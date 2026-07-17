@@ -1,0 +1,83 @@
+// The CA service owns ALL behavioral data — no shared DB with the demo app.
+// Keystroke samples/events, per-user typing profiles, mouse profiles/samples,
+// and the auth-decision log all live here, keyed by an opaque userId supplied
+// by the caller. It stores no users, passwords, passkeys, or sessions.
+const Database = require("better-sqlite3");
+const path = require("path");
+const fs = require("fs");
+
+const dbPath = process.env.DB_PATH
+  ? path.resolve(process.env.DB_PATH)
+  : path.resolve(__dirname, "ca.db");
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+
+const db = new Database(dbPath);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS keystroke_texts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    text_content TEXT NOT NULL,
+    keystroke_timings TEXT,
+    model_confidence REAL,
+    is_suspicious INTEGER DEFAULT 0,
+    sample_purpose TEXT DEFAULT 'activity',
+    source_path TEXT,
+    is_training INTEGER DEFAULT 0,
+    submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS keystroke_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    keystroke_text_id INTEGER NOT NULL,
+    key_code INTEGER,
+    event_type TEXT,
+    timestamp_relative REAL,
+    field_name TEXT,
+    field_type TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS user_typing_profiles (
+    user_id INTEGER PRIMARY KEY,
+    model_json TEXT NOT NULL,
+    sample_count INTEGER NOT NULL DEFAULT 0,
+    trained_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS auth_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    checked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    source TEXT,
+    window_count INTEGER,
+    mean_score REAL,
+    threshold REAL,
+    verdict TEXT,
+    passkey_triggered INTEGER DEFAULT 0,
+    passkey_outcome TEXT,
+    per_window_scores TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS mouse_profiles (
+    user_id INTEGER PRIMARY KEY,
+    model_path TEXT NOT NULL,
+    sample_windows INTEGER NOT NULL DEFAULT 0,
+    balanced_accuracy REAL,
+    trained_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS mouse_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    windows TEXT NOT NULL,
+    window_count INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_kt_user ON keystroke_texts(user_id);
+  CREATE INDEX IF NOT EXISTS idx_ke_text ON keystroke_events(keystroke_text_id);
+  CREATE INDEX IF NOT EXISTS idx_ad_user ON auth_decisions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_mouse_samples_user ON mouse_samples(user_id);
+`);
+
+module.exports = db;

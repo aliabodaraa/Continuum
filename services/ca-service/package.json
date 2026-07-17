@@ -1,0 +1,14 @@
+{
+  "name": "ca-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Continuum behavioral continuous-authentication engine (keystroke + mouse). Owns behavioral models/data; scores via the model-api; exposes a stateless /v1 decision API. Knows nothing about sessions or passkeys.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.2.2",
+    "express": "^4.18.2"
+  }
+}
