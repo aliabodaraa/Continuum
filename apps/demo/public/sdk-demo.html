@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SDK Demo · real login</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:#f1f5f9; color:#0f172a; }
+    header { background:#1e293b; color:#fff; padding:14px 22px; display:flex; align-items:center; gap:10px; }
+    header h1 { font-size:16px; margin:0; }
+    header .sp { flex:1; }
+    header a { color:#93c5fd; font-size:13px; text-decoration:none; }
+    main { max-width:720px; margin:32px auto; padding:0 20px; }
+    .card { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:24px; }
+    h2 { margin:0 0 4px; } p.sub { margin:0 0 16px; color:#64748b; font-size:14px; }
+    textarea { width:100%; min-height:170px; padding:11px 13px; border:1px solid #e2e8f0; border-radius:10px; font:inherit; line-height:1.6; }
+    .row { display:flex; gap:12px; margin-top:14px; align-items:center; }
+    button { background:#4f46e5; color:#fff; border:0; border-radius:10px; padding:11px 18px; font:600 14px system-ui; cursor:pointer; }
+    #result { font-size:13px; font-weight:600; display:none; }
+    .note { margin-top:20px; padding:12px 14px; background:#eef2ff; border:1px solid #c7d2fe; border-radius:10px; font-size:12.5px; color:#3730a3; }
+    .note code { background:#e0e7ff; padding:1px 6px; border-radius:5px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>🛡</div><h1>SDK Demo</h1>
+    <div class="sp"></div>
+    <a href="/dashboard.html">← dashboard</a>
+  </header>
+  <main>
+    <div class="card">
+      <h2>Protected note</h2>
+      <p class="sub">You logged into <b>this app's own</b> login. The SDK identifies you automatically — no sign-in buttons, no frontend identity code.</p>
+      <textarea id="body" placeholder="Type a few natural lines — Continuum verifies it's you…"></textarea>
+      <div class="row"><button id="save">Save</button><span id="result"></span></div>
+      <div class="note">
+        This page's <b>entire</b> integration is one script tag with
+        <code>data-identity-url="/continuum/identity"</code>. The backend adds one line:
+        <code>app.use(continuum.identity(req =&gt; req.session.userId))</code>. That's it.
+      </div>
+    </div>
+  </main>
+  <script>
+    var result = document.getElementById("result");
+    function show(ok, m) { result.style.display = "inline"; result.style.color = ok ? "#059669" : "#dc2626"; result.textContent = m; }
+    document.getElementById("save").addEventListener("click", async function () {
+      var headers = { "Content-Type": "application/json" };
+      if (window.Continuum) Object.assign(headers, window.Continuum.riskHeader());
+      var r = await fetch("/api/guest/save-note", { method: "POST", headers: headers, body: "{}" });
+      var d = await r.json().catch(function () { return {}; });
+      if (r.ok) show(true, "✓ saved (risk: " + (d.verdict && d.verdict.risk) + ")");
+      else if (r.status === 403) show(false, "⛔ suspicious — verify with passkey");
+      else if (r.status === 401) show(false, "🔒 no verdict yet — type a few lines");
+      else show(false, "error " + r.status);
+    });
+  </script>
+
+  <!-- The ONLY integration: one tag. data-identity-url makes the SDK auto-identify the logged-in user. -->
+  <script src="http://localhost:8080/guard.js?v=19"
+          data-api-base="http://localhost:8080"
+          data-site-key="pk_demo"
+          data-identity-url="/continuum/identity"
+          data-keystroke="on" data-mouse="optional"></script>
+</body>
+</html>

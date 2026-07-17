@@ -1,0 +1,3127 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Continuous Auth — Rhythm Lab</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="/vendor/simplewebauthn/index.umd.min.js"></script>
+    <style>
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      :root {
+        --primary: #4f46e5;
+        --primary-dark: #4338ca;
+        --primary-xdark: #1e1b4b;
+        --primary-light: #eef2ff;
+        --text: #0f172a;
+        --muted: #64748b;
+        --border: #e2e8f0;
+        --bg: #f8fafc;
+        --success: #16a34a;
+        --success-bg: #f0fdf4;
+        --danger: #dc2626;
+        --danger-bg: #fef2f2;
+        --warning: #d97706;
+        --warning-bg: #fffbeb;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        min-height: 100vh;
+        color: var(--text);
+      }
+      .navbar {
+        position: sticky;
+        top: 0;
+        background: rgba(15, 13, 42, 0.97);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        color: white;
+        padding: 0 24px;
+        height: 58px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        z-index: 100;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        box-shadow: 0 2px 20px rgba(0,0,0,0.22);
+      }
+      .nav-brand {
+        display: flex; align-items: center; gap: 10px; text-decoration: none;
+      }
+      .nav-brand-icon {
+        width: 32px; height: 32px;
+        background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.4);
+        border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      }
+      .nav-brand-text .nb-name { font-size: 15px; font-weight: 800; color: white; line-height: 1.1; }
+      .nav-brand-text .nb-sub { font-size: 9px; color: rgba(255,255,255,0.35); font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
+      .nav-right {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .nav-btn {
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255,255,255,0.82);
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: background 0.15s, color 0.15s;
+      }
+      .nav-btn:hover {
+        background: rgba(255, 255, 255, 0.18);
+        color: white;
+      }
+      .nav-btn-active {
+        background: rgba(99,102,241,0.25);
+        border-color: rgba(99,102,241,0.4);
+        color: #a5b4fc;
+      }
+      .container {
+        max-width: 1130px;
+        margin: 28px auto;
+        padding: 0 20px;
+      }
+      .card {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 6px 24px rgba(0,0,0,0.05);
+        padding: 24px;
+        margin-bottom: 20px;
+      }
+      .card-title {
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .form-group {
+        margin-bottom: 16px;
+      }
+      label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 6px;
+      }
+      input,
+      textarea {
+        width: 100%;
+        padding: 11px 13px;
+        border: 1.5px solid var(--border);
+        border-radius: 7px;
+        font-size: 14px;
+        font-family: inherit;
+        color: var(--text);
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s;
+      }
+      textarea {
+        min-height: 220px;
+        resize: vertical;
+        line-height: 1.6;
+      }
+      .ta-wrap {
+        position: relative;
+      }
+      input:focus,
+      textarea:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        padding: 10px 18px;
+        border: none;
+        border-radius: 7px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .btn-primary {
+        background: var(--primary);
+        color: white;
+      }
+      .btn-primary:hover:not(:disabled) {
+        background: var(--primary-dark);
+      }
+      .btn-secondary {
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .btn-secondary:hover:not(:disabled) {
+        background: var(--border);
+      }
+      .btn:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .btn-group {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .meta {
+        font-size: 12px;
+        color: var(--muted);
+        margin-left: auto;
+      }
+      .spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.35);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .alert {
+        padding: 11px 14px;
+        border-radius: 7px;
+        font-size: 13px;
+        margin-bottom: 14px;
+        display: none;
+        line-height: 1.5;
+      }
+      .alert-error {
+        background: var(--danger-bg);
+        color: var(--danger);
+        border: 1px solid #fecaca;
+      }
+      .alert-success {
+        background: var(--success-bg);
+        color: var(--success);
+        border: 1px solid #bbf7d0;
+      }
+      .alert-warning {
+        background: var(--warning-bg);
+        color: #92400e;
+        border: 1px solid #fde68a;
+      }
+      /* Auth monitor */
+      .monitor {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      .monitor-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+      }
+      .monitor-title {
+        font-size: 15px;
+        font-weight: 700;
+      }
+      .monitor-badge {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        padding: 4px 10px;
+        border-radius: 20px;
+      }
+      .badge-monitoring {
+        background: var(--primary-light);
+        color: var(--primary);
+      }
+      .badge-ok {
+        background: var(--success-bg);
+        color: var(--success);
+      }
+      .badge-alert {
+        background: var(--danger-bg);
+        color: var(--danger);
+      }
+      .badge-locked {
+        background: var(--warning-bg);
+        color: var(--warning);
+      }
+      .monitor-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      @media (max-width: 720px) {
+        .monitor-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      .monitor-stat {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 11px 13px;
+      }
+      .monitor-stat-label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .monitor-stat-value {
+        font-size: 20px;
+        font-weight: 800;
+        color: var(--text);
+      }
+      /* Score canvas */
+      .score-3d {
+        border-radius: 10px;
+        overflow: hidden;
+        background: #0f172a;
+        border: 1px solid #1e293b;
+        position: relative;
+      }
+      .score-3d-canvas {
+        width: 100%;
+        height: 160px;
+        display: block;
+        transition: box-shadow 0.3s;
+      }
+      /* "Analyzing" pulse on the score canvas while a check is in flight. */
+      .score-3d-canvas.score-calc {
+        box-shadow: inset 0 0 60px rgba(99, 102, 241, 0.35);
+        animation: calcGlow 1.1s ease-in-out infinite;
+      }
+      @keyframes calcGlow {
+        0%,
+        100% {
+          box-shadow: inset 0 0 40px rgba(99, 102, 241, 0.25);
+        }
+        50% {
+          box-shadow: inset 0 0 80px rgba(99, 102, 241, 0.5);
+        }
+      }
+      .calc-dots {
+        letter-spacing: 2px;
+        animation: calcDots 1.1s ease-in-out infinite;
+      }
+      /* Pulsing/spinning orb shown in the score panel while the first window
+         is still being collected (no number, just a "pending" 3D feel). */
+      .pending-orb {
+        display: inline-block;
+        font-size: 52px;
+        line-height: 1;
+        animation: pendingOrb 1.8s linear infinite;
+      }
+      @keyframes pendingOrb {
+        0% {
+          transform: scale(0.82) rotate(0deg);
+          opacity: 0.55;
+        }
+        50% {
+          transform: scale(1.08) rotate(180deg);
+          opacity: 1;
+        }
+        100% {
+          transform: scale(0.82) rotate(360deg);
+          opacity: 0.55;
+        }
+      }
+      @keyframes calcDots {
+        0%,
+        100% {
+          opacity: 0.4;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      .score-overlay-left {
+        position: absolute;
+        left: 0;
+        width: 38%;
+        top: 0;
+        bottom: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+      }
+      .score-overlay-right {
+        position: absolute;
+        right: 0;
+        width: 55%;
+        top: 10px;
+        bottom: 10px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        pointer-events: none;
+        padding-bottom: 10px;
+      }
+      .score-big {
+        font-size: 46px;
+        font-weight: 900;
+        color: white;
+        line-height: 1;
+        text-shadow: 0 0 30px rgba(79, 70, 229, 0.7);
+      }
+      .score-lbl {
+        font-size: 9px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: rgba(255, 255, 255, 0.4);
+        margin-top: 5px;
+      }
+      .bar-chart-label {
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: rgba(255, 255, 255, 0.3);
+        margin-bottom: 4px;
+      }
+      .keystroke-prog-wrap {
+        margin-bottom: 14px;
+      }
+      .keystroke-prog-bar {
+        height: 3px;
+        background: rgba(79, 70, 229, 0.15);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .keystroke-prog-fill {
+        height: 100%;
+        border-radius: 2px;
+        background: var(--primary);
+        transition: width 0.2s;
+      }
+      .keystroke-hint {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .window-grid-wrap {
+        margin-top: 14px;
+      }
+      .window-grid-label {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      /* Horizontal scroll strip of packet cards — newest on the right. */
+      .window-grid {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        gap: 10px;
+        align-items: stretch;
+        min-height: 96px;
+        overflow-x: auto;
+        padding-bottom: 8px;
+        scroll-behavior: smooth;
+      }
+      .window-grid::-webkit-scrollbar {
+        height: 8px;
+      }
+      .window-grid::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+      }
+      .pkt-card {
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px 9px;
+        border-radius: 8px;
+      }
+      .w-tile {
+        width: 34px;
+        height: 52px;
+        border-radius: 5px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        position: relative;
+        overflow: hidden;
+        cursor: default;
+        flex-shrink: 0;
+      }
+      .w-tile-fill {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        border-radius: 0 0 5px 5px;
+        transition: height 0.25s ease;
+      }
+      .w-tile-score {
+        position: absolute;
+        bottom: 3px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 9px;
+        font-weight: 800;
+        color: white;
+        z-index: 1;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+        line-height: 1;
+      }
+      .w-tile-progress {
+        border: 1.5px dashed var(--primary);
+        background: var(--primary-light);
+      }
+      .w-tile-progress .w-tile-score {
+        color: var(--primary);
+        text-shadow: none;
+      }
+      .packet-group {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        border: 2px solid var(--primary);
+        border-radius: 8px;
+        padding: 6px 8px 8px;
+        box-shadow: 0 0 14px rgba(79, 70, 229, 0.35);
+        transition:
+          border-color 0.3s,
+          box-shadow 0.3s;
+      }
+      .packet-group.packet-group-genuine {
+        border-color: var(--success);
+        box-shadow: 0 0 14px rgba(22, 163, 74, 0.35);
+      }
+      .packet-group.packet-group-suspicious {
+        border-color: var(--danger);
+        box-shadow: 0 0 14px rgba(220, 38, 38, 0.35);
+      }
+      .packet-group-label {
+        font-size: 9px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--primary);
+      }
+      .packet-group.packet-group-genuine .packet-group-label {
+        color: var(--success);
+      }
+      .packet-group.packet-group-suspicious .packet-group-label {
+        color: var(--danger);
+      }
+      .packet-group-tiles {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        width: 370px;
+      }
+      @keyframes tile-pop {
+        0% {
+          transform: scaleY(0.6);
+          opacity: 0.4;
+        }
+        60% {
+          transform: scaleY(1.08);
+        }
+        100% {
+          transform: scaleY(1);
+          opacity: 1;
+        }
+      }
+      .w-tile-new {
+        animation: tile-pop 0.35s ease-out forwards;
+      }
+      /* Lu et al. sliding window 3D panel */
+      .lu-win-wrap {
+        margin-top: 14px;
+      }
+      .lu-win-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 5px;
+      }
+      .lu-win-title {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: var(--muted);
+        letter-spacing: 0.05em;
+      }
+      .lu-win-canvas {
+        width: 100%;
+        height: 200px;
+        display: block;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+      }
+      .lu-win-labels {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+        align-items: flex-end;
+      }
+      .lu-win-legend {
+        display: flex;
+        gap: 14px;
+        margin-top: 5px;
+        flex-wrap: wrap;
+      }
+      .lu-win-legend span {
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+      }
+      .lwl-genuine {
+        color: #22c55e;
+      }
+      .lwl-suspicious {
+        color: #ef4444;
+      }
+      .lwl-packet {
+        color: #818cf8;
+      }
+      .lwl-progress {
+        color: var(--muted);
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @keyframes slideInToast {
+        from {
+          opacity: 0;
+          transform: translateY(16px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes prog-flash {
+        0% {
+          background: var(--success);
+        }
+        100% {
+          background: var(--primary);
+        }
+      }
+      .keystroke-prog-fill.window-ready {
+        animation: prog-flash 0.5s ease-out forwards;
+      }
+      .auth-status-text {
+        position: absolute;
+        bottom: 10px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.45);
+        padding: 0 16px;
+        pointer-events: none;
+      }
+      /* Modal */
+      .modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        z-index: 100;
+      }
+      .modal-content {
+        background: white;
+        margin: 8% auto;
+        padding: 28px;
+        border-radius: 12px;
+        width: min(92%, 480px);
+        box-shadow: 0 8px 40px rgba(0, 0, 0, 0.2);
+      }
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+      .modal-title {
+        font-size: 18px;
+        font-weight: 800;
+      }
+      .close {
+        font-size: 24px;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .close:hover {
+        color: var(--text);
+      }
+      /* Particle bg canvas */
+      #bgCanvas {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+      }
+      .container {
+        position: relative;
+        z-index: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="bgCanvas"></canvas>
+
+    <nav class="navbar">
+      <a href="/dashboard.html" class="nav-brand">
+        <div class="nav-brand-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+        </div>
+        <div class="nav-brand-text">
+          <div class="nb-name" id="navUserName">Account</div>
+          <div class="nb-sub">Continuous Auth</div>
+        </div>
+      </a>
+      <div id="navBrand" style="display:none"></div>
+      <div class="nav-right">
+        <a href="/lab.html" class="nav-btn nav-btn-active">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          Lab
+        </a>
+        <a href="/dashboard.html" class="nav-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Dashboard
+        </a>
+        <a href="/profile.html" class="nav-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Profile
+        </a>
+        <button class="nav-btn" onclick="logout()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Logout
+        </button>
+      </div>
+    </nav>
+
+    <div class="container">
+      <div id="alertError" class="alert alert-error"></div>
+      <div id="alertSuccess" class="alert alert-success"></div>
+      <div id="alertWarning" class="alert alert-warning"></div>
+
+      <!-- Continuous auth monitor -->
+      <div class="monitor">
+        <div class="monitor-header">
+          <div class="monitor-title">Continuous Authentication Monitor</div>
+          <span class="monitor-badge badge-monitoring" id="monitorBadge"
+            >Monitoring</span
+          >
+        </div>
+
+        <div class="monitor-grid">
+          <div class="monitor-stat">
+            <div class="monitor-stat-label">Keystrokes</div>
+            <div class="monitor-stat-value" id="statKeys">0</div>
+          </div>
+          <div class="monitor-stat">
+            <div class="monitor-stat-label">Avg Dwell</div>
+            <div class="monitor-stat-value" id="statDwell">--</div>
+          </div>
+          <div class="monitor-stat">
+            <div class="monitor-stat-label">Avg Flight</div>
+            <div class="monitor-stat-value" id="statFlight">--</div>
+          </div>
+        </div>
+
+        <!-- Keystroke progress bar (2D, minimal) -->
+        <div class="keystroke-prog-wrap">
+          <div class="keystroke-prog-bar">
+            <div
+              id="keystrokeProgress"
+              class="keystroke-prog-fill"
+              style="width: 0%"
+            ></div>
+          </div>
+          <div id="keystrokeHint" class="keystroke-hint">
+            0 / 50 keystrokes — evaluates after first window
+          </div>
+        </div>
+
+        <!-- Lu et al. sliding window 3D visualizer -->
+        <div class="lu-win-wrap">
+          <div class="lu-win-head">
+            <span class="lu-win-title"
+              >Sliding Window Evaluation (Lu et al.)</span
+            >
+            <span id="luPacketVerdict"></span>
+          </div>
+          <canvas id="luWinCanvas" class="lu-win-canvas"></canvas>
+          <div id="luWinLabels" class="lu-win-labels">
+            <span
+              style="font-size: 11px; color: var(--muted); font-style: italic"
+              >Type to begin evaluation</span
+            >
+          </div>
+          <div class="lu-win-legend">
+            <span class="lwl-genuine"
+              >■ Genuine window (score ≥ threshold)</span
+            >
+            <span class="lwl-suspicious"
+              >■ Suspicious window (score &lt; threshold)</span
+            >
+            <span class="lwl-packet">□ Current packet (decision group)</span>
+            <span class="lwl-progress">░ Growing window</span>
+          </div>
+        </div>
+
+        <!-- Three.js score visualization — kept above the packet strip so the
+             live score is always visible without scrolling. -->
+        <div class="score-3d">
+          <canvas id="scoreCanvas" class="score-3d-canvas"></canvas>
+          <!-- Score number overlay (over sphere on left) -->
+          <div class="score-overlay-left">
+            <div id="scoreNum" class="score-big">—</div>
+            <div
+              id="scoreSubNum"
+              style="
+                font-size: 11px;
+                color: var(--muted);
+                margin-top: 2px;
+                text-align: center;
+              "
+            ></div>
+            <div class="score-lbl">Packet Result</div>
+          </div>
+          <!-- Bar chart label (over right bars) -->
+          <div class="score-overlay-right">
+            <div class="bar-chart-label">Per-Window Scores</div>
+          </div>
+          <!-- Status text -->
+          <div id="authStatus" class="auth-status-text">
+            Collecting keystroke data — type naturally to build the first
+            evaluation window.
+          </div>
+        </div>
+
+        <!-- Packet history: each card = one decision packet (6 windows),
+             scrolls horizontally with the newest on the right. -->
+        <div class="window-grid-wrap">
+          <div class="window-grid-label">
+            Evaluation Packets (scroll → for history)
+          </div>
+          <div class="window-grid" id="windowGrid">
+            <div
+              style="font-size: 11px; color: var(--muted); font-style: italic"
+            >
+              No windows yet — type to begin
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Writing card (moved above the activity log) -->
+      <div class="card">
+        <div class="card-title">Rhythm Lab — live keystroke analysis (custom integration)</div>
+        <form id="opinionForm">
+          <div class="form-group">
+            <label for="opinionInput"
+              >Opinion
+              <span
+                style="font-size: 12px; font-weight: 400; color: var(--muted)"
+                >(min 80 characters)</span
+              ></label
+            >
+            <div class="ta-wrap">
+              <textarea
+                id="opinionInput"
+                required
+                placeholder="Write your opinion here. The system monitors your typing rhythm continuously."
+              ></textarea>
+            </div>
+          </div>
+          <div class="btn-group">
+            <button
+              type="submit"
+              class="btn btn-primary"
+              id="submitBtn"
+              style="display: none"
+            >
+              Save Training Sample
+            </button>
+            <div
+              style="
+                font-size: 11px;
+                color: var(--muted);
+                margin-top: 2px;
+                line-height: 1.4;
+              "
+            >
+              Your security is monitored automatically while you type. When your
+              rhythm is consistently strong, a green panel appears so you can
+              add the sample to improve your model.
+            </div>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              onclick="clearForm()"
+            >
+              Clear
+            </button>
+            <span class="meta" id="typingMeta">0 chars</span>
+          </div>
+        </form>
+      </div>
+
+      <!-- AI Model Activity Feed -->
+      <div class="card" style="margin-bottom: 20px">
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+          "
+        >
+          <div>
+            <div style="font-size: 14px; font-weight: 700">
+              AI Model Activity
+            </div>
+          </div>
+          <div
+            id="aiBadge"
+            style="
+              font-size: 11px;
+              font-weight: 700;
+              text-transform: uppercase;
+              letter-spacing: 0.07em;
+              padding: 3px 10px;
+              border-radius: 20px;
+              background: var(--primary-light);
+              color: var(--primary);
+            "
+          >
+            Idle
+          </div>
+        </div>
+        <div
+          id="aiLog"
+          style="
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.9;
+            max-height: 130px;
+            overflow-y: auto;
+            font-family: ui-monospace, &quot;Cascadia Code&quot;, monospace;
+          "
+        >
+          <div style="color: var(--border); font-style: italic">
+            No events yet — start typing to activate monitoring.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Passkey step-up is rendered by the Continuum SDK (single shared modal). -->
+
+    <script src="/js/keystroke-tracker.js"></script>
+    <script>
+      // ── User badge ──────────────────────────────────────────────
+      function userAvatarColor(n) {
+        const p = [
+          "#4f46e5",
+          "#0284c7",
+          "#0891b2",
+          "#059669",
+          "#d97706",
+          "#dc2626",
+          "#7c3aed",
+          "#db2777",
+        ];
+        let h = 0;
+        for (const c of n) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+        return p[h % p.length];
+      }
+      function applyUserBadge(username) {
+        const nameEl = document.getElementById("navUserName");
+        if (nameEl) nameEl.textContent = username || "Account";
+        const iconEl = document.querySelector(".nav-brand-icon");
+        if (iconEl && username) {
+          iconEl.style.background = userAvatarColor(username);
+          iconEl.innerHTML = `<span style="color:white;font-size:14px;font-weight:900">${username[0].toUpperCase()}</span>`;
+        }
+      }
+
+      // ── Page logic ───────────────────────────────────────────────
+      const form = document.getElementById("opinionForm");
+      const opinionInput = document.getElementById("opinionInput");
+      const submitBtn = document.getElementById("submitBtn");
+      const tracker = window.continuumKeystrokes.createTracker(form);
+
+      // Window config drives the keystroke-progress display and the client-side
+      // window counter that gates when a new evaluation fires. Defaults match the
+      // server (WS50) and are overwritten at startup from GET /api/text/config so
+      // the client can never silently drift from the model the server serves.
+      let WINDOW_SIZE = 50;
+      let WINDOW_STRIDE = 10;
+      let CHECK_MIN_TEXT = 80;
+
+      async function loadCAConfig() {
+        try {
+          const cfg = await fetch("/api/text/config").then((r) => r.json());
+          if (cfg.windowSize) WINDOW_SIZE = cfg.windowSize;
+          if (cfg.windowStride) WINDOW_STRIDE = cfg.windowStride;
+          if (cfg.checkMinTextChars) CHECK_MIN_TEXT = cfg.checkMinTextChars;
+          // Fixed Lu et al. window boundary (0.50) — the live decision threshold.
+          if (cfg.decisionThreshold != null) _userThreshold = cfg.decisionThreshold;
+          if (cfg.rollingWindowCount) _rollingWindowCount = cfg.rollingWindowCount;
+          const hint = document.getElementById("keystrokeHint");
+          if (hint)
+            hint.textContent = `0 / ${WINDOW_SIZE} keystrokes — evaluates after first window`;
+        } catch {
+          /* keep WS50 defaults if config fetch fails */
+        }
+      }
+
+      const CHECK_KEYSTROKE_INTERVAL = 10; // aligned with WINDOW_STRIDE so ~1 new window per check
+      const CHECK_DEBOUNCE_MS = 300;
+      const CHECK_MAX_WAIT_MS = 2000;
+
+      // ── AI Activity Log ─────────────────────────────────────────
+      const AI_ICONS = {
+        eval: "◈",
+        genuine: "✓",
+        suspicious: "⚠",
+        passkey: "⬡",
+        adaptive: "↻",
+        window: "◇",
+        locked: "⊗",
+        unlocked: "✓",
+      };
+      const AI_COLORS = {
+        eval: "var(--primary)",
+        genuine: "var(--success)",
+        suspicious: "var(--danger)",
+        passkey: "var(--warning)",
+        adaptive: "var(--primary)",
+        window: "var(--muted)",
+        locked: "var(--danger)",
+        unlocked: "var(--success)",
+      };
+      let aiLogEmpty = true;
+
+      function logAI(type, msg) {
+        const log = document.getElementById("aiLog");
+        const badge = document.getElementById("aiBadge");
+        if (!log) return;
+        if (aiLogEmpty) {
+          log.innerHTML = "";
+          aiLogEmpty = false;
+        }
+        const time = new Date().toLocaleTimeString(undefined, {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+        const icon = AI_ICONS[type] || "●";
+        const col = AI_COLORS[type] || "var(--muted)";
+        const entry = document.createElement("div");
+        entry.innerHTML = `<span style="color:${col};font-weight:800">${icon}</span> <span style="color:#94a3b8">${time}</span>  <span style="color:${type === "genuine" ? "var(--success)" : type === "suspicious" ? "var(--danger)" : type === "adaptive" ? "var(--primary)" : "var(--text)"};font-weight:600">${msg}</span>`;
+        log.insertBefore(entry, log.firstChild);
+        // Update badge
+        const badgeMap = {
+          eval: ["Evaluating", "var(--primary-light)", "var(--primary)"],
+          genuine: ["Verified", "var(--success-bg)", "var(--success)"],
+          suspicious: ["Suspicious", "var(--danger-bg)", "var(--danger)"],
+          passkey: ["Passkey", "var(--warning-bg)", "var(--warning)"],
+          adaptive: ["Learning", "var(--primary-light)", "var(--primary)"],
+          locked: ["Locked", "var(--danger-bg)", "var(--danger)"],
+          unlocked: ["Unlocked", "var(--success-bg)", "var(--success)"],
+        };
+        const bm = badgeMap[type];
+        if (bm) {
+          badge.textContent = bm[0];
+          badge.style.background = bm[1];
+          badge.style.color = bm[2];
+        }
+      }
+
+      let monitorTimer = null;
+      let passkeyRequired = false;
+      // Fixed Lu et al. window boundary (overwritten by /config decisionThreshold).
+      let _userThreshold = 0.5;
+      let _rollingWindowCount = 18;
+      // Each /check only sends the most recent events the decision uses. The
+      // verdict needs the last 18 windows (~220 keystrokes ≈ 440 events); we send
+      // a ~700-event (~350-keystroke) tail for safe buffer after dropped digraphs.
+      // Resending the whole history every check bloated the payload and slowed
+      // each check; capping it keeps the payload constant no matter how long the
+      // session runs.
+      const CHECK_SEND_EVENTS = 700;
+      let _windowHistory = [];
+      let _packetSize = 0;
+      let _packetVerdict = null;
+      let _packetSnapshots = []; // one entry per check result
+      // Retained (always false): still gates one check-flow branch below. Adaptive
+      // retraining now lives in the SDK, so nothing sets this true here anymore.
+      let _retrainInProgress = false;
+      let passkeyVerifiedForCurrentText = false;
+      let lastCheckedLength = 0;
+      let lastCheckedKeyCount = 0;
+      let lastCheckedWindowCount = 0;
+      let lastCheckTime = 0;
+      let checkInFlight = false;
+      let _windowMissedDuringFlight = false; // a window appeared while a check was in flight
+
+      function currentKeyCount() {
+        return (
+          window.continuumKeystrokes.analyze(tracker.getEvents()).keyCount || 0
+        );
+      }
+
+      function setLoading(btn, loading, text) {
+        if (loading) {
+          btn._orig = btn.innerHTML;
+          btn.innerHTML = `<span class="spinner"></span>${text || "Loading…"}`;
+          btn.disabled = true;
+        } else {
+          btn.innerHTML = btn._orig || text || "";
+          btn.disabled = false;
+        }
+      }
+      function getSimpleWebAuthnBrowser() {
+        if (
+          !window.SimpleWebAuthnBrowser ||
+          typeof window.SimpleWebAuthnBrowser.startAuthentication !== "function"
+        )
+          throw new Error("Passkey library failed to load.");
+        return window.SimpleWebAuthnBrowser;
+      }
+      function formatPasskeyError(err) {
+        const msg = err && err.message ? err.message : String(err);
+        if (
+          (err && err.name === "NotAllowedError") ||
+          msg.includes("timed out") ||
+          msg.includes("not allowed")
+        )
+          return "Passkey prompt was cancelled or timed out. Keep this tab active and approve the browser prompt.";
+        return msg;
+      }
+
+      let lastWindowCount = 0;
+      function updateMetrics() {
+        const events = tracker.getEvents();
+        const t = window.continuumKeystrokes.analyze(events);
+        const keys = t.keyCount || 0;
+        document.getElementById("statKeys").textContent = keys;
+        document.getElementById("statDwell").textContent =
+          keys >= 5 ? Math.round(t.avgDwellTime) + "ms" : "--";
+        document.getElementById("statFlight").textContent =
+          keys >= 5 ? Math.round(t.avgFlightTime) + "ms" : "--";
+        document.getElementById("typingMeta").textContent =
+          `${opinionInput.value.trim().length} chars | ${keys} keystrokes`;
+        const progress = Math.min(keys / WINDOW_SIZE, 1);
+        document.getElementById("keystrokeProgress").style.width =
+          `${Math.round(progress * 100)}%`;
+        const steps = Math.max(keys - 1, 0);
+        // Count FULL windows only (floor), so the check fires exactly when a
+        // new window completes at the stride boundary — i.e. when the progress
+        // tile reads 10/10 — not one keystroke later.
+        const wins =
+          steps >= WINDOW_SIZE
+            ? Math.floor((steps - WINDOW_SIZE) / WINDOW_STRIDE) + 1
+            : 0;
+        document.getElementById("keystrokeHint").textContent =
+          keys >= WINDOW_SIZE
+            ? `${keys} keystrokes — evaluation window ready`
+            : `${keys} / ${WINDOW_SIZE} keystrokes — ${WINDOW_SIZE - keys} more for first window`;
+
+        // Before the first packet exists (and while no check is mid-flight),
+        // show the engaging "collecting" state in the 3D score panel.
+        if (keys > 0 && _packetSnapshots.length === 0 && !checkInFlight) {
+          setScorePhase("collecting", progress);
+        }
+
+        if (wins > lastWindowCount) {
+          logAI(
+            "window",
+            `Window ${wins} ready (${keys} keystrokes, dwell avg ${keys >= 5 ? Math.round(t.avgDwellTime) : "--"}ms)`,
+          );
+          lastWindowCount = wins;
+          // Flash progress bar green to signal a new window just completed
+          const progFill = document.getElementById("keystrokeProgress");
+          if (progFill) {
+            progFill.classList.add("window-ready");
+            setTimeout(() => progFill.classList.remove("window-ready"), 520);
+          }
+          // Brief glow on the window grid
+          const grid = document.getElementById("windowGrid");
+          if (grid) {
+            grid.style.transition = "box-shadow 0.1s";
+            grid.style.boxShadow = "0 0 0 2px var(--primary)";
+            setTimeout(() => {
+              grid.style.boxShadow = "none";
+            }, 500);
+          }
+          // Fire check directly when a new window appears (no debounce).
+          // If a check is already in flight, mark the missed window so the
+          // finally block can catch up after the current check completes.
+          if (!passkeyRequired &&
+              opinionInput.value.trim().length >= CHECK_MIN_TEXT) {
+            if (checkInFlight) {
+              _windowMissedDuringFlight = true;
+            } else {
+              clearTimeout(monitorTimer);
+              checkRhythmWhileTyping();
+            }
+          }
+        }
+        if (window._threeSetProgress) window._threeSetProgress(progress);
+        updateProgressTile();
+      }
+
+      function setScore(fraction, genuineCount, total, status, color) {
+        const num = document.getElementById("scoreNum");
+        const sub = document.getElementById("scoreSubNum");
+        if (fraction != null) {
+          num.textContent = `${Math.round(fraction * 100)}%`;
+          num.style.textShadow = `0 0 30px ${color}`;
+          num.style.color = "white";
+          if (sub)
+            sub.textContent =
+              genuineCount != null ? `${genuineCount} / ${total} windows` : "";
+        } else {
+          num.textContent = "—";
+          num.style.textShadow = "0 0 30px rgba(79,70,229,.7)";
+          if (sub) sub.textContent = "";
+        }
+        document.getElementById("authStatus").textContent = status || "";
+        const panel = document.getElementById("scoreCanvas");
+        if (panel) panel.classList.remove("score-calc");
+        if (window._threeSetScore) window._threeSetScore(fraction);
+      }
+
+      // Pre-result states for the 3D score panel:
+      //  • "collecting"  → before the first packet, show the live keystroke fill
+      //                     building toward the first window (engaging warm-up).
+      //  • "calculating" → while a /check is in flight, show an analyzing pulse.
+      function setScorePhase(phase, pct) {
+        const num = document.getElementById("scoreNum");
+        const sub = document.getElementById("scoreSubNum");
+        const statusEl = document.getElementById("authStatus");
+        const canvas = document.getElementById("scoreCanvas");
+        if (!num) return;
+        if (phase === "collecting") {
+          // No number — show a 3D "pending" pulse while the first window builds.
+          num.innerHTML = `<span class="pending-orb">◍</span>`;
+          num.style.color = "#a5b4fc";
+          num.style.textShadow = "0 0 28px rgba(99,102,241,.6)";
+          if (sub) sub.textContent = "building first window";
+          if (statusEl)
+            statusEl.textContent =
+              "Capturing your typing rhythm — keep typing to form the first evaluation window.";
+          if (canvas) canvas.classList.add("score-calc");
+          // The 3D sphere still fills with progress so there's motion to watch.
+          if (window._threeSetProgress) window._threeSetProgress(pct || 0);
+        } else if (phase === "calculating") {
+          num.innerHTML = `<span class="calc-dots">● ● ●</span>`;
+          num.style.color = "#a5b4fc";
+          num.style.textShadow = "0 0 28px rgba(99,102,241,.8)";
+          if (sub) sub.textContent = "analyzing rhythm";
+          if (statusEl) statusEl.textContent = "Analyzing your typing rhythm…";
+          if (canvas) canvas.classList.add("score-calc");
+        }
+      }
+
+      function setWindowScores(scores, verdict, totalCount, meanScore) {
+        if (window._threeSetBars) window._threeSetBars(scores, totalCount);
+        _packetVerdict = verdict || null;
+        if (!scores || !scores.length) {
+          _windowHistory = [];
+          _packetSize = 0;
+          renderWindowGrid();
+          return;
+        }
+        _packetSize = scores.length;
+        // Grow the window history from the FRONTEND's true window count, not the
+        // server's window count — the payload cap now bounds the server count, so
+        // relying on it froze the sliding-window chart and desynced it from the
+        // packets. The frontend always knows the real total from the keystrokes.
+        const steps = Math.max(currentKeyCount() - 1, 0);
+        const trueWindowCount =
+          steps >= WINDOW_SIZE
+            ? Math.floor((steps - WINDOW_SIZE) / WINDOW_STRIDE) + 1
+            : scores.length;
+        const target = Math.max(trueWindowCount, scores.length);
+        if (target > _windowHistory.length) {
+          // Append at most the windows we actually have scores for (the packet).
+          const newCount = Math.min(target - _windowHistory.length, scores.length);
+          const newScores = scores.slice(scores.length - newCount);
+          newScores.forEach((s) =>
+            _windowHistory.push({ score: s, genuine: s >= _userThreshold }),
+          );
+        }
+        // Keep the tail of the history exactly equal to the latest packet's
+        // scores, so the rightmost sliding-window bars always match the packet.
+        for (let i = 0; i < scores.length; i++) {
+          const hIdx = _windowHistory.length - scores.length + i;
+          if (hIdx >= 0)
+            _windowHistory[hIdx] = {
+              score: scores[i],
+              genuine: scores[i] >= _userThreshold,
+            };
+        }
+        if (window._threeSetPacket)
+          window._threeSetPacket(scores.length, verdict);
+        if (window._luSetWindows)
+          window._luSetWindows(
+            _windowHistory,
+            scores.length,
+            verdict,
+            _userThreshold,
+          );
+
+        // Snapshot this packet (one per check result with a full 6-window packet).
+        // Early checks may produce only 4-5 windows; snapshotting them creates
+        // artificial "4 new windows" overlap with the next packet because the
+        // first snapshot spans fewer windows than RECENT_WINDOW_COUNT.
+        if (verdict && scores.length >= 6) {
+          // Snapshot the EXACT scores the server voted on (not _windowHistory's
+          // tail, which can drift) so the packet tiles always match the verdict.
+          const wins = scores.map((s) => ({
+            score: s,
+            genuine: s >= _userThreshold,
+          }));
+          // Skip duplicates: if a check fired without a genuinely new window, the
+          // packet is identical to the last snapshot — don't record it twice.
+          const last = _packetSnapshots[_packetSnapshots.length - 1];
+          const sameAsLast =
+            last &&
+            last.windows.length === wins.length &&
+            last.windows.every(
+              (w, i) => Math.abs(w.score - wins[i].score) < 1e-6,
+            );
+          const badCount = wins.filter((w) => !w.genuine).length;
+          if (sameAsLast) {
+            renderWindowGrid();
+            return;
+          }
+          _packetSnapshots.push({
+            id: _packetSnapshots.length + 1,
+            verdict,
+            windows: wins,
+            badCount,
+            genuineCount: wins.length - badCount,
+            total: wins.length,
+            meanScore: meanScore != null ? meanScore : null,
+            threshold: _userThreshold,
+          });
+        }
+        renderWindowGrid();
+      }
+
+      function makeTile(w) {
+        const tile = document.createElement("div");
+        tile.className = "w-tile";
+        const pct = Math.max(12, Math.round(w.score * 100));
+        tile.title = `${(w.score * 100).toFixed(0)}% — ${w.genuine ? "Genuine" : "Suspicious"}`;
+        tile.innerHTML = `<div class="w-tile-fill" style="height:${pct}%;background:${w.genuine ? "var(--success)" : "var(--danger)"};"></div><div class="w-tile-score">${(w.score * 100).toFixed(0)}%</div>`;
+        return tile;
+      }
+
+      // Compact tile used inside the horizontal packet cards.
+      function makeMiniTile(w) {
+        const t = document.createElement("div");
+        const pct = Math.max(12, Math.round(w.score * 100));
+        t.title = `${(w.score * 100).toFixed(0)}% — ${w.genuine ? "Genuine" : "Suspicious"}`;
+        t.style.cssText =
+          "position:relative;width:18px;height:42px;border-radius:4px;background:var(--bg);border:1px solid var(--border);overflow:hidden;flex-shrink:0";
+        t.innerHTML = `<div style="position:absolute;bottom:0;left:0;right:0;height:${pct}%;background:${w.genuine ? "var(--success)" : "var(--danger)"}"></div><div style="position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:7px;font-weight:800;color:white;text-shadow:0 1px 2px rgba(0,0,0,.6)">${Math.round(w.score * 100)}</div>`;
+        return t;
+      }
+
+      function makeVerdictSteps(snap) {
+        if (snap.meanScore == null) return null;
+        // Lu et al. (2020) packet vote: a window is "low" when its genuine score
+        // is below the fixed 0.50 decision boundary (the same boundary the tiles
+        // colour by), and the packet is flagged when ≥ 1/2 of windows are low.
+        const luThreshold = _userThreshold != null ? _userThreshold : 0.5;
+        const winScores = snap.windows.map((w) => w.score);
+        const luBad = winScores.filter((s) => s < luThreshold).length;
+        const luTotal = winScores.length;
+        // Pass/fail follows the server's verdict so the trace can never disagree
+        // with the card's colour.
+        const voteTriggered = snap.verdict === "suspicious";
+        const tPct = snap.threshold != null ? Math.round(snap.threshold * 100) : null;
+        const thrPct = Math.round(luThreshold * 100);
+        const meanPct = Math.round(snap.meanScore * 100);
+
+        const wrap = document.createElement("div");
+        wrap.style.cssText =
+          "display:flex;flex-direction:column;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)";
+
+        // Row 1 — Lu et al. vote
+        const voteColor = voteTriggered ? "#ef4444" : "#22c55e";
+        const v = document.createElement("div");
+        v.style.cssText = `display:flex;align-items:center;gap:7px;padding:4px 8px;
+          border-radius:5px;font-size:10px;font-family:monospace;
+          background:rgba(255,255,255,0.03);border:1px solid ${voteColor}33;`;
+        v.innerHTML = `<span style="color:${voteColor};font-weight:800;font-size:11px">${voteTriggered ? "✗" : "✓"}</span>
+          <span style="color:var(--muted);min-width:54px">Lu Vote</span>
+          <span style="color:var(--text);flex:1">${luBad}/${luTotal} windows &lt; ${thrPct}%</span>
+          <span style="color:${voteColor};font-weight:700;white-space:nowrap">${luBad}/${luTotal} ${voteTriggered ? "≥" : "&lt;"} 1/2 — ${voteTriggered ? "FAIL" : "PASS"}</span>`;
+        wrap.appendChild(v);
+
+        // Row 2 — Overall verdict
+        const ov = document.createElement("div");
+        const ovColor = voteTriggered ? "#ef4444" : "#22c55e";
+        ov.style.cssText = `display:flex;align-items:center;gap:7px;padding:4px 8px;
+          border-radius:5px;font-size:10px;font-family:monospace;font-weight:800;
+          background:${voteTriggered ? "rgba(239,68,68,0.06)" : "rgba(34,197,94,0.06)"};
+          border:1px solid ${ovColor}55;`;
+        ov.innerHTML = `<span style="color:${ovColor};font-size:11px">${voteTriggered ? "✗" : "✓"}</span>
+          <span style="color:var(--muted);min-width:54px">Verdict</span>
+          <span style="color:${ovColor};flex:1">${voteTriggered ? "Intruder — session suspended" : "Legitimate user"}</span>`;
+        wrap.appendChild(ov);
+
+        // Row 3 — Info: mean score + EER threshold (display/research only)
+        const tStr = tPct != null ? ` · EER ${tPct}%` : "";
+        const m = document.createElement("div");
+        m.style.cssText = `display:flex;align-items:center;gap:7px;padding:4px 8px;
+          border-radius:5px;font-size:10px;font-family:monospace;
+          background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);`;
+        m.innerHTML = `<span style="color:var(--muted);font-weight:800;font-size:11px">ℹ</span>
+          <span style="color:var(--muted);min-width:54px">Info</span>
+          <span style="color:var(--muted);flex:1">Mean: ${meanPct}%${tStr}</span>
+          <span style="color:var(--muted);font-size:9px">display only</span>`;
+        wrap.appendChild(m);
+
+        return wrap;
+      }
+
+      function renderWindowGrid() {
+        const grid = document.getElementById("windowGrid");
+        if (!grid) return;
+        grid.innerHTML = "";
+
+        if (_packetSnapshots.length === 0) {
+          if (_windowHistory.length === 0) {
+            grid.innerHTML =
+              '<div style="font-size:11px;color:var(--muted);font-style:italic">No windows yet — type to begin</div>';
+          }
+          updateProgressTile();
+          return;
+        }
+
+        // One card per packet, laid out left→right (oldest→newest) in a
+        // horizontal scroll strip. The current packet is widened and shows the
+        // full Lu-vote verdict trace; older packets stay compact.
+        _packetSnapshots.forEach((snap, idx) => {
+          const isCurrent = idx === _packetSnapshots.length - 1;
+          const vColor =
+            snap.verdict === "genuine" ? "var(--success)" : "var(--danger)";
+          const vIcon = snap.verdict === "genuine" ? "✓" : "✗";
+
+          const card = document.createElement("div");
+          card.className = "pkt-card";
+          card.style.width = isCurrent ? "212px" : "150px";
+          card.style.border = `1px solid ${vColor}${isCurrent ? "" : "55"}`;
+          card.style.background =
+            snap.verdict === "genuine"
+              ? "rgba(34,197,94,0.06)"
+              : "rgba(239,68,68,0.06)";
+          if (isCurrent)
+            card.style.boxShadow = `0 0 0 1px ${vColor}, 0 4px 14px ${vColor}33`;
+
+          const head = document.createElement("div");
+          head.style.cssText =
+            "display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;line-height:1";
+          head.innerHTML = `
+            <span style="color:${vColor};font-size:12px">${vIcon}</span>
+            <span style="color:var(--muted)">Packet #${snap.id}${isCurrent ? " · now" : ""}</span>
+            <span style="margin-left:auto;color:${vColor};text-transform:uppercase;font-size:8px;letter-spacing:.04em">${snap.verdict}</span>`;
+          card.appendChild(head);
+
+          const cnt = document.createElement("div");
+          cnt.style.cssText =
+            "font-size:9px;color:var(--text);font-weight:600";
+          cnt.textContent = `${snap.genuineCount}/${snap.total} genuine · ${snap.badCount} bad`;
+          card.appendChild(cnt);
+
+          const tiles = document.createElement("div");
+          tiles.style.cssText = "display:flex;gap:3px;align-items:flex-end";
+          snap.windows.forEach((w) => tiles.appendChild(makeMiniTile(w)));
+          card.appendChild(tiles);
+
+          const steps = makeVerdictSteps(snap);
+          if (steps) {
+            steps.style.marginTop = "2px";
+            if (isCurrent) {
+              card.appendChild(steps);
+            } else {
+              // Older packets: collapsed by default, click to reveal details.
+              steps.style.display = "none";
+              const toggle = document.createElement("div");
+              toggle.style.cssText =
+                "font-size:9px;color:var(--muted);cursor:pointer;margin-top:3px;user-select:none";
+              toggle.textContent = "▼ details";
+              toggle.onclick = () => {
+                const open = steps.style.display === "none";
+                steps.style.display = open ? "flex" : "none";
+                toggle.textContent = open ? "▲ hide" : "▼ details";
+                card.style.width = open ? "212px" : "150px";
+              };
+              card.appendChild(toggle);
+              card.appendChild(steps);
+            }
+          }
+
+          grid.appendChild(card);
+        });
+
+        updateProgressTile();
+        // Keep the newest packet in view.
+        grid.scrollLeft = grid.scrollWidth;
+      }
+
+      function updateProgressTile() {
+        const grid = document.getElementById("windowGrid");
+        if (!grid) return;
+        const old = grid.querySelector(".w-tile-progress");
+        if (old) old.remove();
+        const keys = currentKeyCount();
+        if (keys === 0) return;
+        // Compute position inside the current (incomplete) window
+        const steps = Math.max(keys - 1, 0);
+        const wins =
+          steps >= WINDOW_SIZE
+            ? Math.floor((steps - WINDOW_SIZE) / WINDOW_STRIDE) + 1
+            : 0;
+        // Progress inside the current stride (0→stride steps since last window)
+        const inWinKeys =
+          steps < WINDOW_SIZE ? steps : (steps - WINDOW_SIZE) % WINDOW_STRIDE;
+        const winTarget = steps < WINDOW_SIZE ? WINDOW_SIZE : WINDOW_STRIDE;
+        // Display 1..target instead of 0..target-1: the instant a window
+        // completes we show target/target (green — the re-check fires HERE)
+        // rather than jumping to 0, which made it look like the check fired
+        // one keystroke late.
+        const justCompleted = inWinKeys === 0 && wins > 0;
+        const displayKeys = justCompleted ? winTarget : inWinKeys;
+        const pct = Math.min(Math.round((displayKeys / winTarget) * 100), 100);
+        const barColor = justCompleted ? "var(--success)" : "var(--primary)";
+        const tile = document.createElement("div");
+        tile.className = "w-tile w-tile-progress";
+        tile.title = justCompleted
+          ? "Window complete — re-checking your rhythm now"
+          : `Next re-check in ${winTarget - inWinKeys} keystroke(s) — a new window forms every ${winTarget} keys`;
+        tile.innerHTML = `<div class="w-tile-fill" style="height:${pct}%;background:${barColor};opacity:0.45;"></div><div class="w-tile-score">${displayKeys}/${winTarget}</div>`;
+        grid.appendChild(tile);
+        // Keep the live progress tile (rightmost) in view as the user types.
+        grid.scrollLeft = grid.scrollWidth;
+        if (window._luSetProgress) window._luSetProgress(inWinKeys / winTarget);
+      }
+
+      function setBadge(state) {
+        const b = document.getElementById("monitorBadge");
+        const map = {
+          monitoring: ["badge-monitoring", "Monitoring"],
+          ok: ["badge-ok", "Verified"],
+          alert: ["badge-alert", "Suspicious"],
+          locked: ["badge-locked", "Locked"],
+        };
+        const [cls, label] = map[state] || map.monitoring;
+        b.className = "monitor-badge " + cls;
+        b.textContent = label;
+      }
+
+
+      async function init() {
+        const res = await fetch("/api/auth/me");
+        if (!res.ok || res.status === 401) {
+          window.location.href = "/login.html";
+          return;
+        }
+        await loadCAConfig();
+        const data = await res.json();
+        applyUserBadge(data.username);
+        if (data.passkeySetupRequired) {
+          window.location.href = "/dashboard.html";
+          return;
+        }
+        if (data.typingStatus && !data.typingStatus.trained) {
+          window.location.href = "/dashboard.html";
+          return;
+        }
+      }
+
+      opinionInput.addEventListener("input", () => {
+        updateMetrics();
+        if (window._threeKeyPress) window._threeKeyPress();
+        if (
+          passkeyVerifiedForCurrentText &&
+          opinionInput.value.trim().length > lastCheckedLength + 120
+        )
+          passkeyVerifiedForCurrentText = false;
+        scheduleRhythmCheck();
+      });
+
+      // Keystroke biometrics depend on genuine typing rhythm — pasted (or
+      // dragged-in) text carries no rhythm and would bypass the whole system.
+      // Block it outright. stopPropagation keeps the tracker's form-level paste
+      // handler from logging a phantom paste event for a paste we just rejected.
+      ["paste", "drop"].forEach((evtName) => {
+        opinionInput.addEventListener(evtName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          showAlert(
+            "warning",
+            "Pasting is disabled — this system verifies your typing rhythm, so please type your text.",
+          );
+        });
+      });
+      // Suppress the drop-cursor so the textarea doesn't look like it accepts drops.
+      opinionInput.addEventListener("dragover", (e) => e.preventDefault());
+
+      function scheduleRhythmCheck() {
+        clearTimeout(monitorTimer);
+        // Note: adaptive retrain runs in the BACKGROUND and must NOT pause
+        // evaluations — packets keep flowing; we only suppress the passkey lock
+        // (below) while the per-user weights are momentarily being rewritten.
+        if (passkeyRequired || checkInFlight) return;
+        const length = opinionInput.value.trim().length;
+        if (passkeyVerifiedForCurrentText && length <= lastCheckedLength + 120)
+          return;
+        if (length < CHECK_MIN_TEXT) return;
+        if (currentKeyCount() - lastCheckedKeyCount < CHECK_KEYSTROKE_INTERVAL)
+          return;
+        if (lastWindowCount <= lastCheckedWindowCount) return;
+        const overdue = Date.now() - lastCheckTime > CHECK_MAX_WAIT_MS;
+        monitorTimer = setTimeout(
+          checkRhythmWhileTyping,
+          overdue ? 0 : CHECK_DEBOUNCE_MS,
+        );
+      }
+
+      async function checkRhythmWhileTyping() {
+        const opinion = opinionInput.value.trim();
+        if (passkeyRequired || checkInFlight || opinion.length < CHECK_MIN_TEXT)
+          return;
+        checkInFlight = true;
+        // Show the "analyzing" pulse on the score panel while the mean is being
+        // computed server-side (only before the first result, so an existing
+        // score isn't repeatedly blanked out on every keystroke check).
+        if (_packetSnapshots.length === 0) setScorePhase("calculating");
+        const nextPacketId = _packetSnapshots.length + 1;
+        const checkBanner = document.createElement("div");
+        checkBanner.id = "checkInFlightBanner";
+        checkBanner.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 12px;
+          border-radius:6px;font-size:11px;font-weight:600;color:var(--primary);
+          background:rgba(79,70,229,0.10);border:1px solid var(--primary);margin-bottom:6px;`;
+        checkBanner.innerHTML = `<span style="display:inline-block;width:11px;height:11px;border:2px solid var(--primary);
+          border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0"></span>
+          Evaluating Packet #${nextPacketId}…`;
+        const grid = document.getElementById("windowGrid");
+        if (grid) grid.before(checkBanner);
+        try {
+          // Send ONLY the recent events the model needs (last ~18 windows), not
+          // the whole history — keeps the payload constant. BUT compute the
+          // timing/paste summary from the FULL history so the server's paste-
+          // coverage check isn't fooled into thinking the capped payload means
+          // most of the text was pasted.
+          const fullEvents = tracker.getEvents();
+          const events = fullEvents.slice(-CHECK_SEND_EVENTS);
+          const timings = window.continuumKeystrokes.analyze(fullEvents);
+          const res = await fetch("/api/text/check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              textContent: opinion,
+              keystrokeEvents: events,
+              keystrokeTimings: timings,
+              sourcePath: "/lab.html",
+            }),
+          });
+          const data = await res.json();
+          if (res.status === 423 && data.rhythmEnrollmentRequired) {
+            window.location.href = "/dashboard.html";
+            return;
+          }
+          if (!res.ok && !data.requiresPasskeyChallenge) return;
+          lastCheckedLength = opinion.length;
+          lastCheckedKeyCount = currentKeyCount();
+          lastCheckedWindowCount =
+            (data.typingEvaluation && data.typingEvaluation.windowCount) ||
+            lastWindowCount;
+          lastCheckTime = Date.now();
+          // The live decision uses the fixed 0.50 boundary (Lu et al.), already
+          // loaded into _userThreshold from /config — so the displayed window
+          // counts match the server's vote without syncing the per-user EER.
+          logAI(
+            "eval",
+            `Model evaluation — ${(data.typingEvaluation && data.typingEvaluation.windowCount) || "--"} windows analysed`,
+          );
+          if (data.warmup && !data.requiresPasskeyChallenge) {
+            // Warm-up grace: the first packet is still settling into the user's
+            // rhythm, so it's shown for monitoring but never locks the session.
+            setBadge("monitoring");
+            const ws =
+              (data.typingEvaluation &&
+                data.typingEvaluation.recentWindowScores) ||
+              [];
+            const gw = ws.filter((s) => s >= _userThreshold).length;
+            logAI(
+              "eval",
+              `Warming up — first packet (${gw}/${ws.length || "—"} windows ≥ 50%)`,
+            );
+            setScore(
+              ws.length ? gw / ws.length : null,
+              gw,
+              ws.length,
+              "Warming up — building your first evaluation packet",
+              "var(--primary)",
+            );
+            if (
+              data.typingEvaluation &&
+              data.typingEvaluation.recentWindowScores
+            )
+              setWindowScores(
+                data.typingEvaluation.recentWindowScores,
+                data.isSuspicious ? "suspicious" : "genuine",
+                data.typingEvaluation.windowCount,
+                Number(data.modelConfidence),
+              );
+          } else if (
+            (data.requiresPasskeyChallenge || data.isSuspicious) &&
+            _retrainInProgress
+          ) {
+            // The model is being rewritten in the background — a single low
+            // reading here is almost certainly the transient retrain, not the
+            // user. Show it as monitoring and never lock the session for it.
+            setBadge("monitoring");
+            const ws =
+              (data.typingEvaluation &&
+                data.typingEvaluation.recentWindowScores) ||
+              [];
+            const gw = ws.filter((s) => s >= _userThreshold).length;
+            setScore(
+              ws.length ? gw / ws.length : null,
+              gw,
+              ws.length,
+              "Model updating — verification paused for a moment",
+              "var(--primary)",
+            );
+            if (
+              data.typingEvaluation &&
+              data.typingEvaluation.recentWindowScores
+            )
+              setWindowScores(
+                data.typingEvaluation.recentWindowScores,
+                "genuine",
+                data.typingEvaluation.windowCount,
+                Number(data.modelConfidence),
+              );
+          } else if (data.requiresPasskeyChallenge || data.isSuspicious) {
+            passkeyRequired = true;
+            submitBtn.disabled = true;
+            setBadge("alert");
+            const reason =
+              (data.typingEvaluation && data.typingEvaluation.reason) ||
+              "Typing rhythm does not match your profile.";
+            const conf =
+              data.modelConfidence != null
+                ? ` (${(Number(data.modelConfidence) * 100).toFixed(0)}% confidence)`
+                : "";
+            logAI(
+              "suspicious",
+              `Suspicious pattern detected${conf} — passkey challenge issued`,
+            );
+            {
+              const ws =
+                (data.typingEvaluation &&
+                  data.typingEvaluation.recentWindowScores) ||
+                [];
+              const gw = ws.filter((s) => s >= _userThreshold).length;
+              setScore(
+                ws.length ? gw / ws.length : null,
+                gw,
+                ws.length,
+                reason,
+                "var(--danger)",
+              );
+            }
+            if (window._threeWindowComplete) window._threeWindowComplete(false);
+            if (window._luVerdict) window._luVerdict(false);
+            if (
+              data.typingEvaluation &&
+              data.typingEvaluation.recentWindowScores
+            )
+              setWindowScores(
+                data.typingEvaluation.recentWindowScores,
+                "suspicious",
+                data.typingEvaluation.windowCount,
+                Number(data.modelConfidence),
+              );
+            showAlert(
+              "warning",
+              "Suspicious typing detected. Passkey verification required.",
+            );
+            if (window.Continuum) window.Continuum.requireStepUp("keystroke", clearForm);
+          } else if (data.checked) {
+            const score = Number(data.modelConfidence);
+            const ws =
+              (data.typingEvaluation &&
+                data.typingEvaluation.recentWindowScores) ||
+              [];
+            const gw = ws.filter((s) => s >= _userThreshold).length;
+            const genFrac = ws.length ? gw / ws.length : null;
+            setBadge("ok");
+            logAI(
+              "genuine",
+              ws.length
+                ? `Rhythm verified — ${gw}/${ws.length} windows genuine`
+                : "Rhythm verified",
+            );
+            setScore(
+              genFrac,
+              gw,
+              ws.length,
+              ws.length
+                ? `Rhythm verified — ${gw} / ${ws.length} windows genuine`
+                : "Rhythm verified.",
+              "var(--success)",
+            );
+            if (window._threeWindowComplete) window._threeWindowComplete(true);
+            if (window._luVerdict) window._luVerdict(true);
+            if (
+              data.typingEvaluation &&
+              data.typingEvaluation.recentWindowScores
+            )
+              setWindowScores(
+                data.typingEvaluation.recentWindowScores,
+                "genuine",
+                data.typingEvaluation.windowCount,
+                score,
+              );
+          }
+        } catch (err) {
+          console.error("Rhythm check:", err);
+        } finally {
+          checkInFlight = false;
+          const b = document.getElementById("checkInFlightBanner");
+          if (b) b.remove();
+          // Catch up: a window appeared while this check was in flight and was
+          // blocked. Fire once now. The flag is cleared first so that if another
+          // window appears during the catch-up it sets the flag again correctly.
+          if (_windowMissedDuringFlight && !passkeyRequired &&
+              opinionInput.value.trim().length >= CHECK_MIN_TEXT) {
+            _windowMissedDuringFlight = false;
+            checkRhythmWhileTyping();
+          } else {
+            _windowMissedDuringFlight = false;
+          }
+        }
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const opinion = opinionInput.value.trim();
+        if (opinion.length < 80) {
+          showAlert("error", "Please write at least 80 characters.");
+          return;
+        }
+        if (passkeyRequired) {
+          showAlert(
+            "warning",
+            "Passkey verification required before submitting.",
+          );
+          if (window.Continuum) window.Continuum.requireStepUp("keystroke", clearForm);
+          return;
+        }
+        setLoading(submitBtn, true, "Submitting…");
+        const events = tracker.getEvents();
+        const timings = window.continuumKeystrokes.analyze(events);
+        const textContent = `[Opinion]\n\n${opinion}`;
+        try {
+          const res = await fetch("/api/text/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              textContent,
+              keystrokeEvents: events,
+              keystrokeTimings: timings,
+              passkeyVerifiedForAction: passkeyVerifiedForCurrentText,
+              sourcePath: "/lab.html",
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            if (res.status === 423 && data.rhythmEnrollmentRequired) {
+              window.location.href = "/dashboard.html";
+              return;
+            }
+            if (res.status === 423 || data.continuousAuthLocked) {
+              window.location.href = "/dashboard.html";
+              return;
+            }
+            throw new Error(data.error || "Submission failed");
+          }
+          if (data.requiresPasskeyChallenge) {
+            passkeyRequired = true;
+            submitBtn.disabled = true;
+            logAI("passkey", "Rhythm changed at submission — passkey required");
+            showAlert(
+              "warning",
+              "Typing rhythm changed. Passkey required before submitting.",
+            );
+            setTimeout(function () { if (window.Continuum) window.Continuum.requireStepUp("keystroke", clearForm); }, 500);
+            return;
+          }
+          const scoreVal =
+            data.modelConfidence != null ? Number(data.modelConfidence) : null;
+          const scoreStr =
+            scoreVal != null
+              ? ` (${(scoreVal * 100).toFixed(0)}% confidence)`
+              : "";
+          logAI("genuine", `Opinion submitted — rhythm verified${scoreStr}`);
+          showAlert("success", "Submitted. Typing rhythm verified.");
+          clearForm();
+        } catch (err) {
+          showAlert("error", err.message);
+        } finally {
+          setLoading(submitBtn, false, "Save Training Sample");
+        }
+      });
+
+      function clearForm() {
+        form.reset();
+        tracker.reset();
+        passkeyRequired = false;
+        passkeyVerifiedForCurrentText = false;
+        lastCheckedLength = 0;
+        lastCheckedKeyCount = 0;
+        lastCheckedWindowCount = 0;
+        lastCheckTime = 0;
+        lastWindowCount = 0;
+        _windowMissedDuringFlight = false;
+        // Clear any lingering suspicious/warning banner from before the unlock.
+        ["alertError", "alertSuccess", "alertWarning"].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.style.display = "none";
+        });
+        submitBtn.disabled = false;
+        setBadge("monitoring");
+        setScore(
+          null,
+          null,
+          null,
+          "Collecting keystroke data — type naturally to build the evaluation window.",
+        );
+        _windowHistory = [];
+        _packetSnapshots = [];
+        setWindowScores([]);
+        if (window._threeClearTiles) window._threeClearTiles();
+        if (window._luReset) window._luReset();
+        // Reset AI log
+        const log = document.getElementById("aiLog");
+        const badge = document.getElementById("aiBadge");
+        if (log) {
+          log.innerHTML = `<div style="color:var(--border);font-style:italic">Session cleared — type to begin monitoring.</div>`;
+          aiLogEmpty = false;
+        }
+        if (badge) {
+          badge.textContent = "Idle";
+          badge.style.background = "var(--primary-light)";
+          badge.style.color = "var(--primary)";
+        }
+        document.getElementById("statKeys").textContent = "0";
+        document.getElementById("statDwell").textContent = "--";
+        document.getElementById("statFlight").textContent = "--";
+        document.getElementById("typingMeta").textContent = "0 chars";
+        document.getElementById("keystrokeProgress").style.width = "0%";
+        document.getElementById("keystrokeHint").textContent =
+          "0 / 50 keystrokes — evaluates after 50+";
+      }
+
+      async function cancelPasskeyChallenge() {
+        await logout();
+      }
+      async function logout() {
+        await fetch("/api/auth/logout", { method: "POST" });
+        window.location.href = "/login.html";
+      }
+      function showAlert(type, msg) {
+        ["error", "success", "warning"].forEach((t) => {
+          const el = document.getElementById(
+            "alert" + t.charAt(0).toUpperCase() + t.slice(1),
+          );
+          if (el) {
+            el.style.display = t === type ? "block" : "none";
+            if (t === type) el.textContent = msg;
+          }
+        });
+      }
+      init();
+    </script>
+
+    <script>
+      // ── Three.js: Interactive Biometric Visualizer ───────────────
+      (function initScoreScene() {
+        if (!window.THREE) return;
+        const canvas = document.getElementById("scoreCanvas");
+        if (!canvas) return;
+
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setClearColor(0x070c18);
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x070c18, 0.032);
+        const camera = new THREE.PerspectiveCamera(50, 2, 0.1, 100);
+        camera.position.set(0, 0.3, 7.2);
+        camera.lookAt(0.7, 0, 0);
+
+        // ── Lighting ────────────────────────────────────────────────
+        scene.add(new THREE.AmbientLight(0xffffff, 0.13));
+        const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
+        keyLight.position.set(5, 8, 5);
+        scene.add(keyLight);
+        const sphLight = new THREE.PointLight(0x4f46e5, 9, 16);
+        sphLight.position.set(-2.8, 1.5, 3);
+        scene.add(sphLight);
+        const rimLight = new THREE.PointLight(0x6366f1, 3, 10);
+        rimLight.position.set(-5, -2, -3);
+        scene.add(rimLight);
+        const pipeLight = new THREE.PointLight(0x818cf8, 2, 8);
+        pipeLight.position.set(0.5, 2, 2);
+        scene.add(pipeLight);
+
+        // ── Star field ─────────────────────────────────────────────
+        const SP = new Float32Array(700 * 3);
+        for (let i = 0; i < 700; i++) {
+          SP[i * 3] = (Math.random() - 0.5) * 38;
+          SP[i * 3 + 1] = (Math.random() - 0.5) * 22;
+          SP[i * 3 + 2] = (Math.random() - 0.5) * 14 - 10;
+        }
+        const starBuf = new THREE.BufferGeometry();
+        starBuf.setAttribute("position", new THREE.BufferAttribute(SP, 3));
+        scene.add(
+          new THREE.Points(
+            starBuf,
+            new THREE.PointsMaterial({
+              color: 0x818cf8,
+              size: 0.04,
+              transparent: true,
+              opacity: 0.45,
+            }),
+          ),
+        );
+
+        // ── 1. BIOMETRIC CORE SPHERE ─────────────────────────────────
+        const SPH = new THREE.Vector3(-3.0, 0, 0);
+        const sphMat = new THREE.MeshPhongMaterial({
+          color: 0x4f46e5,
+          emissive: 0x1e1b4b,
+          shininess: 150,
+          transparent: true,
+          opacity: 0.88,
+          specular: 0xa5b4fc,
+        });
+        const sphere = new THREE.Mesh(
+          new THREE.SphereGeometry(1.1, 64, 64),
+          sphMat,
+        );
+        sphere.position.copy(SPH);
+        scene.add(sphere);
+
+        const wireMat = new THREE.MeshBasicMaterial({
+          color: 0x818cf8,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.07,
+        });
+        const wire = new THREE.Mesh(
+          new THREE.SphereGeometry(1.17, 18, 18),
+          wireMat,
+        );
+        wire.position.copy(SPH);
+        scene.add(wire);
+
+        const icoMat = new THREE.MeshBasicMaterial({
+          color: 0x6366f1,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.11,
+        });
+        const ico = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(1.22, 1),
+          icoMat,
+        );
+        ico.position.copy(SPH);
+        scene.add(ico);
+
+        function mkOrbitRing(r, color, opacity, rx, rz) {
+          const m = new THREE.Mesh(
+            new THREE.TorusGeometry(r, 0.018, 8, 80),
+            new THREE.MeshBasicMaterial({ color, transparent: true, opacity }),
+          );
+          m.position.copy(SPH);
+          m.rotation.x = rx;
+          m.rotation.z = rz;
+          scene.add(m);
+          return m;
+        }
+        const ring1 = mkOrbitRing(1.42, 0x4f46e5, 0.55, Math.PI / 2.2, 0);
+        const ring2 = mkOrbitRing(
+          1.55,
+          0x6366f1,
+          0.28,
+          Math.PI / 2.2,
+          Math.PI / 3.5,
+        );
+        const ring3 = mkOrbitRing(1.68, 0x818cf8, 0.13, 0.32, Math.PI / 5);
+
+        // Score arc gauge (tube around sphere)
+        const ARC_R = 1.66,
+          ARC_S = -Math.PI * 0.72,
+          ARC_SPAN = Math.PI * 1.44;
+        const arcGroup = new THREE.Group();
+        arcGroup.position.copy(SPH);
+        scene.add(arcGroup);
+        (() => {
+          const pts = [];
+          for (let i = 0; i <= 60; i++) {
+            const a = ARC_S + (i / 60) * ARC_SPAN;
+            pts.push(
+              new THREE.Vector3(Math.cos(a) * ARC_R, Math.sin(a) * ARC_R, 0.05),
+            );
+          }
+          arcGroup.add(
+            new THREE.Mesh(
+              new THREE.TubeGeometry(
+                new THREE.CatmullRomCurve3(pts),
+                44,
+                0.02,
+                4,
+                false,
+              ),
+              new THREE.MeshBasicMaterial({
+                color: 0x1e293b,
+                transparent: true,
+                opacity: 0.75,
+              }),
+            ),
+          );
+        })();
+        let arcFill = null;
+        const arcFillMat = new THREE.MeshPhongMaterial({
+          color: 0x4f46e5,
+          shininess: 80,
+          transparent: true,
+          opacity: 0.95,
+        });
+        function setScoreArc(score) {
+          if (arcFill) {
+            arcGroup.remove(arcFill);
+            arcFill.geometry.dispose();
+          }
+          const s = Math.max(0.015, Math.min(1, score || 0));
+          const thr =
+            typeof _userThreshold !== "undefined" ? _userThreshold : 0.65;
+          const col =
+            s >= thr ? 0x16a34a : s >= thr * 0.55 ? 0xd97706 : 0xdc2626;
+          arcFillMat.color.set(col);
+          arcFillMat.emissive.set(new THREE.Color(col).multiplyScalar(0.3));
+          const n = Math.max(3, Math.round(s * 48));
+          const pts = [];
+          for (let i = 0; i <= n; i++) {
+            const a = ARC_S + (i / n) * ARC_SPAN * s;
+            pts.push(
+              new THREE.Vector3(Math.cos(a) * ARC_R, Math.sin(a) * ARC_R, 0.05),
+            );
+          }
+          if (pts.length < 2) pts.push(pts[0].clone().addScalar(0.001));
+          arcFill = new THREE.Mesh(
+            new THREE.TubeGeometry(
+              new THREE.CatmullRomCurve3(pts),
+              Math.max(2, n),
+              0.032,
+              5,
+              false,
+            ),
+            arcFillMat,
+          );
+          arcGroup.add(arcFill);
+        }
+        setScoreArc(0);
+
+        // ── 2. NEURAL NETWORK PIPELINE (Conv1D → LSTM → LSTM → Dense) ─
+        const LAYER_NAMES = ["Conv1D", "LSTM·1", "LSTM·2", "Dense"];
+        const LAYER_X = [-0.8, 0.15, 1.1, 1.95];
+        const layers = LAYER_X.map((lx, idx) => {
+          const g = new THREE.Group();
+          g.position.set(lx, 0, 0);
+          scene.add(g);
+
+          const ringR = 0.46 - idx * 0.02;
+          const ringMat = new THREE.MeshPhongMaterial({
+            color: 0x1e293b,
+            emissive: 0x0a0f1e,
+            shininess: 80,
+            transparent: true,
+            opacity: 0.9,
+          });
+          g.add(
+            new THREE.Mesh(
+              new THREE.TorusGeometry(ringR, 0.048, 10, 40),
+              ringMat,
+            ),
+          );
+
+          const nodeCount = Math.max(3, 6 - idx);
+          const nodeMats = [];
+          for (let ni = 0; ni < nodeCount; ni++) {
+            const theta = (ni / nodeCount) * Math.PI * 2;
+            const nm = new THREE.MeshPhongMaterial({
+              color: 0x3730a3,
+              emissive: 0x1e1b4b,
+              shininess: 110,
+            });
+            const node = new THREE.Mesh(
+              new THREE.SphereGeometry(0.048, 8, 8),
+              nm,
+            );
+            node.position.set(
+              Math.cos(theta) * ringR,
+              Math.sin(theta) * ringR,
+              0,
+            );
+            g.add(node);
+            nodeMats.push(nm);
+          }
+
+          const discMat = new THREE.MeshBasicMaterial({
+            color: 0x4f46e5,
+            transparent: true,
+            opacity: 0.035,
+            side: THREE.DoubleSide,
+          });
+          g.add(
+            new THREE.Mesh(new THREE.CircleGeometry(ringR + 0.08, 32), discMat),
+          );
+
+          if (idx < LAYER_X.length - 1) {
+            const gap =
+              LAYER_X[idx + 1] - lx - ringR - (0.46 - (idx + 1) * 0.02);
+            const lpts = [
+              new THREE.Vector3(ringR, 0, 0),
+              new THREE.Vector3(ringR + gap, 0, 0),
+            ];
+            g.add(
+              new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints(lpts),
+                new THREE.LineBasicMaterial({
+                  color: 0x1e293b,
+                  transparent: true,
+                  opacity: 0.45,
+                }),
+              ),
+            );
+          }
+          return { g, ringMat, discMat, nodeMats };
+        });
+
+        function activateLayer(idx, hexColor) {
+          const l = layers[idx];
+          if (!l) return;
+          const c = new THREE.Color(hexColor);
+          l.ringMat.emissive.copy(c).multiplyScalar(0.55);
+          l.discMat.color.copy(c);
+          l.discMat.opacity = 0.2;
+          l.nodeMats.forEach((m) => {
+            m.color.copy(c);
+            m.emissive.copy(c).multiplyScalar(0.6);
+          });
+          setTimeout(() => {
+            l.ringMat.emissive.set(0x0a0f1e);
+            l.discMat.opacity = 0.035;
+            l.nodeMats.forEach((m) => {
+              m.color.set(0x3730a3);
+              m.emissive.set(0x1e1b4b);
+            });
+          }, 280);
+        }
+
+        // ── 3. DATA PACKET (flies sphere → layers → crystals) ─────────
+        const packetMat = new THREE.MeshPhongMaterial({
+          color: 0x818cf8,
+          emissive: 0x4f46e5,
+          shininess: 140,
+          transparent: true,
+          opacity: 0.92,
+        });
+        const dataPacket = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.13, 0),
+          packetMat,
+        );
+        scene.add(dataPacket);
+        dataPacket.visible = false;
+
+        const TRAIL_N = 24;
+        const trailPos = new Float32Array(TRAIL_N * 3);
+        const trailBuf = new THREE.BufferGeometry();
+        trailBuf.setAttribute(
+          "position",
+          new THREE.BufferAttribute(trailPos, 3),
+        );
+        const trailMat = new THREE.PointsMaterial({
+          color: 0x818cf8,
+          size: 0.055,
+          transparent: true,
+          opacity: 0,
+        });
+        const trailPts = new THREE.Points(trailBuf, trailMat);
+        scene.add(trailPts);
+
+        const WAYPOINTS = [
+          SPH.clone().add(new THREE.Vector3(1.18, 0, 0)),
+          new THREE.Vector3(LAYER_X[0], 0, 0),
+          new THREE.Vector3(LAYER_X[1], 0, 0),
+          new THREE.Vector3(LAYER_X[2], 0, 0),
+          new THREE.Vector3(LAYER_X[3], 0, 0),
+          new THREE.Vector3(3.05, 0, 0),
+        ];
+        function packetPosAt(t) {
+          const n = WAYPOINTS.length - 1;
+          const seg = Math.min(Math.floor(t * n), n - 1);
+          return new THREE.Vector3().lerpVectors(
+            WAYPOINTS[seg],
+            WAYPOINTS[seg + 1],
+            t * n - seg,
+          );
+        }
+
+        let pkActive = false,
+          pkTime = 0,
+          pkColor = 0x818cf8,
+          pkLayerSeen = -1;
+        const pkHistory = Array.from(
+          { length: TRAIL_N },
+          () => new THREE.Vector3(),
+        );
+
+        function firePacket(genuine) {
+          pkColor = genuine ? 0x22c55e : 0xef4444;
+          packetMat.color.set(pkColor);
+          packetMat.emissive.set(new THREE.Color(pkColor).multiplyScalar(0.65));
+          trailMat.color.set(pkColor);
+          dataPacket.position.copy(WAYPOINTS[0]);
+          pkHistory.forEach((v) => v.copy(WAYPOINTS[0]));
+          pkActive = true;
+          pkTime = 0;
+          pkLayerSeen = -1;
+          dataPacket.visible = true;
+        }
+
+        // ── 4. WINDOW CRYSTALS (octahedra, right side) ───────────────
+        const crystalRoot = new THREE.Group();
+        crystalRoot.position.set(3.2, 0, 0);
+        scene.add(crystalRoot);
+        const crystals = [];
+        let sessionScores = [];
+
+        function addCrystal(s, idx) {
+          const thr =
+            typeof _userThreshold !== "undefined" ? _userThreshold : 0.65;
+          const genuine = s >= thr;
+          const col = genuine ? 0x16a34a : 0xdc2626;
+
+          const cg = new THREE.Group();
+
+          // Inner gem (solid octahedron, slightly reflective)
+          const innerMat = new THREE.MeshPhongMaterial({
+            color: col,
+            emissive: genuine ? 0x14532d : 0x7f1d1d,
+            shininess: 180,
+            transparent: true,
+            opacity: 0.8,
+            specular: 0xffffff,
+          });
+          cg.add(
+            new THREE.Mesh(new THREE.OctahedronGeometry(0.19, 0), innerMat),
+          );
+
+          // Outer wireframe shell
+          const outerMat = new THREE.MeshBasicMaterial({
+            color: col,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.45,
+          });
+          cg.add(
+            new THREE.Mesh(new THREE.OctahedronGeometry(0.26, 1), outerMat),
+          );
+
+          // Inner glow light
+          const glow = new THREE.PointLight(col, 1.2, 1.0);
+          cg.add(glow);
+
+          cg.scale.setScalar(0.01);
+          cg.userData = {
+            genuine,
+            score: s,
+            phase: idx * 0.68,
+            born: Date.now(),
+            innerMat,
+            outerMat,
+            glow,
+            isPacket: false,
+          };
+          crystalRoot.add(cg);
+          crystals.push(cg);
+          repositionCrystals();
+        }
+
+        function repositionCrystals() {
+          const n = crystals.length;
+          if (!n) return;
+          const spacing = Math.max(0.24, Math.min(0.62, 4.2 / n));
+          const startY = ((n - 1) * spacing) / 2;
+          crystals.forEach((cg, i) => {
+            cg.userData.bx = Math.sin(i * 0.55) * 0.16;
+            cg.userData.by = startY - i * spacing;
+          });
+        }
+
+        function clearCrystals() {
+          crystals.forEach((cg) => {
+            crystalRoot.remove(cg);
+            cg.children.forEach((c) => {
+              if (c.geometry) c.geometry.dispose();
+              if (c.material) c.material.dispose();
+            });
+          });
+          crystals.length = 0;
+          sessionScores = [];
+        }
+
+        function mergeCrystals(scores, totalCount) {
+          if (!scores || !scores.length) return;
+          const target = totalCount != null && totalCount > 0 ? totalCount : scores.length;
+          if (target > sessionScores.length) {
+            const newCount = target - sessionScores.length;
+            const newScores = scores.slice(scores.length - newCount);
+            newScores.forEach((s) => {
+              sessionScores.push(s);
+              addCrystal(s, sessionScores.length - 1);
+            });
+          }
+        }
+
+        function highlightPacket(n, verdict) {
+          const start = crystals.length - n;
+          const glow =
+            verdict === "genuine"
+              ? 0x22c55e
+              : verdict === "suspicious"
+                ? 0xef4444
+                : 0x818cf8;
+          crystals.forEach((cg, i) => {
+            const inPkt = i >= start && start >= 0;
+            cg.userData.isPacket = inPkt;
+            const d = cg.userData;
+            if (inPkt) {
+              d.innerMat.emissive.set(
+                new THREE.Color(glow).multiplyScalar(0.65),
+              );
+              d.outerMat.color.set(glow);
+              d.glow.color.set(glow);
+              d.glow.intensity = 2.8;
+            } else {
+              d.innerMat.emissive.set(d.genuine ? 0x14532d : 0x7f1d1d);
+              d.outerMat.color.set(d.genuine ? 0x16a34a : 0xdc2626);
+              d.glow.color.set(d.genuine ? 0x16a34a : 0xdc2626);
+              d.glow.intensity = 1.2;
+            }
+          });
+        }
+
+        // ── 5. BURST + RIPPLE (keystroke feedback) ───────────────────
+        const BURST_N = 18;
+        const bPos = new Float32Array(BURST_N * 3);
+        const bOrigins = new Float32Array(BURST_N * 3);
+        const bVel = Array.from({ length: BURST_N }, () => new THREE.Vector3());
+        const bBuf = new THREE.BufferGeometry();
+        bBuf.setAttribute("position", new THREE.BufferAttribute(bPos, 3));
+        const bMat = new THREE.PointsMaterial({
+          color: 0x818cf8,
+          size: 0.08,
+          transparent: true,
+          opacity: 0,
+        });
+        const burstPts = new THREE.Points(bBuf, bMat);
+        burstPts.position.copy(SPH);
+        scene.add(burstPts);
+        let bActive = false,
+          bTime = 0;
+
+        function triggerBurst(strong, col) {
+          const spd = strong ? 0.046 : 0.022;
+          for (let i = 0; i < BURST_N; i++) {
+            const theta = Math.random() * Math.PI * 2,
+              phi = Math.acos(2 * Math.random() - 1);
+            const r = 1.1 + Math.random() * 0.16;
+            bOrigins[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+            bOrigins[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+            bOrigins[i * 3 + 2] = r * Math.cos(phi);
+            bPos[i * 3] = bOrigins[i * 3];
+            bPos[i * 3 + 1] = bOrigins[i * 3 + 1];
+            bPos[i * 3 + 2] = bOrigins[i * 3 + 2];
+            const len = Math.sqrt(
+              bOrigins[i * 3] ** 2 +
+                bOrigins[i * 3 + 1] ** 2 +
+                bOrigins[i * 3 + 2] ** 2,
+            );
+            bVel[i].set(
+              (bOrigins[i * 3] / len) * spd,
+              (bOrigins[i * 3 + 1] / len) * spd,
+              (bOrigins[i * 3 + 2] / len) * spd,
+            );
+          }
+          bBuf.attributes.position.needsUpdate = true;
+          bMat.color.set(col || 0x818cf8);
+          bMat.size = strong ? 0.12 : 0.07;
+          bActive = true;
+          bTime = 0;
+        }
+
+        const rippleMat = new THREE.MeshBasicMaterial({
+          color: 0x818cf8,
+          transparent: true,
+          opacity: 0,
+        });
+        const ripple = new THREE.Mesh(
+          new THREE.TorusGeometry(1.1, 0.014, 6, 48),
+          rippleMat,
+        );
+        ripple.position.copy(SPH);
+        scene.add(ripple);
+        let rActive = false,
+          rTime = 0;
+
+        // ── 6. STATE + PUBLIC API ─────────────────────────────────────
+        let targetCol = new THREE.Color(0x4f46e5),
+          lerpCol = new THREE.Color(0x4f46e5);
+        let kProgress = 0,
+          lastKeyTime = 0;
+
+        window._threeSetScore = function (score) {
+          const thr =
+            typeof _userThreshold !== "undefined" ? _userThreshold : 0.65;
+          if (score == null) {
+            targetCol.set(0x4f46e5);
+            setScoreArc(0);
+            return;
+          }
+          targetCol.set(
+            score >= thr ? 0x16a34a : score >= thr * 0.55 ? 0xd97706 : 0xdc2626,
+          );
+          setScoreArc(score);
+        };
+        window._threeSetBars = function (scores, totalCount) {
+          mergeCrystals(scores, totalCount);
+        };
+        window._threeClearTiles = function () {
+          clearCrystals();
+        };
+        window._threeSetPacket = function (n, verdict) {
+          highlightPacket(n, verdict);
+        };
+        window._threeSetProgress = function (p) {
+          kProgress = p;
+        };
+        window._threeKeyPress = function () {
+          const now = Date.now();
+          if (now - lastKeyTime < 55) return;
+          lastKeyTime = now;
+          triggerBurst(false, 0x818cf8);
+          rActive = true;
+          rTime = 0;
+          ripple.scale.setScalar(1);
+        };
+        window._threeWindowComplete = function (genuine) {
+          firePacket(genuine);
+          triggerBurst(true, genuine ? 0x22c55e : 0xef4444);
+          targetCol.set(genuine ? 0x16a34a : 0xdc2626);
+        };
+
+        // ── 7. RENDER LOOP ────────────────────────────────────────────
+        const clock = new THREE.Clock();
+        let prevT = 0;
+        function animate() {
+          requestAnimationFrame(animate);
+          const t = clock.getElapsedTime();
+          const dt = Math.min(t - prevT, 0.05);
+          prevT = t;
+
+          // Sphere color
+          lerpCol.lerp(targetCol, 0.038);
+          sphMat.color.copy(lerpCol);
+          sphMat.emissive.copy(lerpCol).multiplyScalar(0.18);
+          wireMat.color.copy(lerpCol).multiplyScalar(2.0);
+          icoMat.color.copy(lerpCol).multiplyScalar(0.9);
+          sphLight.color.copy(lerpCol);
+          ring1.material.color.copy(lerpCol).multiplyScalar(1.35);
+          ring2.material.color.copy(lerpCol).multiplyScalar(0.88);
+          ring3.material.color.copy(lerpCol).multiplyScalar(0.5);
+
+          // Sphere pulse (faster while typing)
+          const pspd = 1.4 + kProgress * 3.2,
+            pamp = 0.012 + kProgress * 0.048;
+          const p = 1 + Math.sin(t * pspd) * pamp;
+          sphere.scale.setScalar(p);
+          wire.scale.setScalar(p * 1.026);
+          ico.scale.setScalar(p * 1.045);
+          sphere.rotation.y = t * 0.18;
+          sphere.rotation.z = Math.sin(t * 0.3) * 0.018;
+          wire.rotation.y = t * 0.1;
+          wire.rotation.x = Math.sin(t * 0.18) * 0.03;
+          ico.rotation.y = -t * 0.07;
+          ico.rotation.x = t * 0.045;
+          ring1.rotation.z = t * 0.46;
+          ring2.rotation.y = t * 0.6;
+          ring3.rotation.x += dt * 0.27;
+          ring3.rotation.z -= dt * 0.21;
+          arcGroup.rotation.z = Math.sin(t * 0.1) * 0.02;
+
+          // Pipeline layer rings gently spin
+          layers.forEach((l, i) => {
+            l.g.rotation.z = t * (0.14 + i * 0.07);
+            l.g.rotation.x = Math.sin(t * 0.28 + i * 0.8) * 0.07;
+          });
+
+          // Data packet flight
+          if (pkActive) {
+            pkTime += dt * 0.82;
+            if (pkTime >= 1) {
+              pkActive = false;
+              dataPacket.visible = false;
+              trailMat.opacity = 0;
+            } else {
+              const pos = packetPosAt(pkTime);
+              dataPacket.position.copy(pos);
+              dataPacket.rotation.y = t * 6;
+              dataPacket.rotation.x = t * 4;
+              // Trail
+              for (let i = TRAIL_N - 1; i > 0; i--)
+                pkHistory[i].copy(pkHistory[i - 1]);
+              pkHistory[0].copy(pos);
+              for (let i = 0; i < TRAIL_N; i++) {
+                trailPos[i * 3] = pkHistory[i].x;
+                trailPos[i * 3 + 1] = pkHistory[i].y;
+                trailPos[i * 3 + 2] = pkHistory[i].z;
+              }
+              trailBuf.attributes.position.needsUpdate = true;
+              trailMat.opacity = Math.sin(pkTime * Math.PI) * 0.7;
+              // Activate layer when packet arrives
+              const segIdx = Math.min(
+                Math.floor(pkTime * (WAYPOINTS.length - 1)),
+                WAYPOINTS.length - 2,
+              );
+              const layerIdx = segIdx - 1;
+              if (
+                layerIdx >= 0 &&
+                layerIdx < layers.length &&
+                layerIdx !== pkLayerSeen
+              ) {
+                activateLayer(layerIdx, pkColor);
+                pkLayerSeen = layerIdx;
+              }
+            }
+          }
+
+          // Burst
+          if (bActive) {
+            bTime += dt;
+            const life = Math.min(bTime / 0.5, 1);
+            bMat.opacity = (1 - life) * 0.9;
+            for (let i = 0; i < BURST_N; i++) {
+              bPos[i * 3] = bOrigins[i * 3] + bVel[i].x * bTime * 24;
+              bPos[i * 3 + 1] = bOrigins[i * 3 + 1] + bVel[i].y * bTime * 24;
+              bPos[i * 3 + 2] = bOrigins[i * 3 + 2] + bVel[i].z * bTime * 24;
+            }
+            bBuf.attributes.position.needsUpdate = true;
+            if (life >= 1) {
+              bActive = false;
+              bMat.opacity = 0;
+            }
+          }
+
+          // Ripple
+          if (rActive) {
+            rTime += dt;
+            const life = Math.min(rTime / 0.4, 1);
+            ripple.scale.setScalar(1 + life * 0.9);
+            rippleMat.opacity = (1 - life) * 0.5;
+            rippleMat.color.copy(lerpCol).multiplyScalar(1.8);
+            if (life >= 1) {
+              rActive = false;
+              rippleMat.opacity = 0;
+            }
+          }
+
+          // Crystals: scale-in + float + tumble + packet pulse
+          crystals.forEach((cg) => {
+            const d = cg.userData;
+            const age = (Date.now() - d.born) / 1000;
+            const si = Math.min(1, age / 0.28);
+            const smooth = si * si * (3 - 2 * si);
+            const pulse = d.isPacket
+              ? 1 + Math.sin(t * 3.8 + d.phase) * 0.1
+              : 1;
+            cg.scale.setScalar(smooth * pulse);
+            cg.position.x = d.bx;
+            cg.position.y = d.by + Math.sin(t * 0.48 + d.phase) * 0.055;
+            cg.children[0].rotation.y = t * 0.6 + d.phase;
+            cg.children[0].rotation.x = t * 0.38 + d.phase * 0.5;
+            cg.children[1].rotation.y = -t * 0.38 + d.phase;
+            cg.children[1].rotation.z = t * 0.22;
+          });
+
+          renderer.render(scene, camera);
+        }
+        animate();
+
+        function resize() {
+          const w = canvas.clientWidth || 700,
+            h = canvas.clientHeight || 160;
+          renderer.setSize(w, h, false);
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
+        }
+        window.addEventListener("resize", resize);
+        resize();
+      })();
+
+      // ── Three.js: Particle background ───────────────────────────
+      (function initBg() {
+        if (!window.THREE) return;
+        const canvas = document.getElementById("bgCanvas");
+        if (!canvas) return;
+        const renderer = new THREE.WebGLRenderer({
+          canvas,
+          antialias: false,
+          alpha: true,
+        });
+        renderer.setPixelRatio(1);
+        let W = window.innerWidth,
+          H = window.innerHeight;
+        renderer.setSize(W, H);
+        const scene = new THREE.Scene();
+        const cam = new THREE.OrthographicCamera(
+          -W / 2,
+          W / 2,
+          H / 2,
+          -H / 2,
+          0.1,
+          10,
+        );
+        cam.position.z = 1;
+        const N = 55;
+        const pts = Array.from({ length: N }, () => ({
+          x: (Math.random() - 0.5) * W,
+          y: (Math.random() - 0.5) * H,
+          vx: (Math.random() - 0.5) * 0.3,
+          vy: (Math.random() - 0.5) * 0.3,
+        }));
+        const pPos = new Float32Array(N * 3);
+        const pGeo = new THREE.BufferGeometry();
+        pGeo.setAttribute("position", new THREE.BufferAttribute(pPos, 3));
+        scene.add(
+          new THREE.Points(
+            pGeo,
+            new THREE.PointsMaterial({
+              color: 0x4f46e5,
+              size: 2.2,
+              transparent: true,
+              opacity: 0.3,
+            }),
+          ),
+        );
+        const MAX_L = (N * (N - 1)) / 2;
+        const lPos = new Float32Array(MAX_L * 6);
+        const lGeo = new THREE.BufferGeometry();
+        lGeo.setAttribute("position", new THREE.BufferAttribute(lPos, 3));
+        const lSeg = new THREE.LineSegments(
+          lGeo,
+          new THREE.LineBasicMaterial({
+            color: 0x4f46e5,
+            transparent: true,
+            opacity: 0.07,
+          }),
+        );
+        scene.add(lSeg);
+        const D2 = 145 * 145;
+        (function tick() {
+          pts.forEach((p, i) => {
+            p.x += p.vx;
+            p.y += p.vy;
+            if (p.x > W / 2 || p.x < -W / 2) p.vx *= -1;
+            if (p.y > H / 2 || p.y < -H / 2) p.vy *= -1;
+            pPos[i * 3] = p.x;
+            pPos[i * 3 + 1] = p.y;
+          });
+          pGeo.attributes.position.needsUpdate = true;
+          let lc = 0;
+          for (let i = 0; i < N; i++)
+            for (let j = i + 1; j < N; j++) {
+              const dx = pts[i].x - pts[j].x,
+                dy = pts[i].y - pts[j].y;
+              if (dx * dx + dy * dy < D2) {
+                lPos[lc * 6] = pts[i].x;
+                lPos[lc * 6 + 1] = pts[i].y;
+                lPos[lc * 6 + 2] = 0;
+                lPos[lc * 6 + 3] = pts[j].x;
+                lPos[lc * 6 + 4] = pts[j].y;
+                lPos[lc * 6 + 5] = 0;
+                lc++;
+              }
+            }
+          lGeo.attributes.position.needsUpdate = true;
+          lGeo.setDrawRange(0, lc * 2);
+          renderer.render(scene, cam);
+          requestAnimationFrame(tick);
+        })();
+        window.addEventListener("resize", () => {
+          W = window.innerWidth;
+          H = window.innerHeight;
+          renderer.setSize(W, H);
+          cam.left = -W / 2;
+          cam.right = W / 2;
+          cam.top = H / 2;
+          cam.bottom = -H / 2;
+          cam.updateProjectionMatrix();
+        });
+      })();
+    </script>
+
+    <!-- ── 2D Canvas: Lu et al. Sliding Window Chart ── -->
+    <script>
+      (function initLuChart() {
+        const canvas = document.getElementById("luWinCanvas");
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        let _hist = [],
+          _pktSz = 0,
+          _verdict = null,
+          _thresh = 0.65,
+          _progPct = 0;
+        let _flashUntil = 0,
+          _flashOk = true;
+        const PAD = { l: 34, r: 10, t: 18, b: 26 };
+
+        function rr(x, y, w, h, r) {
+          if (typeof ctx.roundRect === "function") ctx.roundRect(x, y, w, h, r);
+          else ctx.rect(x, y, w, h);
+        }
+        function resize() {
+          canvas.width = canvas.clientWidth || 480;
+          canvas.height = canvas.clientHeight || 200;
+        }
+        resize();
+        window.addEventListener("resize", resize);
+
+        function draw() {
+          requestAnimationFrame(draw);
+          const W = canvas.width,
+            H = canvas.height;
+          const cW = W - PAD.l - PAD.r,
+            cH = H - PAD.t - PAD.b;
+
+          ctx.fillStyle = "#060a18";
+          ctx.fillRect(0, 0, W, H);
+
+          const showN = Math.min(_hist.length, 20);
+          const skip = _hist.length - showN;
+          const hasProg = _progPct > 0;
+          const total = showN + (hasProg ? 1 : 0);
+
+          if (total === 0) {
+            ctx.fillStyle = "rgba(255,255,255,0.14)";
+            ctx.font = "12px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(
+              "Type to begin — evaluated windows will appear here",
+              W / 2,
+              H / 2,
+            );
+            return;
+          }
+
+          const barW = Math.max(
+            18,
+            Math.min(48, (cW - 4 * (total - 1)) / total),
+          );
+          const gap = 4;
+          const totalW = total * barW + (total - 1) * gap;
+          const x0 = PAD.l + (cW - totalW) / 2;
+
+          // Grid lines + Y labels
+          [0, 25, 50, 75, 100].forEach(function (pct) {
+            const y = PAD.t + cH * (1 - pct / 100);
+            ctx.strokeStyle = "rgba(255,255,255,0.05)";
+            ctx.lineWidth = 0.5;
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(PAD.l, y);
+            ctx.lineTo(W - PAD.r, y);
+            ctx.stroke();
+            ctx.fillStyle = "rgba(255,255,255,0.18)";
+            ctx.font = "8px monospace";
+            ctx.textAlign = "right";
+            ctx.textBaseline = "middle";
+            ctx.fillText(pct + "%", PAD.l - 4, y);
+          });
+
+          // Threshold dashed line
+          const thY = PAD.t + cH * (1 - _thresh);
+          ctx.strokeStyle = "rgba(99,102,241,0.6)";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([5, 4]);
+          ctx.beginPath();
+          ctx.moveTo(PAD.l, thY);
+          ctx.lineTo(W - PAD.r, thY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = "rgba(99,102,241,0.85)";
+          ctx.font = "bold 8px monospace";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(
+            "thr " + Math.round(_thresh * 100) + "%",
+            PAD.l + 3,
+            thY - 8,
+          );
+
+          // Packet background + border
+          const pktStart = _pktSz > 0 ? _hist.length - _pktSz : -1;
+          if (pktStart >= 0) {
+            const visStart = Math.max(pktStart - skip, 0);
+            const px = x0 + visStart * (barW + gap) - 5;
+            const pw = (showN - visStart) * (barW + gap) - gap + 10;
+            const now = Date.now();
+            let borderCol =
+              _verdict === "genuine"
+                ? "#22c55e"
+                : _verdict === "suspicious"
+                  ? "#ef4444"
+                  : "#4f46e5";
+            if (now < _flashUntil && Math.floor(now / 120) % 2 === 0)
+              borderCol = _flashOk ? "#22c55e" : "#ef4444";
+            ctx.fillStyle =
+              _verdict === "genuine"
+                ? "rgba(34,197,94,0.07)"
+                : _verdict === "suspicious"
+                  ? "rgba(239,68,68,0.07)"
+                  : "rgba(79,70,229,0.07)";
+            ctx.beginPath();
+            rr(px, PAD.t - 5, pw, cH + 10, 6);
+            ctx.fill();
+            ctx.strokeStyle = borderCol;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            rr(px, PAD.t - 5, pw, cH + 10, 6);
+            ctx.stroke();
+          }
+
+          // History bars
+          for (let i = 0; i < showN; i++) {
+            const hi = skip + i,
+              w = _hist[hi];
+            const inPkt = hi >= pktStart && pktStart >= 0;
+            const x = x0 + i * (barW + gap);
+            const bH = Math.max(w.score * cH, 2);
+            const y = PAD.t + cH - bH;
+            ctx.fillStyle = w.genuine
+              ? inPkt
+                ? "#22c55e"
+                : "rgba(34,197,94,0.38)"
+              : inPkt
+                ? "#ef4444"
+                : "rgba(239,68,68,0.38)";
+            ctx.beginPath();
+            rr(x, y, barW, bH, [3, 3, 0, 0]);
+            ctx.fill();
+            const pct = Math.round(w.score * 100);
+            ctx.fillStyle =
+              bH > 16
+                ? "rgba(255,255,255,0.92)"
+                : w.genuine
+                  ? "#22c55e"
+                  : "#ef4444";
+            ctx.font = "bold " + (barW > 32 ? 9 : 8) + "px monospace";
+            ctx.textAlign = "center";
+            ctx.textBaseline = bH > 16 ? "middle" : "bottom";
+            ctx.fillText(pct + "%", x + barW / 2, bH > 16 ? y + bH / 2 : y - 2);
+            ctx.fillStyle = "rgba(255,255,255,0.28)";
+            ctx.font = "7px monospace";
+            ctx.textBaseline = "top";
+            ctx.fillText("W" + (hi + 1), x + barW / 2, H - PAD.b + 4);
+          }
+
+          // In-progress bar
+          if (hasProg) {
+            const x = x0 + showN * (barW + gap);
+            const bH = Math.max(_progPct * cH, 2);
+            const y = PAD.t + cH - bH;
+            ctx.fillStyle = "rgba(99,102,241,0.22)";
+            ctx.beginPath();
+            rr(x, y, barW, bH, [3, 3, 0, 0]);
+            ctx.fill();
+            ctx.strokeStyle = "rgba(99,102,241,0.65)";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            rr(x, PAD.t, barW, cH, [3, 3, 0, 0]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = "rgba(99,102,241,0.85)";
+            ctx.font = "bold 8px monospace";
+            ctx.textAlign = "center";
+            ctx.textBaseline = bH > 16 ? "middle" : "bottom";
+            ctx.fillText(
+              Math.round(_progPct * 100) + "%",
+              x + barW / 2,
+              bH > 16 ? y + bH / 2 : y - 2,
+            );
+            ctx.fillStyle = "rgba(255,255,255,0.28)";
+            ctx.font = "7px monospace";
+            ctx.textBaseline = "top";
+            ctx.fillText("...", x + barW / 2, H - PAD.b + 4);
+          }
+        }
+
+        window._luSetWindows = function (history, pktSz, verdict, threshold) {
+          _hist = history || [];
+          _pktSz = pktSz || 0;
+          _verdict = verdict || null;
+          if (threshold != null) _thresh = threshold;
+          const badge = document.getElementById("luPacketVerdict");
+          if (badge) {
+            if (verdict === "genuine") {
+              badge.textContent = "GENUINE";
+              badge.style.cssText =
+                "color:#22c55e;background:rgba(34,197,94,0.12);border:1px solid #22c55e;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;letter-spacing:0.05em";
+            } else if (verdict === "suspicious") {
+              badge.textContent = "SUSPICIOUS";
+              badge.style.cssText =
+                "color:#ef4444;background:rgba(239,68,68,0.12);border:1px solid #ef4444;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:800;letter-spacing:0.05em";
+            } else {
+              badge.textContent = "";
+              badge.style.cssText = "";
+            }
+          }
+          const el = document.getElementById("luWinLabels");
+          if (el) {
+            if (!_hist.length) {
+              el.innerHTML =
+                '<span style="font-size:11px;color:var(--muted);font-style:italic">Type to begin evaluation</span>';
+              return;
+            }
+            const ps = _pktSz > 0 ? _hist.length - _pktSz : -1;
+            el.innerHTML = "";
+            _hist.forEach(function (w, i) {
+              const inPkt = i >= ps && ps >= 0;
+              const chip = document.createElement("div");
+              chip.style.cssText =
+                "display:flex;flex-direction:column;align-items:center;gap:1px;padding:3px 6px;border-radius:5px;font-size:9px;font-weight:800;min-width:30px;text-align:center;" +
+                (inPkt
+                  ? "background:" +
+                    (w.genuine
+                      ? "rgba(34,197,94,0.18)"
+                      : "rgba(239,68,68,0.18)") +
+                    ";color:" +
+                    (w.genuine ? "#22c55e" : "#ef4444") +
+                    ";border:1px solid " +
+                    (w.genuine ? "#22c55e" : "#ef4444") +
+                    ";"
+                  : "background:rgba(255,255,255,0.04);color:var(--muted);border:1px solid transparent;");
+              chip.innerHTML =
+                '<span style="font-size:7px;opacity:0.65">W' +
+                (i + 1) +
+                "</span><span>" +
+                Math.round(w.score * 100) +
+                "%</span>";
+              el.appendChild(chip);
+            });
+          }
+        };
+        window._luSetProgress = function (pct) {
+          _progPct = pct || 0;
+        };
+        window._luVerdict = function (genuine) {
+          _flashUntil = Date.now() + 900;
+          _flashOk = genuine;
+        };
+        window._luReset = function () {
+          _hist = [];
+          _pktSz = 0;
+          _verdict = null;
+          _progPct = 0;
+          _flashUntil = 0;
+          const badge = document.getElementById("luPacketVerdict");
+          if (badge) {
+            badge.textContent = "";
+            badge.style.cssText = "";
+          }
+          const el = document.getElementById("luWinLabels");
+          if (el)
+            el.innerHTML =
+              '<span style="font-size:11px;color:var(--muted);font-style:italic">Type to begin evaluation</span>';
+        };
+
+        requestAnimationFrame(draw);
+      })();
+    </script>
+    <!-- Live mouse guard runs alongside keystroke CA on the Write page -->
+    <script src="/js/mouse-features.js"></script>
+    <!-- Continuum GUARD panel (same-origin, session identity). -->
+  <script src="/guard.js?v=19" data-keystroke="off" data-mouse="optional"></script>
+</body>
+</html>

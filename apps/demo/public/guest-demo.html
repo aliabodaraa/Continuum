@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Acme Notes</title>
+  <style>
+    :root { --acc:#0ea5e9; --ink:#0f172a; --mut:#64748b; --line:#e2e8f0; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink); background:#f1f5f9; }
+    header { background:#fff; border-bottom:1px solid var(--line); padding:14px 22px; display:flex; align-items:center; gap:10px; }
+    .logo { width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#0ea5e9,#6366f1); display:grid;place-items:center;color:#fff;font-weight:800; }
+    header h1 { font-size:16px; margin:0; }
+    header .sp { flex:1; }
+    header .u { font-size:13px; color:var(--mut); }
+    main { max-width:760px; margin:32px auto; padding:0 20px; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:24px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+    h2 { margin:0 0 4px; font-size:20px; }
+    p.sub { margin:0 0 18px; color:var(--mut); font-size:14px; }
+    label { display:block; font-size:13px; font-weight:600; margin:14px 0 6px; }
+    input, textarea { width:100%; padding:11px 13px; border:1px solid var(--line); border-radius:10px; font:inherit; }
+    textarea { min-height:190px; resize:vertical; line-height:1.6; }
+    .row { display:flex; gap:12px; margin-top:16px; }
+    button { background:var(--acc); color:#fff; border:0; border-radius:10px; padding:11px 18px; font:600 14px system-ui; cursor:pointer; }
+    button.ghost { background:#fff; color:var(--ink); border:1px solid var(--line); }
+    .hint { margin-top:22px; padding:12px 14px; background:#f8fafc; border:1px dashed var(--line); border-radius:10px; font-size:12.5px; color:var(--mut); }
+    .hint code { background:#eef2ff; color:#4338ca; padding:1px 6px; border-radius:5px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">A</div>
+    <h1>Acme Notes</h1>
+    <div class="sp"></div>
+    <div class="u">signed in</div>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>New note</h2>
+      <p class="sub">A completely ordinary app. It has no idea how continuous auth works — it just dropped in one script.</p>
+
+      <label for="title">Title</label>
+      <input id="title" name="title" placeholder="Meeting notes…" />
+
+      <label for="body">Note</label>
+      <textarea id="body" name="body" placeholder="Start typing naturally — Continuum verifies it's really you as you write. Keep going for a few lines to build an evaluation packet…"></textarea>
+
+      <div class="row">
+        <button id="save">Save note</button>
+        <button class="ghost" id="clear">Clear</button>
+      </div>
+      <div id="result" style="margin-top:14px;font-size:13px;font-weight:600;display:none"></div>
+
+      <div class="hint">
+        This page's entire integration is one script tag pointing at Continuum's
+        gateway, with <code>data-identity-url</code> so the SDK identifies the
+        logged-in user from this app's session — no CA endpoints, no identity code.
+        The floating <b>Guard</b> panel lets you toggle keystroke and mouse
+        monitoring on/off. <b>Save</b> is a sensitive action: it attaches the SDK's
+        signed risk token (<code>Continuum.riskHeader()</code>) and the server only
+        allows it when your live behavior is genuine — otherwise it's blocked (403).
+      </div>
+    </div>
+  </main>
+
+  <script>
+    var resultEl = document.getElementById("result");
+    function showResult(ok, msg) {
+      resultEl.style.display = "block";
+      resultEl.style.color = ok ? "#059669" : "#dc2626";
+      resultEl.textContent = msg;
+    }
+    document.getElementById("save").addEventListener("click", async function () {
+      // Attach the signed behavioral verdict from the SDK. The host backend
+      // enforces it — this app never decides trust itself.
+      var headers = { "Content-Type": "application/json" };
+      if (window.Continuum) Object.assign(headers, window.Continuum.riskHeader());
+      try {
+        var r = await fetch("/api/guest/save-note", {
+          method: "POST", headers: headers,
+          body: JSON.stringify({ title: document.getElementById("title").value, body: document.getElementById("body").value }),
+        });
+        var d = await r.json();
+        if (r.ok) {
+          // Common functionality: a successful save also contributes the clean
+          // typing as an adaptive training sample, so the model keeps learning.
+          if (window.Continuum && window.Continuum.contribute) window.Continuum.contribute().catch(function () {});
+          showResult(true, "✓ " + (d.message || "Saved") + " (risk: " + (d.verdict && d.verdict.risk) + ") — sample added to your model");
+        }
+        else if (r.status === 403) showResult(false, "⛔ Blocked — behavior looks suspicious. Passkey step-up required before saving.");
+        else if (r.status === 401) showResult(false, "🔒 No valid behavioral verdict yet — type a few lines first so the guard can evaluate you.");
+        else showResult(false, "Error: " + (d.error || r.status));
+      } catch (e) { showResult(false, "Network error: " + e.message); }
+    });
+    document.getElementById("clear").addEventListener("click", function () {
+      document.getElementById("title").value = "";
+      document.getElementById("body").value = "";
+      resultEl.style.display = "none";
+    });
+  </script>
+
+  <!-- The ONLY Continuum integration — one drop-in script, loaded from Continuum's
+       gateway. No CA endpoints, no identity code: data-identity-url lets the SDK
+       auto-identify the logged-in user from this app's own session cookie. -->
+  <script src="http://localhost:8080/guard.js?v=19"
+          data-api-base="http://localhost:8080"
+          data-site-key="pk_demo"
+          data-identity-url="/continuum/identity"
+          data-keystroke="on" data-mouse="optional"></script>
+</body>
+</html>

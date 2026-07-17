@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Continuous Auth — Profile</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="/vendor/simplewebauthn/index.umd.min.js"></script>
+    <style>
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      :root {
+        --primary: #4f46e5;
+        --primary-dark: #4338ca;
+        --primary-xdark: #1e1b4b;
+        --primary-light: #eef2ff;
+        --text: #0f172a;
+        --muted: #64748b;
+        --border: #e2e8f0;
+        --bg: #f8fafc;
+        --success: #16a34a;
+        --success-bg: #f0fdf4;
+        --danger: #dc2626;
+        --danger-bg: #fef2f2;
+        --warning: #d97706;
+        --warning-bg: #fffbeb;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        min-height: 100vh;
+        color: var(--text);
+        scrollbar-width: thin;
+        scrollbar-color: #c3c3c3 #f8fafc;
+      }
+      #bgCanvas {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+      }
+      .navbar {
+        position: sticky;
+        top: 0;
+        background: rgba(15, 13, 42, 0.97);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        color: white;
+        padding: 0 24px;
+        height: 58px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        z-index: 100;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        box-shadow: 0 2px 20px rgba(0,0,0,0.22);
+      }
+      .nav-brand {
+        display: flex; align-items: center; gap: 10px; text-decoration: none;
+      }
+      .nav-brand-icon {
+        width: 32px; height: 32px;
+        background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.4);
+        border-radius: 8px; display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+      }
+      .nav-brand-text .nb-name { font-size: 15px; font-weight: 800; color: white; line-height: 1.1; }
+      .nav-brand-text .nb-sub { font-size: 9px; color: rgba(255,255,255,0.35); font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
+      .nav-right {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .nav-btn {
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255,255,255,0.82);
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: background 0.15s, color 0.15s;
+      }
+      .nav-btn:hover {
+        background: rgba(255, 255, 255, 0.18);
+        color: white;
+      }
+      .nav-btn-active {
+        background: rgba(99,102,241,0.25);
+        border-color: rgba(99,102,241,0.4);
+        color: #a5b4fc;
+      }
+      .container {
+        max-width: 1000px;
+        margin: 28px auto;
+        padding: 0 20px;
+        position: relative;
+        z-index: 1;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        gap: 20px;
+      }
+      @media (max-width: 800px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 6px 24px rgba(0,0,0,0.05);
+        padding: 24px;
+        margin-bottom: 20px;
+      }
+      .card-title {
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .avatar {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+        color: white;
+        display: grid;
+        place-items: center;
+        font-size: 36px;
+        font-weight: 800;
+        margin: 0 auto 16px;
+        overflow: hidden;
+        box-shadow: 0 0 0 4px rgba(79,70,229,0.15), 0 4px 20px rgba(79,70,229,0.2);
+      }
+      .avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .profile-name {
+        text-align: center;
+        font-size: 20px;
+        font-weight: 800;
+        margin-bottom: 2px;
+      }
+      .profile-email {
+        text-align: center;
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 18px;
+      }
+      .form-group {
+        margin-bottom: 16px;
+      }
+      label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 6px;
+      }
+      input {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1.5px solid var(--border);
+        border-radius: 7px;
+        font-size: 14px;
+        color: var(--text);
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s;
+      }
+      input:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        padding: 9px 16px;
+        border: none;
+        border-radius: 7px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .btn-primary {
+        background: var(--primary);
+        color: white;
+      }
+      .btn-primary:hover:not(:disabled) {
+        background: var(--primary-dark);
+      }
+      .btn-secondary {
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .btn-secondary:hover:not(:disabled) {
+        background: var(--border);
+      }
+      .btn-danger {
+        background: var(--danger);
+        color: white;
+      }
+      .btn-danger:hover:not(:disabled) {
+        background: #b91c1c;
+      }
+      .btn:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .btn-block {
+        width: 100%;
+      }
+      .btn-group {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.35);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+      }
+      .spinner-dark {
+        border-color: rgba(0, 0, 0, 0.15);
+        border-top-color: var(--primary);
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .alert {
+        padding: 11px 14px;
+        border-radius: 7px;
+        font-size: 13px;
+        margin-bottom: 14px;
+        display: none;
+        line-height: 1.5;
+      }
+      .alert-error {
+        background: var(--danger-bg);
+        color: var(--danger);
+        border: 1px solid #fecaca;
+      }
+      .alert-success {
+        background: var(--success-bg);
+        color: var(--success);
+        border: 1px solid #bbf7d0;
+      }
+      .info-box {
+        background: var(--primary-light);
+        border-left: 3px solid var(--primary);
+        padding: 11px 14px;
+        border-radius: 0 7px 7px 0;
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 16px;
+        line-height: 1.5;
+      }
+      .passkey-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 700;
+        margin-bottom: 16px;
+      }
+      .passkey-ok {
+        background: var(--success-bg);
+        color: var(--success);
+      }
+      .passkey-missing {
+        background: var(--warning-bg);
+        color: #92400e;
+      }
+      .rhythm-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+      }
+      .rhythm-row:last-child {
+        border-bottom: none;
+      }
+      .rhythm-key {
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .rhythm-val {
+        font-weight: 700;
+      }
+      /* Wave canvas */
+      .wave-canvas-wrap {
+        background: #0f172a;
+        border-radius: 8px;
+        overflow: hidden;
+        margin-top: 14px;
+      }
+      .wave-canvas {
+        width: 100%;
+        height: 80px;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="bgCanvas"></canvas>
+
+    <nav class="navbar">
+      <a href="/dashboard.html" class="nav-brand">
+        <div class="nav-brand-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+        </div>
+        <div class="nav-brand-text">
+          <div class="nb-name" id="navUserName">Account</div>
+          <div class="nb-sub">Continuous Auth</div>
+        </div>
+      </a>
+      <div id="navBrand" style="display:none"></div>
+      <div class="nav-right">
+        <a href="/opinion.html" class="nav-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          Write
+        </a>
+        <a href="/lab.html" class="nav-btn" title="Advanced custom-integration showcase">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.5L4.5 19a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L14 9.5V2"/><path d="M8.5 2h7"/></svg>
+          Lab
+        </a>
+        <a href="/dashboard.html" class="nav-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Dashboard
+        </a>
+        <a href="/profile.html" class="nav-btn nav-btn-active">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Profile
+        </a>
+        <button class="nav-btn" onclick="logout()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Logout
+        </button>
+      </div>
+    </nav>
+
+    <div class="container">
+      <div id="alertError" class="alert alert-error"></div>
+      <div id="alertSuccess" class="alert alert-success"></div>
+
+      <div class="layout">
+        <!-- Left: avatar + rhythm -->
+        <div>
+          <div class="card">
+            <div class="avatar" id="avatar"></div>
+            <div class="profile-name" id="profileName">--</div>
+            <div class="profile-email" id="profileEmail"></div>
+            <div class="form-group">
+              <label for="photoInput">Update Photo</label>
+              <input
+                id="photoInput"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+              />
+            </div>
+            <button
+              class="btn btn-secondary btn-block"
+              onclick="uploadPhoto()"
+              id="uploadPhotoBtn"
+            >
+              Upload Photo
+            </button>
+          </div>
+
+          <!-- Rhythm model status -->
+          <div class="card">
+            <div class="card-title">Rhythm Model</div>
+            <div class="rhythm-row">
+              <span class="rhythm-key">Status</span
+              ><span class="rhythm-val" id="rhythmStatusVal">--</span>
+            </div>
+            <div class="rhythm-row">
+              <span class="rhythm-key">Samples</span
+              ><span class="rhythm-val" id="rhythmSamples">--</span>
+            </div>
+            <div class="rhythm-row">
+              <span class="rhythm-key">Model Type</span
+              ><span class="rhythm-val" id="rhythmModel">--</span>
+            </div>
+
+            <!-- Three.js rhythm wave -->
+            <div class="wave-canvas-wrap">
+              <canvas id="waveCanvas" class="wave-canvas"></canvas>
+            </div>
+
+            <div style="margin-top: 14px; display: flex; gap: 8px;">
+              <button
+                class="btn btn-secondary"
+                style="flex:1"
+                onclick="window.location.href = '/dashboard.html'"
+              >
+                Manage Enrollment
+              </button>
+              <button
+                id="btnRebuildModel"
+                class="btn btn-secondary"
+                style="flex:1"
+                onclick="rebuildModel()"
+              >
+                Rebuild Model
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: forms -->
+        <div>
+          <div class="card">
+            <div class="card-title">Edit Credentials</div>
+            <div class="info-box">
+              Leave password fields empty to update only username or email.
+            </div>
+            <form id="profileForm">
+              <div class="form-group">
+                <label for="usernameInput">Username</label
+                ><input id="usernameInput" autocomplete="username" required />
+              </div>
+              <div class="form-group">
+                <label for="emailInput">Email</label
+                ><input id="emailInput" type="email" autocomplete="email" />
+              </div>
+              <div class="form-group">
+                <label for="currentPasswordInput">Current Password</label
+                ><input
+                  id="currentPasswordInput"
+                  type="password"
+                  autocomplete="current-password"
+                />
+              </div>
+              <div class="form-group">
+                <label for="newPasswordInput">New Password</label
+                ><input
+                  id="newPasswordInput"
+                  type="password"
+                  autocomplete="new-password"
+                />
+              </div>
+              <div class="btn-group">
+                <button
+                  type="submit"
+                  class="btn btn-primary"
+                  id="saveProfileBtn"
+                >
+                  Save Changes
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  onclick="loadProfile()"
+                >
+                  Discard
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Passkey Management</div>
+            <div id="passkeyBadge" class="passkey-badge passkey-missing">
+              Checking…
+            </div>
+            <div class="info-box">
+              Resetting passkeys locks the account until a new passkey is
+              registered on this or another device.
+            </div>
+            <div class="btn-group">
+              <button
+                class="btn btn-primary"
+                onclick="registerPasskey()"
+                id="registerPasskeyBtn"
+              >
+                Register Passkey
+              </button>
+              <button class="btn btn-secondary" onclick="replacePasskey()">
+                Replace
+              </button>
+              <button class="btn btn-danger" onclick="resetPasskeys()">
+                Reset All
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // ── User badge ──────────────────────────────────────────────
+      function userAvatarColor(n) {
+        const p = [
+          "#4f46e5",
+          "#0284c7",
+          "#0891b2",
+          "#059669",
+          "#d97706",
+          "#dc2626",
+          "#7c3aed",
+          "#db2777",
+        ];
+        let h = 0;
+        for (const c of n) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+        return p[h % p.length];
+      }
+      function applyUserBadge(username) {
+        const nameEl = document.getElementById("navUserName");
+        if (nameEl) nameEl.textContent = username || "Account";
+        const iconEl = document.querySelector(".nav-brand-icon");
+        if (iconEl && username) {
+          iconEl.style.background = userAvatarColor(username);
+          iconEl.innerHTML = `<span style="color:white;font-size:14px;font-weight:900">${username[0].toUpperCase()}</span>`;
+        }
+      }
+
+      let profile = null;
+      let passkeysRegistered = false;
+
+      function setLoading(btn, loading, text) {
+        if (!btn) return;
+        if (loading) {
+          btn._orig = btn.innerHTML;
+          btn.innerHTML = `<span class="spinner${btn.classList.contains("btn-secondary") ? " spinner-dark" : ""}"></span>${text || "Loading…"}`;
+          btn.disabled = true;
+        } else {
+          btn.innerHTML = btn._orig || text || "";
+          btn.disabled = false;
+        }
+      }
+      function getSimpleWebAuthnBrowser() {
+        if (
+          !window.SimpleWebAuthnBrowser ||
+          typeof window.SimpleWebAuthnBrowser.startRegistration !== "function"
+        )
+          throw new Error("Passkey library failed to load.");
+        return window.SimpleWebAuthnBrowser;
+      }
+      function formatPasskeyError(err) {
+        const msg = err && err.message ? err.message : String(err);
+        if (
+          (err && err.name === "NotAllowedError") ||
+          msg.includes("timed out") ||
+          msg.includes("not allowed")
+        )
+          return "Passkey prompt was cancelled or timed out. Keep this tab active and approve the browser prompt.";
+        return msg;
+      }
+      function showError(msg) {
+        const el = document.getElementById("alertError");
+        el.textContent = msg;
+        el.style.display = "block";
+        document.getElementById("alertSuccess").style.display = "none";
+      }
+      function showSuccess(msg) {
+        const el = document.getElementById("alertSuccess");
+        el.textContent = msg;
+        el.style.display = "block";
+        document.getElementById("alertError").style.display = "none";
+        setTimeout(() => (el.style.display = "none"), 5000);
+      }
+
+      async function loadProfile() {
+        try {
+          const res = await fetch("/api/auth/profile");
+          if (res.status === 401) {
+            window.location.href = "/login.html";
+            return;
+          }
+          if (!res.ok) {
+            const d = await res.json();
+            throw new Error(d.error || "Failed to load profile");
+          }
+          const data = await res.json();
+          profile = data.profile;
+          passkeysRegistered = !!data.passkeysRegistered;
+          document.getElementById("usernameInput").value =
+            profile.username || "";
+          document.getElementById("emailInput").value = profile.email || "";
+          document.getElementById("currentPasswordInput").value = "";
+          document.getElementById("newPasswordInput").value = "";
+          renderProfile();
+          applyUserBadge(profile.username || "User");
+        } catch (err) {
+          showError(err.message);
+        }
+      }
+
+      function renderProfile() {
+        const name = profile.username || "--";
+        document.getElementById("profileName").textContent = name;
+        document.getElementById("profileEmail").textContent =
+          profile.email || "";
+        const avatar = document.getElementById("avatar");
+        if (profile.profilePhoto)
+          avatar.innerHTML = `<img src="${profile.profilePhoto}" alt="Photo">`;
+        else avatar.textContent = name.slice(0, 1).toUpperCase();
+        const badge = document.getElementById("passkeyBadge");
+        const regBtn = document.getElementById("registerPasskeyBtn");
+        if (passkeysRegistered) {
+          badge.className = "passkey-badge passkey-ok";
+          badge.textContent = "Passkey registered";
+          regBtn.style.display = "none";
+        } else {
+          badge.className = "passkey-badge passkey-missing";
+          badge.textContent = "No passkey registered";
+          regBtn.style.display = "inline-flex";
+        }
+      }
+
+      async function loadRhythmStatus() {
+        try {
+          const res = await fetch("/api/text/typing-status");
+          if (!res.ok) return;
+          const s = await res.json();
+          document.getElementById("rhythmStatusVal").textContent = s.trained
+            ? "Ready"
+            : "Not enrolled";
+          document.getElementById("rhythmStatusVal").style.color = s.trained
+            ? "var(--success)"
+            : "var(--warning)";
+          document.getElementById("rhythmSamples").textContent =
+            `${s.sampleCount} / ${s.requiredSamples}`;
+          document.getElementById("rhythmModel").textContent =
+            s.modelType || "per-user CNN+LSTM";
+          if (window._waveSetState) window._waveSetState(s.trained);
+        } catch {}
+      }
+
+      document
+        .getElementById("profileForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const btn = document.getElementById("saveProfileBtn");
+          setLoading(btn, true, "Saving…");
+          try {
+            const res = await fetch("/api/auth/profile", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                username: document.getElementById("usernameInput").value.trim(),
+                email:
+                  document.getElementById("emailInput").value.trim() || null,
+                currentPassword: document.getElementById("currentPasswordInput")
+                  .value,
+                newPassword: document.getElementById("newPasswordInput").value,
+              }),
+            });
+            const data = await res.json();
+            if (!res.ok)
+              throw new Error(data.error || "Failed to update profile");
+            profile = data.profile;
+            showSuccess("Profile updated.");
+            renderProfile();
+            applyUserBadge(profile.username || "User");
+          } catch (err) {
+            showError(err.message);
+          } finally {
+            setLoading(btn, false, "Save Changes");
+          }
+        });
+
+      async function uploadPhoto() {
+        const btn = document.getElementById("uploadPhotoBtn");
+        try {
+          const file = document.getElementById("photoInput").files[0];
+          if (!file) throw new Error("Choose a photo first");
+          if (file.size > 2 * 1024 * 1024)
+            throw new Error("Image must be 2 MB or smaller");
+          setLoading(btn, true, "Uploading…");
+          const imageData = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error("Failed to read image"));
+            reader.readAsDataURL(file);
+          });
+          const res = await fetch("/api/auth/profile/photo", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageData }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Upload failed");
+          profile.profilePhoto = data.profilePhoto;
+          renderProfile();
+          showSuccess("Profile photo updated.");
+        } catch (err) {
+          showError(err.message);
+        } finally {
+          setLoading(btn, false, "Upload Photo");
+        }
+      }
+
+      async function registerPasskey() {
+        const btn = document.getElementById("registerPasskeyBtn");
+        setLoading(btn, true, "Registering…");
+        try {
+          const optRes = await fetch("/api/webauthn/register/options", {
+            method: "POST",
+          });
+          const options = await optRes.json();
+          if (!optRes.ok)
+            throw new Error(options.error || "Failed to get options");
+          const attestation =
+            await getSimpleWebAuthnBrowser().startRegistration(options);
+          const verRes = await fetch("/api/webauthn/register/complete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ credential: attestation }),
+          });
+          const verData = await verRes.json();
+          if (!verRes.ok)
+            throw new Error(verData.error || "Registration failed");
+          showSuccess("Passkey registered.");
+          passkeysRegistered = true;
+          renderProfile();
+        } catch (err) {
+          showError("Passkey registration failed: " + formatPasskeyError(err));
+        } finally {
+          setLoading(btn, false, "Register Passkey");
+        }
+      }
+      async function replacePasskey() {
+        if (!confirm("Replace the stored passkey for this account?")) return;
+        const res = await fetch("/api/webauthn/register/reset", {
+          method: "POST",
+        });
+        if (!res.ok) {
+          const d = await res.json();
+          showError(d.error || "Reset failed");
+          return;
+        }
+        passkeysRegistered = false;
+        renderProfile();
+        await registerPasskey();
+      }
+      async function resetPasskeys() {
+        if (
+          !confirm(
+            "Delete all passkey registrations? The account will be locked until a new passkey is registered.",
+          )
+        )
+          return;
+        try {
+          const res = await fetch("/api/webauthn/register/reset", {
+            method: "POST",
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed");
+          showSuccess(
+            "Passkeys reset. Register a new passkey to unlock the account.",
+          );
+          passkeysRegistered = false;
+          renderProfile();
+          setTimeout(() => (window.location.href = "/dashboard.html"), 1200);
+        } catch (err) {
+          showError("Reset failed: " + err.message);
+        }
+      }
+      async function rebuildModel() {
+        const btn = document.getElementById("btnRebuildModel");
+        btn.disabled = true;
+        btn.textContent = "Rebuilding…";
+        try {
+          const res = await fetch("/api/text/typing-retrain", { method: "POST" });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Rebuild failed");
+          showSuccess(
+            `Rhythm model rebuilt from stored samples (${data.profile?.sampleCount ?? "?"} samples, threshold ${data.profile?.threshold?.toFixed(3) ?? "?"})`,
+          );
+          loadRhythmStatus();
+        } catch (err) {
+          showError("Rebuild failed: " + err.message);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Rebuild Model";
+        }
+      }
+      async function logout() {
+        await fetch("/api/auth/logout", { method: "POST" });
+        window.location.href = "/login.html";
+      }
+      loadProfile();
+      loadRhythmStatus();
+    </script>
+
+    <script>
+      // ── Three.js: Rhythm Wave ────────────────────────────────────
+      (function initWave() {
+        if (!window.THREE) return;
+        const canvas = document.getElementById("waveCanvas");
+        if (!canvas) return;
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setClearColor(0x0f172a);
+        const scene = new THREE.Scene();
+        const camera = new THREE.OrthographicCamera(-4, 4, 1.2, -1.2, 0.1, 10);
+        camera.position.z = 5;
+
+        // Three wave lines (different frequencies)
+        function makeWaveLine(color, opacity, yBase) {
+          const N = 180;
+          const pos = new Float32Array(N * 3);
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+          const mat = new THREE.LineBasicMaterial({
+            color,
+            transparent: true,
+            opacity,
+          });
+          const line = new THREE.Line(geo, mat);
+          scene.add(line);
+          return { geo, pos, yBase };
+        }
+        const waves = [
+          makeWaveLine(0x4f46e5, 0.9, 0),
+          makeWaveLine(0x818cf8, 0.45, 0),
+          makeWaveLine(0x6366f1, 0.25, 0),
+        ];
+
+        let trained = false;
+        window._waveSetState = function (t) {
+          trained = t;
+        };
+
+        const clock = new THREE.Clock();
+        (function animate() {
+          requestAnimationFrame(animate);
+          const t = clock.getElapsedTime();
+          const baseFreqs = trained ? [2.8, 5.2, 9.1] : [1.4, 2.6, 4.5];
+          const baseAmps = trained ? [0.45, 0.18, 0.08] : [0.25, 0.1, 0.04];
+          const baseSpeeds = trained ? [1.8, 2.7, 3.5] : [0.9, 1.35, 1.75];
+          waves.forEach((w, wi) => {
+            const N = 180;
+            for (let i = 0; i < N; i++) {
+              const x = (i / (N - 1)) * 8 - 4;
+              const y =
+                Math.sin(x * baseFreqs[wi] + t * baseSpeeds[wi]) *
+                  baseAmps[wi] +
+                Math.sin(x * baseFreqs[wi] * 2.3 + t * baseSpeeds[wi] * 1.4) *
+                  baseAmps[wi] *
+                  0.3;
+              w.pos[i * 3] = x;
+              w.pos[i * 3 + 1] = y;
+              w.pos[i * 3 + 2] = 0;
+            }
+            w.geo.attributes.position.needsUpdate = true;
+          });
+          renderer.render(scene, camera);
+        })();
+
+        function resize() {
+          const w = canvas.clientWidth || 240,
+            h = 80;
+          renderer.setSize(w, h, false);
+          const aspect = w / h;
+          camera.left = -aspect * 1.2;
+          camera.right = aspect * 1.2;
+          camera.updateProjectionMatrix();
+        }
+        window.addEventListener("resize", resize);
+        resize();
+      })();
+
+      // ── Three.js: Particle background ───────────────────────────
+      (function initBg() {
+        if (!window.THREE) return;
+        const canvas = document.getElementById("bgCanvas");
+        if (!canvas) return;
+        const renderer = new THREE.WebGLRenderer({
+          canvas,
+          antialias: false,
+          alpha: true,
+        });
+        renderer.setPixelRatio(1);
+        let W = window.innerWidth,
+          H = window.innerHeight;
+        renderer.setSize(W, H);
+        const scene = new THREE.Scene();
+        const cam = new THREE.OrthographicCamera(
+          -W / 2,
+          W / 2,
+          H / 2,
+          -H / 2,
+          0.1,
+          10,
+        );
+        cam.position.z = 1;
+        const N = 55;
+        const pts = Array.from({ length: N }, () => ({
+          x: (Math.random() - 0.5) * W,
+          y: (Math.random() - 0.5) * H,
+          vx: (Math.random() - 0.5) * 0.28,
+          vy: (Math.random() - 0.5) * 0.28,
+        }));
+        const pPos = new Float32Array(N * 3);
+        const pGeo = new THREE.BufferGeometry();
+        pGeo.setAttribute("position", new THREE.BufferAttribute(pPos, 3));
+        scene.add(
+          new THREE.Points(
+            pGeo,
+            new THREE.PointsMaterial({
+              color: 0x4f46e5,
+              size: 2,
+              transparent: true,
+              opacity: 0.25,
+            }),
+          ),
+        );
+        const MAX_L = (N * (N - 1)) / 2,
+          lPos = new Float32Array(MAX_L * 6);
+        const lGeo = new THREE.BufferGeometry();
+        lGeo.setAttribute("position", new THREE.BufferAttribute(lPos, 3));
+        scene.add(
+          new THREE.LineSegments(
+            lGeo,
+            new THREE.LineBasicMaterial({
+              color: 0x4f46e5,
+              transparent: true,
+              opacity: 0.06,
+            }),
+          ),
+        );
+        const D2 = 140 * 140;
+        (function tick() {
+          pts.forEach((p, i) => {
+            p.x += p.vx;
+            p.y += p.vy;
+            if (p.x > W / 2 || p.x < -W / 2) p.vx *= -1;
+            if (p.y > H / 2 || p.y < -H / 2) p.vy *= -1;
+            pPos[i * 3] = p.x;
+            pPos[i * 3 + 1] = p.y;
+          });
+          pGeo.attributes.position.needsUpdate = true;
+          let lc = 0;
+          for (let i = 0; i < N; i++)
+            for (let j = i + 1; j < N; j++) {
+              const dx = pts[i].x - pts[j].x,
+                dy = pts[i].y - pts[j].y;
+              if (dx * dx + dy * dy < D2) {
+                lPos[lc * 6] = pts[i].x;
+                lPos[lc * 6 + 1] = pts[i].y;
+                lPos[lc * 6 + 2] = 0;
+                lPos[lc * 6 + 3] = pts[j].x;
+                lPos[lc * 6 + 4] = pts[j].y;
+                lPos[lc * 6 + 5] = 0;
+                lc++;
+              }
+            }
+          lGeo.attributes.position.needsUpdate = true;
+          lGeo.setDrawRange(0, lc * 2);
+          renderer.render(scene, cam);
+          requestAnimationFrame(tick);
+        })();
+        window.addEventListener("resize", () => {
+          W = window.innerWidth;
+          H = window.innerHeight;
+          renderer.setSize(W, H);
+          cam.left = -W / 2;
+          cam.right = W / 2;
+          cam.top = H / 2;
+          cam.bottom = -H / 2;
+          cam.updateProjectionMatrix();
+        });
+      })();
+    </script>
+    <!-- Live mouse continuous-auth guard (header toggle + passkey step-up) -->
+    <script src="/js/mouse-features.js"></script>
+    <!-- Continuum GUARD panel (same-origin, session identity). -->
+  <script src="/guard.js?v=19" data-keystroke="on" data-mouse="optional"></script>
+</body>
+</html>

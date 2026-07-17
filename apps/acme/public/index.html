@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Acme Vault</title>
+  <style>
+    :root { --acc:#059669; --ink:#0f172a; --mut:#64748b; --line:#e5e7eb; --bg:#f9fafb; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif; color:var(--ink); background:var(--bg); }
+    header { background:#064e3b; color:#fff; padding:14px 22px; display:flex; align-items:center; gap:10px; }
+    .logo { width:30px;height:30px;border-radius:8px;background:#10b981;display:grid;place-items:center;font-weight:900;color:#064e3b; }
+    header h1 { font-size:16px; margin:0; letter-spacing:.3px; }
+    header .sp { flex:1; }
+    header .u { font-size:12px; opacity:.85; }
+    main { max-width:720px; margin:34px auto; padding:0 20px; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:24px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+    h2 { margin:0 0 4px; font-size:20px; }
+    p.sub { margin:0 0 18px; color:var(--mut); font-size:14px; }
+    label { display:block; font-size:13px; font-weight:600; margin:14px 0 6px; }
+    input, textarea { width:100%; padding:11px 13px; border:1px solid var(--line); border-radius:10px; font:inherit; }
+    textarea { min-height:180px; resize:vertical; line-height:1.6; }
+    .row { display:flex; gap:12px; margin-top:16px; align-items:center; }
+    button { background:var(--acc); color:#fff; border:0; border-radius:10px; padding:11px 18px; font:600 14px system-ui; cursor:pointer; }
+    #result { font-size:13px; font-weight:600; display:none; }
+    .note { margin-top:22px; padding:12px 14px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px; font-size:12.5px; color:#065f46; }
+    .note code { background:#d1fae5; padding:1px 6px; border-radius:5px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">V</div>
+    <h1>Acme Vault</h1>
+    <div class="sp"></div>
+    <span id="who" style="font-size:12px;opacity:.85;margin-right:6px">not signed in</span>
+    <button class="signin" data-user="alice" style="background:#10b981;color:#064e3b;border:0;border-radius:8px;padding:6px 12px;font:700 12px system-ui;cursor:pointer">Sign in as Alice</button>
+    <button class="signin" data-user="bob" style="background:#34d399;color:#064e3b;border:0;border-radius:8px;padding:6px 12px;font:700 12px system-ui;cursor:pointer;margin-left:6px">Sign in as Bob</button>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>Secure note</h2>
+      <p class="sub">Acme runs on its own origin (:4200) with its own backend. The only Continuum code here is one script tag — everything else (onboarding, passkey, verification) is provided by the SDK.</p>
+
+      <label for="title">Title</label>
+      <input id="title" placeholder="Bank details…" />
+
+      <label for="body">Note</label>
+      <textarea id="body" placeholder="Type a few natural lines — Continuum verifies it's really you as you write…"></textarea>
+
+      <div class="row">
+        <button id="save">Save to vault</button>
+        <span id="result"></span>
+      </div>
+
+      <div class="note">
+        Save is enforced by Acme's own backend using Continuum's <b>signed verdict</b>:
+        <code>guard.requireTrusted</code>. If your live behavior looks suspicious it returns
+        <b>403</b> and the SDK asks for a passkey — Acme itself decides nothing about trust.
+      </div>
+    </div>
+  </main>
+
+  <script>
+    var result = document.getElementById("result");
+    function show(ok, msg) { result.style.display = "inline"; result.style.color = ok ? "#059669" : "#dc2626"; result.textContent = msg; }
+    document.getElementById("save").addEventListener("click", async function () {
+      var headers = { "Content-Type": "application/json" };
+      if (window.Continuum) Object.assign(headers, window.Continuum.riskHeader()); // attach signed verdict
+      try {
+        var r = await fetch("/save-note", { method: "POST", headers: headers, body: JSON.stringify({ title: title.value, body: body.value }) });
+        var d = await r.json();
+        if (r.ok) show(true, "✓ " + d.message + " (risk: " + (d.verdict && d.verdict.risk) + ")");
+        else if (r.status === 403) show(false, "⛔ Blocked — behavior looks suspicious; verify with your passkey, then retry.");
+        else if (r.status === 401) show(false, "🔒 No verdict yet — type a few lines so Continuum can evaluate you.");
+        else show(false, "Error " + r.status);
+      } catch (e) { show(false, "Network error: " + e.message); }
+    });
+
+    // Sign-in: Acme's backend vouches for the user (mints a signed identity token),
+    // then hands it to the SDK. This binds the behavioral profile to the ACCOUNT
+    // (same user = same profile in any browser/device), not the browser.
+    function whenReady(cb) { if (window.Continuum && window.Continuum.identify) return cb(); var iv = setInterval(function () { if (window.Continuum && window.Continuum.identify) { clearInterval(iv); cb(); } }, 150); }
+    document.querySelectorAll(".signin").forEach(function (b) {
+      b.addEventListener("click", async function () {
+        var user = b.getAttribute("data-user");
+        var t = await fetch("/continuum-identity?user=" + user).then(function (r) { return r.json(); });
+        document.getElementById("who").textContent = "signed in as " + user;
+        whenReady(function () { window.Continuum.identify(t.token); });
+      });
+    });
+  </script>
+
+  <!-- The ONLY Continuum integration: one script tag, loaded from Continuum's gateway. -->
+  <script src="http://localhost:8080/guard.js?v=7"
+          data-api-base="http://localhost:8080"
+          data-site-key="pk_demo"
+          data-defer="1" data-keystroke="on" data-mouse="optional"></script>
+</body>
+</html>
