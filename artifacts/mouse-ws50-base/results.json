@@ -1,0 +1,16 @@
+{
+  "model": "mouse 1D CNN + 2GRU \u2014 user identifier (transfer feature extractor)",
+  "dataset": "SapiMouse (Antal et al., 2021)",
+  "task": "closed-set user identification",
+  "num_users": 120,
+  "window_size": 50,
+  "num_features": 7,
+  "test_loss": 1.7868695259094238,
+  "test_top1_accuracy": 0.5108425617218018,
+  "test_top5_accuracy": 0.8130457410512925,
+  "chance_top1": 0.008333333333333333,
+  "lift_over_chance": 61.30110740661621,
+  "training_epochs": 40,
+  "genuine_windows": 115282,
+  "train_size": 80693
+}
