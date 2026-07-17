@@ -80,12 +80,21 @@ services:
       PORT: 8080
       CA_API_URL: http://ca-service:4100
       PASSKEY_API_URL: http://passkey-service:4000
+      # Signing key + tenant registry are generated/seeded here on first run and
+      # persist across restarts — NOT baked into the image (see gateway/.dockerignore).
+      DATA_DIR: /app/data
+      # The auto-seeded demo tenant's secret; a consumer signing identities must use
+      # the SAME value. REQUIRED (no shared fallback). Generate: openssl rand -hex 32
+      CA_SIGNING_SECRET: ${CA_SIGNING_SECRET:?Set CA_SIGNING_SECRET in .env (openssl rand -hex 32)}
       # Comma-separated tenant API keys (blank = open, for local dev only).
       GATEWAY_API_KEYS: ${GATEWAY_API_KEYS:-}
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
+    volumes:
+      - continuum_gateway_data:/app/data   # RS256 signing key + tenant registry (persistent)
 
 volumes:
+  continuum_gateway_data:
   continuum_user_models:
   continuum_ca_db:
   continuum_passkey_db:

@@ -53,6 +53,13 @@ artifacts/mouse-ws50-gru/
 *.exe
 tools/*.exe
 
+# ─── Gateway secrets / runtime state (generated on first run, on a volume) ───
+# Never commit — a leaked RS256 key lets anyone forge verdicts; tenant secrets
+# allow impersonation. Dev regenerates them locally on first start.
+services/gateway/gateway-verdict-key.pem
+services/gateway/tenants.json
+services/gateway/identity.json
+
 # ─── Data migration snapshots (biometric — never push to a remote) ───
 continuum-data-*.tgz
 

@@ -1,2 +1,9 @@
 node_modules/
 npm-debug.log
+
+# Secrets / runtime state — must NOT be baked into a (possibly public) image.
+# The gateway generates the signing key on first run and auto-seeds the demo
+# tenant from CA_SIGNING_SECRET; all of this persists on the mounted DATA_DIR volume.
+gateway-verdict-key.pem
+tenants.json
+identity.json
