@@ -1,0 +1,8 @@
+{
+  "name": "@continuum/node",
+  "version": "1.0.0",
+  "description": "Server-side enforcement SDK for Continuum — verify signed behavioral risk verdicts and gate sensitive routes.",
+  "main": "index.js",
+  "license": "MIT",
+  "keywords": ["continuous-authentication", "zero-trust", "webauthn", "risk", "middleware"]
+}
