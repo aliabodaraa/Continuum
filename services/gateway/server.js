@@ -1,0 +1,359 @@
+// Continuum API Gateway — the multi-tenant front door + backend for the browser SDK.
+//   • serves the SDK assets (guard.js + deps),
+//   • is a TENANT REGISTRY: any app self-registers (POST /v1/tenants) and gets a
+//     site key (public) + signing secret (private) + allowed origins,
+//   • mints a per-user Continuum identity/session (/v1/sdk/session), scoped to a tenant,
+//   • exposes a CORS-enabled, TOKEN-SCOPED facade (/v1/sdk/*) that injects userId/
+//     username/origin and routes to CA + passkey,
+//   • RE-SIGNS each risk verdict with the TENANT's secret, so one tenant can never
+//     verify (or forge) another tenant's verdicts.
+const express = require("express");
+const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
+
+const PORT = Number(process.env.PORT || 8080);
+const CA_URL = process.env.CA_API_URL || "http://ca-service:4100";
+const ONBOARDING_MODE = process.env.ONBOARDING_MODE === "lazy" ? "lazy" : "eager";
+const PASSKEY_URL = process.env.PASSKEY_API_URL || "http://passkey-service:4000";
+const SESSION_SECRET = process.env.GATEWAY_SESSION_SECRET || "dev-gateway-session-secret";
+const SESSION_TTL_SEC = Number(process.env.GATEWAY_SESSION_TTL_SEC || 12 * 3600);
+const RISK_TTL_SEC = Number(process.env.GATEWAY_RISK_TTL_SEC || 90);
+// Admin key to gate tenant registration. If unset (dev), registration is open.
+const ADMIN_KEY = process.env.GATEWAY_ADMIN_KEY || "";
+// Default demo tenant's secret — must equal the demo host's CONTINUUM_SECRET.
+const DEMO_SECRET = process.env.CA_SIGNING_SECRET || "dev-continuum-risk-secret";
+const USER_ID_BASE = Number(process.env.GATEWAY_USER_ID_BASE || 900000);
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const IDENTITY_FILE = path.join(DATA_DIR, "identity.json");
+const TENANTS_FILE = path.join(DATA_DIR, "tenants.json");
+const SDK_PUBLIC = path.join(__dirname, "sdk-public");
+
+function loadJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { return fallback; } }
+function saveJson(file, obj) { try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(file, JSON.stringify(obj, null, 2)); } catch (e) { console.error("save", file, e.message); } }
+
+// ---- tenant registry ----
+let tenants = loadJson(TENANTS_FILE, { tenants: {} });
+// Seed the demo tenant so the bundled Acme app works out of the box.
+if (!tenants.tenants["pk_demo"]) {
+  tenants.tenants["pk_demo"] = { name: "Demo", secret: DEMO_SECRET, origins: [], webhookUrl: process.env.DEMO_WEBHOOK_URL || null, createdAt: new Date().toISOString() };
+  saveJson(TENANTS_FILE, tenants);
+}
+// Keep the demo tenant's webhook in sync with env (so CAEP is demonstrable).
+if (tenants.tenants["pk_demo"] && process.env.DEMO_WEBHOOK_URL) tenants.tenants["pk_demo"].webhookUrl = process.env.DEMO_WEBHOOK_URL;
+const resolveTenant = (siteKey) => tenants.tenants[siteKey] || null;
+
+// Verify a backend-signed IDENTITY token: `base64url({sub,exp}).hmacHex`, signed
+// with the tenant's secret. This is how any backend (Python/PHP/Ruby/Go/.NET/…)
+// vouches for its logged-in user without the browser being able to spoof it.
+function verifyIdentity(secret, token) {
+  if (!token || typeof token !== "string") return null;
+  const parts = token.split(".");
+  let payloadB64, sig, expected;
+  if (parts.length === 3) {
+    // STANDARD HS256 JWT (header.payload.signature) — the documented contract:
+    // any language's stock JWT library can mint this (client_secret_jwt).
+    let header; try { header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8")); } catch (e) { return null; }
+    if (header.alg !== "HS256") return null;
+    payloadB64 = parts[1]; sig = parts[2];
+    expected = crypto.createHmac("sha256", secret).update(parts[0] + "." + parts[1]).digest("base64url");
+  } else if (parts.length === 2) {
+    // Legacy compact form (base64url(payload).hexhmac) — kept for back-compat.
+    payloadB64 = parts[0]; sig = parts[1];
+    expected = crypto.createHmac("sha256", secret).update(payloadB64).digest("hex");
+  } else return null;
+  const a = Buffer.from(sig), b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  let pl; try { pl = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8")); } catch (e) { return null; }
+  if (pl.exp && Math.floor(Date.now() / 1000) > pl.exp + 5) return null;
+  return pl && pl.sub != null ? pl : null;
+}
+
+// ---- identity mapping (siteKey|externalId -> Continuum user) ----
+// DETERMINISTIC: the Continuum userId is a stable hash of (siteKey, externalId),
+// NOT an auto-increment kept in a file. So the SAME logged-in user (same signed
+// `sub` from the consumer) ALWAYS resolves to the SAME Continuum userId — hence
+// the SAME keystroke/mouse models — with no lookup table that could be lost. The
+// consumer stores nothing about Continuum; it just re-sends its own user id.
+let store = loadJson(IDENTITY_FILE, { users: {} }); // bookkeeping only (listing / GDPR delete)
+function userFor(siteKey, externalId) {
+  const h = crypto.createHmac("sha256", SESSION_SECRET).update(siteKey + "|" + externalId).digest("hex");
+  const userId = parseInt(h.slice(0, 13), 16); // stable id within JS safe-integer range
+  const key = siteKey + "|" + externalId;
+  if (!store.users[key]) { store.users[key] = { userId, externalId, createdAt: new Date().toISOString() }; saveJson(IDENTITY_FILE, store); }
+  return { userId, username: (siteKey + "-" + externalId).slice(0, 48) };
+}
+
+// ---- tokens ----
+const b64 = (s) => Buffer.from(s).toString("base64url");
+function jwt(secret, payload) {
+  const h = b64(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const p = b64(JSON.stringify(payload));
+  const d = h + "." + p;
+  return d + "." + crypto.createHmac("sha256", secret).update(d).digest("base64url");
+}
+function unjwt(secret, t) {
+  if (!t || typeof t !== "string") return null;
+  const parts = t.split("."); if (parts.length !== 3) return null;
+  const exp = crypto.createHmac("sha256", secret).update(parts[0] + "." + parts[1]).digest("base64url");
+  const a = Buffer.from(parts[2]), b = Buffer.from(exp);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  let pl; try { pl = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")); } catch (e) { return null; }
+  if (pl.exp && Math.floor(Date.now() / 1000) > pl.exp) return null;
+  return pl;
+}
+function signSession(u, siteKey, externalId) {
+  const now = Math.floor(Date.now() / 1000);
+  // `ext` carries the consumer's OWN user identifier (what they signed into the
+  // identity token) so pushed events can name the subject in the consumer's terms.
+  return jwt(SESSION_SECRET, { sub: u.userId, uname: u.username, sk: siteKey, ext: externalId, iat: now, exp: now + SESSION_TTL_SEC });
+}
+// The subject a CONSUMER understands: their raw id (strip our "id:" namespace on
+// verified account ids); anon browser ids pass through unchanged.
+const extSubject = (ext) => (typeof ext === "string" && ext.startsWith("id:") ? ext.slice(3) : ext);
+// ---- verdict signing: RS256 (asymmetric) + JWKS — the framework-agnostic best
+// practice. Continuum signs verdicts with a PRIVATE key; consumers verify with the
+// PUBLIC key from /.well-known/jwks.json using their framework's native JWT tooling
+// (no shared secret). Identity tokens (consumer→gateway) stay HMAC (client_secret).
+const ISSUER = process.env.GATEWAY_PUBLIC_URL || "http://localhost:8080";
+let rsaPrivateKey, verdictJwk, verdictKid;
+(function loadVerdictKeys() {
+  const keyFile = path.join(DATA_DIR, "gateway-verdict-key.pem");
+  let pem;
+  try { pem = fs.readFileSync(keyFile, "utf8"); }
+  catch (e) {
+    const kp = crypto.generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
+    pem = kp.privateKey;
+    try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(keyFile, pem); } catch (_) {}
+  }
+  rsaPrivateKey = crypto.createPrivateKey(pem);
+  const pub = crypto.createPublicKey(rsaPrivateKey).export({ format: "jwk" }); // { kty, n, e }
+  verdictKid = crypto.createHash("sha256").update(pub.n).digest("hex").slice(0, 16);
+  verdictJwk = { ...pub, kid: verdictKid, use: "sig", alg: "RS256" };
+})();
+function signRiskRS256(userId, risk, modality) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64(JSON.stringify({ alg: "RS256", typ: "JWT", kid: verdictKid }));
+  const body = b64(JSON.stringify({ iss: ISSUER, sub: String(userId), risk, modality, iat: now, exp: now + RISK_TTL_SEC }));
+  const data = header + "." + body;
+  const sig = crypto.sign("RSA-SHA256", Buffer.from(data), rsaPrivateKey).toString("base64url");
+  return data + "." + sig;
+}
+// Signature kept (callers pass a secret) but verdicts are now asymmetric; secret ignored.
+function signRisk(_secret, userId, risk, modality) { return signRiskRS256(userId, risk, modality); }
+const riskLevel = (warmup, suspicious) => (warmup ? "warmup" : suspicious ? "suspicious" : "genuine");
+
+// ---- CAEP / Shared Signals: push a signed Security Event Token (SET) to the
+// tenant's webhook the moment a user's SETTLED verdict changes (genuine<->suspicious),
+// so the app can react mid-session without waiting for a sensitive action. The SET
+// is RS256 (same key as verdicts) → the receiver verifies it via the SAME JWKS.
+function signEvent(subject, risk, modality) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64(JSON.stringify({ alg: "RS256", typ: "secevent+jwt", kid: verdictKid }));
+  // `sub` is the consumer's OWN user id (their terms), so their receiver can act
+  // on it directly; the Continuum id stays internal.
+  const body = b64(JSON.stringify({ iss: ISSUER, sub: String(subject), event: "risk-change", risk, modality, iat: now, jti: crypto.randomBytes(8).toString("hex") }));
+  const data = header + "." + body;
+  return data + "." + crypto.sign("RSA-SHA256", Buffer.from(data), rsaPrivateKey).toString("base64url");
+}
+const lastRisk = new Map(); // keyId (Continuum id) -> last SETTLED risk ("genuine" | "suspicious")
+function maybeFireRiskEvent(tenant, keyId, subject, risk, modality) {
+  if (!tenant || !tenant.webhookUrl) return;
+  if (risk !== "genuine" && risk !== "suspicious") return; // ignore warm-up (transient)
+  const prev = lastRisk.get(keyId);
+  if (prev === risk) return;                 // no transition
+  lastRisk.set(keyId, risk);
+  if (prev === undefined && risk === "genuine") return; // first-seen-genuine isn't an event
+  const set = signEvent(subject, risk, modality);
+  console.log(`[caep] risk-change user=${subject} ${prev || "?"}→${risk} → ${tenant.webhookUrl}`);
+  fetch(tenant.webhookUrl, { method: "POST", headers: { "Content-Type": "application/secevent+jwt" }, body: set }).catch((e) => console.error("[caep] delivery failed:", e.message));
+}
+
+const app = express();
+
+// ---- CORS ----
+app.use((req, res, next) => {
+  const origin = req.get("Origin");
+  if (origin) { res.set("Access-Control-Allow-Origin", origin); res.set("Vary", "Origin"); }
+  res.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Api-Key,X-Admin-Key");
+  res.set("Access-Control-Max-Age", "600");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+app.use(express.json({ limit: "5mb" }));
+app.use(express.static(SDK_PUBLIC));
+app.get("/health", (req, res) => res.json({ ok: true, service: "gateway", tenants: Object.keys(tenants.tenants).length }));
+
+// ---- discovery + public keys (so ANY framework verifies verdicts with config, not code) ----
+app.get("/.well-known/jwks.json", (req, res) => res.json({ keys: [verdictJwk] }));
+app.get("/.well-known/continuum-configuration", (req, res) => res.json({
+  issuer: ISSUER,
+  jwks_uri: ISSUER + "/.well-known/jwks.json",
+  session_endpoint: ISSUER + "/v1/sdk/session",
+  risk_endpoint: ISSUER + "/v1/risk",
+  verdict_signing_alg: "RS256",
+  verdict_claims: ["iss", "sub", "risk", "modality", "iat", "exp"],
+  risk_values: ["genuine", "warmup", "suspicious"],
+  // How a consumer's backend vouches for its logged-in user (client_secret_jwt):
+  // a plain HS256 JWT any language's JWT library can mint — no Continuum SDK needed.
+  identity_token: {
+    format: "JWT",
+    signing_alg: "HS256",
+    key: "your tenant secret",
+    claims: ["sub", "exp"],
+    subject: "your own user id",
+    send_via: ["SDK data-identity-url / Continuum.identify()", "POST /v1/resolve"],
+  },
+  // CAEP / Shared Signals push contract — everything a consumer in ANY language
+  // needs to receive risk-change events without reading Continuum's SDK source:
+  // expose an endpoint that verifies this token against jwks_uri and acts on { sub, risk }.
+  caep: {
+    delivery_method: "urn:ietf:rfc:8935",              // push (SET over HTTP POST)
+    receiver_registration: "tenant.webhookUrl",         // where to register your endpoint
+    content_type: "application/secevent+jwt",
+    signing_alg: "RS256",                               // verify via jwks_uri (same key as verdicts)
+    event_type: "risk-change",
+    event_claims: ["iss", "sub", "event", "risk", "modality", "iat", "jti"],
+    risk_values: ["genuine", "suspicious"],             // warm-up is transient — never pushed
+    subject: "consumer_user_id",                        // `sub` is YOUR user id (from the identity token)
+    fires_on: "settled_verdict_transition",             // only on genuine<->suspicious change
+  },
+}));
+
+// ---- helpers ----
+async function fwd(url, method, body) {
+  const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const text = await r.text();
+  return { status: r.status, ct: r.headers.get("content-type") || "application/json", text };
+}
+const relay = (res, r) => { res.status(r.status); res.set("Content-Type", r.ct); res.send(r.text); };
+const rpFromOrigin = (req) => { try { return new URL(req.get("Origin")).hostname; } catch (e) { return "localhost"; } };
+const originOf = (req) => req.get("Origin") || undefined;
+function originAllowed(tenant, req) {
+  if (!tenant.origins || tenant.origins.length === 0) return true; // no allowlist = allow all (dev)
+  const o = req.get("Origin"); return !o || tenant.origins.includes(o);
+}
+
+const pkCache = new Map();
+async function hasPasskey(uid) {
+  const c = pkCache.get(uid); if (c && Date.now() - c.t < 60000) return c.v;
+  try { const d = await fetch(`${PASSKEY_URL}/v1/users/${uid}/passkeys`).then((r) => r.json()); const v = !!d.hasPasskey; pkCache.set(uid, { v, t: Date.now() }); return v; }
+  catch (e) { return false; }
+}
+async function onboardingFor(uid) {
+  const pk = await hasPasskey(uid);
+  const ob = await fetch(`${CA_URL}/v1/users/${uid}/onboarding`).then((r) => r.json()).catch(() => ({}));
+  return { passkey: pk, keystroke: !!ob.trained, mouse: !!ob.mouseEnrolled };
+}
+
+// ---- TENANT REGISTRATION (self-service) ----
+function adminGate(req, res, next) { if (ADMIN_KEY && req.get("X-Admin-Key") !== ADMIN_KEY) return res.status(401).json({ error: "invalid_admin_key" }); next(); }
+app.post("/v1/tenants", adminGate, (req, res) => {
+  const name = String(req.body.name || "app");
+  const origins = Array.isArray(req.body.origins) ? req.body.origins.map(String) : [];
+  const webhookUrl = req.body.webhookUrl ? String(req.body.webhookUrl) : null; // CAEP push target
+  const siteKey = "pk_" + crypto.randomBytes(9).toString("hex");
+  const secret = crypto.randomBytes(24).toString("hex");
+  tenants.tenants[siteKey] = { name, secret, origins, webhookUrl, createdAt: new Date().toISOString() };
+  saveJson(TENANTS_FILE, tenants);
+  res.json({ siteKey, secret, name, origins, webhookUrl, note: "Put siteKey in the SDK <script data-site-key>, and secret in your backend CONTINUUM_SECRET." });
+});
+app.get("/v1/tenants", adminGate, (req, res) => {
+  res.json({ tenants: Object.entries(tenants.tenants).map(([k, t]) => ({ siteKey: k, name: t.name, origins: t.origins, createdAt: t.createdAt })) });
+});
+
+// ---- identity: establish a tenant-scoped session ----
+app.post("/v1/sdk/session", async (req, res) => {
+  try {
+    const siteKey = String(req.body.siteKey || "");
+    const tenant = resolveTenant(siteKey);
+    if (!tenant) return res.status(401).json({ error: "invalid_site_key" });
+    if (!originAllowed(tenant, req)) return res.status(403).json({ error: "origin_not_allowed" });
+    // Prefer a backend-signed identity (account-bound, cross-device). Fall back to
+    // an anonymous, browser-bound externalId when the app hasn't identified a user.
+    let externalId, verified = false;
+    if (req.body.identityToken) {
+      const id = verifyIdentity(tenant.secret, req.body.identityToken);
+      if (!id) return res.status(401).json({ error: "invalid_identity_token" });
+      externalId = "id:" + String(id.sub); verified = true; // namespaced from anon ids
+    } else {
+      externalId = String(req.body.externalId || "anon-" + crypto.randomUUID());
+    }
+    const u = userFor(siteKey, externalId);
+    res.json({ token: signSession(u, siteKey, externalId), userId: u.userId, username: u.username, externalId, verified, onboarding: await onboardingFor(u.userId), onboardingMode: ONBOARDING_MODE });
+  } catch (e) { console.error("session:", e); res.status(500).json({ error: e.message }); }
+});
+
+// Server-to-server: the consumer's backend resolves the Continuum userId for one
+// of its users (given a signed identity token), so it can STORE the link in its
+// own database if it wishes. Deterministic — same input, same id, forever.
+app.post("/v1/resolve", (req, res) => {
+  const siteKey = String(req.body.siteKey || "");
+  const tenant = resolveTenant(siteKey);
+  if (!tenant) return res.status(401).json({ error: "invalid_site_key" });
+  const id = verifyIdentity(tenant.secret, req.body.identityToken);
+  if (!id) return res.status(401).json({ error: "invalid_identity_token" });
+  const u = userFor(siteKey, "id:" + String(id.sub));
+  res.json({ continuumUserId: u.userId, sub: id.sub });
+});
+
+// Session auth: resolves user AND tenant (from the token's siteKey).
+function auth(req, res, next) {
+  const h = req.get("Authorization") || "";
+  const pl = unjwt(SESSION_SECRET, h.startsWith("Bearer ") ? h.slice(7) : null);
+  if (!pl) return res.status(401).json({ error: "invalid_session" });
+  const tenant = resolveTenant(pl.sk);
+  if (!tenant) return res.status(401).json({ error: "tenant_revoked" });
+  if (!originAllowed(tenant, req)) return res.status(403).json({ error: "origin_not_allowed" });
+  req.uid = pl.sub; req.uname = pl.uname; req.tenant = tenant; req.esub = extSubject(pl.ext); next();
+}
+
+app.get("/v1/sdk/onboarding", auth, async (req, res) => res.json(await onboardingFor(req.uid)));
+
+// keystroke
+app.get("/v1/sdk/keystroke/config", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/config`, "GET")));
+app.get("/v1/sdk/keystroke/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/status/${req.uid}`, "GET")));
+app.post("/v1/sdk/keystroke/enroll", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/enroll`, "POST", { ...req.body, userId: req.uid })));
+// Adaptive learning: contribute a clean, high-confidence sample to the user's
+// training set (the CA retrains every N samples, validation-gated).
+app.post("/v1/sdk/keystroke/contribute", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/contribute`, "POST", { ...req.body, userId: req.uid })));
+app.post("/v1/sdk/keystroke/check", auth, async (req, res) => {
+  const r = await fwd(`${CA_URL}/v1/keystroke/check`, "POST", { ...req.body, userId: req.uid, hasPasskey: await hasPasskey(req.uid) });
+  let d; try { d = JSON.parse(r.text); } catch (e) { return relay(res, r); }
+  if (d && d.checked) {
+    const rk = riskLevel(d.warmup, d.isSuspicious);
+    d.riskToken = signRiskRS256(req.uid, rk, "keystroke");
+    maybeFireRiskEvent(req.tenant, req.uid, req.esub || req.uid, rk, "keystroke"); // push on transition
+  }
+  res.status(r.status).json(d);
+});
+
+// mouse
+app.post("/v1/sdk/mouse/enroll", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/mouse/enroll`, "POST", { ...req.body, userId: req.uid })));
+const MOUSE_STRIKES_TO_LOCK = 3;
+const mouseStreak = new Map();
+app.post("/v1/sdk/mouse/check", auth, async (req, res) => {
+  const r = await fwd(`${CA_URL}/v1/mouse/check`, "POST", { ...req.body, userId: req.uid });
+  let d; try { d = JSON.parse(r.text); } catch (e) { return relay(res, r); }
+  if (!d || !d.checked) return res.status(r.status).json(d);
+  if (d.isSuspicious) mouseStreak.set(req.uid, (mouseStreak.get(req.uid) || 0) + 1);
+  else if (!d.warmup) mouseStreak.set(req.uid, 0);
+  const streak = mouseStreak.get(req.uid) || 0;
+  const passkeyTriggered = streak >= MOUSE_STRIKES_TO_LOCK && (await hasPasskey(req.uid));
+  if (passkeyTriggered) mouseStreak.set(req.uid, 0);
+  const mrk = riskLevel(d.warmup, d.isSuspicious);
+  d.riskToken = signRiskRS256(req.uid, mrk, "mouse");
+  maybeFireRiskEvent(req.tenant, req.uid, req.esub || req.uid, mrk, "mouse"); // push on transition
+  res.status(r.status).json({ ...d, ok: !passkeyTriggered, suspiciousStreak: streak, strikesToLock: MOUSE_STRIKES_TO_LOCK, requiresPasskeyChallenge: passkeyTriggered });
+});
+app.get("/v1/sdk/mouse/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/mouse/status/${req.uid}`, "GET")));
+
+// passkey (origin/rpId bind to the HOST app's origin)
+app.post("/v1/sdk/passkey/register/options", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/register/options`, "POST", { userId: req.uid, username: req.uname, rpId: rpFromOrigin(req), origin: originOf(req) })));
+app.post("/v1/sdk/passkey/register/complete", auth, async (req, res) => { const r = await fwd(`${PASSKEY_URL}/v1/register/complete`, "POST", { userId: req.uid, credential: req.body.credential, rpId: rpFromOrigin(req), origin: originOf(req) }); pkCache.delete(req.uid); relay(res, r); });
+app.post("/v1/sdk/passkey/auth/options", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/auth/options`, "POST", { userId: req.uid, rpId: rpFromOrigin(req) })));
+app.post("/v1/sdk/passkey/auth/complete", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/auth/complete`, "POST", { userId: req.uid, challengeId: req.body.challengeId, assertion: req.body.assertion, rpId: rpFromOrigin(req), origin: originOf(req) })));
+app.get("/v1/sdk/passkey/status", auth, async (req, res) => res.json({ hasPasskey: await hasPasskey(req.uid) }));
+
+app.listen(PORT, () => console.log(`Continuum gateway on :${PORT} (tenants=${Object.keys(tenants.tenants).length})`));

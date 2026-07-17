@@ -1,0 +1,9 @@
+{
+  "name": "continuum-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Continuum API gateway — single-entry facade over the CA and passkey microservices.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "express": "^4.18.2" }
+}
