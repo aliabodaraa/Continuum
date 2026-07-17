@@ -1,0 +1,48 @@
+# Production model-api image: fully self-contained. Unlike Dockerfile.model
+# (dev), this bakes the source, the base models, and the mouse negative dataset
+# INTO the image, so it needs no bind mounts and runs identically on any host.
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    MODEL_HOST=0.0.0.0 \
+    MODEL_PORT=5000 \
+    MODEL_DEBUG=0 \
+    MODEL_PATH=/app/artifacts/ws50-gru/final_model
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Dependencies first (cached layer) — same stack as dev.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install --upgrade pip \
+    && python -m pip install --default-timeout=300 --retries=20 \
+      "numpy<2" \
+      pandas==2.2.2 \
+      h5py==3.11.0 \
+      scikit-learn==1.5.0 \
+      flask==3.0.3 \
+      python-dotenv \
+      matplotlib \
+    && python -m pip install --default-timeout=300 --retries=20 tensorflow-cpu==2.15.0
+
+# Application code (all scripts the API + per-user training path use). Build
+# context is the continuum root; keep the services/model-api/ prefix so the dev
+# (bind-mounted) and prod (baked) runtime layouts match.
+COPY services/model-api/ ./services/model-api/
+
+# Base models (keystroke + mouse) — .dockerignore keeps artifacts/users out, so
+# only the shared base artifacts are baked. If the mouse base isn't built yet,
+# it's simply absent and enrollment falls back to from-scratch (handled in code).
+COPY artifacts/ ./artifacts/
+
+# Mouse enrollment's negative pool (SapiMouse). Keystroke negatives come from
+# the DB, so only this one dataset is needed at runtime.
+COPY data/mouse_only/Mouse_WS50.h5 ./data/mouse_only/Mouse_WS50.h5
+
+EXPOSE 5000
+
+CMD ["python", "services/model-api/api.py"]

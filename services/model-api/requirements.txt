@@ -1,0 +1,10 @@
+# Training stack: use Python 3.10 or 3.11. Python 3.13 is not supported
+# by this TensorFlow/h5py setup on Windows.
+numpy<2
+pandas==2.2.2
+h5py==3.11.0
+scikit-learn==1.5.0
+tensorflow-cpu==2.15.0
+flask==3.0.3
+python-dotenv
+matplotlib
