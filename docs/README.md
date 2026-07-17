@@ -207,6 +207,65 @@ Troubleshooting
 - Delete `continuum/server/db/continuum.db` and restart to recreate schema
 - Ensure proper SQLite permissions
 
+Session Lock & Step-Up Enforcement
+
+A passkey step-up challenge (triggered by suspicious keystroke or mouse behavior)
+must not be escapable by simply reloading or navigating away — otherwise an
+impostor mid-challenge could just refresh the page and keep going.
+
+- **apps/demo**: its own `passkeySetupGate` middleware (`apps/demo/app.js`) checks
+  `continuousAuthLocked` on every request. Reloading (or navigating to) any page
+  other than `/dashboard.html` while locked now destroys the session and redirects
+  to `/login.html`, instead of the previous behavior of just bouncing to the
+  dashboard. Dashboard keeps its own in-place recovery UI (a banner + "Verify with
+  Passkey" button).
+- **Any other app** (e.g. `apps/acme`, or a real customer integration via SDK +
+  middleware only) has no server-side gate of its own — the SDK's in-memory lock
+  resets on every page load, so nothing previously caught this case. Fixed with a
+  **shared, persisted lock in ca-service** (`services/ca-service/lib/lock.js`,
+  `session_locks` table), which is the single source of truth regardless of which
+  app or which modality (keystroke/mouse) triggered the challenge:
+  - ca-service sets it directly when keystroke's own check/submit decides a
+    challenge is required; the gateway and apps/demo set it explicitly for mouse,
+    since that modality's consecutive-strike debounce lives in each caller, not in
+    ca-service.
+  - Cleared on a verified passkey step-up, in both the gateway
+    (`/v1/sdk/passkey/auth/complete`) and apps/demo (`webauthn.js`).
+  - Endpoints: `POST /v1/lock/set`, `POST /v1/lock/clear`,
+    `GET /v1/lock/status/:userId` (ca-service, internal); `GET /v1/sdk/lock/status`
+    (gateway, auth-gated, the one any consumer's SDK instance actually calls).
+  - `sdk/guard.js`'s gateway-mode bootstrap (`gatewayFlow()`) checks this on every
+    page load and logs out immediately if locked, before onboarding or monitoring
+    starts.
+- **Framework-agnostic by construction**: the SDK talks to the gateway over
+  HTTP/JSON, and the gateway is the only thing that talks to ca-service/passkey-
+  service — none of this depends on the consumer's backend language. The one
+  requirement on any integrating app is a real login/logout endpoint (or pointing
+  `data-logout-url` / `data-login-url` at one) — Continuum has no session of its
+  own to destroy in gateway mode, only the host app's.
+- **One logout path, everywhere**: cancelling the mandatory step-up modal's `×`,
+  a mandatory onboarding wizard step's `×`, and this reload/lock check all call
+  the exact same `doLogout()` in `guard.js` (POST `cfg.logoutUrl`, then redirect
+  to `cfg.loginUrl` regardless of the response) — there is one implementation,
+  not three that happen to agree.
+
+Mouse Enrollment: Server-Side Click Enforcement
+
+The mouse feature vector includes `is_click`, so enrollment needs real clicks, not
+just movement, or the model never learns click dynamics. The onboarding wizard and
+"add more sessions" popup already gated their submit button on ≥10 real clicks, but
+`ca-service`'s `/v1/mouse/enroll` never verified this itself — a request that
+bypassed the popup (e.g. calling the endpoint directly) could train on
+movement-only windows. `services/ca-service/lib/mouse.js` now reconstructs the
+real click count from the overlapping enrollment windows (they overlap by stride,
+so naively summing `is_click` across all of them would overcount) and rejects
+enrollment below the threshold with a 422, regardless of the caller.
+
+The enrollment/reinforcement popup itself (`sdk/guard.js`) was also reworked: a
+larger pad (150px → 260px) and a single click target that jumps to a new random
+position after each hit, instead of counting any click anywhere in the box —
+forcing genuinely separate, deliberate clicks.
+
 References
 
 - Lu, X., Zhang, S., Hui, P., & Liò, P. (2020). _Continuous authentication by free-text keystroke based on CNN and RNN_. Computers & Security, 96, 101861.
