@@ -28,6 +28,12 @@ if [ -z "$TAG" ] || [ "$TAG" = "latest" ]; then
 fi
 
 export REGISTRY TAG
+# The compose files REQUIRE these at parse time. They are runtime env (the
+# operator injects real values via .env) and are NOT baked into the images, so
+# throwaway placeholders are fine for building/pushing.
+export CA_SIGNING_SECRET="${CA_SIGNING_SECRET:-build-time-placeholder}"
+export SESSION_SECRET="${SESSION_SECRET:-build-time-placeholder}"
+
 echo ">> Publishing Continuum images to ${REGISTRY} at tag ${TAG}"
 
 # 1) The product bundle: model-api, ca-service, passkey-service, gateway.
