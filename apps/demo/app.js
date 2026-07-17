@@ -100,8 +100,15 @@ async function passkeySetupGate(req, res, next) {
       });
     }
 
+    // Reloading (or navigating to) any other page while a step-up challenge is
+    // pending must not silently resume the session with no popup — the
+    // in-memory client-side lock (guard.js `locked`, lab.html `passkeyRequired`)
+    // resets on every page load, so only the server can enforce this. Log out
+    // rather than bounce to the dashboard, so a dismissed challenge can't be
+    // waited out by reloading. Dashboard keeps its own in-place resolve UI
+    // (banner + "Verify with Passkey" button) and is exempted above.
     if (req.path.endsWith(".html") && req.path !== "/dashboard.html") {
-      return res.redirect("/dashboard.html");
+      return req.session.destroy(() => res.redirect("/login.html"));
     }
 
     return next();

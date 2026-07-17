@@ -124,7 +124,7 @@
       ".tgl{cursor:pointer;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#cbd5e1;border-radius:7px;padding:3px 8px;font:700 10px system-ui}.tgl.on{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.5);color:#86efac}" +
       ".tgl.add{color:#7dd3fc;border-color:rgba(125,211,252,.35)}.tgl.add:hover{background:rgba(125,211,252,.12)}" +
       ".ov{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,.65);backdrop-filter:blur(4px)}" +
-      ".card{position:relative;background:#fff;border-radius:16px;padding:26px 30px;max-width:440px;width:92%;font-family:system-ui;box-shadow:0 24px 60px rgba(0,0,0,.4)}" +
+      ".card{position:relative;background:#fff;border-radius:16px;padding:26px 30px;max-width:480px;width:92%;font-family:system-ui;box-shadow:0 24px 60px rgba(0,0,0,.4)}" +
       ".wizx{position:absolute;top:10px;right:12px;width:28px;height:28px;border:0;background:transparent;color:#94a3b8;font:400 22px/1 system-ui;cursor:pointer;border-radius:7px}.wizx:hover{background:#f1f5f9;color:#0f172a}" +
       ".wizload{position:absolute;inset:0;border-radius:16px;background:rgba(255,255,255,.82);display:none;align-items:center;justify-content:center;gap:10px;font-weight:800;color:#4f46e5;z-index:2}.wizload.on{display:flex}" +
       ".wizspin{width:20px;height:20px;border:3px solid #c7d2fe;border-top-color:#4f46e5;border-radius:50%;animation:cspin .7s linear infinite}@keyframes cspin{to{transform:rotate(360deg)}}" +
@@ -136,7 +136,8 @@
       ".e{display:none;color:#dc2626;font-size:12px;margin-top:10px}" +
       ".passage{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;font-size:13px;color:#334155;line-height:1.6;margin-bottom:10px;user-select:none}" +
       ".ta{width:100%;min-height:96px;border:1px solid #cbd5e1;border-radius:10px;padding:11px;font:inherit;resize:none}" +
-      ".pad{height:150px;border:2px dashed #c7d2fe;border-radius:12px;background:#eef2ff;display:flex;align-items:center;justify-content:center;color:#6366f1;font-weight:700;margin-bottom:12px;text-align:center}" +
+      ".pad{position:relative;overflow:hidden;height:260px;border:2px dashed #c7d2fe;border-radius:12px;background:#eef2ff;display:flex;align-items:center;justify-content:center;color:#6366f1;font-weight:700;margin-bottom:12px;text-align:center}" +
+      ".pt{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#4f46e5;box-shadow:0 0 0 6px rgba(79,70,229,.18);cursor:pointer;animation:cptpulse 1s ease-in-out infinite}@keyframes cptpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}" +
       ".bar{height:8px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin:10px 0}.bar>i{display:block;height:100%;background:#4f46e5;width:0}" +
       ".steps{display:flex;gap:6px;margin-bottom:14px}.steps .s{flex:1;height:5px;border-radius:999px;background:#e2e8f0}.steps .s.on{background:#4f46e5}.steps .s.done{background:#22c55e}" +
       // Floating "adaptive learning" prompt — positioned above the active text field.
@@ -342,6 +343,29 @@
   }
   function closeWiz() { wizEl.style.display = "none"; wizEl.innerHTML = ""; }
 
+  // Places a single clickable target at a random spot inside `pad`, moving it to a
+  // new random spot on each hit (instead of counting a click anywhere in the box) —
+  // forces genuinely separate, deliberate clicks across the area. `onHit(n)` fires
+  // with the running total; the target is removed once `total` hits are reached.
+  // Doesn't stop propagation, so the mouse tracker's own listener on `pad` still
+  // captures the click as real feature data.
+  function spawnClickTarget(pad, total, onHit) {
+    var hits = 0, ptEl = el("div", "pt");
+    function place() {
+      var size = 26, w = pad.clientWidth, h = pad.clientHeight;
+      var x = size / 2 + Math.random() * Math.max(1, w - size);
+      var y = size / 2 + Math.random() * Math.max(1, h - size);
+      ptEl.style.left = x + "px"; ptEl.style.top = y + "px";
+    }
+    ptEl.addEventListener("mousedown", function () {
+      hits += 1; onHit(hits);
+      if (hits >= total) { ptEl.remove(); return; }
+      place();
+    });
+    pad.appendChild(ptEl);
+    place();
+  }
+
   // Step 1 — passkey registration
   function wizPasskey() {
     return new Promise(function (resolve) {
@@ -404,17 +428,17 @@
   // `optional`: lazy-mode standalone use — dismissable × (no logout), no step bar.
   function wizMouse(optional) {
     return new Promise(function (resolve) {
-      openWiz((optional ? "" : wizStepBar(2, 3, 2)) + '<div class="t">Teach your mouse motion</div><div class="d">Move naturally AND click the box several times — clicks are part of your mouse signature.</div><div class="pad" id="cpad">move & click here</div><div class="bar"><i id="mbar"></i></div><div id="mdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">movement 0% · clicks 0/' + MOUSE_ENROLL_CLICKS + '</div><button class="b" id="ms" disabled>Finish enrollment</button><div class="e"></div>', optional ? function () { closeWiz(); resolve(false); } : null);
-      var pad = wizEl.querySelector("#cpad"), bar = wizEl.querySelector("#mbar"), btn = wizEl.querySelector("#ms"), e = wizEl.querySelector(".e"), diag = wizEl.querySelector("#mdiag");
+      openWiz((optional ? "" : wizStepBar(2, 3, 2)) + '<div class="t">Teach your mouse motion</div><div class="d">Move naturally AND click the target as it appears — clicks are part of your mouse signature.</div><div class="pad" id="cpad"><span class="padlabel">move & click the dot</span></div><div class="bar"><i id="mbar"></i></div><div id="mdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">movement 0% · clicks 0/' + MOUSE_ENROLL_CLICKS + '</div><button class="b" id="ms" disabled>Finish enrollment</button><div class="e"></div>', optional ? function () { closeWiz(); resolve(false); } : null);
+      var pad = wizEl.querySelector("#cpad"), label = pad.querySelector(".padlabel"), bar = wizEl.querySelector("#mbar"), btn = wizEl.querySelector("#ms"), e = wizEl.querySelector(".e"), diag = wizEl.querySelector("#mdiag");
       var tracker = window.mouseFeatures.createMouseTracker(pad);
-      var clicks = 0; pad.addEventListener("mousedown", function () { clicks += 1; });
+      var clicks = 0; spawnClickTarget(pad, MOUSE_ENROLL_CLICKS, function (n) { clicks = n; });
       var iv = null;
       function tick() {
         var w = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(tracker.getEvents()));
         var n = w ? w.length : 0, pct = Math.min(100, Math.round((n / MOUSE_ENROLL_TARGET) * 100));
         var enoughMove = n >= MOUSE_ENROLL_TARGET, enoughClicks = clicks >= MOUSE_ENROLL_CLICKS;
         bar.style.width = pct + "%";
-        pad.textContent = !enoughMove ? "keep moving…" : !enoughClicks ? "now click a few more times" : "ready ✓";
+        label.textContent = !enoughMove ? "keep moving…" : !enoughClicks ? "now hit the dot a few more times" : "ready ✓";
         diag.textContent = "movement " + pct + "% · clicks " + Math.min(clicks, MOUSE_ENROLL_CLICKS) + "/" + MOUSE_ENROLL_CLICKS;
         btn.disabled = !(enoughMove && enoughClicks);
       }
@@ -485,15 +509,15 @@
     if (!window.mouseFeatures) return;
     var added = 0, total = null;
     function render() {
-      openWiz('<div class="wizload" id="mwl"><span class="wizspin"></span>Saving session…</div><div class="t">Strengthen your mouse motion</div><div class="d">Move naturally AND click the box several times — clicks are part of your signature.</div><div class="samplecount">Sessions on file: <b>' + (total == null ? "…" : total) + '</b> · added now: <b>' + added + '</b></div><div class="pad" id="cpad">move & click here</div><div class="bar"><i id="mbar"></i></div><div id="mdiag2" style="font-size:11px;color:#64748b;margin:6px 0 8px">movement 0% · clicks 0/' + MOUSE_ENROLL_CLICKS + '</div><div style="display:flex;gap:8px"><button class="b" id="ms" disabled style="flex:1">Save session</button><button class="b" id="mdone" style="flex:0 0 96px;background:#475569">Done</button></div><div class="e"></div>', closeWiz);
-      var pad = wizEl.querySelector("#cpad"), bar = wizEl.querySelector("#mbar"), btn = wizEl.querySelector("#ms"), done = wizEl.querySelector("#mdone"), e = wizEl.querySelector(".e"), load = wizEl.querySelector("#mwl"), diag = wizEl.querySelector("#mdiag2");
+      openWiz('<div class="wizload" id="mwl"><span class="wizspin"></span>Saving session…</div><div class="t">Strengthen your mouse motion</div><div class="d">Move naturally AND click the target as it appears — clicks are part of your signature.</div><div class="samplecount">Sessions on file: <b>' + (total == null ? "…" : total) + '</b> · added now: <b>' + added + '</b></div><div class="pad" id="cpad"><span class="padlabel">move & click the dot</span></div><div class="bar"><i id="mbar"></i></div><div id="mdiag2" style="font-size:11px;color:#64748b;margin:6px 0 8px">movement 0% · clicks 0/' + MOUSE_ENROLL_CLICKS + '</div><div style="display:flex;gap:8px"><button class="b" id="ms" disabled style="flex:1">Save session</button><button class="b" id="mdone" style="flex:0 0 96px;background:#475569">Done</button></div><div class="e"></div>', closeWiz);
+      var pad = wizEl.querySelector("#cpad"), label = pad.querySelector(".padlabel"), bar = wizEl.querySelector("#mbar"), btn = wizEl.querySelector("#ms"), done = wizEl.querySelector("#mdone"), e = wizEl.querySelector(".e"), load = wizEl.querySelector("#mwl"), diag = wizEl.querySelector("#mdiag2");
       var tracker = window.mouseFeatures.createMouseTracker(pad), iv = null;
-      var clicks = 0; pad.addEventListener("mousedown", function () { clicks += 1; });
+      var clicks = 0; spawnClickTarget(pad, MOUSE_ENROLL_CLICKS, function (n) { clicks = n; });
       function tick() {
         var w = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(tracker.getEvents())); var n = w ? w.length : 0;
         var pct = Math.min(100, Math.round((n / MOUSE_ENROLL_TARGET) * 100)), enoughMove = n >= MOUSE_ENROLL_TARGET, enoughClicks = clicks >= MOUSE_ENROLL_CLICKS;
         bar.style.width = pct + "%";
-        pad.textContent = !enoughMove ? "keep moving…" : !enoughClicks ? "now click a few more times" : "ready ✓";
+        label.textContent = !enoughMove ? "keep moving…" : !enoughClicks ? "now hit the dot a few more times" : "ready ✓";
         diag.textContent = "movement " + pct + "% · clicks " + Math.min(clicks, MOUSE_ENROLL_CLICKS) + "/" + MOUSE_ENROLL_CLICKS;
         btn.disabled = !(enoughMove && enoughClicks);
       }

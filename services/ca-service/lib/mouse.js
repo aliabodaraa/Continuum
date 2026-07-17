@@ -14,6 +14,14 @@ const WINDOW_DECISION_THRESHOLD = 0.5;
 const PACKET_VOTE_FRACTION = 0.5;
 const MIN_ENROLL_WINDOWS = 150;
 const MAX_TRAIN_WINDOWS = 1200;
+// Must match sdk/js/mouse-features.js WINDOW_STRIDE — windows overlap by
+// (WINDOW_SIZE - WINDOW_STRIDE) steps, so clicks are reconstructed from the
+// non-overlapping slice of each window rather than summed across all of them.
+const WINDOW_STRIDE = 10;
+// is_click (feature index 6) is a trained model feature, not just movement —
+// mirrors MOUSE_ENROLL_CLICKS in sdk/guard.js. Enforced here because the client
+// gate is UI-only and can be bypassed by calling the endpoint directly.
+const MOUSE_ENROLL_CLICKS = 10;
 
 async function postModelApi(path, body) {
   const r = await fetch(`${MODEL_API_URL}${path}`, {
@@ -37,6 +45,18 @@ function validWindows(windows) {
   );
 }
 
+// Reconstruct the underlying step sequence's click count from overlapping
+// windows: the first window in full, then only the new (non-overlapping)
+// tail of each subsequent one.
+function countClicks(windows) {
+  if (!windows.length) return 0;
+  let clicks = windows[0].filter((step) => step[6]).length;
+  for (let i = 1; i < windows.length; i++) {
+    clicks += windows[i].slice(-WINDOW_STRIDE).filter((step) => step[6]).length;
+  }
+  return clicks;
+}
+
 // Enroll: store this session's windows, then (re)train on ALL accumulated
 // sessions so enrollment builds up over visits — the mouse analogue of the
 // keystroke multi-sample profile. Transfer-learns from the SapiMouse base.
@@ -52,6 +72,18 @@ async function enrollMouse(userId, windows) {
         error: `Keep moving the mouse — need ${MIN_ENROLL_WINDOWS} windows, have ${windows.length}.`,
         have: windows.length,
         need: MIN_ENROLL_WINDOWS,
+      },
+    };
+  }
+  const clickCount = countClicks(windows);
+  if (clickCount < MOUSE_ENROLL_CLICKS) {
+    return {
+      status: 422,
+      body: {
+        ok: false,
+        error: `Click a few times while moving — need ${MOUSE_ENROLL_CLICKS} clicks, have ${clickCount}.`,
+        haveClicks: clickCount,
+        needClicks: MOUSE_ENROLL_CLICKS,
       },
     };
   }
