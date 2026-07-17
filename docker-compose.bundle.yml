@@ -1,0 +1,91 @@
+# Continuum — the PRODUCT bundle. One command stands up the whole security layer
+# (behavioral CA + FIDO2 passkey) behind a single API gateway. This is what a
+# customer runs; they then include guard.js (client) + @continuum/node (server
+# middleware) in their own app, pointed at the gateway.
+#
+# On the maintainer machine (has the source): build + push tagged images
+#   REGISTRY=<dockerhub-user> TAG=0.1.0 docker compose -f docker-compose.bundle.yml build
+#   REGISTRY=<dockerhub-user> TAG=0.1.0 docker compose -f docker-compose.bundle.yml push
+# On any customer machine (needs only this file + .env): pull + run, no build
+#   REGISTRY=<dockerhub-user> TAG=0.1.0 docker compose -f docker-compose.bundle.yml pull
+#   docker compose -f docker-compose.bundle.yml up -d
+#
+# Only the gateway is exposed. Set secrets in .env (see .env.example). The host
+# app's CONTINUUM_SECRET must equal CA_SIGNING_SECRET here. Image coordinates are
+# ${REGISTRY}/<svc>:${TAG} — REGISTRY defaults to a local-only name so an
+# unconfigured `build` still works for trying it out.
+services:
+  model-api:
+    build:
+      context: .
+      dockerfile: services/model-api/Dockerfile.model.prod
+    image: ${REGISTRY:-continuum}/model-api:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      MODEL_HOST: 0.0.0.0
+      MODEL_PORT: 5000
+      MODEL_DEBUG: "0"
+      MODEL_UNITS: ${MODEL_UNITS:-32}
+    expose: ["5000"]
+    volumes:
+      - continuum_user_models:/app/artifacts/users
+
+  ca-service:
+    build:
+      context: ./services/ca-service
+      dockerfile: Dockerfile
+    image: ${REGISTRY:-continuum}/ca-service:${TAG:-latest}
+    restart: unless-stopped
+    depends_on: [model-api]
+    environment:
+      PORT: 4100
+      MODEL_API_URL: http://model-api:5000
+      DB_PATH: /app/data/ca.db
+      CA_API_KEY: ${CA_API_KEY:-}
+      # Signs the risk verdicts; the host's @continuum/node uses the SAME value.
+      # REQUIRED — no shared fallback, or every deployment would sign with the
+      # same key (verdicts forgeable across tenants). Generate: openssl rand -hex 32
+      CA_SIGNING_SECRET: ${CA_SIGNING_SECRET:?Set CA_SIGNING_SECRET in .env (openssl rand -hex 32)}
+    expose: ["4100"]
+    volumes:
+      - continuum_ca_db:/app/data
+
+  passkey-service:
+    build:
+      context: ./services/passkey-service
+      dockerfile: Dockerfile
+    image: ${REGISTRY:-continuum}/passkey-service:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      RP_ID: ${RP_ID:-localhost}
+      ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
+      DB_PATH: /app/data/passkey.db
+      PASSKEY_API_KEY: ${PASSKEY_API_KEY:-}
+    expose: ["4000"]
+    volumes:
+      - continuum_passkey_db:/app/data
+
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+      # Inject the top-level SDK so the image can serve guard.js without a mount.
+      additional_contexts:
+        sdk: ./sdk
+    image: ${REGISTRY:-continuum}/gateway:${TAG:-latest}
+    restart: unless-stopped
+    depends_on: [ca-service, passkey-service]
+    environment:
+      PORT: 8080
+      CA_API_URL: http://ca-service:4100
+      PASSKEY_API_URL: http://passkey-service:4000
+      # Comma-separated tenant API keys (blank = open, for local dev only).
+      GATEWAY_API_KEYS: ${GATEWAY_API_KEYS:-}
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+
+volumes:
+  continuum_user_models:
+  continuum_ca_db:
+  continuum_passkey_db:

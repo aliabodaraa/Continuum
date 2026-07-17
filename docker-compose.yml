@@ -1,0 +1,165 @@
+# Continuum — development stack (bind mounts + hot reload).
+services:
+  model-api:
+    profiles:
+      - model
+    build:
+      context: .
+      dockerfile: services/model-api/Dockerfile.model
+    environment:
+      MODEL_HOST: 0.0.0.0
+      MODEL_PORT: 5000
+      MODEL_PATH: ${MODEL_PATH:-/app/artifacts/ws50-gru/final_model}
+      MODEL_UNITS: ${MODEL_UNITS:-32}
+      # Storage roots OWNED by model-api — callers reference models by
+      # (userId, modality); this service derives + confines every path.
+      ARTIFACTS_DIR: /app/artifacts
+      DATA_DIR: /app/data
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+    command: python services/model-api/api.py
+
+  passkey-service:
+    build:
+      context: ./services/passkey-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 4000
+      RP_ID: localhost
+      ORIGIN: http://localhost:3000
+    volumes:
+      - ./services/passkey-service:/app
+      - passkey_node_modules:/app/node_modules
+    command: npm start
+
+  ca-service:
+    build:
+      context: ./services/ca-service
+      dockerfile: Dockerfile
+    depends_on:
+      model-api:
+        condition: service_started
+        required: false
+    environment:
+      PORT: 4100
+      MODEL_API_URL: http://model-api:5000
+      # Field types the SDK must NOT monitor (comma-sep). Password is monitored
+      # by default (value masked); add it here to exclude. Hidden is always sensible.
+      MONITOR_EXCLUDE_TYPES: ${MONITOR_EXCLUDE_TYPES:-hidden}
+      # Onboarding strategy served to SDKs via /v1/keystroke/config:
+      #   eager (default) — popup enrolls everything missing at load
+      #   lazy            — passkey only; each modality enrolls when its toggle is enabled
+      ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
+    volumes:
+      - ./services/ca-service:/app
+      - ca_node_modules:/app/node_modules
+    command: npm start
+
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+      # Same Dockerfile as prod bakes the SDK from this named context; the volume
+      # mount below overlays it with the live ./sdk for hot reload.
+      additional_contexts:
+        sdk: ./sdk
+    depends_on:
+      ca-service:
+        condition: service_started
+      passkey-service:
+        condition: service_started
+    environment:
+      PORT: 8080
+      CA_API_URL: http://ca-service:4100
+      PASSKEY_API_URL: http://passkey-service:4000
+      # Onboarding strategy handed to gateway-mode SDKs at session bootstrap.
+      ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
+      # CAEP: push signed risk-change events to the demo tenant's receiver.
+      DEMO_WEBHOOK_URL: http://web:3000/continuum/events
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./services/gateway:/app
+      - gateway_node_modules:/app/node_modules
+      # The customer-facing SDK lives in its own top-level sdk/ (not the demo).
+      - ./sdk:/app/sdk-public:ro
+    command: npm start
+
+  web:
+    build:
+      context: ./apps/demo
+      dockerfile: Dockerfile
+      # Same Dockerfile as prod bakes the SDK from this named context; the volume
+      # mount below overlays it with the live ./sdk for hot reload.
+      additional_contexts:
+        sdk: ./sdk
+    depends_on:
+      passkey-service:
+        condition: service_started
+      ca-service:
+        condition: service_started
+    environment:
+      PORT: 3000
+      ORIGIN: http://localhost:3000
+      RP_ID: localhost
+      # The demo NEVER talks to the model-api directly — behavioral calls go
+      # through the CA service (proper layering).
+      PASSKEY_API_URL: http://passkey-service:4000
+      CA_API_URL: http://ca-service:4100
+      # Must match ca-service ONBOARDING_MODE: in lazy mode the gate stops
+      # blocking unenrolled users (enrollment is per-toggle in the SDK).
+      ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
+      # Verify verdicts via the gateway's public keys (RS256/JWKS) — no shared secret.
+      CONTINUUM_JWKS_URI: http://gateway:8080/.well-known/jwks.json
+      # Resolve the unified Continuum id for the app's own CA calls (identity unification).
+      GATEWAY_URL: http://gateway:8080
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/demo:/app
+      - web_node_modules:/app/node_modules
+      # The demo pages also use the shared SDK libs (served from the same sdk/).
+      - ./sdk:/app/sdk-assets:ro
+    command: npm start
+
+  # A genuinely SEPARATE host app (its own origin :4200). It adopts Continuum
+  # through nothing but the SDK (loaded from the gateway) + the @continuum/node
+  # middleware. No shared session, DB, or enrollment pages.
+  acme:
+    build:
+      context: ./apps/acme
+      dockerfile: Dockerfile
+    depends_on:
+      gateway:
+        condition: service_started
+    environment:
+      PORT: 4200
+      # Identity minting still uses the tenant secret (HMAC, client_secret_jwt).
+      CONTINUUM_SECRET: ${CA_SIGNING_SECRET:-dev-continuum-risk-secret}
+      # Verdicts are verified via the gateway's PUBLIC keys (RS256/JWKS) — no secret.
+      CONTINUUM_JWKS_URI: http://gateway:8080/.well-known/jwks.json
+    ports:
+      - "4200:4200"
+    volumes:
+      - ./apps/acme:/app
+      - acme_node_modules:/app/node_modules
+    command: npm start
+
+  trainer:
+    build:
+      context: .
+      dockerfile: services/model-api/Dockerfile.model
+    profiles:
+      - training
+    volumes:
+      - .:/app
+    command: python services/model-api/train.py --data-dir data --window-size 50 --epochs 150 --batch-size 64 --output-dir artifacts/ws50-gru --rnn-type gru --units 32
+
+volumes:
+  web_node_modules:
+  passkey_node_modules:
+  ca_node_modules:
+  gateway_node_modules:
+  acme_node_modules:

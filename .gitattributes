@@ -1,0 +1,15 @@
+# Never text-normalize model/data binaries — CRLF conversion corrupts them.
+*.pb        binary
+*.h5        binary
+*.hdf5      binary
+*.index     binary
+*.tflite    binary
+*.zip       binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+variables.data-* binary
+*.data-00000-of-00001 binary
+
+# Shell scripts must stay LF even on Windows checkouts.
+*.sh text eol=lf

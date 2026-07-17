@@ -1,0 +1,110 @@
+# Continuum — production / portable deployment. Everything is baked into the
+# images (no bind mounts), so this runs identically on any machine with Docker —
+# `docker compose -f docker-compose.prod.yml up -d` and nothing else. Only
+# runtime STATE lives on named volumes so it survives restarts and image rebuilds.
+#
+# Config is env-driven (see .env.example). To serve on a real domain, set
+# PUBLIC_ORIGIN + RP_ID to that domain (WebAuthn passkeys are bound to it).
+services:
+  model-api:
+    build:
+      context: .
+      dockerfile: services/model-api/Dockerfile.model.prod
+    image: ${REGISTRY:-continuum}/model-api:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      MODEL_HOST: 0.0.0.0
+      MODEL_PORT: 5000
+      MODEL_DEBUG: "0"
+      MODEL_UNITS: ${MODEL_UNITS:-32}
+      MODEL_PATH: ${MODEL_PATH:-/app/artifacts/ws50-gru/final_model}
+    expose:
+      - "5000"
+    volumes:
+      # Per-user models (keystroke + mouse) are generated at enrollment time and
+      # must persist across restarts/rebuilds. Base models stay baked in the image.
+      - continuum_user_models:/app/artifacts/users
+
+  passkey-service:
+    build:
+      context: ./services/passkey-service
+      dockerfile: Dockerfile
+    image: ${REGISTRY:-continuum}/passkey-service:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      # WebAuthn identity — must match the web app's public origin/domain.
+      RP_ID: ${RP_ID:-localhost}
+      ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
+      DB_PATH: /app/data/passkey.db
+      # Shared secret between web and passkey service (set in .env for prod).
+      PASSKEY_API_KEY: ${PASSKEY_API_KEY:-}
+    expose:
+      - "4000"
+    volumes:
+      - continuum_passkey_db:/app/data   # credentials + challenges (persistent)
+
+  ca-service:
+    build:
+      context: ./services/ca-service
+      dockerfile: Dockerfile
+    image: ${REGISTRY:-continuum}/ca-service:${TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      - model-api
+    environment:
+      PORT: 4100
+      MODEL_API_URL: http://model-api:5000
+      DB_PATH: /app/data/ca.db
+      CA_API_KEY: ${CA_API_KEY:-}
+      # Signs behavioral risk verdicts; the app's CONTINUUM_SECRET must match.
+      # REQUIRED — no shared fallback. Generate: openssl rand -hex 32
+      CA_SIGNING_SECRET: ${CA_SIGNING_SECRET:?Set CA_SIGNING_SECRET in .env (openssl rand -hex 32)}
+    expose:
+      - "4100"
+    volumes:
+      - continuum_ca_db:/app/data   # behavioral data (persistent)
+
+  web:
+    build:
+      context: ./apps/demo
+      dockerfile: Dockerfile
+      # Inject the top-level SDK so the image serves /guard.js without a mount.
+      additional_contexts:
+        sdk: ./sdk
+    image: ${REGISTRY:-continuum}/web-demo:${TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      - model-api
+      - passkey-service
+      - ca-service
+    environment:
+      PORT: 3000
+      # Public-facing identity. Override for a real domain (must match the URL
+      # the browser uses, or passkeys will be rejected).
+      ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
+      RP_ID: ${RP_ID:-localhost}
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}
+      # REQUIRED — signs session cookies. Generate: openssl rand -hex 32
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env (openssl rand -hex 32)}
+      MODEL_API_URL: http://model-api:5000
+      PASSKEY_API_URL: http://passkey-service:4000
+      PASSKEY_API_KEY: ${PASSKEY_API_KEY:-}
+      CA_API_URL: http://ca-service:4100
+      CA_API_KEY: ${CA_API_KEY:-}
+      # Verifies signed risk tokens (@continuum/node middleware) — must equal CA_SIGNING_SECRET.
+      CONTINUUM_SECRET: ${CA_SIGNING_SECRET:-dev-continuum-risk-secret}
+      # SQLite lives on a volume (NOT in /app/db, which holds source).
+      DB_PATH: /app/data/continuum.db
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      - continuum_db:/app/data                 # SQLite: users, mouse_samples…
+      - continuum_uploads:/app/public/uploads  # profile photos
+
+volumes:
+  continuum_user_models:
+  continuum_db:
+  continuum_passkey_db:
+  continuum_ca_db:
+  continuum_uploads:

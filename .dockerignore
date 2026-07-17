@@ -1,0 +1,33 @@
+__pycache__/
+**/__pycache__/
+*.pyc
+.venv/
+tools/
+docs/
+apps/demo/node_modules/
+apps/demo/db/*.db
+apps/demo/public/uploads/
+services/passkey-service/node_modules/
+services/passkey-service/*.db
+
+# Runtime-generated per-user models must NOT be baked into the image — they
+# belong on a persistent volume. Base models (artifacts/ws50-gru,
+# artifacts/mouse-ws50-base) ARE baked so the service works out of the box.
+artifacts/users/
+
+# Dead / experimental model variants the running service never loads — excluded
+# to keep the image lean. Only ws50-gru (keystroke base) and mouse-ws50-base
+# (mouse base) are needed at runtime.
+artifacts/*.BROKEN*
+artifacts/*-v2
+artifacts/*.log
+artifacts/smoke-*
+artifacts/ws20-gru/
+artifacts/ws50/
+
+# Large training-only datasets the running service never needs. Mouse
+# enrollment needs data/mouse_only/Mouse_WS50.h5 (kept); the keystroke base was
+# trained offline from the Rand_WS*.h5 files, so they're excluded from images.
+# (Dev bind-mounts the whole tree, so training still sees them locally.)
+data/Rand_WS*.h5
+data/Mouse_WS50.h5
