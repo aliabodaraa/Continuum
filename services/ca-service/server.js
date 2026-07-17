@@ -7,6 +7,7 @@ const crypto = require("crypto");
 const db = require("./db");
 const ks = require("./lib/keystrokeSecurity");
 const mouse = require("./lib/mouse");
+const lock = require("./lib/lock");
 
 const PORT = Number(process.env.PORT || 4100);
 const API_KEY = process.env.CA_API_KEY || "";
@@ -239,6 +240,7 @@ app.post("/v1/keystroke/check", async (req, res) => {
     const isWarmup = Number(evaluation.windowCount || 0) <= ks.RECENT_WINDOW_COUNT &&
       !overwhelmingImpostor && !unverifiable && !isPastePolicy;
     const passkeyTriggered = !isWarmup && evaluation.isSuspicious && !!hasPasskey;
+    if (passkeyTriggered) lock.setLocked(userId);
 
     ks.logAuthDecision(userId, db, { source: "check", evaluation, passkeyTriggered });
 
@@ -286,6 +288,8 @@ app.post("/v1/keystroke/submit", async (req, res) => {
     if (adaptiveTrainingSample) maybeRetrainAdaptively(userId);
 
     const passkeyTriggered = !passkeyVerified && evaluation.isSuspicious && !!hasPasskey;
+    if (passkeyVerified) lock.clearLocked(userId);
+    else if (passkeyTriggered) lock.setLocked(userId);
     ks.logAuthDecision(userId, db, {
       source: "submit", evaluation, passkeyTriggered, passkeyOutcome: passkeyVerified ? "success" : null,
     });
@@ -443,5 +447,13 @@ app.post("/v1/mouse/check", async (req, res) => {
   } catch (err) { console.error("mouse check:", err); res.status(500).json({ ok: false, error: err.message }); }
 });
 app.get("/v1/mouse/status/:userId", (req, res) => res.json(mouse.mouseStatus(uid(req))));
+
+// Shared step-up lock (see lib/lock.js). Mouse callers (apps/demo, the
+// gateway) each run their own consecutive-strike debounce, so they set/clear
+// this explicitly; keystroke sets it directly above since ca-service already
+// decides passkeyTriggered for it.
+app.post("/v1/lock/set", (req, res) => { lock.setLocked(uid(req)); res.json({ ok: true }); });
+app.post("/v1/lock/clear", (req, res) => { lock.clearLocked(uid(req)); res.json({ ok: true }); });
+app.get("/v1/lock/status/:userId", (req, res) => res.json({ locked: lock.isLocked(uid(req)) }));
 
 app.listen(PORT, () => console.log(`CA service on http://localhost:${PORT}`));

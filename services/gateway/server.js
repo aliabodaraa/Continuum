@@ -341,7 +341,10 @@ app.post("/v1/sdk/mouse/check", auth, async (req, res) => {
   else if (!d.warmup) mouseStreak.set(req.uid, 0);
   const streak = mouseStreak.get(req.uid) || 0;
   const passkeyTriggered = streak >= MOUSE_STRIKES_TO_LOCK && (await hasPasskey(req.uid));
-  if (passkeyTriggered) mouseStreak.set(req.uid, 0);
+  if (passkeyTriggered) {
+    mouseStreak.set(req.uid, 0);
+    await fwd(`${CA_URL}/v1/lock/set`, "POST", { userId: req.uid }).catch(() => {});
+  }
   const mrk = riskLevel(d.warmup, d.isSuspicious);
   d.riskToken = signRiskRS256(req.uid, mrk, "mouse");
   maybeFireRiskEvent(req.tenant, req.uid, req.esub || req.uid, mrk, "mouse"); // push on transition
@@ -353,7 +356,15 @@ app.get("/v1/sdk/mouse/status", auth, async (req, res) => relay(res, await fwd(`
 app.post("/v1/sdk/passkey/register/options", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/register/options`, "POST", { userId: req.uid, username: req.uname, rpId: rpFromOrigin(req), origin: originOf(req) })));
 app.post("/v1/sdk/passkey/register/complete", auth, async (req, res) => { const r = await fwd(`${PASSKEY_URL}/v1/register/complete`, "POST", { userId: req.uid, credential: req.body.credential, rpId: rpFromOrigin(req), origin: originOf(req) }); pkCache.delete(req.uid); relay(res, r); });
 app.post("/v1/sdk/passkey/auth/options", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/auth/options`, "POST", { userId: req.uid, rpId: rpFromOrigin(req) })));
-app.post("/v1/sdk/passkey/auth/complete", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/auth/complete`, "POST", { userId: req.uid, challengeId: req.body.challengeId, assertion: req.body.assertion, rpId: rpFromOrigin(req), origin: originOf(req) })));
+app.post("/v1/sdk/passkey/auth/complete", auth, async (req, res) => {
+  const r = await fwd(`${PASSKEY_URL}/v1/auth/complete`, "POST", { userId: req.uid, challengeId: req.body.challengeId, assertion: req.body.assertion, rpId: rpFromOrigin(req), origin: originOf(req) });
+  if (r.status === 200) await fwd(`${CA_URL}/v1/lock/clear`, "POST", { userId: req.uid }).catch(() => {});
+  relay(res, r);
+});
+
+// Shared step-up lock (see ca-service/lib/lock.js) — lets the SDK log out on
+// page load for ANY app, not just apps/demo's own session-based gate.
+app.get("/v1/sdk/lock/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/lock/status/${req.uid}`, "GET")));
 app.get("/v1/sdk/passkey/status", auth, async (req, res) => res.json({ hasPasskey: await hasPasskey(req.uid) }));
 
 app.listen(PORT, () => console.log(`Continuum gateway on :${PORT} (tenants=${Object.keys(tenants.tenants).length})`));

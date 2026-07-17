@@ -7,6 +7,7 @@
 const express = require("express");
 const db = require("../db/init");
 const passkey = require("../services/passkeyClient");
+const ca = require("../services/caClient");
 
 const router = express.Router();
 
@@ -51,6 +52,7 @@ router.post("/register/reset", async (req, res) => {
     req.session.hasPasskey = false;
     delete req.session.passkeyVerifiedUserId;
     delete req.session.continuousAuthLocked;
+    ca.lockClear(req.caUid).catch(() => {});
     req.session.passkeySetupRequired = true;
     res.json({ ok: true, message: "Stored passkeys cleared" });
   } catch (err) {
@@ -101,6 +103,7 @@ router.post("/auth/complete", async (req, res) => {
     req.session.passkeyVerifiedUserId = Number(userId);
     if (req.session.userId && Number(req.session.userId) === Number(userId)) {
       delete req.session.continuousAuthLocked;
+      ca.lockClear(req.caUid).catch(() => {});
     }
     res.json({ ok: true, message: "Passkey authentication successful" });
   } catch (err) {

@@ -44,6 +44,7 @@ router.post("/check", requireAuth, async (req, res, next) => {
     const passkeyTriggered = lockNow && !!req.session.hasPasskey;
     if (passkeyTriggered) {
       req.session.continuousAuthLocked = true;
+      ca.lockSet(req.caUid).catch(() => {});
       req.session.mouseSuspiciousStreak = 0; // consumed — restart clean after unlock
     }
 

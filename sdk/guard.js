@@ -80,6 +80,7 @@
     mouseEnroll: "/v1/sdk/mouse/enroll", mouseCheck: "/v1/sdk/mouse/check", mouseStatus: "/v1/sdk/mouse/status", onboarding: "/v1/sdk/onboarding",
     pkRegOpts: "/v1/sdk/passkey/register/options", pkRegDone: "/v1/sdk/passkey/register/complete",
     pkAuthOpts: "/v1/sdk/passkey/auth/options", pkAuthDone: "/v1/sdk/passkey/auth/complete",
+    lockStatus: "/v1/sdk/lock/status",
   } : {
     config: "/api/text/config", ksStatus: "/api/text/typing-status", ksEnroll: "/api/text/enroll", ksCheck: "/api/text/check", ksContribute: "/api/text/contribute",
     mouseEnroll: "/api/mouse/enroll", mouseCheck: "/api/mouse/check", mouseStatus: "/api/mouse/status",
@@ -787,6 +788,12 @@
   async function gatewayFlow() {
     try {
       var ob = await bootstrapGateway();
+      // A pending step-up survives page loads only on the server (this lock is
+      // in-memory and just reset above) — a host app has no gate of its own to
+      // enforce this like apps/demo does, so the SDK is the only place any page,
+      // in any app, can catch a reload/navigation during a locked session.
+      var ls = await reqJson(EP.lockStatus + "/" + userId);
+      if (ls.ok && ls.d && ls.d.locked) { doLogout(); return; }
       await loadConfig(); // now authed
       obState = ob;
       if (needOnboarding(ob)) await runOnboarding(ob);

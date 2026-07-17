@@ -74,6 +74,15 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  -- Single source of truth for "this user has a passkey step-up pending,"
+  -- shared by every caller (apps/demo's own session, the gateway, any future
+  -- app) so the SDK can tell on page load whether to log out -- the client-side
+  -- lock (guard.js's own locked var) is in-memory only and resets on reload.
+  CREATE TABLE IF NOT EXISTS session_locks (
+    user_id INTEGER PRIMARY KEY,
+    locked_at DATETIME NOT NULL
+  );
+
   CREATE INDEX IF NOT EXISTS idx_kt_user ON keystroke_texts(user_id);
   CREATE INDEX IF NOT EXISTS idx_ke_text ON keystroke_events(keystroke_text_id);
   CREATE INDEX IF NOT EXISTS idx_ad_user ON auth_decisions(user_id);

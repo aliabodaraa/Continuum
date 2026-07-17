@@ -42,4 +42,10 @@ module.exports = {
   mouseEnroll: (userId, windows) => call("POST", "/v1/mouse/enroll", { userId, windows }),
   mouseCheck: (userId, windows) => call("POST", "/v1/mouse/check", { userId, windows }),
   mouseStatus: (userId) => call("GET", `/v1/mouse/status/${Number(userId)}`),
+
+  // Shared step-up lock (see ca-service/lib/lock.js) — set from here when the
+  // mouse strike debounce fires (keystroke sets it directly inside ca-service),
+  // cleared on a successful passkey verification.
+  lockSet: (userId) => call("POST", "/v1/lock/set", { userId }),
+  lockClear: (userId) => call("POST", "/v1/lock/clear", { userId }),
 };
