@@ -1,0 +1,15 @@
+{
+  "name": "passkey-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone FIDO2/WebAuthn passkey microservice. Owns credentials + challenges; exposes a stateless /v1 HTTP API. Knows nothing about behavioral CA.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "^8.3.5",
+    "better-sqlite3": "^9.2.2",
+    "express": "^4.18.2"
+  }
+}
