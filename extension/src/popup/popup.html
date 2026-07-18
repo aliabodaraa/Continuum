@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font: 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; width: 264px; margin: 0; padding: 14px; background: #0f172a; color: #e2e8f0; }
+      h1 { font-size: 14px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: #22c55e; }
+      .dot.off { background: #64748b; }
+      .row { display: flex; justify-content: space-between; align-items: center; margin: 9px 0; }
+      .val { font-weight: 700; }
+      button { border: 0; border-radius: 8px; padding: 9px 12px; font: 600 12px system-ui; cursor: pointer; width: 100%; color: #fff; background: #4f46e5; }
+      button.off { background: #475569; }
+      .muted { color: #94a3b8; font-size: 11px; margin-top: 12px; line-height: 1.4; }
+    </style>
+  </head>
+  <body>
+    <h1><span class="dot" id="dot"></span> Continuum Guard</h1>
+    <div class="row"><span>Status</span><span class="val" id="state">…</span></div>
+    <div class="row"><span>Windows captured</span><span class="val" id="wins">0</span></div>
+    <div class="row"><span>This site</span><span class="val" id="site">…</span></div>
+    <button id="toggle">…</button>
+    <div style="height: 8px"></div>
+    <button id="exclude" class="off">…</button>
+    <div class="muted">P0 — capturing your typing <b>rhythm</b> on-device. The characters you type never leave your browser.</div>
+    <script src="popup.js"></script>
+  </body>
+</html>

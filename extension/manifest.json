@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Continuum Guard",
+  "version": "0.1.0",
+  "description": "Continuous authentication by keystroke & mouse rhythm — on-device, privacy-first.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "src/background.js" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/features.js", "src/content.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Continuum Guard"
+  },
+  "browser_specific_settings": {
+    "gecko": { "id": "guard@continuum.dev", "strict_min_version": "115.0" }
+  }
+}
