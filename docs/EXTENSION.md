@@ -1,28 +1,34 @@
 # Continuum Browser Extension — Design
 
-A Chrome (MV3) extension that applies Continuum's continuous authentication to the
-**whole browser**, not a single web app. It binds identity to the **browser profile**,
-enrolls the user's typing/mouse rhythm once, monitors every page, and on a suspicious
-change performs a **step-up bound to Continuum itself** (a platform passkey via a fixed
-Continuum relying party — "Option B"), since a website's own passkey can't be reused
-browser-wide.
+A **cross-browser** (WebExtensions / MV3) extension that applies Continuum's continuous
+authentication to the **whole browser**, not a single web app. It binds identity to the
+**browser profile**, enrolls the user's typing/mouse rhythm once, monitors every page, and
+on a suspicious change performs a **step-up bound to Continuum itself** (a platform passkey
+via a fixed Continuum relying party — "Option B"), since a website's own passkey can't be
+reused browser-wide.
+
+**Browser support:** one codebase targets Chromium (Chrome, Edge, Brave, Opera) **and**
+Firefox by using the standard `browser.*` WebExtensions API with the `webextension-polyfill`.
+Safari supports Web Extensions too but requires an Xcode app wrapper — a later target. We
+therefore avoid Chrome-only APIs (e.g. `chrome.identity`'s Google profile) — see §3.
 
 > Status: design. Nothing here is built yet; this is the spec + build plan.
 
-## 1. Why the backend doesn't change
+## 1. What the backend reuses (and the one addition)
 Continuum already separates **capture/transport** (thin, per-surface) from
 **intelligence** (server-side models + verdicts + protocol). The extension is a new
 capture surface: it re-implements only the browser-side layer and feeds the **same
-event schema** to the **same** `gateway → ca-service → model-api`. No model or
-verdict-pipeline changes.
+event schema** to the **same** `gateway → ca-service → model-api`. The verdict pipeline,
+signing, and identity protocol are **unchanged**; the only backend addition is a
+**timing-only model variant** for privacy (§6).
 
 | Piece | Reused as-is | New for the extension |
 |---|---|---|
-| Keystroke/mouse models + per-user training (`model-api`) | ✅ | |
 | Verdict pipeline — warmup, probation, paste policy (`ca-service`) | ✅ | |
 | Verdict signing RS256/JWKS, tenant/identity protocol (`gateway`) | ✅ | |
+| Per-user training + serving (`model-api`) | ✅ mechanism | + a **timing-only model** variant (no key codes) |
 | Capture (keystroke/mouse) | logic reused | re-packaged as a bundled content script |
-| Identity | protocol reused | sourced from the **browser profile**, not a web-app session |
+| Identity | protocol reused | a **per-profile key**, not a web-app session (§3) |
 | Step-up | `requireStepUp(modality)` reused | new **platform-passkey** modality bound to a fixed Continuum RP |
 
 ## 2. Components (MV3)
@@ -41,16 +47,18 @@ extension/
 - **popup**: first-run onboarding (collect enrollment samples), and an on/off + per-site
   exclusion list + status ("verified / analyzing / locked").
 
-## 3. Identity = the browser profile
-- `chrome.identity.getProfileUserInfo({ accountStatus: "ANY" })` → the signed-in Chrome
-  profile's email/id. If not signed in, fall back to a per-profile random id persisted in
-  `chrome.storage.local`.
+## 3. Identity = the browser profile (portable across browsers)
+- On first run the extension generates a **per-profile key** and stores it in
+  `browser.storage.local` — a stable identifier for *this* browser profile. Works
+  identically on every browser (no Chrome-only `chrome.identity` / Google account).
+- Optionally the user signs into a **Continuum account** in the popup, so the identity (and
+  trained model) follows them across devices/browsers; otherwise it stays per-profile local.
 - The extension sends this as its **externalId** (or a backend-verified token) to the
   gateway, which maps it to the same deterministic `continuumUserId`. So the identity is
   **stable across every site** — exactly the point of a browser-wide guard.
 - The extension is its own **tenant** (a dedicated site key + secret), whose registered
   origin is the fixed Continuum step-up origin (see §5). The site key/secret live in the
-  extension's packaged config / `chrome.storage`, provisioned once at install.
+  extension's packaged config / `browser.storage`, provisioned once at install.
 
 ## 4. Onboarding (once, at setup)
 1. On install, the popup runs the same enrollment flow as the SDK wizard: collect typing
@@ -76,23 +84,38 @@ user on `bank.com` while they're on `mail.com`. Solution: make **Continuum the R
   always works. The `requireStepUp(modality)` abstraction already supports multiple modes.
 
 ## 6. Browser-wide monitoring & privacy (the critical part)
-Capturing input on **every** site (banking, email, other passwords) is sensitive. Design
-guarantees:
-- **Timing only, never content.** The model uses digraph *timings*
-  (`[id1,id2,dwell1,dwell2,dd,ud]`), not the typed text. The content script extracts
-  features and discards characters; password fields are masked (already in the SDK).
-- **Explicit consent** at install; a clear on/off toggle.
-- **Per-site exclusion list** (e.g. never run on a bank's domain) + a global pause.
-- No raw keystroke text ever leaves the browser → a strong, defensible privacy story:
-  *"Continuum observes how you type, never what you type."*
+Capturing input on **every** site (banking, email, other passwords) is sensitive, so the
+extension's privacy stance must be **stronger than the web SDK's**. The goal: authenticate
+by *rhythm* (how you type) and never by *content* (what you type).
 
-## 7. MV3 constraints
+- **What "timing features" means:** instead of the letters, the extension keeps
+  measurements — key hold time (dwell) and the gaps between keys (flight). These numbers
+  describe your rhythm, like recognizing someone by their gait.
+- **Password masking:** on password fields the characters are never captured at all.
+- **Per-site exclusions:** the user can exclude sites (e.g. their bank) — nothing is
+  captured there — plus a global pause.
+- **Explicit consent:** the user knowingly opts in at install; monitoring is never silent.
+
+### Honest caveat + the fix (timing-only model)
+Today's feature vector is `[id1, id2, dwell1, dwell2, dd, ud]` where `id1/id2` are **key
+codes** (which keys). So the raw feature stream *could* reconstruct text — acceptable for the
+web SDK (the host app already sees its own textarea) but **not** for a browser-wide monitor
+watching other sites. To make *"never what you type"* literally true here, the extension
+should use a **timing-only model** (drop the key ids → only dwell/flight timings), so content
+is unrecoverable by construction. Cost: a retrained timing-only variant and a possible small
+accuracy trade-off (key identity carries some signal). This is the privacy-correct default
+for the extension; the key-code model stays for the web SDK where content isn't newly exposed.
+
+## 7. MV3 & cross-browser constraints
+- **One codebase:** write against the standard `browser.*` API + `webextension-polyfill`;
+  it runs on Chromium and Firefox MV3. Safari via the Xcode Web Extension converter (later).
 - **No remote code:** bundle the capture libs (`keystroke-tracker.js`, mouse features)
   into the extension package — can't `loadScript` from the gateway like the web SDK does.
 - **Service worker** (not a persistent background page): keep session state in
-  `chrome.storage`/memory with re-hydration on wake.
-- **Permissions:** `host_permissions: ["<all_urls>"]`, `identity`, `storage`, `scripting`.
-  Justify `<all_urls>` in the store listing (continuous auth needs cross-site capture).
+  `browser.storage`/memory with re-hydration on wake.
+- **Permissions:** `host_permissions: ["<all_urls>"]`, `storage`, `scripting`. (No `identity`
+  permission — identity is a local per-profile key, §3.) Justify `<all_urls>` in each store
+  listing (continuous auth needs cross-site capture; only timing is collected).
 
 ## 8. Data flow (per session)
 ```
@@ -106,8 +129,8 @@ verdict suspicious ──▶ background opens Continuum step-up (Windows Hello) 
 ## 9. Build plan (phases)
 1. **P0 — skeleton:** manifest, background worker, content script that captures timing and
    logs it. Prove capture works on arbitrary pages.
-2. **P1 — identity + enrollment:** `chrome.identity` → gateway session; onboarding popup
-   collects samples → trains the profile model.
+2. **P1 — identity + enrollment:** per-profile key (`browser.storage.local`) → gateway
+   session; onboarding popup collects samples → trains the (timing-only) profile model.
 3. **P2 — monitoring loop:** batch → gateway checks → surface "verified/analyzing" in the popup.
 4. **P3 — step-up (Option B):** fixed-RP passkey page + Windows Hello; lock/clear wired to
    the existing shared lock. Password fallback (Option A).
