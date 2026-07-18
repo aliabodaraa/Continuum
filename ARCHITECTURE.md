@@ -51,6 +51,28 @@ to the CA **through** its layer, never to model-api directly.
   *enforce* a decision. A stdlib-only Python reference (`packages/continuum-python`)
   proves the protocol end-to-end.
 
+## 3b. Tenants, site keys & origin binding
+- Each consumer app is a **tenant**: a **site key** (public — goes in the SDK
+  `data-site-key`) paired with a **signing secret** (private — the backend's
+  `CONTINUUM_SECRET`). Issued by `POST /v1/tenants` (admin-gated), which returns both.
+  The gateway auto-seeds a `pk_demo` tenant from `CA_SIGNING_SECRET` on first boot so the
+  bundled demo/acme work out of the box.
+- **Self-hosted config model:** since the consumer runs the whole stack, they don't
+  "register with a provider" — they set their secret in `.env`; the site key is a stable
+  public label. Security lives in the **secret**, never the site key.
+- **Origin-bound keys (the isolation guarantee):** because the site key is public, it must
+  be bound to its tenant's `origins`. `POST /v1/tenants` **requires** `origins` (empty →
+  `400 origins_required`; only the demo tenant is left open). A key loaded from a domain it
+  isn't registered for → `403 origin_not_allowed`, and the SDK then **removes the guard panel
+  and shows a warning popup** instead of running. This stops two apps on one gateway from
+  sharing a key (which would collide their `(siteKey, externalId)` user namespaces);
+  legitimate multi-domain is supported by registering several origins under one tenant.
+- **Two secrets, two directions:** the **tenant HMAC secret** authenticates *inbound*
+  identity (the browser can't forge it); the **gateway RS256 key** signs *outbound* verdicts
+  (verified via JWKS, nothing shared). Per-deployment isolation should be reinforced with a
+  unique `GATEWAY_SESSION_SECRET` (it currently falls back to a shared default — a recommended
+  hardening) alongside `CA_SIGNING_SECRET`.
+
 ---
 
 ## 4. Keystroke dynamics engine
@@ -183,6 +205,7 @@ Implementation details:
 | Grace after a step-up | Probation on scored windows; persisted cross-app lock on reload |
 | Forged verdicts | RS256 signing, verified via JWKS (asymmetric) |
 | Spoofed identity from the browser | Backend-signed HS256 identity token; browser can't mint it |
+| Site-key reuse by another app | Origin-bound keys → `403 origin_not_allowed`; SDK hides panel + warns |
 | Secret leakage in images/repo | Runtime-generated gateway key; fail-fast env secrets; secrets git-ignored + purged from history |
 
 ## 15. Repository layout (top level)

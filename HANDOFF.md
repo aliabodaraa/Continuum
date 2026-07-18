@@ -49,6 +49,9 @@ Middleware: `packages/continuum-node/` (auto-detects the logged-in user; mints i
 - **Persisted shared step-up lock** (`session_locks` table in ca-service): a server-side
   "step-up pending" flag keyed by userId, so ANY app's SDK — not just apps/demo's own
   Express session — logs the user out on reload/navigation during a pending challenge.
+- **Origin-bound site keys**: a tenant's public site key is bound to its `origins`; the same
+  key loaded from another domain → `403 origin_not_allowed`, and the SDK removes the panel +
+  shows a warning popup. `POST /v1/tenants` requires `origins` (only the demo tenant stays open).
 
 ## 3. Standing constraints / working style
 - **Fully autonomous** — the user said "never ask me, it's on you." Act with best judgment; don't
@@ -100,7 +103,7 @@ pipeline (`services/ca-service/lib/keystrokeSecurity.js` + `server.js` + `sdk/gu
 - Conceptual point reinforced to the user: keystroke auth models the **person's motor rhythm**, not
   the text/speed. "Ali typing fast gibberish in ali's account" stays genuine (correct) — impostor
   detection needs a *different person* (the ali-in-aiham's-account test), which works.
-- SDK cache bumped (now `guard.js?v=20`). Details captured in memory `ca-check-pipeline-invariants`.
+- SDK cache bumped (now `guard.js?v=21`). Details captured in memory `ca-check-pipeline-invariants`.
 
 ### 4c. Deploy kit (make it shippable / portable)
 - Three compose files: `docker-compose.yml` (dev, bind mounts), `docker-compose.prod.yml` (demo
@@ -143,7 +146,7 @@ passkey (`submit` with `passkeyVerified`, gateway `/v1/sdk/passkey/auth/complete
 `GET /v1/sdk/lock/status/:userId` → `doLogout()` if locked. Endpoints: ca `/v1/lock/{set,
 clear,status}`, gateway `/v1/sdk/lock/status`. Complements probation (in-session re-challenge)
 by covering the reload/navigation/cross-app gap. Verified: table auto-creates, lock lifecycle
-works, gateway serves the updated SDK. `guard.js?v=20`.
+works, gateway serves the updated SDK. `guard.js?v=21`.
 
 ### 4g. Data migration kit
 `scripts/data-export.sh` (consistent snapshot: `ca.db` + `continuum.db` + `artifacts/users/`;
