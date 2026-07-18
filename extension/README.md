@@ -41,8 +41,12 @@ src/popup/               # status + on/off + per-site exclusion
 ## Roadmap (from docs/EXTENSION.md)
 - **P0 (this):** skeleton + on-device capture. ✅
 - **P1:** per-profile identity + onboarding (collect samples → train the user's model server-side).
-- **P2:** download the model → **on-device scoring** (packet vote + probation) → live verdict in the popup.
-  - Spike done: the 1D-CNN + 2xGRU base **converts to a TF.js graph model** (`model/ws50-gru/`, input `[-1,50,6]`, only ~152 KB). Regenerate via `scripts/convert-model.sh`. Next: bundle the TF.js runtime + `tf.loadGraphModel` in `background.js`.
+- **P2 (on-device scoring): built.** The background worker loads the TF.js runtime
+  (`vendor/tf.min.js`) + the graph model (`model/ws50-gru/`), scores each window, and applies
+  the Lu et al. packet vote (`src/scoring.js`) → live verdict in the popup. Verified: model
+  runs via `executeAsync` (GRU has a dynamic loop op), valid softmax, ~80 ms/window on the CPU
+  backend; decision logic unit-tested. **Next (P1):** swap the base model for the user's
+  personalised one after enrollment — same loop, just a different `ContinuumScoring.load()`.
 - **P3:** step-up — Windows Hello / Touch ID via a fixed Continuum relying-party page (Option B).
 - **P4:** consent screen, richer exclusions, store-listing polish.
 
