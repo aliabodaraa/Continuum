@@ -69,9 +69,11 @@ to the CA **through** its layer, never to model-api directly.
   legitimate multi-domain is supported by registering several origins under one tenant.
 - **Two secrets, two directions:** the **tenant HMAC secret** authenticates *inbound*
   identity (the browser can't forge it); the **gateway RS256 key** signs *outbound* verdicts
-  (verified via JWKS, nothing shared). Per-deployment isolation should be reinforced with a
-  unique `GATEWAY_SESSION_SECRET` (it currently falls back to a shared default — a recommended
-  hardening) alongside `CA_SIGNING_SECRET`.
+  (verified via JWKS, nothing shared). Per-deployment isolation is enforced by a **required,
+  unique `GATEWAY_SESSION_SECRET`** (fail-fast in the bundle; the gateway also warns at startup
+  if the dev default is in use) alongside `CA_SIGNING_SECRET`. It signs session tokens and
+  seeds the `continuumUserId = HMAC(GATEWAY_SESSION_SECRET, siteKey|externalId)` namespace, so
+  it must be unique per deployment and never change afterwards.
 
 ---
 
@@ -206,6 +208,7 @@ Implementation details:
 | Forged verdicts | RS256 signing, verified via JWKS (asymmetric) |
 | Spoofed identity from the browser | Backend-signed HS256 identity token; browser can't mint it |
 | Site-key reuse by another app | Origin-bound keys → `403 origin_not_allowed`; SDK hides panel + warns |
+| Forged gateway session tokens | Signed with a required, per-deployment `GATEWAY_SESSION_SECRET` (fail-fast + startup warning) |
 | Secret leakage in images/repo | Runtime-generated gateway key; fail-fast env secrets; secrets git-ignored + purged from history |
 
 ## 15. Repository layout (top level)

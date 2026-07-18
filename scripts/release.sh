@@ -33,6 +33,7 @@ export REGISTRY TAG
 # throwaway placeholders are fine for building/pushing.
 export CA_SIGNING_SECRET="${CA_SIGNING_SECRET:-build-time-placeholder}"
 export SESSION_SECRET="${SESSION_SECRET:-build-time-placeholder}"
+export GATEWAY_SESSION_SECRET="${GATEWAY_SESSION_SECRET:-build-time-placeholder}"
 
 echo ">> Publishing Continuum images to ${REGISTRY} at tag ${TAG}"
 

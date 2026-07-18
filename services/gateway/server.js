@@ -16,7 +16,18 @@ const PORT = Number(process.env.PORT || 8080);
 const CA_URL = process.env.CA_API_URL || "http://ca-service:4100";
 const ONBOARDING_MODE = process.env.ONBOARDING_MODE === "lazy" ? "lazy" : "eager";
 const PASSKEY_URL = process.env.PASSKEY_API_URL || "http://passkey-service:4000";
+// Signs the gateway session token AND derives the per-deployment user-id namespace
+// (continuumUserId = HMAC(SESSION_SECRET, siteKey|externalId)). A shared value makes
+// session tokens forgeable and user ids identical across deployments — so any real
+// deployment MUST set a unique one (enforced fail-fast in docker-compose.bundle.yml).
 const SESSION_SECRET = process.env.GATEWAY_SESSION_SECRET || "dev-gateway-session-secret";
+if (SESSION_SECRET === "dev-gateway-session-secret") {
+  console.warn(
+    "[continuum][SECURITY] GATEWAY_SESSION_SECRET is unset — using the shared DEV default. " +
+      "Session tokens are forgeable and user ids are not deployment-unique. " +
+      "Set a unique value for any real deployment:  openssl rand -hex 32",
+  );
+}
 const SESSION_TTL_SEC = Number(process.env.GATEWAY_SESSION_TTL_SEC || 12 * 3600);
 const RISK_TTL_SEC = Number(process.env.GATEWAY_RISK_TTL_SEC || 90);
 // Admin key to gate tenant registration. If unset (dev), registration is open.

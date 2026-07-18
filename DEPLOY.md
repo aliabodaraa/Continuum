@@ -42,8 +42,9 @@ different CPU arch (e.g. Apple Silicon vs x86), build multi-arch with
 ```bash
 cp .env.example .env
 # Fill in the REQUIRED secrets — compose refuses to start without them:
-#   CA_SIGNING_SECRET=$(openssl rand -hex 32)
-#   SESSION_SECRET=$(openssl rand -hex 32)     # only needed for the demo stack
+#   CA_SIGNING_SECRET=$(openssl rand -hex 32)       # signs verdicts + demo tenant
+#   GATEWAY_SESSION_SECRET=$(openssl rand -hex 32)  # session tokens + user-id namespace (unique per deployment; never change it)
+#   SESSION_SECRET=$(openssl rand -hex 32)          # only needed for the demo stack
 # Point at your published images:
 #   REGISTRY=<your-dockerhub-user>   TAG=0.1.0
 
