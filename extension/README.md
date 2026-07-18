@@ -42,6 +42,7 @@ src/popup/               # status + on/off + per-site exclusion
 - **P0 (this):** skeleton + on-device capture. ✅
 - **P1:** per-profile identity + onboarding (collect samples → train the user's model server-side).
 - **P2:** download the model → **on-device scoring** (packet vote + probation) → live verdict in the popup.
+  - Spike done: the 1D-CNN + 2xGRU base **converts to a TF.js graph model** (`model/ws50-gru/`, input `[-1,50,6]`, only ~152 KB). Regenerate via `scripts/convert-model.sh`. Next: bundle the TF.js runtime + `tf.loadGraphModel` in `background.js`.
 - **P3:** step-up — Windows Hello / Touch ID via a fixed Continuum relying-party page (Option B).
 - **P4:** consent screen, richer exclusions, store-listing polish.
 

@@ -83,7 +83,7 @@ to the CA **through** its layer, never to model-api directly.
   Faithful to Lu et al. (2020) / the referenced BioKey capstone architecture.
 - **Windows:** `WINDOW_SIZE=50`, `STRIDE=10`, stride-aligned only (no padded/tail
   windows — those are out-of-distribution and destabilize scores).
-- **Model:** 1D-CNN + 2×LSTM base (`artifacts/ws50-gru`), **fine-tuned per user**
+- **Model:** 1D-CNN + 2×GRU base (`artifacts/ws50-gru`), **fine-tuned per user**
   (transfer learning) with the user's enrollment typing as positives and impostor
   windows (other users + dataset negatives) as negatives.
 - **Live decision (Lu et al. packet vote):** score the most recent

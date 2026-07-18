@@ -41,7 +41,7 @@ Middleware: `packages/continuum-node/` (auto-detects the logged-in user; mints i
 - **Keystroke pipeline**: digraph steps `[id1,id2,dwell1,dwell2,dd,ud]`; `WINDOW_SIZE=50`,
   `STRIDE=10`, `RECENT_WINDOW_COUNT=6`, `ROLLING_WINDOW_COUNT=18`. Live verdict = Lu et al. (2020)
   packet vote at the fixed 0.50 softmax boundary (`PACKET_VOTE_FRACTION=0.50`). Model is per-user
-  CNN+LSTM fine-tuned from a base (`artifacts/ws50-gru`).
+  CNN+GRU (1D-CNN + 2×GRU) fine-tuned from a base (`artifacts/ws50-gru`).
 - **Mouse feature vector F=7**: `[dx, dy, v, a, dtheta, dt, is_click]` — clicks ARE a learned
   feature, so mouse enrollment requires real clicks (≥10), not just movement.
 - **Post-step-up probation**: after a passkey step-up, any *scored* suspicious verdict
