@@ -785,6 +785,24 @@
     return (cfg.keystroke !== "off" && !ob.keystroke) || (cfg.mouse !== "off" && !ob.mouse);
   }
 
+  // A misused site key — unknown to this gateway, or loaded from a domain it isn't
+  // registered for (i.e. another app reusing the same key) — must NOT run the guard.
+  // Remove the panel and show a visible warning popup so the integrator sees the
+  // problem instead of the guard silently doing nothing.
+  function guardBlocked(message) {
+    try { var h = document.getElementById("continuum-guard-host"); if (h) h.remove(); } catch (e) {}
+    console.error("[continuum] guard not started — " + message);
+    try {
+      if (document.getElementById("continuum-guard-warning")) return;
+      var w = document.createElement("div");
+      w.id = "continuum-guard-warning";
+      w.style.cssText = "position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:340px;background:#7f1d1d;color:#fff;border:1px solid #fca5a5;border-radius:12px;padding:14px 16px;font:600 13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 12px 34px rgba(0,0,0,.45)";
+      w.innerHTML = "<div style=\"display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:5px;font-size:14px\">⚠ Continuum guard not active<span id=\"cgwx\" style=\"cursor:pointer;opacity:.8\">✕</span></div><div style=\"font-weight:400;opacity:.95\">" + message + "</div>";
+      (document.documentElement || document.body).appendChild(w);
+      var x = w.querySelector("#cgwx"); if (x) x.addEventListener("click", function () { w.remove(); });
+    } catch (e) {}
+  }
+
   async function gatewayFlow() {
     try {
       var ob = await bootstrapGateway();
@@ -797,7 +815,14 @@
       await loadConfig(); // now authed
       obState = ob;
       if (needOnboarding(ob)) await runOnboarding(ob);
-    } catch (e) { console.warn("[continuum] bootstrap failed:", e.message); setKb("bad", "offline"); return; }
+    } catch (e) {
+      var reason = e && e.message;
+      if (reason === "invalid_site_key")
+        return guardBlocked("Invalid site key “" + cfg.siteKey + "” — it isn't registered on this gateway.");
+      if (reason === "origin_not_allowed")
+        return guardBlocked("This site key is already in use for another domain — it is not authorized for " + location.origin + ".");
+      console.warn("[continuum] bootstrap failed:", reason); setKb("bad", "offline"); return;
+    }
     startGuard();
   }
 

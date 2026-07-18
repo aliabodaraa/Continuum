@@ -251,7 +251,17 @@ async function onboardingFor(uid) {
 function adminGate(req, res, next) { if (ADMIN_KEY && req.get("X-Admin-Key") !== ADMIN_KEY) return res.status(401).json({ error: "invalid_admin_key" }); next(); }
 app.post("/v1/tenants", adminGate, (req, res) => {
   const name = String(req.body.name || "app");
-  const origins = Array.isArray(req.body.origins) ? req.body.origins.map(String) : [];
+  const origins = Array.isArray(req.body.origins) ? req.body.origins.map(String).filter(Boolean) : [];
+  // A site key is PUBLIC (it lives in the page). Binding it to the tenant's own
+  // origin(s) is what stops another app on this gateway from reusing the same key
+  // (which would collide their user namespaces). So a real tenant MUST declare its
+  // origin(s); the same key loaded from any other origin is then rejected (403).
+  if (origins.length === 0) {
+    return res.status(400).json({
+      error: "origins_required",
+      note: "Provide origins: [\"https://your-app.com\"] so the site key is bound to your domain(s) and can't be reused by another app.",
+    });
+  }
   const webhookUrl = req.body.webhookUrl ? String(req.body.webhookUrl) : null; // CAEP push target
   const siteKey = "pk_" + crypto.randomBytes(9).toString("hex");
   const secret = crypto.randomBytes(24).toString("hex");
