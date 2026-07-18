@@ -41,12 +41,17 @@ src/popup/               # status + on/off + per-site exclusion
 ## Roadmap (from docs/EXTENSION.md)
 - **P0 (this):** skeleton + on-device capture. ✅
 - **P1:** per-profile identity + onboarding (collect samples → train the user's model server-side).
-- **P2 (on-device scoring): built.** The background worker loads the TF.js runtime
-  (`vendor/tf.min.js`) + the graph model (`model/ws50-gru/`), scores each window, and applies
-  the Lu et al. packet vote (`src/scoring.js`) → live verdict in the popup. Verified: model
-  runs via `executeAsync` (GRU has a dynamic loop op), valid softmax, ~80 ms/window on the CPU
-  backend; decision logic unit-tested. **Next (P1):** swap the base model for the user's
-  personalised one after enrollment — same loop, just a different `ContinuumScoring.load()`.
+- **P2 (on-device scoring): built.** TF.js can't run in a service worker (no DOM), so the
+  model runs in an **offscreen document** (`src/offscreen.html` + `offscreen.js`) that hosts
+  `vendor/tf.min.js` + the graph model (`model/ws50-gru/`). The service worker keeps the
+  rolling packet + verdict + config, delegates single-window scoring to the offscreen doc, and
+  applies the Lu et al. packet vote (`src/scoring.js`) → live verdict in the popup. Verified in
+  Node: model runs via `executeAsync` (GRU has a dynamic loop op), valid softmax, ~80 ms/window
+  on the CPU backend; decision logic unit-tested.
+  - *Chromium-first:* the offscreen API is Chrome/Edge/Brave only. Capture works on Firefox;
+    Firefox scoring needs a different TF.js host (later — e.g. a hidden tab).
+  - **Next (P1):** swap the base model for the user's personalised one after enrollment — same
+    loop, just a different `ContinuumScoring.load()` in the offscreen doc.
 - **P3:** step-up — Windows Hello / Touch ID via a fixed Continuum relying-party page (Option B).
 - **P4:** consent screen, richer exclusions, store-listing polish.
 

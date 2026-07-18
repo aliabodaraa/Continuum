@@ -1,21 +1,16 @@
-// background.js — MV3 service worker. Loads the TF.js runtime + the graph model, scores
-// the feature windows arriving from every tab ON-DEVICE (Lu et al. packet vote), and
-// serves the popup. Nothing leaves the browser: the model is a packaged asset, keystrokes
-// stay in the content script, and only the verdict is kept here.
-//
-// NOTE: P2 scores against the BASE model (population-level). P1 will download the user's
-// personalised model and swap it in via ContinuumScoring.load() — the loop is identical.
-try {
-  importScripts("../vendor/tf.min.js", "scoring.js");
-} catch (e) {
-  console.error("[continuum-guard] failed to load tf/scoring:", e && e.message);
-}
+// background.js — MV3 service worker. TensorFlow.js can't run HERE (a service worker has
+// no DOM), so inference is delegated to an OFFSCREEN document (src/offscreen.html) that
+// hosts TF.js. This worker keeps the rolling packet + verdict + config and serves the
+// popup; it loads only the PURE decision logic from scoring.js (no tf) to apply the
+// Lu et al. packet vote. Windows arrive from every tab; the typed text never leaves the page.
+try { importScripts("scoring.js"); } catch (e) { console.error("[continuum-guard] failed to load scoring:", e && e.message); }
 
 var api = globalThis.browser || globalThis.chrome;
+var RECENT = (typeof ContinuumScoring !== "undefined") ? ContinuumScoring.RECENT_WINDOW_COUNT : 6;
 
 var config = { enabled: true, exclusions: [] };
 var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null };
-var scores = [];  // rolling last N window SCORES (each window scored once)
+var scores = [];  // rolling last N window scores
 
 api.storage.local.get(["cg_enabled", "cg_exclusions"], function (d) {
   d = d || {};
@@ -23,18 +18,63 @@ api.storage.local.get(["cg_enabled", "cg_exclusions"], function (d) {
   config.exclusions = d.cg_exclusions || [];
 });
 
-// Load the on-device model (packaged asset — no network).
-(async function () {
+// ---- offscreen document that hosts TF.js (Chromium; Firefox has no offscreen API) ----
+async function ensureOffscreen() {
+  if (!api.offscreen) { if (!state.modelError) state.modelError = "offscreen_api_unavailable"; return; }
   try {
-    if (typeof ContinuumScoring === "undefined") throw new Error("scoring module missing");
-    await ContinuumScoring.load(api.runtime.getURL("model/ws50-gru/model.json"));
-    state.modelReady = true;
-    console.log("[continuum-guard] on-device model ready");
+    if (api.offscreen.hasDocument && (await api.offscreen.hasDocument())) return;
+    await api.offscreen.createDocument({
+      url: "src/offscreen.html",
+      reasons: ["WORKERS"],
+      justification: "Run the on-device keystroke model (TensorFlow.js requires a DOM).",
+    });
   } catch (e) {
-    state.modelError = (e && e.message) || String(e);
-    console.error("[continuum-guard] model load failed:", state.modelError);
+    var m = (e && e.message) || "";
+    if (!/single offscreen|already/i.test(m)) { state.modelError = "offscreen_create: " + m; console.error("[continuum-guard]", state.modelError); }
   }
-})();
+}
+ensureOffscreen();
+
+function scoreViaOffscreen(win) {
+  return new Promise(function (resolve) {
+    try {
+      api.runtime.sendMessage({ target: "offscreen", type: "cg:score", win: win }, function (res) {
+        if (api.runtime.lastError || !res || res.error != null) resolve(null);
+        else resolve(res.score);
+      });
+    } catch (e) { resolve(null); }
+  });
+}
+
+// ---- capture → score (offscreen) → verdict ----
+var scoringBusy = false, pendingWin = null;
+async function onWindow(win) {
+  if (!config.enabled) return;
+  state.totalWindows += 1;
+  state.lastWindowAt = Date.now();
+  if (!state.modelReady) { await ensureOffscreen(); return; }
+
+  pendingWin = win;                 // coalesce bursts — always score the newest
+  if (scoringBusy) return;
+  scoringBusy = true;
+  try {
+    while (pendingWin) {
+      var w = pendingWin; pendingWin = null;
+      var s = await scoreViaOffscreen(w);
+      if (s == null) continue;
+      scores.push(s);
+      if (scores.length > RECENT) scores.shift();
+      var v = ContinuumScoring.decide(scores);
+      state.verdict = {
+        status: scores.length < RECENT ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
+        mean: Math.round(v.mean * 100),
+        packet: scores.length,
+        need: RECENT,
+      };
+    }
+  } catch (e) { console.error("[continuum-guard] scoring error:", e && e.message); }
+  finally { scoringBusy = false; }
+}
 
 function broadcastConfig() {
   if (!api.tabs) return;
@@ -45,44 +85,11 @@ function broadcastConfig() {
   });
 }
 
-var scoringBusy = false;
-var pendingWin = null;
-async function onWindow(win) {
-  if (!config.enabled) return;
-  state.totalWindows += 1;
-  state.lastWindowAt = Date.now();
-  if (!state.modelReady) return;
-
-  // Score each window ONCE (~80ms). Coalesce bursts: while a score is running, only the
-  // newest pending window is kept, so we never build a backlog — we always score latest.
-  pendingWin = win;
-  if (scoringBusy) return;
-  scoringBusy = true;
-  var N = ContinuumScoring.RECENT_WINDOW_COUNT;
-  try {
-    while (pendingWin) {
-      var w = pendingWin; pendingWin = null;
-      var s = await ContinuumScoring.scoreWindow(w);
-      scores.push(s);
-      if (scores.length > N) scores.shift();
-      var v = ContinuumScoring.decide(scores);
-      state.verdict = {
-        status: scores.length < N ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
-        mean: Math.round(v.mean * 100),
-        packet: scores.length,
-        need: N,
-      };
-    }
-  } catch (e) {
-    console.error("[continuum-guard] scoring error:", e && e.message);
-  } finally {
-    scoringBusy = false;
-  }
-}
-
 api.runtime.onMessage.addListener(function (msg, sender, reply) {
   if (!msg) return;
   switch (msg.type) {
+    case "cg:model-ready": state.modelReady = true; state.modelError = null; return;
+    case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":
       reply({ enabled: config.enabled, excluded: config.exclusions.indexOf(msg.origin) >= 0 });
       return true;
