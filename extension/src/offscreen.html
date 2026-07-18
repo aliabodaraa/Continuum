@@ -5,7 +5,9 @@
     <!-- Hidden offscreen document: hosts TensorFlow.js in a DOM context (the service
          worker can't run it — no document/window). It loads the model once and answers
          single-window scoring requests from the background worker. -->
-    <script src="../vendor/tf.min.js"></script>
+    <!-- eval-free minimal TF.js (core + cpu + converter) — the full UMD build trips the
+         MV3 CSP because its legacy polyfills call Function()/eval. -->
+    <script src="../vendor/tf-lite.js"></script>
     <script src="scoring.js"></script>
     <script src="offscreen.js"></script>
   </body>
