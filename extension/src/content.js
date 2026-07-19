@@ -28,6 +28,7 @@
       try { document.removeEventListener(handlers[i][0], handlers[i][1], true); } catch (e) {}
     }
     handlers = [];
+    try { api.runtime.onMessage.removeListener(onMsg); } catch (e) {}
   }
   function safeSend(msg, cb) {
     if (!alive()) { teardown(); return; }

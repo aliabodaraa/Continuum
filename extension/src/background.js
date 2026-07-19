@@ -3,10 +3,19 @@
 // hosts TF.js. This worker keeps the rolling packet + verdict + config and serves the
 // popup; it loads only the PURE decision logic from scoring.js (no tf) to apply the
 // Lu et al. packet vote. Windows arrive from every tab; the typed text never leaves the page.
-try { importScripts("scoring.js"); } catch (e) { console.error("[continuum-guard] failed to load scoring:", e && e.message); }
-
 var api = globalThis.browser || globalThis.chrome;
-var RECENT = (typeof ContinuumScoring !== "undefined") ? ContinuumScoring.RECENT_WINDOW_COUNT : 6;
+var RECENT = 6;                                        // packet size (mirrors ca-service)
+var WINDOW_THRESHOLD = 0.5, PACKET_VOTE_FRACTION = 0.5;
+
+// Pure Lu et al. packet vote, INLINED — the service worker needs no importScripts (MV3 SW
+// importScripts of a packaged file was failing and cascading into "No SW"). The offscreen
+// document still uses scoring.js for the actual TF.js inference.
+function decide(scores) {
+  var low = 0, sum = 0;
+  for (var i = 0; i < scores.length; i++) { if (scores[i] < WINDOW_THRESHOLD) low += 1; sum += scores[i]; }
+  var frac = scores.length ? low / scores.length : 0;
+  return { suspicious: frac >= PACKET_VOTE_FRACTION, mean: scores.length ? sum / scores.length : 0, lowFraction: frac };
+}
 
 var config = { enabled: true, exclusions: [] };
 var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null };
@@ -81,7 +90,7 @@ async function onWindow(win) {
       if (s == null) continue;
       scores.push(s);
       if (scores.length > RECENT) scores.shift();
-      var v = ContinuumScoring.decide(scores);
+      var v = decide(scores);
       state.verdict = {
         status: scores.length < RECENT ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
         mean: Math.round(v.mean * 100),
