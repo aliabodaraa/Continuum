@@ -3,8 +3,9 @@
 var api = globalThis.browser || globalThis.chrome;
 var ready = false, loadError = null, personal = false;
 
-// Load order: (1) the model the WIZARD trained on-device (IndexedDB — this profile's
-// own rhythm), (2) a bundled personal model if the package ships one, (3) the base model.
+// Load order: (1) the model the WIZARD trained on-device (IndexedDB — this profile's own
+// rhythm), (2) the base model. Nothing user-specific is ever bundled in the package —
+// a packaged model would leak into every profile that loads the extension.
 async function loadBestModel() {
   ready = false;
   try {
@@ -14,13 +15,8 @@ async function loadBestModel() {
       await ContinuumScoring.loadTrained(api.runtime.getURL("model/base-extractor/model.json"));
       personal = true;
     } catch (et) {
-      try {
-        await ContinuumScoring.load(api.runtime.getURL("model/personal/model.json"));
-        personal = true;
-      } catch (ep) {
-        await ContinuumScoring.load(api.runtime.getURL("model/ws50-gru/model.json"));
-        personal = false;
-      }
+      await ContinuumScoring.load(api.runtime.getURL("model/ws50-gru/model.json"));
+      personal = false;
     }
     ready = true;
     loadError = null;
