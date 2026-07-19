@@ -39,12 +39,15 @@ const ADAPTIVE_CONFIDENCE_MIN = 0.8;
 const ADAPTIVE_RETRAIN_EVERY = 3;
 const adaptiveRetrainsInFlight = new Set();
 const PASTE_POLICY_MAX_CHARS = 80;
-// Debounce keystroke CHALLENGES (not scoring): a genuine user occasionally yields one low
-// packet — more so on unusual/arbitrary text — so require this many CONSECUTIVE normal-
-// suspicious packets before challenging. A single unlucky packet no longer false-rejects.
-// Strong signals (paste, un-modelable input, overwhelming-impostor) bypass this.
-const KS_SUSPICIOUS_STRIKES = 2;
-const suspiciousStreak = new Map(); // userId -> consecutive normal-suspicious packet count
+// Debounce keystroke CHALLENGES (not scoring): challenge when >= KS_SUSPICIOUS_MIN of the
+// last KS_SUSPICIOUS_WINDOW checks are suspicious (a SLIDING window, not strictly
+// consecutive). This catches sustained/intermittent abnormal typing (e.g. high-speed
+// mashing that's suspicious on many packets but rarely two in a row) while still tolerating
+// a single isolated dip on natural text. Strong signals (paste, un-modelable input,
+// overwhelming-impostor) bypass the debounce and challenge immediately.
+const KS_SUSPICIOUS_WINDOW = 3;
+const KS_SUSPICIOUS_MIN = 2;
+const suspiciousHistory = new Map(); // userId -> recent booleans (last KS_SUSPICIOUS_WINDOW)
 const PASTE_POLICY_MIN_TYPED_COVERAGE = 0.6;
 
 function pastePolicyViolation(quality) {
@@ -250,10 +253,13 @@ app.post("/v1/keystroke/check", async (req, res) => {
     // genuine verdict resets the streak. Probation (post step-up, client-side) is unaffected.
     const rawSuspicious = !isWarmup && evaluation.isSuspicious;
     const strongSignal = overwhelmingImpostor || unverifiable || isPastePolicy;
-    const streak = rawSuspicious ? (suspiciousStreak.get(userId) || 0) + 1 : 0;
-    suspiciousStreak.set(userId, streak);
-    const passkeyTriggered = !!hasPasskey && rawSuspicious && (strongSignal || streak >= KS_SUSPICIOUS_STRIKES);
-    if (passkeyTriggered) { suspiciousStreak.set(userId, 0); lock.setLocked(userId); }
+    let hist = suspiciousHistory.get(userId) || [];
+    hist.push(rawSuspicious);
+    if (hist.length > KS_SUSPICIOUS_WINDOW) hist = hist.slice(-KS_SUSPICIOUS_WINDOW);
+    suspiciousHistory.set(userId, hist);
+    const recentSuspicious = hist.filter(Boolean).length;
+    const passkeyTriggered = !!hasPasskey && rawSuspicious && (strongSignal || recentSuspicious >= KS_SUSPICIOUS_MIN);
+    if (passkeyTriggered) { suspiciousHistory.set(userId, []); lock.setLocked(userId); }
 
     ks.logAuthDecision(userId, db, { source: "check", evaluation, passkeyTriggered });
 
