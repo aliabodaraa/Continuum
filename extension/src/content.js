@@ -12,7 +12,23 @@
   var lastWindowCount = 0;
   var t0 = performance.now();
 
-  api.runtime.sendMessage({ type: "cg:hello", origin: origin }, function (res) {
+  var dead = false;
+  // Guarded send: after the extension is reloaded/updated, this old content script's
+  // context is invalidated and any runtime call throws. Catch it, stop capturing, and
+  // let a page refresh inject a fresh script.
+  function safeSend(msg, cb) {
+    if (dead) return;
+    try {
+      api.runtime.sendMessage(msg, function (res) {
+        void api.runtime.lastError; // orphaned tab / no receiver — ignore
+        if (cb) cb(res);
+      });
+    } catch (e) {
+      dead = true;
+    }
+  }
+
+  safeSend({ type: "cg:hello", origin: origin }, function (res) {
     if (res) { enabled = res.enabled !== false; excluded = !!res.excluded; }
   });
   api.runtime.onMessage.addListener(function (msg) {
@@ -27,7 +43,7 @@
   function isHidden(t) { return t && t.tagName === "INPUT" && t.type === "hidden"; }
 
   function rec(type, e) {
-    if (!enabled || excluded) return;
+    if (dead || !enabled || excluded) return;
     var tgt = e.target;
     if (isHidden(tgt)) return;
     var kc = isPassword(tgt) ? 0 : (e.keyCode || 0);   // mask the KEY on password fields
@@ -44,7 +60,7 @@
     if (windows.length > lastWindowCount) {
       lastWindowCount = windows.length;
       // Only the newest window of TIMING features — never the characters.
-      api.runtime.sendMessage({ type: "cg:windows", origin: origin, latest: windows[windows.length - 1] });
+      safeSend({ type: "cg:windows", origin: origin, latest: windows[windows.length - 1] });
     }
   }
 
