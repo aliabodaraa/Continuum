@@ -132,7 +132,15 @@ function broadcastConfig() {
 api.runtime.onMessage.addListener(function (msg, sender, reply) {
   if (!msg) return;
   switch (msg.type) {
-    case "cg:enrolled": state.enrolled = true; return;
+    case "cg:enrolled":
+      state.enrolled = true;
+      // The wizard just trained a personal model into IndexedDB — hot-swap it in.
+      ensureOffscreen().then(function () {
+        try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model" }, function () { void api.runtime.lastError; }); } catch (e) {}
+      });
+      scores = [];            // old packet was scored by the previous model
+      state.verdict = null;
+      return;
     case "cg:model-ready": state.modelReady = true; state.modelError = null; state.modelPersonal = !!msg.personal; return;
     case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":

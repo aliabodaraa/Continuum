@@ -18,7 +18,8 @@ function refresh() {
     q("state").textContent = s.enabled ? "on" : "off";
     q("dot").className = "dot" + (s.enabled ? "" : " off");
     q("wins").textContent = s.totalWindows;
-    q("steps").textContent = (s.steps || 0) + "/" + (s.needSteps || 50);
+    var st = s.steps || 0, nd = s.needSteps || 50;
+    q("steps").textContent = st >= nd ? "ready ✓" : st + "/" + nd;
     q("profile").textContent = s.modelPersonal ? "personalized ✓" : (s.enrolled ? "trained ✓" : "not trained (base model)");
     q("model").textContent = s.modelReady ? ("ready — " + (s.modelPersonal ? "personal" : "base")) : (s.modelError ? "error" : "loading…");
     q("site").textContent = curOrigin ? (excluded ? curOrigin + " (excluded)" : curOrigin) : "—";

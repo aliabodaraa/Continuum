@@ -26,10 +26,13 @@
     <textarea id="ta" placeholder="Start typing the passage here…" autofocus></textarea>
     <div class="bar"><i id="prog"></i></div>
     <div class="status" id="status">0 / 12 windows captured</div>
-    <button id="save" disabled>Save my profile</button>
-    <div id="done">✓ Your typing profile is saved. You can close this tab — the guard now knows your rhythm.</div>
-    <p class="note">Only timing features (key hold + gaps) are stored locally on this device. The text you type is never saved or sent.</p>
+    <button id="save" disabled>Save my profile &amp; train</button>
+    <div class="status" id="trainStatus" style="display:none">training…</div>
+    <div id="done">✓ Your personal model is trained and active. You can close this tab — the guard now knows your rhythm.</div>
+    <p class="note">Only timing features (key hold + gaps) are stored locally on this device. The text you type is never saved or sent. Training runs entirely in your browser.</p>
+    <script src="../vendor/tf-lite.js"></script>
     <script src="features.js"></script>
+    <script src="trainer.js"></script>
     <script src="enroll.js"></script>
   </body>
 </html>

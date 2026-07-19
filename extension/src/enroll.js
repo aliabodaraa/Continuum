@@ -54,14 +54,32 @@ function getProfileId(cb) {
 
 saveBtn.addEventListener("click", function () {
   var w = currentWindows();
+  var ts = document.getElementById("trainStatus");
+  saveBtn.disabled = true;
+  ta.disabled = true;
+  ts.style.display = "block";
+  ts.textContent = "training your personal model… (stays on this device)";
   getProfileId(function (id) {
     var rec = {};
     rec["cg_enroll_" + id] = w;                 // the enrollment windows
     rec["cg_enrolled_at"] = Date.now();
     api.storage.local.set(rec, function () {
-      document.getElementById("done").style.display = "block";
-      saveBtn.disabled = true;
-      try { api.runtime.sendMessage({ type: "cg:enrolled", count: w.length }); } catch (e) {}
+      // Fine-tune the base model on these windows, entirely in-page (see trainer.js).
+      ContinuumTrainer.train(
+        w,
+        api.runtime.getURL("data/impostors.json"),
+        api.runtime.getURL("model/base-extractor/model.json"),
+        api.runtime.getURL("model/scaler.json"),
+        function (p) { ts.textContent = "training… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "%"; }
+      ).then(function (r) {
+        ts.style.display = "none";
+        document.getElementById("done").style.display = "block";
+        try { api.runtime.sendMessage({ type: "cg:enrolled", count: w.length, accuracy: r.accuracy }); } catch (e) {}
+      }).catch(function (e) {
+        ts.textContent = "training failed: " + ((e && e.message) || e) + " — profile windows were saved; you can retry.";
+        saveBtn.disabled = false;
+        ta.disabled = false;
+      });
     });
   });
 });
