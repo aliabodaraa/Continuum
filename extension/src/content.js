@@ -40,14 +40,15 @@
     } catch (e) { teardown(); }
   }
 
+  function onMsg(msg) {
+    if (dead) return;
+    if (msg && msg.type === "cg:config") { enabled = msg.enabled !== false; excluded = (msg.exclusions || []).indexOf(origin) >= 0; }
+  }
+
   safeSend({ type: "cg:hello", origin: origin }, function (res) {
     if (res) { enabled = res.enabled !== false; excluded = !!res.excluded; }
   });
-  if (alive()) {
-    api.runtime.onMessage.addListener(function (msg) {
-      if (msg && msg.type === "cg:config") { enabled = msg.enabled !== false; excluded = (msg.exclusions || []).indexOf(origin) >= 0; }
-    });
-  }
+  if (alive()) { try { api.runtime.onMessage.addListener(onMsg); } catch (e) { teardown(); } }
 
   function fieldOf(t) { return t && (t.name || t.id || t.tagName) ? (t.name || t.id || t.tagName) : "page"; }
   function isPassword(t) { return t && t.tagName === "INPUT" && t.type === "password"; }
