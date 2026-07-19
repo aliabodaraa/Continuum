@@ -68,11 +68,13 @@
     } catch (err) { teardown(); }
   }
 
+  var warnedNoF = false;
   function emit() {
     var F = globalThis.ContinuumFeatures;
-    if (!F) return;
+    if (!F) { if (!warnedNoF) { warnedNoF = true; console.warn("[continuum-guard] ContinuumFeatures NOT loaded — features.js didn't run; capture can't build windows"); } return; }
     var steps = F.eventSteps(events);
     var windows = F.stepsToWindows(steps);
+    if (events.length % 20 === 0) { try { console.log("[continuum-guard] keys=" + events.length + " steps=" + steps.length + "/" + F.WINDOW_SIZE + " windows=" + windows.length); } catch (e) {} }
     // Live progress so the popup shows capture is working before a full window forms.
     safeSend({ type: "cg:activity", steps: steps.length, need: F.WINDOW_SIZE });
     if (windows.length > lastWindowCount) {
@@ -85,4 +87,5 @@
   function on(type) { var fn = function (e) { rec(type, e); }; document.addEventListener(type, fn, true); handlers.push([type, fn]); }
   on("keydown");
   on("keyup");
+  try { console.log("[continuum-guard] content script ACTIVE on " + origin + " — features.js: " + (globalThis.ContinuumFeatures ? "loaded" : "MISSING") + ", enabled=" + enabled + ", excluded=" + excluded); } catch (e) {}
 })();
