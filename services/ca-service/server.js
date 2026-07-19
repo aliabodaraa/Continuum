@@ -39,6 +39,12 @@ const ADAPTIVE_CONFIDENCE_MIN = 0.8;
 const ADAPTIVE_RETRAIN_EVERY = 3;
 const adaptiveRetrainsInFlight = new Set();
 const PASTE_POLICY_MAX_CHARS = 80;
+// Debounce keystroke CHALLENGES (not scoring): a genuine user occasionally yields one low
+// packet — more so on unusual/arbitrary text — so require this many CONSECUTIVE normal-
+// suspicious packets before challenging. A single unlucky packet no longer false-rejects.
+// Strong signals (paste, un-modelable input, overwhelming-impostor) bypass this.
+const KS_SUSPICIOUS_STRIKES = 2;
+const suspiciousStreak = new Map(); // userId -> consecutive normal-suspicious packet count
 const PASTE_POLICY_MIN_TYPED_COVERAGE = 0.6;
 
 function pastePolicyViolation(quality) {
@@ -239,8 +245,15 @@ app.post("/v1/keystroke/check", async (req, res) => {
     const isPastePolicy = evaluation.modelType === "paste-policy";
     const isWarmup = Number(evaluation.windowCount || 0) <= ks.RECENT_WINDOW_COUNT &&
       !overwhelmingImpostor && !unverifiable && !isPastePolicy;
-    const passkeyTriggered = !isWarmup && evaluation.isSuspicious && !!hasPasskey;
-    if (passkeyTriggered) lock.setLocked(userId);
+    // Debounce the CHALLENGE (not the scoring): normal packet-vote suspicion must persist
+    // for KS_SUSPICIOUS_STRIKES consecutive checks; strong signals fire immediately. A
+    // genuine verdict resets the streak. Probation (post step-up, client-side) is unaffected.
+    const rawSuspicious = !isWarmup && evaluation.isSuspicious;
+    const strongSignal = overwhelmingImpostor || unverifiable || isPastePolicy;
+    const streak = rawSuspicious ? (suspiciousStreak.get(userId) || 0) + 1 : 0;
+    suspiciousStreak.set(userId, streak);
+    const passkeyTriggered = !!hasPasskey && rawSuspicious && (strongSignal || streak >= KS_SUSPICIOUS_STRIKES);
+    if (passkeyTriggered) { suspiciousStreak.set(userId, 0); lock.setLocked(userId); }
 
     ks.logAuthDecision(userId, db, { source: "check", evaluation, passkeyTriggered });
 
