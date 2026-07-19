@@ -85,6 +85,13 @@
     if (msg && msg.type === "cg:config") { enabled = msg.enabled !== false; excluded = (msg.exclusions || []).indexOf(origin) >= 0; }
     if (msg && msg.type === "cg:lock") showLock(!!msg.hasPasskey);
     if (msg && msg.type === "cg:unlock") hideLock();
+    if (msg && msg.type === "cg:reset") {
+      // Fresh packet after a verified step-up: drop buffered timings so counting
+      // restarts from zero instead of replaying pre-lock windows.
+      events = [];
+      lastWindowCount = 0;
+      safeSend({ type: "cg:activity", steps: 0, need: (globalThis.ContinuumFeatures || {}).WINDOW_SIZE || 50 });
+    }
   }
 
   safeSend({ type: "cg:hello", origin: origin }, function (res) {

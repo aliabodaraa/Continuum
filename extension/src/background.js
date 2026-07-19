@@ -130,15 +130,17 @@ async function onWindow(win) {
       scores.push(s);
       if (scores.length > RECENT) scores.shift();
       var v = decide(scores);
+      // PROVISIONAL verdict from the 2nd window (~60 keystrokes) so the user gets early
+      // feedback; ENFORCEMENT still waits for the full packet — locking on a thin
+      // provisional signal would false-lock genuine users.
       state.verdict = {
-        status: scores.length < RECENT ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
+        status: scores.length < 2 ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
+        provisional: scores.length < RECENT,
         mean: Math.round(v.mean * 100),
         packet: scores.length,
         need: RECENT,
       };
-      // ENFORCEMENT: a full suspicious packet locks every monitored page until the
-      // user proves presence with the Continuum passkey (fixed RP).
-      if (state.verdict.status === "suspicious" && !state.locked) engageLock();
+      if (scores.length >= RECENT && v.suspicious && !state.locked) engageLock();
       updateBadge();
     }
   } catch (e) { console.error("[continuum-guard] scoring error:", e && e.message); }
@@ -175,8 +177,19 @@ function releaseLock() {
   state.locked = false;
   scores = [];              // fresh packet after a verified step-up (probation-style reset)
   state.verdict = null;
+  state.steps = 0;          // and a fresh step counter — otherwise the badge sticks at 99
   broadcastAll({ type: "cg:unlock" });
+  broadcastAll({ type: "cg:reset" });   // content scripts drop their event buffers too
   updateBadge();
+}
+
+// Open the RP ceremony as a small dialog-style popup window (falls back to a tab).
+function openRpPage(path) {
+  var url = RP_BASE + path + "#uid=" + state.profileNum;
+  if (api.windows && api.windows.create) {
+    try { api.windows.create({ url: url, type: "popup", width: 480, height: 620 }); return; } catch (e) {}
+  }
+  api.tabs.create({ url: url });
 }
 
 function broadcastConfig() {
@@ -210,10 +223,10 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       reply({ enabled: config.enabled, excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey });
       return true;
     case "cg:open-verify":
-      api.tabs.create({ url: RP_BASE + "/ext/verify.html#uid=" + state.profileNum });
+      openRpPage("/ext/verify.html");
       return;
     case "cg:open-register":
-      api.tabs.create({ url: RP_BASE + "/ext/register.html#uid=" + state.profileNum });
+      openRpPage("/ext/register.html");
       return;
     case "cg:verified":
       // Relayed by the content script on the RP page — trust ONLY that origin.
