@@ -28,7 +28,9 @@
     <div class="status" id="status">0 / 12 windows captured</div>
     <button id="save" disabled>Save my profile &amp; train</button>
     <div class="status" id="trainStatus" style="display:none">training…</div>
-    <div id="done">✓ Your personal model is trained and active. You can close this tab — the guard now knows your rhythm.</div>
+    <div id="done">✓ Your personal model is trained and active. The guard now knows your rhythm.<br /><br />
+      <button id="regpk" style="background:#0e7490">🔑 Set up your passkey (used when the guard locks a page)</button>
+    </div>
     <p class="note">Only timing features (key hold + gaps) are stored locally on this device. The text you type is never saved or sent. Training runs entirely in your browser.</p>
     <script src="../vendor/tf-lite.js"></script>
     <script src="features.js"></script>

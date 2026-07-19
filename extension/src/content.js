@@ -7,6 +7,10 @@
 // Fully guarded: when the extension is reloaded/updated this old script's context is
 // invalidated; we detect that and tear ourselves down instead of throwing.
 (function () {
+  // Double-injection guard: the worker programmatically injects into already-open tabs,
+  // which can race the manifest's own injection after a reload.
+  if (window.__cgGuardActive) return;
+  window.__cgGuardActive = true;
   var api = globalThis.browser || globalThis.chrome;
   var enabled = true, excluded = false;
   var origin = location.origin;
@@ -40,13 +44,55 @@
     } catch (e) { teardown(); }
   }
 
+  // ---- enforcement overlay: shown when the worker declares the session suspicious ----
+  var lockEl = null;
+  function blockWhileLocked(e) { if (lockEl) { e.stopImmediatePropagation(); e.preventDefault(); } }
+  window.addEventListener("keydown", blockWhileLocked, true);
+  window.addEventListener("keyup", blockWhileLocked, true);
+  window.addEventListener("beforeinput", blockWhileLocked, true);
+  function showLock(hasPasskey) {
+    if (lockEl || dead) return;
+    lockEl = document.createElement("div");
+    lockEl.setAttribute("style",
+      "position:fixed;inset:0;z-index:2147483647;background:rgba(2,6,23,.88);backdrop-filter:blur(6px);" +
+      "display:flex;align-items:center;justify-content:center;font:15px/1.5 system-ui,sans-serif;color:#e2e8f0;");
+    var box = document.createElement("div");
+    box.setAttribute("style", "max-width:420px;background:#0f172a;border:1px solid #334155;border-radius:16px;padding:28px 30px;text-align:center;");
+    box.innerHTML =
+      '<div style="font-size:34px;margin-bottom:10px">🔒</div>' +
+      '<div style="font-weight:800;font-size:18px;margin-bottom:8px">Continuum Guard locked this page</div>' +
+      '<div style="color:#94a3b8;margin-bottom:18px">The recent typing rhythm does not match the enrolled profile. Verify it&#39;s you to continue.</div>' +
+      '<button id="__cgVerifyBtn" style="background:#4f46e5;color:#fff;border:0;border-radius:10px;padding:12px 22px;font:700 15px system-ui;cursor:pointer">' +
+      (hasPasskey ? "Verify with passkey" : "Set up your passkey") + "</button>";
+    lockEl.appendChild(box);
+    (document.body || document.documentElement).appendChild(lockEl);
+    box.querySelector("#__cgVerifyBtn").addEventListener("click", function () {
+      safeSend({ type: hasPasskey ? "cg:open-verify" : "cg:open-register" });
+    });
+  }
+  function hideLock() { if (lockEl) { try { lockEl.remove(); } catch (e) {} lockEl = null; } }
+
+  // RP pages (the fixed Continuum passkey origin) postMessage their outcome into their own
+  // window; this relay forwards it to the worker, which checks sender.url === RP origin.
+  window.addEventListener("message", function (ev) {
+    var d = ev && ev.data;
+    if (!d || d.type !== "continuum-ext-passkey" || !d.ok) return;
+    safeSend({ type: d.action === "register" ? "cg:passkey-registered" : "cg:verified" });
+  });
+
   function onMsg(msg) {
     if (dead) return;
     if (msg && msg.type === "cg:config") { enabled = msg.enabled !== false; excluded = (msg.exclusions || []).indexOf(origin) >= 0; }
+    if (msg && msg.type === "cg:lock") showLock(!!msg.hasPasskey);
+    if (msg && msg.type === "cg:unlock") hideLock();
   }
 
   safeSend({ type: "cg:hello", origin: origin }, function (res) {
-    if (res) { enabled = res.enabled !== false; excluded = !!res.excluded; }
+    if (res) {
+      enabled = res.enabled !== false;
+      excluded = !!res.excluded;
+      if (res.locked) showLock(!!res.hasPasskey);   // navigated / reopened while locked
+    }
   });
   if (alive()) { try { api.runtime.onMessage.addListener(onMsg); } catch (e) { teardown(); } }
 

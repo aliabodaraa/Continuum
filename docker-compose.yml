@@ -29,6 +29,8 @@ services:
       PORT: 4000
       RP_ID: localhost
       ORIGIN: http://localhost:3000
+    ports:
+      - "4000:4000"   # browser-facing: the extension's fixed-RP step-up pages (/ext/*)
     volumes:
       - ./services/passkey-service:/app
       - passkey_node_modules:/app/node_modules

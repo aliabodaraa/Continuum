@@ -17,16 +17,52 @@ function decide(scores) {
   return { suspicious: frac >= PACKET_VOTE_FRACTION, mean: scores.length ? sum / scores.length : 0, lowFraction: frac };
 }
 
+// The FIXED Continuum relying party: passkeys live on this origin (site passkeys are
+// origin-bound, so the extension keeps its own RP — served by the passkey-service).
+var RP_BASE = "http://localhost:4000";
+
 var config = { enabled: true, exclusions: [] };
-var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false };
+var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, hasPasskey: false, profileNum: 0 };
 var scores = [];  // rolling last N window scores
 
-api.storage.local.get(["cg_enabled", "cg_exclusions", "cg_enrolled_at"], function (d) {
+// Stable NUMERIC id for the passkey-service, derived from this profile's id (FNV-1a).
+function numericUid(pid) {
+  var h = 2166136261;
+  for (var i = 0; i < pid.length; i++) { h ^= pid.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) + 1;   // +1: never 0 (service treats 0 as missing)
+}
+
+api.storage.local.get(["cg_enabled", "cg_exclusions", "cg_enrolled_at", "cg_passkey", "cg_profile_id"], function (d) {
   d = d || {};
   config.enabled = d.cg_enabled !== false;
   config.exclusions = d.cg_exclusions || [];
   state.enrolled = !!d.cg_enrolled_at;
+  state.hasPasskey = !!d.cg_passkey;
+  var pid = d.cg_profile_id;
+  if (!pid) {   // same format the enrollment wizard uses; whoever runs first creates it
+    pid = "p_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    api.storage.local.set({ cg_profile_id: pid });
+  }
+  state.profileNum = numericUid(pid);
 });
+
+// Inject the capture scripts into tabs that were ALREADY open when the extension was
+// (re)loaded — otherwise monitoring only starts after the user manually refreshes each tab.
+function injectAll() {
+  if (!api.scripting || !api.tabs) return;
+  api.tabs.query({ url: ["http://*/*", "https://*/*"] }, function (tabs) {
+    (tabs || []).forEach(function (t) {
+      try {
+        api.scripting.executeScript(
+          { target: { tabId: t.id }, files: ["src/features.js", "src/content.js"] },
+          function () { void api.runtime.lastError; }   // chrome:// & store tabs refuse — fine
+        );
+      } catch (e) {}
+    });
+  });
+}
+if (api.runtime.onInstalled) api.runtime.onInstalled.addListener(injectAll);
+if (api.runtime.onStartup) api.runtime.onStartup.addListener(injectAll);
 
 // ---- offscreen document that hosts TF.js (Chromium; Firefox has no offscreen API) ----
 async function ensureOffscreen() {
@@ -61,6 +97,7 @@ function statusObj() {
     enabled: config.enabled, totalWindows: state.totalWindows, lastWindowAt: state.lastWindowAt,
     exclusions: config.exclusions, modelReady: state.modelReady, modelError: state.modelError, verdict: state.verdict,
     steps: state.steps, needSteps: state.needSteps, enrolled: state.enrolled, modelPersonal: state.modelPersonal,
+    locked: state.locked, hasPasskey: state.hasPasskey,
   };
 }
 
@@ -99,6 +136,9 @@ async function onWindow(win) {
         packet: scores.length,
         need: RECENT,
       };
+      // ENFORCEMENT: a full suspicious packet locks every monitored page until the
+      // user proves presence with the Continuum passkey (fixed RP).
+      if (state.verdict.status === "suspicious" && !state.locked) engageLock();
       updateBadge();
     }
   } catch (e) { console.error("[continuum-guard] scoring error:", e && e.message); }
@@ -110,10 +150,33 @@ function updateBadge() {
   if (!api.action || !api.action.setBadgeText) return;
   var txt = "", color = "#4f46e5";
   if (!config.enabled) { txt = "off"; color = "#475569"; }
+  else if (state.locked) { txt = "🔒"; color = "#dc2626"; }
   else if (state.verdict && state.verdict.status === "suspicious") { txt = "!"; color = "#dc2626"; }
-  else if (state.verdict && state.verdict.status === "genuine") { txt = "OK"; color = "#16a34a"; }
+  else if (state.verdict && state.verdict.status === "genuine") { txt = state.verdict.mean + "%"; color = "#16a34a"; }  // live genuine confidence
   else if (state.steps > 0) { txt = String(Math.min(state.steps, 99)); }  // steps toward first window
   try { api.action.setBadgeText({ text: txt }); api.action.setBadgeBackgroundColor({ color: color }); } catch (e) {}
+}
+
+// ---- lock / passkey step-up (fixed Continuum RP) ----
+function broadcastAll(msg) {
+  if (!api.tabs) return;
+  api.tabs.query({}, function (tabs) {
+    (tabs || []).forEach(function (t) {
+      try { api.tabs.sendMessage(t.id, msg, function () { void api.runtime.lastError; }); } catch (e) {}
+    });
+  });
+}
+function engageLock() {
+  state.locked = true;
+  broadcastAll({ type: "cg:lock", hasPasskey: state.hasPasskey });
+  updateBadge();
+}
+function releaseLock() {
+  state.locked = false;
+  scores = [];              // fresh packet after a verified step-up (probation-style reset)
+  state.verdict = null;
+  broadcastAll({ type: "cg:unlock" });
+  updateBadge();
 }
 
 function broadcastConfig() {
@@ -144,8 +207,25 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
     case "cg:model-ready": state.modelReady = true; state.modelError = null; state.modelPersonal = !!msg.personal; return;
     case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":
-      reply({ enabled: config.enabled, excluded: config.exclusions.indexOf(msg.origin) >= 0 });
+      reply({ enabled: config.enabled, excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey });
       return true;
+    case "cg:open-verify":
+      api.tabs.create({ url: RP_BASE + "/ext/verify.html#uid=" + state.profileNum });
+      return;
+    case "cg:open-register":
+      api.tabs.create({ url: RP_BASE + "/ext/register.html#uid=" + state.profileNum });
+      return;
+    case "cg:verified":
+      // Relayed by the content script on the RP page — trust ONLY that origin.
+      if (sender && sender.url && sender.url.indexOf(RP_BASE) === 0) releaseLock();
+      return;
+    case "cg:passkey-registered":
+      if (sender && sender.url && sender.url.indexOf(RP_BASE) === 0) {
+        state.hasPasskey = true;
+        api.storage.local.set({ cg_passkey: 1 });
+        if (state.locked) broadcastAll({ type: "cg:lock", hasPasskey: true });  // refresh overlay button
+      }
+      return;
     case "cg:activity":
       if (config.enabled) { state.steps = msg.steps || 0; state.needSteps = msg.need || 50; state.lastWindowAt = Date.now(); updateBadge(); }
       return;

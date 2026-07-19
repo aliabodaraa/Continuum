@@ -52,6 +52,10 @@ function getProfileId(cb) {
   });
 }
 
+document.getElementById("regpk").addEventListener("click", function () {
+  try { api.runtime.sendMessage({ type: "cg:open-register" }); } catch (e) {}
+});
+
 saveBtn.addEventListener("click", function () {
   var w = currentWindows();
   var ts = document.getElementById("trainStatus");

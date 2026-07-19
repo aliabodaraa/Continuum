@@ -28,7 +28,9 @@ const app = express();
 app.use(express.json({ limit: "1mb" }));
 
 app.use((req, res, next) => {
-  if (req.path === "/health") return next();
+  // /ext/* are the browser-facing pages for the extension's fixed-RP step-up — they can't
+  // carry a server API key. Their API calls are still origin+challenge bound by WebAuthn.
+  if (req.path === "/health" || req.path.startsWith("/ext/")) return next();
   if (API_KEY && req.get("X-Api-Key") !== API_KEY) {
     return res.status(401).json({ error: "Invalid or missing API key" });
   }
@@ -262,6 +264,52 @@ app.post("/v1/auth/complete", async (req, res) => {
     console.error("auth/complete:", err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ---- extension step-up pages (the FIXED Continuum RP) ----
+// Site passkeys are origin-bound, so the browser extension cannot use a customer site's
+// passkey. Instead its step-up happens HERE, on the Continuum origin: these two pages run
+// the WebAuthn ceremony against this service and postMessage the outcome into their own
+// window, where the extension's content script relays it (the worker verifies sender.url).
+// NOTE: they call the /v1 endpoints directly, so with PASSKEY_API_KEY set these pages need
+// a fronting proxy to attach the key — dev runs without one.
+const EXT_PAGE_STYLE = `body{font:15px/1.5 system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;min-height:96vh;align-items:center;justify-content:center;margin:0}
+.card{max-width:420px;background:#1e293b;border-radius:16px;padding:30px 34px;text-align:center}
+h1{font-size:19px;margin:0 0 8px}p{color:#94a3b8;margin:0 0 6px}#s{font-weight:700;color:#e2e8f0;margin-top:14px}`;
+const EXT_PAGE_HELPERS = `const uid=Number(new URLSearchParams(location.hash.slice(1)).get("uid"));
+const b2b=s=>Uint8Array.from(atob(String(s).replace(/-/g,"+").replace(/_/g,"/")),c=>c.charCodeAt(0));
+const b2s=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"");
+const post=async(u,body)=>{const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.assign({rpId:location.hostname,origin:location.origin},body))});const j=await r.json();if(j.error)throw new Error(j.error);return j};
+const report=(action,ok,err)=>{window.postMessage({type:"continuum-ext-passkey",action,ok,error:err},"*")};`;
+
+app.get("/ext/register.html", (req, res) => {
+  res.type("html").send(`<!doctype html><meta charset="utf-8"><title>Continuum — set up passkey</title><style>${EXT_PAGE_STYLE}</style>
+<div class="card"><h1>🔑 Set up your Continuum passkey</h1>
+<p>This passkey protects your browser profile everywhere the guard runs. Approve the prompt (Windows Hello / Touch ID).</p><div id="s">Starting…</div></div>
+<script>${EXT_PAGE_HELPERS}
+(async()=>{const s=document.getElementById("s");try{
+const o=await post("/v1/register/options",{userId:uid,username:"guard-profile-"+uid});
+o.challenge=b2b(o.challenge);o.user.id=b2b(o.user.id);(o.excludeCredentials||[]).forEach(c=>c.id=b2b(c.id));
+const c=await navigator.credentials.create({publicKey:o});
+await post("/v1/register/complete",{userId:uid,credential:{id:c.id,rawId:b2s(c.rawId),type:c.type,response:{clientDataJSON:b2s(c.response.clientDataJSON),attestationObject:b2s(c.response.attestationObject),transports:c.response.getTransports?c.response.getTransports():void 0}}});
+s.textContent="✓ Passkey registered — you can close this tab.";report("register",true)}
+catch(e){s.textContent="✗ "+e.message;report("register",false,e.message)}})();
+</script>`);
+});
+
+app.get("/ext/verify.html", (req, res) => {
+  res.type("html").send(`<!doctype html><meta charset="utf-8"><title>Continuum — verify it's you</title><style>${EXT_PAGE_STYLE}</style>
+<div class="card"><h1>🔒 Verify it's you</h1>
+<p>Continuum Guard detected typing that doesn't match this profile. Confirm with your passkey to unlock.</p><div id="s">Starting…</div></div>
+<script>${EXT_PAGE_HELPERS}
+(async()=>{const s=document.getElementById("s");try{
+const o=await post("/v1/auth/options",{userId:uid});
+const cid=o.challengeId;o.challenge=b2b(o.challenge);(o.allowCredentials||[]).forEach(c=>c.id=b2b(c.id));
+const a=await navigator.credentials.get({publicKey:o});
+await post("/v1/auth/complete",{userId:uid,challengeId:cid,assertion:{id:a.id,rawId:b2s(a.rawId),type:a.type,response:{clientDataJSON:b2s(a.response.clientDataJSON),authenticatorData:b2s(a.response.authenticatorData),signature:b2s(a.response.signature),userHandle:a.response.userHandle?b2s(a.response.userHandle):null}}});
+s.textContent="✓ Verified — pages are unlocked. You can close this tab.";report("verify",true)}
+catch(e){s.textContent="✗ "+e.message;report("verify",false,e.message)}})();
+</script>`);
 });
 
 app.listen(PORT, () => {
