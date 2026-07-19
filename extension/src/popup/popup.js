@@ -21,6 +21,12 @@ function refresh() {
     var st = s.steps || 0, nd = s.needSteps || 50;
     q("steps").textContent = st >= nd ? "ready ✓" : st + "/" + nd;
     q("profile").textContent = s.modelPersonal ? "personalized ✓" : (s.enrolled ? "trained ✓" : "not trained (base model)");
+    var mv = s.mouseVerdict;
+    q("mouse").textContent = !s.mouseReady ? "not trained"
+      : !mv ? "watching…"
+      : mv.status === "analyzing" ? "analyzing (" + mv.packet + "/" + mv.need + ")"
+      : mv.status === "suspicious" ? "⚠ " + mv.mean + "%"
+      : "✓ " + mv.mean + "%";
     q("model").textContent = s.modelReady ? ("ready — " + (s.modelPersonal ? "personal" : "base")) : (s.modelError ? "error" : "loading…");
     q("site").textContent = curOrigin ? (excluded ? curOrigin + " (excluded)" : curOrigin) : "—";
 

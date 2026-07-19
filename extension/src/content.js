@@ -90,6 +90,8 @@
       // restarts from zero instead of replaying pre-lock windows.
       events = [];
       lastWindowCount = 0;
+      mouseEvents = [];
+      lastMouseWindows = 0;
       safeSend({ type: "cg:activity", steps: 0, need: (globalThis.ContinuumFeatures || {}).WINDOW_SIZE || 50 });
     }
   }
@@ -141,5 +143,28 @@
   function on(type) { var fn = function (e) { rec(type, e); }; document.addEventListener(type, fn, true); handlers.push([type, fn]); }
   on("keydown");
   on("keyup");
+
+  // ---- mouse capture (positions + timing only — same privacy story as keys) ----
+  var mouseEvents = [], mouseDown = false, lastMouseWindows = 0;
+  function recMouse(x, y, st) {
+    if (dead || !enabled || excluded || lockEl) return;
+    mouseEvents.push({ t: performance.now(), x: x, y: y, state: st });
+    if (mouseEvents.length > 3000) mouseEvents = mouseEvents.slice(-2000);
+    // Mouse events are dense (60–120/s) — rebuild windows every 10th event, not on each.
+    if (mouseEvents.length % 10 === 0) emitMouse();
+  }
+  function emitMouse() {
+    var M = globalThis.ContinuumMouseFeatures;
+    if (!M || !alive()) return;
+    var windows = M.stepsToWindows(M.eventsToSteps(mouseEvents));
+    if (windows.length > lastMouseWindows) {
+      lastMouseWindows = windows.length;
+      safeSend({ type: "cg:windows-mouse", origin: origin, latest: windows[windows.length - 1] });
+    }
+  }
+  function onM(type, fn) { document.addEventListener(type, fn, true); handlers.push([type, fn]); }
+  onM("mousemove", function (e) { recMouse(e.clientX, e.clientY, mouseDown ? "Drag" : "Move"); });
+  onM("mousedown", function (e) { mouseDown = true; recMouse(e.clientX, e.clientY, "Pressed"); });
+  onM("mouseup", function (e) { mouseDown = false; recMouse(e.clientX, e.clientY, "Released"); });
   try { console.log("[continuum-guard] content script ACTIVE on " + origin + " — features.js: " + (globalThis.ContinuumFeatures ? "loaded" : "MISSING") + ", enabled=" + enabled + ", excluded=" + excluded); } catch (e) {}
 })();

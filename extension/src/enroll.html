@@ -28,12 +28,25 @@
     <div class="status" id="status">0 / 12 windows captured</div>
     <button id="save" disabled>Save my profile &amp; train</button>
     <div class="status" id="trainStatus" style="display:none">training…</div>
+
+    <div id="mouseStage" style="display:none">
+      <h1 style="font-size:19px;margin:22px 0 6px">Step 2 — your mouse style</h1>
+      <p class="sub">Chase and <b>click the dot</b> at your normal pace. Continuum learns how your hand moves — positions and timing only.</p>
+      <div id="playArea" style="position:relative;height:320px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:12px;cursor:crosshair;overflow:hidden">
+        <div id="dot" style="position:absolute;width:28px;height:28px;border-radius:50%;background:#4f46e5;box-shadow:0 0 0 6px rgba(79,70,229,.2);left:40%;top:40%"></div>
+      </div>
+      <div class="bar"><i id="mprog"></i></div>
+      <div class="status" id="mstatus">0 / 20 mouse windows captured</div>
+      <div class="status" id="mtrainStatus" style="display:none">training…</div>
+    </div>
+
     <div id="done">✓ Your personal model is trained and active. The guard now knows your rhythm.<br /><br />
       <button id="regpk" style="background:#0e7490">🔑 Set up your passkey (used when the guard locks a page)</button>
     </div>
     <p class="note">Only timing features (key hold + gaps) are stored locally on this device. The text you type is never saved or sent. Training runs entirely in your browser.</p>
     <script src="../vendor/tf-lite.js"></script>
     <script src="features.js"></script>
+    <script src="features-mouse.js"></script>
     <script src="trainer.js"></script>
     <script src="enroll.js"></script>
   </body>

@@ -69,16 +69,15 @@ saveBtn.addEventListener("click", function () {
     rec["cg_enrolled_at"] = Date.now();
     api.storage.local.set(rec, function () {
       // Fine-tune the base model on these windows, entirely in-page (see trainer.js).
-      ContinuumTrainer.train(
-        w,
-        api.runtime.getURL("data/impostors.json"),
-        api.runtime.getURL("model/base-extractor/model.json"),
-        api.runtime.getURL("model/scaler.json"),
-        function (p) { ts.textContent = "training… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "%"; }
-      ).then(function (r) {
+      ContinuumTrainer.train(w, {
+        impostorsUrl: api.runtime.getURL("data/impostors.json"),
+        extractorUrl: api.runtime.getURL("model/base-extractor/model.json"),
+        scalerUrl: api.runtime.getURL("model/scaler.json"),
+        saveTo: "indexeddb://cg-personal-head",
+        onProgress: function (p) { ts.textContent = "training… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "%"; },
+      }).then(function (r) {
         ts.style.display = "none";
-        document.getElementById("done").style.display = "block";
-        try { api.runtime.sendMessage({ type: "cg:enrolled", count: w.length, accuracy: r.accuracy }); } catch (e) {}
+        startMouseStage();
       }).catch(function (e) {
         ts.textContent = "training failed: " + ((e && e.message) || e) + " — profile windows were saved; you can retry.";
         saveBtn.disabled = false;
@@ -87,3 +86,59 @@ saveBtn.addEventListener("click", function () {
     });
   });
 });
+
+// ---- Step 2: mouse enrollment (chase-the-dot) ----
+// 20 windows (validated sweep: held-out genuine windows win 95%, impostors stay low 85%
+// — 12 was too few, the head memorized). ~1 minute of dot-chasing.
+var MOUSE_TARGET = 20;
+function startMouseStage() {
+  var stage = document.getElementById("mouseStage");
+  var area = document.getElementById("playArea");
+  var dot = document.getElementById("dot");
+  var mprog = document.getElementById("mprog");
+  var mstatus = document.getElementById("mstatus");
+  var mts = document.getElementById("mtrainStatus");
+  stage.style.display = "block";
+  stage.scrollIntoView({ behavior: "smooth" });
+
+  var M = globalThis.ContinuumMouseFeatures;
+  var mEvents = [], down = false, doneTraining = false;
+
+  function push(x, y, st) { if (!doneTraining) { mEvents.push({ t: performance.now(), x: x, y: y, state: st }); if (mEvents.length % 10 === 0) update(); } }
+  area.addEventListener("mousemove", function (e) { push(e.clientX, e.clientY, down ? "Drag" : "Move"); });
+  area.addEventListener("mousedown", function (e) { down = true; push(e.clientX, e.clientY, "Pressed"); });
+  area.addEventListener("mouseup", function (e) { down = false; push(e.clientX, e.clientY, "Released"); });
+  dot.addEventListener("click", function () {
+    dot.style.left = (8 + Math.random() * 84) + "%";
+    dot.style.top = (8 + Math.random() * 78) + "%";
+  });
+
+  function windows() { return M ? M.stepsToWindows(M.eventsToSteps(mEvents)) : []; }
+  function update() {
+    var w = windows();
+    mprog.style.width = Math.min(100, Math.round((w.length / MOUSE_TARGET) * 100)) + "%";
+    mstatus.textContent = w.length + " / " + MOUSE_TARGET + " mouse windows captured";
+    if (w.length >= MOUSE_TARGET && !doneTraining) {
+      doneTraining = true;
+      mts.style.display = "block";
+      mts.textContent = "training your mouse model… (stays on this device)";
+      ContinuumTrainer.train(w.slice(0, MOUSE_TARGET), {
+        impostorsUrl: api.runtime.getURL("data/mouse-impostors.json"),
+        extractorUrl: api.runtime.getURL("model/mouse-extractor/model.json"),
+        scalerUrl: api.runtime.getURL("model/mouse-scaler.json"),
+        saveTo: "indexeddb://cg-personal-mouse-head",
+        jitterCols: [2, 3, 4, 5],   // never jitter the is_click flag
+        onProgress: function (p) { mts.textContent = "training mouse… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "%"; },
+      }).then(function () {
+        mts.style.display = "none";
+        document.getElementById("done").style.display = "block";
+        document.getElementById("done").scrollIntoView({ behavior: "smooth" });
+        try { api.runtime.sendMessage({ type: "cg:enrolled" }); } catch (e) {}
+      }).catch(function (e) {
+        mts.textContent = "mouse training failed: " + ((e && e.message) || e) + " — keystroke model is active; you can re-run enrollment for mouse.";
+        document.getElementById("done").style.display = "block";
+        try { api.runtime.sendMessage({ type: "cg:enrolled" }); } catch (er) {}
+      });
+    }
+  }
+}

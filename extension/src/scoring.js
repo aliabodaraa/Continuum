@@ -54,6 +54,31 @@ var ContinuumScoring = (function () {
 
   function isReady() { return kind === "hybrid" ? !!(extractor && head) : !!model; }
 
+  // ---- mouse modality (only meaningful once a personal head is trained: the mouse
+  // base is a 120-user ID net, so there is no generic genuine/impostor fallback) ----
+  var mouseExtractor = null, mouseHead = null, mouseScaler = null;
+  async function loadMouseTrained(extractorUrl, scalerUrl) {
+    if (typeof tf === "undefined") throw new Error("tf runtime not loaded");
+    try { await tf.setBackend("cpu"); } catch (e) {}
+    await tf.ready();
+    mouseHead = await tf.loadLayersModel("indexeddb://cg-personal-mouse-head");  // throws if never trained
+    mouseScaler = await (await fetch(scalerUrl)).json();
+    mouseExtractor = await tf.loadGraphModel(extractorUrl);
+    return true;
+  }
+  function isMouseReady() { return !!(mouseExtractor && mouseHead); }
+  async function scoreMouseWindow(win) {
+    var scaled = win.map(function (row) {
+      return row.map(function (v, c) { return (v - mouseScaler.mean[c]) / (mouseScaler.std[c] || 1); });
+    });
+    var x = tf.tensor3d([scaled]);               // [1, 50, 7]
+    var f = await mouseExtractor.executeAsync(x);
+    var y = mouseHead.predict(f);
+    var out = y.dataSync();
+    x.dispose(); f.dispose(); y.dispose();
+    return out[1];                               // class 1 = genuine
+  }
+
   // win = 50 x 6 array → genuine-class probability (softmax[1]).
   // Graph models run via executeAsync() (the GRU compiles to a dynamic while-loop op;
   // predict() throws). Hybrid: extractor (graph) → features → trained head (layers).
@@ -92,7 +117,7 @@ var ContinuumScoring = (function () {
     };
   }
 
-  return { load: load, loadTrained: loadTrained, loadScaler: loadScaler, scaleWindow: scaleWindow, isReady: isReady, scoreWindow: scoreWindow, verdict: verdict, decide: decide, RECENT_WINDOW_COUNT: RECENT_WINDOW_COUNT };
+  return { load: load, loadTrained: loadTrained, loadScaler: loadScaler, scaleWindow: scaleWindow, isReady: isReady, scoreWindow: scoreWindow, loadMouseTrained: loadMouseTrained, isMouseReady: isMouseReady, scoreMouseWindow: scoreMouseWindow, verdict: verdict, decide: decide, RECENT_WINDOW_COUNT: RECENT_WINDOW_COUNT };
 })();
 
 // Allow importing the pure decision logic under Node for tests.

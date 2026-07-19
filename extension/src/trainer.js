@@ -11,18 +11,21 @@
 // offscreen scorer prefers over any bundled model (extractor.executeAsync → head.predict).
 var ContinuumTrainer = (function () {
   var EPOCHS = 25, BATCH = 32, LR = 0.002;
-  var JITTER = 0.006;   // augmentation noise (~6ms on the seconds-scaled timing features)
+  var JITTER = 0.006;   // augmentation noise on continuous feature columns
 
   // Oversample + jitter the genuine windows so the two classes are balanced.
-  function augment(genuine, targetCount) {
+  // jitterCols: which feature columns take noise (keystroke: timings only, ids pristine;
+  // mouse: kinematics only, the is_click flag pristine).
+  function augment(genuine, targetCount, jitterCols) {
     var out = [];
     for (var i = 0; out.length < targetCount; i++) {
       var w = genuine[i % genuine.length], copy = [];
       for (var r = 0; r < w.length; r++) {
         var row = w[r].slice();
         if (i >= genuine.length) {                 // first pass stays pristine
-          for (var c = 2; c < row.length; c++) {   // jitter TIMING cols only (0,1 = key ids)
-            row[c] = Math.max(0, row[c] + (Math.random() * 2 - 1) * JITTER);
+          for (var j = 0; j < jitterCols.length; j++) {
+            var c = jitterCols[j];
+            row[c] = row[c] + (Math.random() * 2 - 1) * JITTER;
           }
         }
         copy.push(row);
@@ -32,26 +35,32 @@ var ContinuumTrainer = (function () {
     return out;
   }
 
-  // genuine: array of [50x6] windows from the wizard; impostorsUrl / extractorUrl:
-  // packaged assets. onProgress({epoch, epochs, acc, loss}) fires per epoch for the UI.
-  async function train(genuine, impostorsUrl, extractorUrl, scalerUrl, onProgress) {
+  // genuine: array of [50xF] windows from the wizard; opts:
+  //   impostorsUrl / extractorUrl / scalerUrl — packaged assets for this modality
+  //   saveTo     — IndexedDB slot for the trained head (default: the keystroke slot)
+  //   jitterCols — feature columns the augmentation may jitter (default: keystroke timings)
+  //   onProgress({epoch, epochs, acc, loss}) — fires per epoch for the UI
+  async function train(genuine, opts) {
     if (typeof tf === "undefined") throw new Error("tf runtime not loaded");
     try { await tf.setBackend("cpu"); } catch (e) {}
     await tf.ready();
+    var onProgress = opts.onProgress;
+    var saveTo = opts.saveTo || "indexeddb://cg-personal-head";
+    var jitterCols = opts.jitterCols || [2, 3, 4, 5];
 
-    var impostors = (await (await fetch(impostorsUrl)).json()).windows;
-    var scaler = await (await fetch(scalerUrl)).json();
-    var extractor = await tf.loadGraphModel(extractorUrl);
+    var impostors = (await (await fetch(opts.impostorsUrl)).json()).windows;
+    var scaler = await (await fetch(opts.scalerUrl)).json();
+    var extractor = await tf.loadGraphModel(opts.extractorUrl);
 
-    // Augment in RAW feature space (jitter is in seconds), then standardize exactly like
-    // the base model's training pipeline (model-api scale_windows) — without this the
-    // extractor sees out-of-distribution inputs and its features are meaningless.
+    // Augment in RAW feature space, then standardize exactly like the base model's
+    // training pipeline (model-api scale_windows) — without this the extractor sees
+    // out-of-distribution inputs and its features are meaningless.
     function scale(w) {
       return w.map(function (row) {
         return row.map(function (v, c) { return (v - scaler.mean[c]) / (scaler.std[c] || 1); });
       });
     }
-    var gen = augment(genuine, impostors.length);
+    var gen = augment(genuine, impostors.length, jitterCols);
     var X = gen.concat(impostors).map(scale);
     var Y = [];
     for (var i = 0; i < X.length; i++) Y.push(i < gen.length ? [0, 1] : [1, 0]);
@@ -86,13 +95,15 @@ var ContinuumTrainer = (function () {
       });
     } finally { feats.dispose(); ys.dispose(); }
 
-    await head.save("indexeddb://cg-personal-head");
+    await head.save(saveTo);
     return { accuracy: acc, genuineWindows: genuine.length, impostorWindows: impostors.length };
   }
 
   async function clearTrained() {
-    try { await tf.io.removeModel("indexeddb://cg-personal-head"); return true; }
-    catch (e) { return false; }
+    var ok = false;
+    try { await tf.io.removeModel("indexeddb://cg-personal-head"); ok = true; } catch (e) {}
+    try { await tf.io.removeModel("indexeddb://cg-personal-mouse-head"); ok = true; } catch (e) {}
+    return ok;
   }
 
   return { train: train, clearTrained: clearTrained };

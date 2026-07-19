@@ -22,8 +22,9 @@ function decide(scores) {
 var RP_BASE = "http://localhost:4000";
 
 var config = { enabled: true, exclusions: [] };
-var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, hasPasskey: false, profileNum: 0 };
-var scores = [];  // rolling last N window scores
+var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0 };
+var scores = [];       // rolling last N keystroke window scores
+var mouseScores = [];  // rolling last N mouse window scores
 
 // Stable NUMERIC id for the passkey-service, derived from this profile's id (FNV-1a).
 function numericUid(pid) {
@@ -54,7 +55,7 @@ function injectAll() {
     (tabs || []).forEach(function (t) {
       try {
         api.scripting.executeScript(
-          { target: { tabId: t.id }, files: ["src/features.js", "src/content.js"] },
+          { target: { tabId: t.id }, files: ["src/features.js", "src/features-mouse.js", "src/content.js"] },
           function () { void api.runtime.lastError; }   // chrome:// & store tabs refuse — fine
         );
       } catch (e) {}
@@ -81,10 +82,10 @@ async function ensureOffscreen() {
 }
 ensureOffscreen();
 
-function scoreViaOffscreen(win) {
+function scoreViaOffscreen(win, msgType) {
   return new Promise(function (resolve) {
     try {
-      api.runtime.sendMessage({ target: "offscreen", type: "cg:score", win: win }, function (res) {
+      api.runtime.sendMessage({ target: "offscreen", type: msgType || "cg:score", win: win }, function (res) {
         if (api.runtime.lastError || !res || res.error != null) resolve(null);
         else resolve(res.score);
       });
@@ -98,6 +99,7 @@ function statusObj() {
     exclusions: config.exclusions, modelReady: state.modelReady, modelError: state.modelError, verdict: state.verdict,
     steps: state.steps, needSteps: state.needSteps, enrolled: state.enrolled, modelPersonal: state.modelPersonal,
     locked: state.locked, hasPasskey: state.hasPasskey,
+    mouseReady: state.mouseReady, mouseVerdict: state.mouseVerdict, totalMouseWindows: state.totalMouseWindows,
   };
 }
 
@@ -146,13 +148,44 @@ async function onWindow(win) {
   finally { scoringBusy = false; }
 }
 
+// Mouse windows: same packet vote, separate stream. Only runs once the wizard's mouse
+// stage has trained a personal head (the mouse base alone can't say genuine/impostor).
+var mouseBusy = false, pendingMouseWin = null;
+async function onMouseWindow(win) {
+  if (!config.enabled || !state.mouseReady) return;
+  state.totalMouseWindows += 1;
+  pendingMouseWin = win;
+  if (mouseBusy) return;
+  mouseBusy = true;
+  try {
+    while (pendingMouseWin) {
+      var w = pendingMouseWin; pendingMouseWin = null;
+      var s = await scoreViaOffscreen(w, "cg:score-mouse");
+      if (s == null) continue;
+      mouseScores.push(s);
+      if (mouseScores.length > RECENT) mouseScores.shift();
+      var v = decide(mouseScores);
+      state.mouseVerdict = {
+        status: mouseScores.length < RECENT ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
+        mean: Math.round(v.mean * 100),
+        packet: mouseScores.length,
+        need: RECENT,
+      };
+      // FUSION: either modality's full suspicious packet locks the session.
+      if (state.mouseVerdict.status === "suspicious" && !state.locked) engageLock();
+      updateBadge();
+    }
+  } catch (e) { console.error("[continuum-guard] mouse scoring error:", e && e.message); }
+  finally { mouseBusy = false; }
+}
+
 // Live status on the toolbar icon badge, so capture/verdict is visible without the popup.
 function updateBadge() {
   if (!api.action || !api.action.setBadgeText) return;
   var txt = "", color = "#4f46e5";
   if (!config.enabled) { txt = "off"; color = "#475569"; }
   else if (state.locked) { txt = "🔒"; color = "#dc2626"; }
-  else if (state.verdict && state.verdict.status === "suspicious") { txt = "!"; color = "#dc2626"; }
+  else if ((state.verdict && state.verdict.status === "suspicious") || (state.mouseVerdict && state.mouseVerdict.status === "suspicious")) { txt = "!"; color = "#dc2626"; }
   else if (state.verdict && state.verdict.status === "genuine") { txt = state.verdict.mean + "%"; color = "#16a34a"; }  // live genuine confidence
   else if (state.steps > 0) { txt = String(Math.min(state.steps, 99)); }  // steps toward first window
   try { api.action.setBadgeText({ text: txt }); api.action.setBadgeBackgroundColor({ color: color }); } catch (e) {}
@@ -174,8 +207,10 @@ function engageLock() {
 }
 function releaseLock() {
   state.locked = false;
-  scores = [];              // fresh packet after a verified step-up (probation-style reset)
+  scores = [];              // fresh packets after a verified step-up (probation-style reset)
+  mouseScores = [];
   state.verdict = null;
+  state.mouseVerdict = null;
   state.steps = 0;          // and a fresh step counter — otherwise the badge sticks at 99
   broadcastAll({ type: "cg:unlock" });
   broadcastAll({ type: "cg:reset" });   // content scripts drop their event buffers too
@@ -226,7 +261,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       scores = [];            // old packet was scored by the previous model
       state.verdict = null;
       return;
-    case "cg:model-ready": state.modelReady = true; state.modelError = null; state.modelPersonal = !!msg.personal; return;
+    case "cg:model-ready": state.modelReady = true; state.modelError = null; state.modelPersonal = !!msg.personal; state.mouseReady = !!msg.mouse; return;
     case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":
       reply({ enabled: config.enabled, excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey });
@@ -258,12 +293,15 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
     case "cg:windows":
       if (msg.latest) onWindow(msg.latest);
       return;
+    case "cg:windows-mouse":
+      if (msg.latest) onMouseWindow(msg.latest);
+      return;
     case "cg:status":
       if (!state.modelReady) {
         // Make sure the offscreen doc exists, then ask it directly whether the model loaded.
         ensureOffscreen().then(function () {
           pingOffscreen(function (r) {
-            if (r && r.ready) { state.modelReady = true; state.modelError = null; state.modelPersonal = !!r.personal; }
+            if (r && r.ready) { state.modelReady = true; state.modelError = null; state.modelPersonal = !!r.personal; state.mouseReady = !!r.mouse; }
             else if (r && r.error) { state.modelError = r.error; }
             reply(statusObj());
           });
