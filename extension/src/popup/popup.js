@@ -8,6 +8,8 @@ api.tabs.query({ active: true, currentWindow: true }, function (tabs) {
   try { curOrigin = new URL(tabs[0].url).origin; } catch (e) { curOrigin = ""; }
   refresh();
 });
+// Poll so the model-ready state and live verdict update while the popup is open.
+setInterval(refresh, 1000);
 
 function refresh() {
   api.runtime.sendMessage({ type: "cg:status" }, function (s) {

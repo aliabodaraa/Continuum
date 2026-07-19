@@ -46,6 +46,23 @@ function scoreViaOffscreen(win) {
   });
 }
 
+function statusObj() {
+  return {
+    enabled: config.enabled, totalWindows: state.totalWindows, lastWindowAt: state.lastWindowAt,
+    exclusions: config.exclusions, modelReady: state.modelReady, modelError: state.modelError, verdict: state.verdict,
+  };
+}
+
+// Ask the offscreen doc whether the model is ready (survives worker restarts, where the
+// in-memory modelReady flag is lost but the offscreen doc is still alive).
+function pingOffscreen(cb) {
+  try {
+    api.runtime.sendMessage({ target: "offscreen", type: "cg:ping" }, function (r) {
+      cb(api.runtime.lastError ? null : r);
+    });
+  } catch (e) { cb(null); }
+}
+
 // ---- capture → score (offscreen) → verdict ----
 var scoringBusy = false, pendingWin = null;
 async function onWindow(win) {
@@ -97,10 +114,18 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       if (msg.latest) onWindow(msg.latest);
       return;
     case "cg:status":
-      reply({
-        enabled: config.enabled, totalWindows: state.totalWindows, lastWindowAt: state.lastWindowAt,
-        exclusions: config.exclusions, modelReady: state.modelReady, modelError: state.modelError, verdict: state.verdict,
-      });
+      if (!state.modelReady) {
+        // Make sure the offscreen doc exists, then ask it directly whether the model loaded.
+        ensureOffscreen().then(function () {
+          pingOffscreen(function (r) {
+            if (r && r.ready) { state.modelReady = true; state.modelError = null; }
+            else if (r && r.error) { state.modelError = r.error; }
+            reply(statusObj());
+          });
+        });
+        return true; // async reply
+      }
+      reply(statusObj());
       return true;
     case "cg:setEnabled":
       config.enabled = !!msg.value;
