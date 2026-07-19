@@ -25,8 +25,8 @@ function refresh() {
     var vd = q("verdict"), v = s.verdict;
     if (!s.enabled) { vd.textContent = "paused"; vd.style.background = "#334155"; }
     else if (!s.modelReady) { vd.textContent = s.modelError ? ("model error: " + s.modelError) : "loading model…"; vd.style.background = "#334155"; }
-    else if (!v) { vd.textContent = "type a little to begin…"; vd.style.background = "#1e293b"; }
-    else if (v.status === "analyzing") { vd.textContent = "analyzing… (" + v.packet + "/" + v.need + ")"; vd.style.background = "#334155"; }
+    else if (!v) { vd.textContent = "idle — type on any web page to begin"; vd.style.background = "#1e293b"; }
+    else if (v.status === "analyzing") { vd.textContent = "analyzing your typing… (" + v.packet + "/" + v.need + ")"; vd.style.background = "#334155"; }
     else if (v.status === "suspicious") { vd.textContent = "⚠ suspicious — " + v.mean + "%"; vd.style.background = "#7f1d1d"; }
     else { vd.textContent = "✓ verified — " + v.mean + "%"; vd.style.background = "#065f46"; }
     q("toggle").textContent = s.enabled ? "Turn off" : "Turn on";

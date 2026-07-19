@@ -97,7 +97,11 @@ function broadcastConfig() {
   if (!api.tabs) return;
   api.tabs.query({}, function (tabs) {
     (tabs || []).forEach(function (t) {
-      try { api.tabs.sendMessage(t.id, { type: "cg:config", enabled: config.enabled, exclusions: config.exclusions }); } catch (e) {}
+      // Callback reads lastError so tabs without a content script (chrome:// pages, the
+      // web store) don't produce an unhandled "receiving end does not exist" rejection.
+      try {
+        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: config.enabled, exclusions: config.exclusions }, function () { void api.runtime.lastError; });
+      } catch (e) {}
     });
   });
 }
