@@ -55,6 +55,7 @@
   function isHidden(t) { return t && t.tagName === "INPUT" && t.type === "hidden"; }
 
   function rec(type, e) {
+    if (!rec.fired) { rec.fired = true; try { console.log("[continuum-guard] FIRST key event (" + type + ") — listener works; field=" + (e.target && (e.target.name || e.target.id || e.target.tagName))); } catch (x) {} }
     if (dead) return;
     if (!alive()) { teardown(); return; }
     if (!enabled || excluded) return;

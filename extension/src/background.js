@@ -98,9 +98,21 @@ async function onWindow(win) {
         packet: scores.length,
         need: RECENT,
       };
+      updateBadge();
     }
   } catch (e) { console.error("[continuum-guard] scoring error:", e && e.message); }
   finally { scoringBusy = false; }
+}
+
+// Live status on the toolbar icon badge, so capture/verdict is visible without the popup.
+function updateBadge() {
+  if (!api.action || !api.action.setBadgeText) return;
+  var txt = "", color = "#4f46e5";
+  if (!config.enabled) { txt = "off"; color = "#475569"; }
+  else if (state.verdict && state.verdict.status === "suspicious") { txt = "!"; color = "#dc2626"; }
+  else if (state.verdict && state.verdict.status === "genuine") { txt = "OK"; color = "#16a34a"; }
+  else if (state.steps > 0) { txt = String(Math.min(state.steps, 99)); }  // steps toward first window
+  try { api.action.setBadgeText({ text: txt }); api.action.setBadgeBackgroundColor({ color: color }); } catch (e) {}
 }
 
 function broadcastConfig() {
@@ -125,7 +137,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       reply({ enabled: config.enabled, excluded: config.exclusions.indexOf(msg.origin) >= 0 });
       return true;
     case "cg:activity":
-      if (config.enabled) { state.steps = msg.steps || 0; state.needSteps = msg.need || 50; state.lastWindowAt = Date.now(); }
+      if (config.enabled) { state.steps = msg.steps || 0; state.needSteps = msg.need || 50; state.lastWindowAt = Date.now(); updateBadge(); }
       return;
     case "cg:windows":
       if (msg.latest) onWindow(msg.latest);
@@ -148,6 +160,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       config.enabled = !!msg.value;
       api.storage.local.set({ cg_enabled: config.enabled });
       broadcastConfig();
+      updateBadge();
       reply({ ok: true });
       return true;
     case "cg:toggleExclude": {
