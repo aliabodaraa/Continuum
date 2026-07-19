@@ -18,6 +18,7 @@ function refresh() {
     q("state").textContent = s.enabled ? "on" : "off";
     q("dot").className = "dot" + (s.enabled ? "" : " off");
     q("wins").textContent = s.totalWindows;
+    q("steps").textContent = (s.steps || 0) + "/" + (s.needSteps || 50);
     q("model").textContent = s.modelReady ? "ready (on-device)" : (s.modelError ? "error" : "loading…");
     q("site").textContent = curOrigin ? (excluded ? curOrigin + " (excluded)" : curOrigin) : "—";
 

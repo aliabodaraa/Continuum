@@ -73,6 +73,8 @@
     if (!F) return;
     var steps = F.eventSteps(events);
     var windows = F.stepsToWindows(steps);
+    // Live progress so the popup shows capture is working before a full window forms.
+    safeSend({ type: "cg:activity", steps: steps.length, need: F.WINDOW_SIZE });
     if (windows.length > lastWindowCount) {
       lastWindowCount = windows.length;
       // Only the newest window of TIMING features — never the characters.

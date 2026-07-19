@@ -18,7 +18,7 @@ function decide(scores) {
 }
 
 var config = { enabled: true, exclusions: [] };
-var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null };
+var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50 };
 var scores = [];  // rolling last N window scores
 
 api.storage.local.get(["cg_enabled", "cg_exclusions"], function (d) {
@@ -59,6 +59,7 @@ function statusObj() {
   return {
     enabled: config.enabled, totalWindows: state.totalWindows, lastWindowAt: state.lastWindowAt,
     exclusions: config.exclusions, modelReady: state.modelReady, modelError: state.modelError, verdict: state.verdict,
+    steps: state.steps, needSteps: state.needSteps,
   };
 }
 
@@ -123,6 +124,9 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
     case "cg:hello":
       reply({ enabled: config.enabled, excluded: config.exclusions.indexOf(msg.origin) >= 0 });
       return true;
+    case "cg:activity":
+      if (config.enabled) { state.steps = msg.steps || 0; state.needSteps = msg.need || 50; state.lastWindowAt = Date.now(); }
+      return;
     case "cg:windows":
       if (msg.latest) onWindow(msg.latest);
       return;
