@@ -18,7 +18,7 @@ function decide(scores) {
 }
 
 var config = { enabled: true, exclusions: [] };
-var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false };
+var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false };
 var scores = [];  // rolling last N window scores
 
 api.storage.local.get(["cg_enabled", "cg_exclusions", "cg_enrolled_at"], function (d) {
@@ -60,7 +60,7 @@ function statusObj() {
   return {
     enabled: config.enabled, totalWindows: state.totalWindows, lastWindowAt: state.lastWindowAt,
     exclusions: config.exclusions, modelReady: state.modelReady, modelError: state.modelError, verdict: state.verdict,
-    steps: state.steps, needSteps: state.needSteps, enrolled: state.enrolled,
+    steps: state.steps, needSteps: state.needSteps, enrolled: state.enrolled, modelPersonal: state.modelPersonal,
   };
 }
 
@@ -133,7 +133,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
   if (!msg) return;
   switch (msg.type) {
     case "cg:enrolled": state.enrolled = true; return;
-    case "cg:model-ready": state.modelReady = true; state.modelError = null; return;
+    case "cg:model-ready": state.modelReady = true; state.modelError = null; state.modelPersonal = !!msg.personal; return;
     case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":
       reply({ enabled: config.enabled, excluded: config.exclusions.indexOf(msg.origin) >= 0 });
@@ -149,7 +149,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
         // Make sure the offscreen doc exists, then ask it directly whether the model loaded.
         ensureOffscreen().then(function () {
           pingOffscreen(function (r) {
-            if (r && r.ready) { state.modelReady = true; state.modelError = null; }
+            if (r && r.ready) { state.modelReady = true; state.modelError = null; state.modelPersonal = !!r.personal; }
             else if (r && r.error) { state.modelError = r.error; }
             reply(statusObj());
           });
