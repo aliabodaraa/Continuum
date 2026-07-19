@@ -233,15 +233,19 @@ app.post("/v1/keystroke/check", async (req, res) => {
       if (trueKeys > checkQuality.keydownCount && checkQuality.textLength > 0) checkQuality.typedCoverage = trueKeys / checkQuality.textLength;
       if (truePasted > checkQuality.pastedLength) checkQuality.pastedLength = truePasted;
     }
-    // Degenerate-input detector: hammering one key (or a tiny set) is "typing" the identity
-    // model can't judge — it's still your hands, so it may score genuine, yet it's not
-    // verifiable rhythm. Very low key DIVERSITY over many keydowns => challenge (like a paste).
-    const degenerateInput = (() => {
-      const kd = (Array.isArray(keystrokeEvents) ? keystrokeEvents : [])
-        .filter((e) => e && e.eventType === "keydown" && Number(e.keyCode) > 0);
-      if (kd.length < 30) return false;
-      return new Set(kd.map((e) => Number(e.keyCode))).size <= 4;
-    })();
+    // Degenerate / unverifiable input the identity model can't judge (it's still your hands,
+    // so it may score genuine, yet it isn't real rhythm). Two patterns, either one => challenge:
+    //  (a) low key DIVERSITY  — hammering one key or a tiny set;
+    //  (b) chaotic TIMING     — keydowns landing implausibly close together (< 40ms apart is
+    //      > 25 keys/s, i.e. key rollover / slapping, not sustainable deliberate typing).
+    const degKeydowns = (Array.isArray(keystrokeEvents) ? keystrokeEvents : [])
+      .filter((e) => e && e.eventType === "keydown" && Number(e.keyCode) > 0);
+    const lowDiversity = degKeydowns.length >= 30 && new Set(degKeydowns.map((e) => Number(e.keyCode))).size <= 4;
+    const degDowns = degKeydowns.map((e) => Number(e.timestampRelative)).filter(Number.isFinite).sort((a, b) => a - b);
+    let degTooFast = 0, degGaps = 0;
+    for (let i = 1; i < degDowns.length; i++) { const dd = degDowns[i] - degDowns[i - 1]; if (dd >= 0) { degGaps += 1; if (dd < 40) degTooFast += 1; } }
+    const chaoticInput = degGaps >= 20 && degTooFast / degGaps >= 0.4;
+    const degenerateInput = lowDiversity || chaoticInput;
     const evaluation = pastePolicyViolation(checkQuality)
       ? pastePolicyEvaluation(checkQuality, keystrokeTimings)
       : await ks.evaluateKeystrokes({ events: keystrokeEvents, timings: keystrokeTimings, userId, db });
@@ -287,7 +291,7 @@ app.post("/v1/keystroke/check", async (req, res) => {
       typingEvaluation: evaluation,
       riskToken: signRisk(userId, riskLevel(isWarmup, evaluation.isSuspicious), "keystroke"),
       message: passkeyTriggered
-        ? (degenerateInput ? "Repeated/degenerate keystrokes can't verify identity. Passkey verification required."
+        ? (degenerateInput ? "Repeated or erratic keystrokes can't verify identity. Passkey verification required."
           : "Typing rhythm does not match. Passkey verification required.")
         : isWarmup ? "Warming up — building the first evaluation packet." : "Typing rhythm verified.",
     });
