@@ -19,6 +19,7 @@ function refresh() {
     q("dot").className = "dot" + (s.enabled ? "" : " off");
     q("wins").textContent = s.totalWindows;
     q("steps").textContent = (s.steps || 0) + "/" + (s.needSteps || 50);
+    q("profile").textContent = s.enrolled ? "trained ✓" : "not trained (base model)";
     q("model").textContent = s.modelReady ? "ready (on-device)" : (s.modelError ? "error" : "loading…");
     q("site").textContent = curOrigin ? (excluded ? curOrigin + " (excluded)" : curOrigin) : "—";
 
@@ -45,4 +46,8 @@ q("toggle").addEventListener("click", function () {
 q("exclude").addEventListener("click", function () {
   if (!curOrigin) return;
   api.runtime.sendMessage({ type: "cg:toggleExclude", origin: curOrigin }, refresh);
+});
+
+q("enroll").addEventListener("click", function () {
+  api.tabs.create({ url: api.runtime.getURL("src/enroll.html") });
 });

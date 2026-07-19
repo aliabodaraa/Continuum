@@ -18,13 +18,14 @@ function decide(scores) {
 }
 
 var config = { enabled: true, exclusions: [] };
-var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50 };
+var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false };
 var scores = [];  // rolling last N window scores
 
-api.storage.local.get(["cg_enabled", "cg_exclusions"], function (d) {
+api.storage.local.get(["cg_enabled", "cg_exclusions", "cg_enrolled_at"], function (d) {
   d = d || {};
   config.enabled = d.cg_enabled !== false;
   config.exclusions = d.cg_exclusions || [];
+  state.enrolled = !!d.cg_enrolled_at;
 });
 
 // ---- offscreen document that hosts TF.js (Chromium; Firefox has no offscreen API) ----
@@ -59,7 +60,7 @@ function statusObj() {
   return {
     enabled: config.enabled, totalWindows: state.totalWindows, lastWindowAt: state.lastWindowAt,
     exclusions: config.exclusions, modelReady: state.modelReady, modelError: state.modelError, verdict: state.verdict,
-    steps: state.steps, needSteps: state.needSteps,
+    steps: state.steps, needSteps: state.needSteps, enrolled: state.enrolled,
   };
 }
 
@@ -131,6 +132,7 @@ function broadcastConfig() {
 api.runtime.onMessage.addListener(function (msg, sender, reply) {
   if (!msg) return;
   switch (msg.type) {
+    case "cg:enrolled": state.enrolled = true; return;
     case "cg:model-ready": state.modelReady = true; state.modelError = null; return;
     case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":

@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Continuum Guard — Train on your typing</title>
+    <style>
+      body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; color: #0f172a; background: #f8fafc; }
+      h1 { font-size: 22px; margin: 0 0 6px; }
+      p.sub { color: #475569; margin: 0 0 20px; }
+      blockquote { background: #eef2ff; border-left: 4px solid #4f46e5; margin: 0 0 14px; padding: 12px 16px; border-radius: 8px; color: #1e293b; }
+      textarea { width: 100%; min-height: 150px; padding: 12px 14px; border: 1.5px solid #cbd5e1; border-radius: 10px; font: inherit; line-height: 1.6; resize: vertical; box-sizing: border-box; }
+      textarea:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,.15); }
+      .bar { height: 12px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin: 16px 0 8px; }
+      .bar i { display: block; height: 100%; width: 0; background: #4f46e5; transition: width .2s; }
+      .status { font-weight: 700; margin-bottom: 16px; }
+      button { background: #4f46e5; color: #fff; border: 0; border-radius: 10px; padding: 12px 20px; font: 700 15px system-ui; cursor: pointer; }
+      button:disabled { background: #94a3b8; cursor: default; }
+      #done { display: none; margin-top: 16px; padding: 12px 16px; background: #dcfce7; border: 1px solid #86efac; border-radius: 10px; color: #065f46; font-weight: 600; }
+      .note { color: #64748b; font-size: 13px; margin-top: 18px; }
+    </style>
+  </head>
+  <body>
+    <h1>Train Continuum Guard on your typing</h1>
+    <p class="sub">Type the passage below at your <b>normal, natural pace</b>. Continuum learns your rhythm — <b>how</b> you type, never <b>what</b> you type. Keep going until the bar fills.</p>
+    <blockquote id="passage"></blockquote>
+    <textarea id="ta" placeholder="Start typing the passage here…" autofocus></textarea>
+    <div class="bar"><i id="prog"></i></div>
+    <div class="status" id="status">0 / 12 windows captured</div>
+    <button id="save" disabled>Save my profile</button>
+    <div id="done">✓ Your typing profile is saved. You can close this tab — the guard now knows your rhythm.</div>
+    <p class="note">Only timing features (key hold + gaps) are stored locally on this device. The text you type is never saved or sent.</p>
+    <script src="features.js"></script>
+    <script src="enroll.js"></script>
+  </body>
+</html>
