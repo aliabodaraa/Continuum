@@ -130,17 +130,16 @@ async function onWindow(win) {
       scores.push(s);
       if (scores.length > RECENT) scores.shift();
       var v = decide(scores);
-      // PROVISIONAL verdict from the 2nd window (~60 keystrokes) so the user gets early
-      // feedback; ENFORCEMENT still waits for the full packet — locking on a thin
-      // provisional signal would false-lock genuine users.
+      // Verdict only on a FULL packet (6 windows ≈ 100 keystrokes) — early provisional
+      // verdicts were tried and reverted: they surface "!" on thin evidence without
+      // making the decision meaningfully faster.
       state.verdict = {
-        status: scores.length < 2 ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
-        provisional: scores.length < RECENT,
+        status: scores.length < RECENT ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
         mean: Math.round(v.mean * 100),
         packet: scores.length,
         need: RECENT,
       };
-      if (scores.length >= RECENT && v.suspicious && !state.locked) engageLock();
+      if (state.verdict.status === "suspicious" && !state.locked) engageLock();
       updateBadge();
     }
   } catch (e) { console.error("[continuum-guard] scoring error:", e && e.message); }
@@ -181,6 +180,16 @@ function releaseLock() {
   broadcastAll({ type: "cg:unlock" });
   broadcastAll({ type: "cg:reset" });   // content scripts drop their event buffers too
   updateBadge();
+}
+
+// After a successful ceremony, close the RP window — Chrome hands focus straight back
+// to the window/tab the user was on. Short delay so the ✓ message is visible.
+function closeRpTab(sender) {
+  if (!(sender && sender.tab && sender.tab.id != null && api.tabs)) return;
+  var tabId = sender.tab.id;
+  setTimeout(function () {
+    try { api.tabs.remove(tabId, function () { void api.runtime.lastError; }); } catch (e) {}
+  }, 1200);
 }
 
 // Open the RP ceremony as a small dialog-style popup window (falls back to a tab).
@@ -230,13 +239,17 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       return;
     case "cg:verified":
       // Relayed by the content script on the RP page — trust ONLY that origin.
-      if (sender && sender.url && sender.url.indexOf(RP_BASE) === 0) releaseLock();
+      if (sender && sender.url && sender.url.indexOf(RP_BASE) === 0) {
+        releaseLock();
+        closeRpTab(sender);   // return the user to where they were
+      }
       return;
     case "cg:passkey-registered":
       if (sender && sender.url && sender.url.indexOf(RP_BASE) === 0) {
         state.hasPasskey = true;
         api.storage.local.set({ cg_passkey: 1 });
         if (state.locked) broadcastAll({ type: "cg:lock", hasPasskey: true });  // refresh overlay button
+        closeRpTab(sender);
       }
       return;
     case "cg:activity":

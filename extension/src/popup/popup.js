@@ -31,8 +31,8 @@ function refresh() {
     else if (s.locked) { vd.textContent = "🔒 locked — passkey verification required"; vd.style.background = "#7f1d1d"; }
     else if (!v) { vd.textContent = "idle — type on any web page to begin"; vd.style.background = "#1e293b"; }
     else if (v.status === "analyzing") { vd.textContent = "analyzing your typing… (" + v.packet + "/" + v.need + ")"; vd.style.background = "#334155"; }
-    else if (v.status === "suspicious") { vd.textContent = "⚠ suspicious — " + v.mean + "%" + (v.provisional ? " (early, " + v.packet + "/" + v.need + ")" : ""); vd.style.background = "#7f1d1d"; }
-    else { vd.textContent = "✓ verified — " + v.mean + "%" + (v.provisional ? " (early, " + v.packet + "/" + v.need + ")" : ""); vd.style.background = "#065f46"; }
+    else if (v.status === "suspicious") { vd.textContent = "⚠ suspicious — " + v.mean + "%"; vd.style.background = "#7f1d1d"; }
+    else { vd.textContent = "✓ verified — " + v.mean + "%"; vd.style.background = "#065f46"; }
     q("toggle").textContent = s.enabled ? "Turn off" : "Turn on";
     q("toggle").className = s.enabled ? "" : "off";
     q("exclude").textContent = excluded ? "Include this site" : "Exclude this site";
