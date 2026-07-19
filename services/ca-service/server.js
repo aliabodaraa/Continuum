@@ -233,6 +233,15 @@ app.post("/v1/keystroke/check", async (req, res) => {
       if (trueKeys > checkQuality.keydownCount && checkQuality.textLength > 0) checkQuality.typedCoverage = trueKeys / checkQuality.textLength;
       if (truePasted > checkQuality.pastedLength) checkQuality.pastedLength = truePasted;
     }
+    // Degenerate-input detector: hammering one key (or a tiny set) is "typing" the identity
+    // model can't judge — it's still your hands, so it may score genuine, yet it's not
+    // verifiable rhythm. Very low key DIVERSITY over many keydowns => challenge (like a paste).
+    const degenerateInput = (() => {
+      const kd = (Array.isArray(keystrokeEvents) ? keystrokeEvents : [])
+        .filter((e) => e && e.eventType === "keydown" && Number(e.keyCode) > 0);
+      if (kd.length < 30) return false;
+      return new Set(kd.map((e) => Number(e.keyCode))).size <= 4;
+    })();
     const evaluation = pastePolicyViolation(checkQuality)
       ? pastePolicyEvaluation(checkQuality, keystrokeTimings)
       : await ks.evaluateKeystrokes({ events: keystrokeEvents, timings: keystrokeTimings, userId, db });
@@ -247,18 +256,20 @@ app.post("/v1/keystroke/check", async (req, res) => {
     const unverifiable = evaluation.unverifiable === true;
     const isPastePolicy = evaluation.modelType === "paste-policy";
     const isWarmup = Number(evaluation.windowCount || 0) <= ks.RECENT_WINDOW_COUNT &&
-      !overwhelmingImpostor && !unverifiable && !isPastePolicy;
+      !overwhelmingImpostor && !unverifiable && !isPastePolicy && !degenerateInput;
     // Debounce the CHALLENGE (not the scoring): normal packet-vote suspicion must persist
-    // for KS_SUSPICIOUS_STRIKES consecutive checks; strong signals fire immediately. A
-    // genuine verdict resets the streak. Probation (post step-up, client-side) is unaffected.
-    const rawSuspicious = !isWarmup && evaluation.isSuspicious;
-    const strongSignal = overwhelmingImpostor || unverifiable || isPastePolicy;
+    // across KS_SUSPICIOUS_MIN of the last KS_SUSPICIOUS_WINDOW checks (sliding window);
+    // strong signals fire immediately. A genuine run flushes the history. Probation (post
+    // step-up, client-side) is unaffected. Degenerate input is unverifiable even when the
+    // model scores it genuine, so it forces suspicion AND counts as a strong signal.
+    const effectiveSuspicious = (!isWarmup && evaluation.isSuspicious) || degenerateInput;
+    const strongSignal = overwhelmingImpostor || unverifiable || isPastePolicy || degenerateInput;
     let hist = suspiciousHistory.get(userId) || [];
-    hist.push(rawSuspicious);
+    hist.push(effectiveSuspicious);
     if (hist.length > KS_SUSPICIOUS_WINDOW) hist = hist.slice(-KS_SUSPICIOUS_WINDOW);
     suspiciousHistory.set(userId, hist);
     const recentSuspicious = hist.filter(Boolean).length;
-    const passkeyTriggered = !!hasPasskey && rawSuspicious && (strongSignal || recentSuspicious >= KS_SUSPICIOUS_MIN);
+    const passkeyTriggered = !!hasPasskey && effectiveSuspicious && (strongSignal || recentSuspicious >= KS_SUSPICIOUS_MIN);
     if (passkeyTriggered) { suspiciousHistory.set(userId, []); lock.setLocked(userId); }
 
     ks.logAuthDecision(userId, db, { source: "check", evaluation, passkeyTriggered });
@@ -275,7 +286,9 @@ app.post("/v1/keystroke/check", async (req, res) => {
       modelConfidence: evaluation.modelConfidence, isSuspicious: evaluation.isSuspicious,
       typingEvaluation: evaluation,
       riskToken: signRisk(userId, riskLevel(isWarmup, evaluation.isSuspicious), "keystroke"),
-      message: passkeyTriggered ? "Typing rhythm does not match. Passkey verification required."
+      message: passkeyTriggered
+        ? (degenerateInput ? "Repeated/degenerate keystrokes can't verify identity. Passkey verification required."
+          : "Typing rhythm does not match. Passkey verification required.")
         : isWarmup ? "Warming up — building the first evaluation packet." : "Typing rhythm verified.",
     });
   } catch (err) { console.error("check:", err); res.status(500).json({ error: err.message }); }
