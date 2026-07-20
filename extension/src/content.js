@@ -128,11 +128,14 @@
   function emit() {
     var F = globalThis.ContinuumFeatures;
     if (!F) { if (!warnedNoF) { warnedNoF = true; console.warn("[continuum-guard] ContinuumFeatures NOT loaded — features.js didn't run; capture can't build windows"); } return; }
-    var steps = F.eventSteps(events);
-    var windows = F.stepsToWindows(steps);
-    if (events.length % 20 === 0) { try { console.log("[continuum-guard] keys=" + events.length + " steps=" + steps.length + "/" + F.WINDOW_SIZE + " windows=" + windows.length); } catch (e) {} }
+    var segments = F.eventSteps(events);           // array of pause-separated step runs
+    var windows = F.stepsToWindows(segments);
+    // Progress toward the NEXT window only cares about the CURRENT run — a pause starts
+    // a fresh one, so the counter resets after a real pause instead of counting through it.
+    var curSteps = segments.length ? segments[segments.length - 1].length : 0;
+    if (events.length % 20 === 0) { try { console.log("[continuum-guard] keys=" + events.length + " steps=" + curSteps + "/" + F.WINDOW_SIZE + " windows=" + windows.length); } catch (e) {} }
     // Live progress so the popup shows capture is working before a full window forms.
-    safeSend({ type: "cg:activity", steps: steps.length, need: F.WINDOW_SIZE });
+    safeSend({ type: "cg:activity", steps: curSteps, need: F.WINDOW_SIZE });
     if (windows.length > lastWindowCount) {
       lastWindowCount = windows.length;
       var latest = windows[windows.length - 1];

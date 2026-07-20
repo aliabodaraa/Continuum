@@ -12,6 +12,11 @@
   function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 
   // events: [{ keyCode, type: "keydown"|"keyup", t (ms), field }]
+  // A composition pause (dd > PAUSE_DD) is a HARD BREAK, not just a dropped digraph: the
+  // steps right before and right after a real pause (stopped to think, then resumed) are
+  // a different behavioral moment than sustained typing, so they must never end up in the
+  // same 50-step window. Returned as segments (arrays of runs), not one flat array, so
+  // stepsToWindows can never slide a window across a pause boundary.
   function eventSteps(events) {
     var lastDown = {}, keyUps = new Map(), downs = [];
     for (var i = 0; i < events.length; i++) {
@@ -19,7 +24,7 @@
       if (e.type === "keydown") { lastDown[id] = e; downs.push(e); }
       else if (e.type === "keyup") { var d = lastDown[id]; if (d) { keyUps.set(d, e); delete lastDown[id]; } }
     }
-    var steps = [];
+    var segments = [], current = [];
     for (var j = 0; j + 1 < downs.length; j++) {
       var a = downs[j], b = downs[j + 1];
       if (a.field !== b.field) continue;                 // digraph must be within one field
@@ -28,17 +33,24 @@
       var dwell1 = (au.t - a.t) / 1000, dwell2 = (bu.t - b.t) / 1000;
       var dd = (b.t - a.t) / 1000, ud = (b.t - au.t) / 1000;
       if (dwell1 < 0 || dwell2 < 0 || dd < 0) continue;
-      if (dd < MIN_DD || dwell1 < MIN_DWELL || dwell2 < MIN_DWELL) continue;  // artifact
-      if (dd > PAUSE_DD) continue;                                            // composition pause
-      steps.push([clamp01(a.keyCode / 254), clamp01(b.keyCode / 254), dwell1, dwell2, dd, ud]);
+      if (dd < MIN_DD || dwell1 < MIN_DWELL || dwell2 < MIN_DWELL) continue;  // artifact — skip, no break
+      if (dd > PAUSE_DD) {                                                    // composition pause — hard break
+        if (current.length) { segments.push(current); current = []; }
+        continue;
+      }
+      current.push([clamp01(a.keyCode / 254), clamp01(b.keyCode / 254), dwell1, dwell2, dd, ud]);
     }
-    return steps;
+    if (current.length) segments.push(current);
+    return segments;
   }
 
-  function stepsToWindows(steps) {
+  function stepsToWindows(segments) {
     var w = [];
-    if (steps.length < WINDOW_SIZE) return w;
-    for (var s = 0; s + WINDOW_SIZE <= steps.length; s += STRIDE) w.push(steps.slice(s, s + WINDOW_SIZE));
+    for (var k = 0; k < segments.length; k++) {
+      var steps = segments[k];
+      if (steps.length < WINDOW_SIZE) continue;
+      for (var s = 0; s + WINDOW_SIZE <= steps.length; s += STRIDE) w.push(steps.slice(s, s + WINDOW_SIZE));
+    }
     return w;
   }
 
