@@ -280,6 +280,26 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       scores = [];            // old packet was scored by the previous model
       state.verdict = null;
       return;
+    case "cg:profile-reset": {
+      // The wizard just deleted the stored windows + trained heads (IndexedDB) — mirror
+      // that here: drop back to untrained (monitoring off) until the user retrains.
+      state.enrolled = false;
+      state.mouseReady = false;
+      state.mouseVerdict = null;
+      scores = [];
+      mouseScores = [];
+      state.verdict = null;
+      var wasLocked = state.locked;
+      state.locked = false;
+      setModelPersonal(false);                          // broadcasts cg:config (enabled:false)
+      if (wasLocked) broadcastAll({ type: "cg:unlock" });
+      broadcastAll({ type: "cg:reset" });                // tabs drop buffered timings too
+      ensureOffscreen().then(function () {
+        try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model" }, function () { void api.runtime.lastError; }); } catch (e) {}
+      });
+      updateBadge();
+      return;
+    }
     case "cg:model-ready": state.modelReady = true; state.modelError = null; setModelPersonal(msg.personal); state.mouseReady = !!msg.mouse; return;
     case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":

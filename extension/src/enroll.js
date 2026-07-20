@@ -113,6 +113,44 @@ document.getElementById("regpk").addEventListener("click", function () {
   try { api.runtime.sendMessage({ type: "cg:open-register" }); } catch (e) {}
 });
 
+// ---- show what's already on file, and let the user wipe it instead of accumulating on
+// top of samples that may have been captured while the passage text was confusing them ----
+var existingBox = document.getElementById("existingProfile");
+var existingCount = document.getElementById("existingCount");
+var resetLink = document.getElementById("resetProfile");
+
+getProfileId(function (id) {
+  api.storage.local.get(["cg_enroll_" + id, "cg_enroll_mouse_" + id], function (d) {
+    var nKey = ((d && d["cg_enroll_" + id]) || []).length;
+    var nMouse = ((d && d["cg_enroll_mouse_" + id]) || []).length;
+    if (nKey > 0 || nMouse > 0) {
+      existingCount.textContent = nKey + " typing + " + nMouse + " mouse windows";
+      existingBox.style.display = "block";
+    }
+  });
+});
+
+var resetArmed = false, resetTimer = null;
+resetLink.addEventListener("click", function (e) {
+  e.preventDefault();
+  if (!resetArmed) {
+    resetArmed = true;
+    resetLink.textContent = "⚠ click again to confirm — deletes your trained model";
+    resetTimer = setTimeout(function () { resetArmed = false; resetLink.textContent = "🗑️ clear & start fresh"; }, 4000);
+    return;
+  }
+  clearTimeout(resetTimer);
+  resetLink.textContent = "clearing…";
+  getProfileId(function (id) {
+    api.storage.local.remove(["cg_enroll_" + id, "cg_enroll_mouse_" + id, "cg_enrolled_at"], function () {
+      ContinuumTrainer.clearTrained().then(function () {
+        try { api.runtime.sendMessage({ type: "cg:profile-reset" }); } catch (e2) {}
+        location.reload();
+      });
+    });
+  });
+});
+
 saveBtn.addEventListener("click", function () {
   var wNew = currentWindows();
   var ts = document.getElementById("trainStatus");
