@@ -20,17 +20,42 @@ var PASSAGE_FALLBACKS = [
   "The model should learn from repeated samples collected from the real user. These samples are separate from the password and are used only after passkey setup. When somebody else types on my account, their holding times and the gaps between their keys will not match my profile, and the system can then ask for stronger proof of identity right away.",
 ];
 var fbIdx = Math.floor(Math.random() * PASSAGE_FALLBACKS.length);
+
+// Lower score = simpler/more natural to type. Penalizes long/unfamiliar words, digits
+// (dates), parentheses (asides), and non-ASCII (names/diacritics) — the things that make
+// someone pause, re-read, or hunt-and-peck instead of typing at their normal rhythm.
+function complexityScore(text) {
+  var words = text.split(/\s+/).filter(Boolean);
+  if (words.length < 15) return Infinity;
+  var longWords = words.filter(function (w) { return w.replace(/[^a-zA-Z]/g, "").length > 9; }).length;
+  var digits = (text.match(/[0-9]/g) || []).length;
+  var parens = (text.match(/[()]/g) || []).length;
+  var nonAscii = (text.match(/[^\x00-\x7F]/g) || []).length;
+  var avgWordLen = words.reduce(function (s, w) { return s + w.length; }, 0) / words.length;
+  return (longWords / words.length) * 3 + (digits / text.length) * 4 + (parens / text.length) * 3 + (nonAscii / text.length) * 5 + Math.max(0, avgWordLen - 5) * 0.6;
+}
+
+// Simple English Wikipedia — same API shape as en.wikipedia.org but written in short
+// sentences and plain vocabulary by design, which is far less likely to trip someone up
+// mid-sentence than the general encyclopedia. Fetch a few candidates and keep the
+// simplest-scoring one, since even Simple Wikipedia occasionally lands on a dense topic.
 async function fetchRandomText() {
-  for (var i = 0; i < 3; i++) {
+  var candidates = [];
+  for (var i = 0; i < 4; i++) {
     try {
-      var res = await fetch("https://en.wikipedia.org/api/rest_v1/page/random/summary", { cache: "no-store" });
+      var res = await fetch("https://simple.wikipedia.org/api/rest_v1/page/random/summary", { cache: "no-store" });
       if (!res.ok) continue;
       var data = await res.json();
       var text = (data.extract || "").replace(/\n+/g, " ").trim();
-      if (text.length >= 150 && text.indexOf("<") < 0) return text.slice(0, 480);
+      if (text.length >= 150 && text.indexOf("<") < 0) {
+        var t = text.slice(0, 420);
+        candidates.push({ text: t, score: complexityScore(t) });
+      }
     } catch (e) { /* retry */ }
   }
-  return null;
+  if (!candidates.length) return null;
+  candidates.sort(function (a, b) { return a.score - b.score; });
+  return candidates[0].text;
 }
 async function nextPassage() { return (await fetchRandomText()) || PASSAGE_FALLBACKS[fbIdx++ % PASSAGE_FALLBACKS.length]; }
 
