@@ -9,14 +9,43 @@ var MAX_STORED_KEY_WINDOWS = 60;  // cap on accumulated keystroke windows across
 var MAX_STORED_MOUSE_WINDOWS = 80;
 var events = [], t0 = performance.now();
 
-var PASSAGE =
-  "Continuous authentication works best when the system observes ordinary writing over time. " +
-  "I am typing this paragraph naturally so Continuum can learn my own rhythm from the small " +
-  "timing between each key. Every pair of keys I press carries a little piece of how my hands " +
-  "move across the keyboard, and together these quick measurements describe the way I type. " +
-  "The quick brown fox jumps over the lazy dog while I keep a steady, comfortable pace.";
+// Same source as the demo/SDK wizard (sdk/guard.js): a random Wikipedia summary so each
+// enrollment session types DIFFERENT text — varied words/letter combos teach the model
+// more of the user's rhythm, and typing the same fixed passage every time was flagged as
+// repetitive. Static fallbacks cover the offline / API-down case.
+var PASSAGE_FALLBACKS = [
+  "Continuous authentication works best when the system observes ordinary writing over time. I am typing this paragraph naturally so Continuum can learn my own rhythm from keydown and keyup timing. Every pair of keys I press carries a small piece of my personal pattern, and together these quick measurements describe how my hands move across the keyboard.",
+  "My typing pattern is personal and quite hard to imitate. The time I hold each key down and the pause between two keys creates a behavioral signal that can support account protection after login. Just like a signature on paper, the speed and flow of my fingers form a private mark that follows me whenever I write a message or a longer document.",
+  "This enrollment sample helps the application build a private rhythm profile for my account. Later, unusual typing during protected actions can require passkey verification. The more natural text I provide now, the better the model will recognize me in the future, because varied words and different letter combinations teach it the full shape of my typing.",
+  "The model should learn from repeated samples collected from the real user. These samples are separate from the password and are used only after passkey setup. When somebody else types on my account, their holding times and the gaps between their keys will not match my profile, and the system can then ask for stronger proof of identity right away.",
+];
+var fbIdx = Math.floor(Math.random() * PASSAGE_FALLBACKS.length);
+async function fetchRandomText() {
+  for (var i = 0; i < 3; i++) {
+    try {
+      var res = await fetch("https://en.wikipedia.org/api/rest_v1/page/random/summary", { cache: "no-store" });
+      if (!res.ok) continue;
+      var data = await res.json();
+      var text = (data.extract || "").replace(/\n+/g, " ").trim();
+      if (text.length >= 150 && text.indexOf("<") < 0) return text.slice(0, 480);
+    } catch (e) { /* retry */ }
+  }
+  return null;
+}
+async function nextPassage() { return (await fetchRandomText()) || PASSAGE_FALLBACKS[fbIdx++ % PASSAGE_FALLBACKS.length]; }
 
-document.getElementById("passage").textContent = PASSAGE;
+var passageEl = document.getElementById("passage");
+var newPassageLink = document.getElementById("newPassage");
+async function loadPassage() {
+  passageEl.style.opacity = "0.45";
+  newPassageLink.style.pointerEvents = "none";
+  passageEl.textContent = await nextPassage();
+  passageEl.style.opacity = "1";
+  newPassageLink.style.pointerEvents = "";
+}
+newPassageLink.addEventListener("click", function (e) { e.preventDefault(); loadPassage(); });
+loadPassage();
+
 var ta = document.getElementById("ta");
 var prog = document.getElementById("prog");
 var status = document.getElementById("status");
