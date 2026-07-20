@@ -63,6 +63,23 @@ function looksLikeList(p) {
   var caps = words.filter(function (w, i) { return i > 0 && /^[A-Z]/.test(w); }).length;
   return words.length > 0 && (caps / words.length) > 0.35;
 }
+
+// These old book scans preserve the original small-caps opening of each fable ("AN EAGLE
+// stayed his flight...") — 2-4 words in ALL CAPS. Typing a sustained all-caps run needs
+// held Shift/Caps Lock the whole time, which real natural writing never requires and
+// disrupts normal digraph timing right at the start of the sample. Normalize it to
+// ordinary sentence case before showing the passage.
+function fixAllCapsOpening(p) {
+  return p.replace(/^((?:[A-Z]+[.,]?\s+){1,6})/, function (run) {
+    var words = run.trim().split(/\s+/);
+    if (!words.some(function (w) { return w.replace(/[^A-Z]/g, "").length >= 2; })) return run;   // no real all-caps word — leave alone
+    var fixed = words.map(function (w, i) {
+      var lower = w.toLowerCase();
+      return i === 0 ? lower.charAt(0).toUpperCase() + lower.slice(1) : lower;
+    });
+    return fixed.join(" ") + " ";
+  });
+}
 async function fetchStoryParagraphs() {
   if (storyParagraphsCache) return storyParagraphsCache;
   try {
@@ -91,7 +108,7 @@ async function fetchStoryText() {
     candidates.push({ text: p, score: complexityScore(p) });
   }
   candidates.sort(function (a, b) { return a.score - b.score; });
-  return candidates[0].score < Infinity ? candidates[0].text : null;
+  return candidates[0].score < Infinity ? fixAllCapsOpening(candidates[0].text) : null;
 }
 
 // FALLBACK: Simple English Wikipedia — used only if the story source is unreachable.
@@ -149,11 +166,19 @@ function currentWindows() {
 }
 
 function update() {
-  var w = currentWindows();
+  var F = globalThis.ContinuumFeatures;
+  var segments = F ? F.eventSteps(events) : [];
+  var w = F ? F.stepsToWindows(segments) : [];
   var n = w.length;
   prog.style.width = Math.min(100, Math.round((n / TARGET) * 100)) + "%";
   status.textContent = n + " / " + TARGET + " windows captured";
   saveBtn.disabled = n < TARGET;
+  // DIAGNOSTIC: why is the count stuck? Shows every 20 keystrokes — segment lengths
+  // reveal whether typing is being fragmented (many short pause-separated runs) instead
+  // of accumulating into one run of 50+.
+  if (events.length % 20 === 0) {
+    console.log("[continuum-guard/diag] enroll: keys=" + events.length + " segments=" + JSON.stringify(segments.map(function (s) { return s.length; })) + " windows=" + n);
+  }
 }
 
 function getProfileId(cb) {
