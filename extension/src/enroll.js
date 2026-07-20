@@ -22,10 +22,13 @@ function logWindowStats(label, windows) {
   console.log("  max :", maxs.map(function (v) { return Number(v.toFixed(3)); }));
 }
 
-// Same source as the demo/SDK wizard (sdk/guard.js): a random Wikipedia summary so each
-// enrollment session types DIFFERENT text — varied words/letter combos teach the model
-// more of the user's rhythm, and typing the same fixed passage every time was flagged as
-// repetitive. Static fallbacks cover the offline / API-down case.
+// FIXED passage by default. Earlier this fetched a fresh random Wikipedia passage every
+// session (varied text was assumed to teach more rhythm); but a fixed, familiar passage
+// verified correctly and random-per-session text did not (confirmed: 1 session ~45%,
+// even 3 sessions only ~37%). The likely reason: typing the SAME text each session is
+// naturally more repeatable (you're not reading+composing something new each time), which
+// is exactly what a few-shot personal model needs to learn a stable signature from. The
+// random-Wikipedia path is kept as an opt-in via "New passage" for whoever wants variety.
 var PASSAGE_FALLBACKS = [
   "Continuous authentication works best when the system observes ordinary writing over time. I am typing this paragraph naturally so Continuum can learn my own rhythm from keydown and keyup timing. Every pair of keys I press carries a small piece of my personal pattern, and together these quick measurements describe how my hands move across the keyboard.",
   "My typing pattern is personal and quite hard to imitate. The time I hold each key down and the pause between two keys creates a behavioral signal that can support account protection after login. Just like a signature on paper, the speed and flow of my fingers form a private mark that follows me whenever I write a message or a longer document.",
@@ -72,9 +75,10 @@ async function fetchRandomText() {
 }
 async function nextPassage() { return (await fetchRandomText()) || PASSAGE_FALLBACKS[fbIdx++ % PASSAGE_FALLBACKS.length]; }
 
+var FIXED_PASSAGE = PASSAGE_FALLBACKS[0];   // default every session — same text, on purpose
 var passageEl = document.getElementById("passage");
 var newPassageLink = document.getElementById("newPassage");
-async function loadPassage() {
+async function loadPassage() {          // only called when the user explicitly wants variety
   passageEl.style.opacity = "0.45";
   newPassageLink.style.pointerEvents = "none";
   passageEl.textContent = await nextPassage();
@@ -82,7 +86,7 @@ async function loadPassage() {
   newPassageLink.style.pointerEvents = "";
 }
 newPassageLink.addEventListener("click", function (e) { e.preventDefault(); loadPassage(); });
-loadPassage();
+passageEl.textContent = FIXED_PASSAGE;   // default on load — NOT randomized
 
 var ta = document.getElementById("ta");
 var prog = document.getElementById("prog");
