@@ -11,6 +11,13 @@ var ContinuumScoring = (function () {
   var scaler = null;               // {mean:[6], std:[6]} — the models were trained on
                                    // STANDARDIZED features (model-api scale_windows); raw
                                    // windows must get the same (x-mean)/std or scores are garbage.
+  // Keystroke-only clip range (services/model-api/preprocessing.py CLIP_MIN/CLIP_MAX):
+  // long thinking pauses (dd/ud) carry no rhythm signal and blow up the z-score if left
+  // unclipped — training clips BEFORE standardizing, so scoring must too, or a genuine
+  // user who pauses naturally (composing text, not reading a fixed passage) gets scored
+  // on a corrupted, out-of-distribution feature and reads as an impostor.
+  var KS_CLIP_MIN = [0.0, 0.0, 0.0, 0.0, 0.0, -1.0];
+  var KS_CLIP_MAX = [1.0, 1.0, 2.0, 2.0, 5.0, 5.0];
 
   async function loadScaler(url) {
     scaler = await (await fetch(url)).json();
@@ -19,10 +26,15 @@ var ContinuumScoring = (function () {
 
   function scaleWindow(win) {
     if (!scaler) return win;
+    var clip = win[0] && win[0].length === KS_CLIP_MIN.length;   // 6 dims = keystroke; mouse (7) skips clip
     var out = [];
     for (var r = 0; r < win.length; r++) {
       var row = [];
-      for (var c = 0; c < win[r].length; c++) row.push((win[r][c] - scaler.mean[c]) / (scaler.std[c] || 1));
+      for (var c = 0; c < win[r].length; c++) {
+        var v = win[r][c];
+        if (clip) v = Math.max(KS_CLIP_MIN[c], Math.min(KS_CLIP_MAX[c], v));
+        row.push((v - scaler.mean[c]) / (scaler.std[c] || 1));
+      }
       out.push(row);
     }
     return out;

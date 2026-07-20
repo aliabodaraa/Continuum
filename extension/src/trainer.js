@@ -53,11 +53,17 @@ var ContinuumTrainer = (function () {
     var extractor = await tf.loadGraphModel(opts.extractorUrl);
 
     // Augment in RAW feature space, then standardize exactly like the base model's
-    // training pipeline (model-api scale_windows) — without this the extractor sees
-    // out-of-distribution inputs and its features are meaningless.
+    // training pipeline (model-api preprocessing.py FeatureScaler) — CLIP before
+    // z-score, same as scoring.js, or the extractor sees out-of-distribution inputs.
+    var KS_CLIP_MIN = [0.0, 0.0, 0.0, 0.0, 0.0, -1.0];
+    var KS_CLIP_MAX = [1.0, 1.0, 2.0, 2.0, 5.0, 5.0];
     function scale(w) {
+      var clip = w[0] && w[0].length === KS_CLIP_MIN.length;   // 6 dims = keystroke; mouse (7) skips clip
       return w.map(function (row) {
-        return row.map(function (v, c) { return (v - scaler.mean[c]) / (scaler.std[c] || 1); });
+        return row.map(function (v, c) {
+          if (clip) v = Math.max(KS_CLIP_MIN[c], Math.min(KS_CLIP_MAX[c], v));
+          return (v - scaler.mean[c]) / (scaler.std[c] || 1);
+        });
       });
     }
     var gen = augment(genuine, impostors.length, jitterCols);
