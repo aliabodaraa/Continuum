@@ -142,7 +142,7 @@ resetLink.addEventListener("click", function (e) {
   clearTimeout(resetTimer);
   resetLink.textContent = "clearing…";
   getProfileId(function (id) {
-    api.storage.local.remove(["cg_enroll_" + id, "cg_enroll_mouse_" + id, "cg_enrolled_at"], function () {
+    api.storage.local.remove(["cg_enroll_" + id, "cg_enroll_mouse_" + id, "cg_enrolled_at", "cg_enroll_sessions_" + id], function () {
       ContinuumTrainer.clearTrained().then(function () {
         try { api.runtime.sendMessage({ type: "cg:profile-reset" }); } catch (e2) {}
         location.reload();
@@ -150,6 +150,29 @@ resetLink.addEventListener("click", function (e) {
     });
   });
 });
+
+// A single ~1-minute session isn't enough real data to learn a stable rhythm against
+// natural session-to-session variation (mood, time of day) — tested end-to-end: 1 session
+// verified genuine typing at ~45% confidence (false-rejects), 3 accumulated sessions at
+// ~84%. Track how many sessions this profile has done and nudge toward at least 3.
+var RECOMMENDED_SESSIONS = 3;
+function showSessionNudge() {
+  getProfileId(function (id) {
+    var key = "cg_enroll_sessions_" + id;
+    api.storage.local.get([key], function (d) {
+      var n = ((d && d[key]) || 0) + 1;
+      var rec = {}; rec[key] = n;
+      api.storage.local.set(rec);
+      var box = document.getElementById("sessionNudge");
+      if (n < RECOMMENDED_SESSIONS) {
+        box.style.display = "block";
+        box.textContent = "📈 Session " + n + " of " + RECOMMENDED_SESSIONS + " recommended — accuracy improves a lot with a few separate sessions (ideally at different times). Come back and train again soon.";
+      } else {
+        box.style.display = "none";
+      }
+    });
+  });
+}
 
 saveBtn.addEventListener("click", function () {
   var wNew = currentWindows();
@@ -243,11 +266,13 @@ function startMouseStage() {
               onProgress: function (p) { mts.textContent = "training mouse… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "% (" + merged.length + " windows total)"; },
             }).then(function () {
               mts.style.display = "none";
+              showSessionNudge();
               document.getElementById("done").style.display = "block";
               document.getElementById("done").scrollIntoView({ behavior: "smooth" });
               try { api.runtime.sendMessage({ type: "cg:enrolled" }); } catch (e) {}
             }).catch(function (e) {
               mts.textContent = "mouse training failed: " + ((e && e.message) || e) + " — keystroke model is active; you can re-run enrollment for mouse.";
+              showSessionNudge();
               document.getElementById("done").style.display = "block";
               try { api.runtime.sendMessage({ type: "cg:enrolled" }); } catch (er) {}
             });
