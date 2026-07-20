@@ -34,7 +34,7 @@ function refresh() {
     var vd = q("verdict"), v = s.verdict;
     if (!s.enabled) { vd.textContent = "🎓 Train your profile below to start monitoring"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
     else if (!s.modelReady) { vd.textContent = s.modelError ? ("⚠ model error: " + s.modelError) : "⏳ loading model…"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
-    else if (s.locked) { vd.textContent = "🔒 locked — passkey verification required"; vd.style.background = "rgba(239,68,68,.18)"; vd.style.borderColor = "rgba(239,68,68,.45)"; }
+    else if (s.locked) { vd.textContent = "🔒 locked — passkey required (keystroke score: " + (v ? v.mean + "%" : "?") + ")"; vd.style.background = "rgba(239,68,68,.18)"; vd.style.borderColor = "rgba(239,68,68,.45)"; }
     else if (!v) { vd.textContent = "idle — type on any web page to begin"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
     else if (v.status === "analyzing") { vd.textContent = "analyzing your typing… (" + v.packet + "/" + v.need + ")"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
     else if (v.status === "suspicious") { vd.textContent = "⚠ suspicious — " + v.mean + "%"; vd.style.background = "rgba(239,68,68,.18)"; vd.style.borderColor = "rgba(239,68,68,.45)"; }
