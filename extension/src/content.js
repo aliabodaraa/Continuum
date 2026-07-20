@@ -135,8 +135,18 @@
     safeSend({ type: "cg:activity", steps: steps.length, need: F.WINDOW_SIZE });
     if (windows.length > lastWindowCount) {
       lastWindowCount = windows.length;
+      var latest = windows[windows.length - 1];
+      // DIAGNOSTIC: per-feature min/mean/max for this LIVE window, so it can be compared
+      // directly against the enrollment wizard's logged stats (same format, this page's
+      // own DevTools console, F12) to spot any real discrepancy between enrolled data and
+      // what's actually being scored.
+      try {
+        var mn = [Infinity, Infinity, Infinity, Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity], sm = [0, 0, 0, 0, 0, 0];
+        latest.forEach(function (row) { for (var c = 0; c < 6; c++) { if (row[c] < mn[c]) mn[c] = row[c]; if (row[c] > mx[c]) mx[c] = row[c]; sm[c] += row[c]; } });
+        console.log("[continuum-guard/diag] live-window min:", mn.map(function (v) { return Number(v.toFixed(3)); }), "mean:", sm.map(function (v) { return Number((v / latest.length).toFixed(3)); }), "max:", mx.map(function (v) { return Number(v.toFixed(3)); }));
+      } catch (e) {}
       // Only the newest window of TIMING features — never the characters.
-      safeSend({ type: "cg:windows", origin: origin, latest: windows[windows.length - 1] });
+      safeSend({ type: "cg:windows", origin: origin, latest: latest });
     }
   }
 

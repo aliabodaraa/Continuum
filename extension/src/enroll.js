@@ -9,6 +9,19 @@ var MAX_STORED_KEY_WINDOWS = 60;  // cap on accumulated keystroke windows across
 var MAX_STORED_MOUSE_WINDOWS = 80;
 var events = [], t0 = performance.now();
 
+// DIAGNOSTIC: dump per-feature stats [id1,id2,dwell1,dwell2,dd,ud] for a set of windows,
+// so real captured data can be compared across sessions (open this page's DevTools
+// console — F12 on the enroll.html tab — to read it).
+function logWindowStats(label, windows) {
+  var F = 6, mins = new Array(F).fill(Infinity), maxs = new Array(F).fill(-Infinity), sums = new Array(F).fill(0), n = 0;
+  windows.forEach(function (w) { w.forEach(function (row) { for (var c = 0; c < F; c++) { var v = row[c]; if (v < mins[c]) mins[c] = v; if (v > maxs[c]) maxs[c] = v; sums[c] += v; } n++; }); });
+  var means = sums.map(function (s) { return n ? s / n : 0; });
+  console.log("[continuum-guard/diag] " + label + ": windows=" + windows.length + " steps=" + n);
+  console.log("  min :", mins.map(function (v) { return Number(v.toFixed(3)); }));
+  console.log("  mean:", means.map(function (v) { return Number(v.toFixed(3)); }));
+  console.log("  max :", maxs.map(function (v) { return Number(v.toFixed(3)); }));
+}
+
 // Same source as the demo/SDK wizard (sdk/guard.js): a random Wikipedia summary so each
 // enrollment session types DIFFERENT text — varied words/letter combos teach the model
 // more of the user's rhythm, and typing the same fixed passage every time was flagged as
@@ -189,6 +202,8 @@ saveBtn.addEventListener("click", function () {
       var prior = (d && d[key]) || [];
       var merged = prior.concat(wNew);
       if (merged.length > MAX_STORED_KEY_WINDOWS) merged = merged.slice(-MAX_STORED_KEY_WINDOWS);
+      logWindowStats("accumulated-for-training", merged);
+      logWindowStats("this-session-only", wNew);
 
       var rec = {};
       rec[key] = merged;

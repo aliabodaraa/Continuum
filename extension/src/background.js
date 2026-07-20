@@ -136,6 +136,7 @@ async function onWindow(win) {
       scores.push(s);
       if (scores.length > RECENT) scores.shift();
       var v = decide(scores);
+      console.log("[continuum-guard/diag] window score=" + s.toFixed(3) + " packet=" + JSON.stringify(scores.map(function (x) { return Number(x.toFixed(3)); })) + " mean=" + v.mean.toFixed(3));
       // Verdict only on a FULL packet (6 windows ≈ 100 keystrokes) — early provisional
       // verdicts were tried and reverted: they surface "!" on thin evidence without
       // making the decision meaningfully faster.
