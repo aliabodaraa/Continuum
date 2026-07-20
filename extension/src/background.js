@@ -117,6 +117,21 @@ function pingOffscreen(cb) {
   } catch (e) { cb(null); }
 }
 
+// Debounce the LOCK (not the displayed verdict): a genuine user occasionally produces one
+// unlucky packet — the personal head isn't perfect, and a cold-start packet right after
+// enrollment is the likeliest moment for it. Mirrors the ca-service's server-side fix
+// (see memory: ks-challenge-policy) — require 2 of the last 3 full-packet verdicts to be
+// suspicious before locking, instead of locking on the very first one.
+var KS_SUSPICIOUS_WINDOW = 3, KS_SUSPICIOUS_MIN = 2;
+var suspiciousHistory = [];
+function shouldLock(isSuspicious) {
+  suspiciousHistory.push(isSuspicious);
+  if (suspiciousHistory.length > KS_SUSPICIOUS_WINDOW) suspiciousHistory.shift();
+  var lock = suspiciousHistory.filter(Boolean).length >= KS_SUSPICIOUS_MIN;
+  if (lock) suspiciousHistory.length = 0;   // fresh streak after a decision either way
+  return lock;
+}
+
 // ---- capture → score (offscreen) → verdict ----
 var scoringBusy = false, pendingWin = null;
 async function onWindow(win) {
@@ -139,13 +154,14 @@ async function onWindow(win) {
       // Verdict only on a FULL packet (6 windows ≈ 100 keystrokes) — early provisional
       // verdicts were tried and reverted: they surface "!" on thin evidence without
       // making the decision meaningfully faster.
+      var fullPacket = scores.length >= RECENT;
       state.verdict = {
-        status: scores.length < RECENT ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
+        status: fullPacket ? (v.suspicious ? "suspicious" : "genuine") : "analyzing",
         mean: Math.round(v.mean * 100),
         packet: scores.length,
         need: RECENT,
       };
-      if (state.verdict.status === "suspicious" && !state.locked) engageLock();
+      if (fullPacket && shouldLock(v.suspicious) && !state.locked) engageLock();
       updateBadge();
     }
   } catch (e) { console.error("[continuum-guard] scoring error:", e && e.message); }
@@ -218,6 +234,7 @@ function releaseLock() {
   state.locked = false;
   scores = [];              // fresh packets after a verified step-up (probation-style reset)
   mouseScores = [];
+  suspiciousHistory = [];
   state.verdict = null;
   state.mouseVerdict = null;
   state.steps = 0;          // and a fresh step counter — otherwise the badge sticks at 99
@@ -278,6 +295,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
         try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model" }, function () { void api.runtime.lastError; }); } catch (e) {}
       });
       scores = [];            // old packet was scored by the previous model
+      suspiciousHistory = [];
       state.verdict = null;
       return;
     case "cg:model-ready": state.modelReady = true; state.modelError = null; setModelPersonal(msg.personal); state.mouseReady = !!msg.mouse; return;
