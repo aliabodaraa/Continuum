@@ -32,15 +32,15 @@ function refresh() {
 
     // Verdict banner
     var vd = q("verdict"), v = s.verdict;
-    if (!s.enabled) { vd.textContent = "paused"; vd.style.background = "#334155"; }
-    else if (!s.modelReady) { vd.textContent = s.modelError ? ("model error: " + s.modelError) : "loading model…"; vd.style.background = "#334155"; }
-    else if (s.locked) { vd.textContent = "🔒 locked — passkey verification required"; vd.style.background = "#7f1d1d"; }
-    else if (!v) { vd.textContent = "idle — type on any web page to begin"; vd.style.background = "#1e293b"; }
-    else if (v.status === "analyzing") { vd.textContent = "analyzing your typing… (" + v.packet + "/" + v.need + ")"; vd.style.background = "#334155"; }
-    else if (v.status === "suspicious") { vd.textContent = "⚠ suspicious — " + v.mean + "%"; vd.style.background = "#7f1d1d"; }
-    else { vd.textContent = "✓ verified — " + v.mean + "%"; vd.style.background = "#065f46"; }
+    if (!s.enabled) { vd.textContent = "⏸ paused"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
+    else if (!s.modelReady) { vd.textContent = s.modelError ? ("⚠ model error: " + s.modelError) : "⏳ loading model…"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
+    else if (s.locked) { vd.textContent = "🔒 locked — passkey verification required"; vd.style.background = "rgba(239,68,68,.18)"; vd.style.borderColor = "rgba(239,68,68,.45)"; }
+    else if (!v) { vd.textContent = "idle — type on any web page to begin"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
+    else if (v.status === "analyzing") { vd.textContent = "analyzing your typing… (" + v.packet + "/" + v.need + ")"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
+    else if (v.status === "suspicious") { vd.textContent = "⚠ suspicious — " + v.mean + "%"; vd.style.background = "rgba(239,68,68,.18)"; vd.style.borderColor = "rgba(239,68,68,.45)"; }
+    else { vd.textContent = "✓ verified — " + v.mean + "%"; vd.style.background = "rgba(22,163,74,.18)"; vd.style.borderColor = "rgba(22,163,74,.45)"; }
     q("toggle").textContent = s.enabled ? "Turn off" : "Turn on";
-    q("toggle").className = s.enabled ? "" : "off";
+    q("toggle").className = s.enabled ? "btn-primary" : "btn-slate";
     q("exclude").textContent = excluded ? "Include this site" : "Exclude this site";
   });
 }

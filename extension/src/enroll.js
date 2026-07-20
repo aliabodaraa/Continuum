@@ -1,9 +1,12 @@
 // enroll.js — the enrollment wizard (runs in its own extension page, has a DOM). Captures
 // the user's typing of a passage, builds the same [50 x 6] feature windows as the guard,
 // and stores them locally keyed to a per-profile id. Only timing features are kept — never
-// the characters. A later stage trains/loads a personal model from these windows.
+// the characters. Re-running the wizard ACCUMULATES windows on top of prior sessions (capped)
+// instead of discarding them, so the personal model gets more robust over time.
 var api = globalThis.browser || globalThis.chrome;
-var TARGET = 12;                 // enrollment windows to collect (~700+ keystrokes)
+var TARGET = 12;                 // NEW windows this session (~700+ keystrokes)
+var MAX_STORED_KEY_WINDOWS = 60;  // cap on accumulated keystroke windows across all sessions
+var MAX_STORED_MOUSE_WINDOWS = 80;
 var events = [], t0 = performance.now();
 
 var PASSAGE =
@@ -57,31 +60,40 @@ document.getElementById("regpk").addEventListener("click", function () {
 });
 
 saveBtn.addEventListener("click", function () {
-  var w = currentWindows();
+  var wNew = currentWindows();
   var ts = document.getElementById("trainStatus");
   saveBtn.disabled = true;
   ta.disabled = true;
   ts.style.display = "block";
-  ts.textContent = "training your personal model… (stays on this device)";
+  ts.textContent = "capturing complete — training your personal model on-device…";
   getProfileId(function (id) {
-    var rec = {};
-    rec["cg_enroll_" + id] = w;                 // the enrollment windows
-    rec["cg_enrolled_at"] = Date.now();
-    api.storage.local.set(rec, function () {
-      // Fine-tune the base model on these windows, entirely in-page (see trainer.js).
-      ContinuumTrainer.train(w, {
-        impostorsUrl: api.runtime.getURL("data/impostors.json"),
-        extractorUrl: api.runtime.getURL("model/base-extractor/model.json"),
-        scalerUrl: api.runtime.getURL("model/scaler.json"),
-        saveTo: "indexeddb://cg-personal-head",
-        onProgress: function (p) { ts.textContent = "training… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "%"; },
-      }).then(function (r) {
-        ts.style.display = "none";
-        startMouseStage();
-      }).catch(function (e) {
-        ts.textContent = "training failed: " + ((e && e.message) || e) + " — profile windows were saved; you can retry.";
-        saveBtn.disabled = false;
-        ta.disabled = false;
+    var key = "cg_enroll_" + id;
+    api.storage.local.get([key], function (d) {
+      // ACCUMULATE: prior sessions' windows + this session's, capped to the most recent N —
+      // more of the user's natural variation makes the personal model more robust over time.
+      var prior = (d && d[key]) || [];
+      var merged = prior.concat(wNew);
+      if (merged.length > MAX_STORED_KEY_WINDOWS) merged = merged.slice(-MAX_STORED_KEY_WINDOWS);
+
+      var rec = {};
+      rec[key] = merged;
+      rec["cg_enrolled_at"] = Date.now();
+      api.storage.local.set(rec, function () {
+        // Fine-tune the base model on ALL accumulated windows, entirely in-page (trainer.js).
+        ContinuumTrainer.train(merged, {
+          impostorsUrl: api.runtime.getURL("data/impostors.json"),
+          extractorUrl: api.runtime.getURL("model/base-extractor/model.json"),
+          scalerUrl: api.runtime.getURL("model/scaler.json"),
+          saveTo: "indexeddb://cg-personal-head",
+          onProgress: function (p) { ts.textContent = "training… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "% (" + merged.length + " windows total)"; },
+        }).then(function (r) {
+          ts.style.display = "none";
+          startMouseStage();
+        }).catch(function (e) {
+          ts.textContent = "training failed: " + ((e && e.message) || e) + " — your samples were saved; you can retry.";
+          saveBtn.disabled = false;
+          ta.disabled = false;
+        });
       });
     });
   });
@@ -121,23 +133,34 @@ function startMouseStage() {
     if (w.length >= MOUSE_TARGET && !doneTraining) {
       doneTraining = true;
       mts.style.display = "block";
-      mts.textContent = "training your mouse model… (stays on this device)";
-      ContinuumTrainer.train(w.slice(0, MOUSE_TARGET), {
-        impostorsUrl: api.runtime.getURL("data/mouse-impostors.json"),
-        extractorUrl: api.runtime.getURL("model/mouse-extractor/model.json"),
-        scalerUrl: api.runtime.getURL("model/mouse-scaler.json"),
-        saveTo: "indexeddb://cg-personal-mouse-head",
-        jitterCols: [2, 3, 4, 5],   // never jitter the is_click flag
-        onProgress: function (p) { mts.textContent = "training mouse… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "%"; },
-      }).then(function () {
-        mts.style.display = "none";
-        document.getElementById("done").style.display = "block";
-        document.getElementById("done").scrollIntoView({ behavior: "smooth" });
-        try { api.runtime.sendMessage({ type: "cg:enrolled" }); } catch (e) {}
-      }).catch(function (e) {
-        mts.textContent = "mouse training failed: " + ((e && e.message) || e) + " — keystroke model is active; you can re-run enrollment for mouse.";
-        document.getElementById("done").style.display = "block";
-        try { api.runtime.sendMessage({ type: "cg:enrolled" }); } catch (er) {}
+      mts.textContent = "capturing complete — training your mouse model on-device…";
+      getProfileId(function (id) {
+        var key = "cg_enroll_mouse_" + id;
+        api.storage.local.get([key], function (d) {
+          var prior = (d && d[key]) || [];
+          var merged = prior.concat(w.slice(0, MOUSE_TARGET));
+          if (merged.length > MAX_STORED_MOUSE_WINDOWS) merged = merged.slice(-MAX_STORED_MOUSE_WINDOWS);
+          var rec = {}; rec[key] = merged;
+          api.storage.local.set(rec, function () {
+            ContinuumTrainer.train(merged, {
+              impostorsUrl: api.runtime.getURL("data/mouse-impostors.json"),
+              extractorUrl: api.runtime.getURL("model/mouse-extractor/model.json"),
+              scalerUrl: api.runtime.getURL("model/mouse-scaler.json"),
+              saveTo: "indexeddb://cg-personal-mouse-head",
+              jitterCols: [2, 3, 4, 5],   // never jitter the is_click flag
+              onProgress: function (p) { mts.textContent = "training mouse… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "% (" + merged.length + " windows total)"; },
+            }).then(function () {
+              mts.style.display = "none";
+              document.getElementById("done").style.display = "block";
+              document.getElementById("done").scrollIntoView({ behavior: "smooth" });
+              try { api.runtime.sendMessage({ type: "cg:enrolled" }); } catch (e) {}
+            }).catch(function (e) {
+              mts.textContent = "mouse training failed: " + ((e && e.message) || e) + " — keystroke model is active; you can re-run enrollment for mouse.";
+              document.getElementById("done").style.display = "block";
+              try { api.runtime.sendMessage({ type: "cg:enrolled" }); } catch (er) {}
+            });
+          });
+        });
       });
     }
   }
