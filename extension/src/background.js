@@ -21,10 +21,15 @@ function decide(scores) {
 // origin-bound, so the extension keeps its own RP — served by the passkey-service).
 var RP_BASE = "http://localhost:4000";
 
-var config = { enabled: true, exclusions: [] };
+var config = { exclusions: [] };
 var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0 };
 var scores = [];       // rolling last N keystroke window scores
 var mouseScores = [];  // rolling last N mouse window scores
+
+// Monitoring is NOT a manual toggle anymore: it stays off until the user has trained a
+// personal model (the wizard), then turns on by itself. A base-model verdict on a
+// stranger's rhythm isn't meaningful, so there is nothing useful to "turn on" before that.
+function monitoringEnabled() { return !!state.modelPersonal; }
 
 // Stable NUMERIC id for the passkey-service, derived from this profile's id (FNV-1a).
 function numericUid(pid) {
@@ -33,9 +38,8 @@ function numericUid(pid) {
   return (h >>> 0) + 1;   // +1: never 0 (service treats 0 as missing)
 }
 
-api.storage.local.get(["cg_enabled", "cg_exclusions", "cg_enrolled_at", "cg_passkey", "cg_profile_id"], function (d) {
+api.storage.local.get(["cg_exclusions", "cg_enrolled_at", "cg_passkey", "cg_profile_id"], function (d) {
   d = d || {};
-  config.enabled = d.cg_enabled !== false;
   config.exclusions = d.cg_exclusions || [];
   state.enrolled = !!d.cg_enrolled_at;
   state.hasPasskey = !!d.cg_passkey;
@@ -95,7 +99,7 @@ function scoreViaOffscreen(win, msgType) {
 
 function statusObj() {
   return {
-    enabled: config.enabled, totalWindows: state.totalWindows, lastWindowAt: state.lastWindowAt,
+    enabled: monitoringEnabled(), totalWindows: state.totalWindows, lastWindowAt: state.lastWindowAt,
     exclusions: config.exclusions, modelReady: state.modelReady, modelError: state.modelError, verdict: state.verdict,
     steps: state.steps, needSteps: state.needSteps, enrolled: state.enrolled, modelPersonal: state.modelPersonal,
     locked: state.locked, hasPasskey: state.hasPasskey,
@@ -116,7 +120,7 @@ function pingOffscreen(cb) {
 // ---- capture → score (offscreen) → verdict ----
 var scoringBusy = false, pendingWin = null;
 async function onWindow(win) {
-  if (!config.enabled) return;
+  if (!monitoringEnabled()) return;
   state.totalWindows += 1;
   state.lastWindowAt = Date.now();
   if (!state.modelReady) { await ensureOffscreen(); return; }
@@ -152,7 +156,7 @@ async function onWindow(win) {
 // stage has trained a personal head (the mouse base alone can't say genuine/impostor).
 var mouseBusy = false, pendingMouseWin = null;
 async function onMouseWindow(win) {
-  if (!config.enabled || !state.mouseReady) return;
+  if (!monitoringEnabled() || !state.mouseReady) return;
   state.totalMouseWindows += 1;
   pendingMouseWin = win;
   if (mouseBusy) return;
@@ -183,7 +187,7 @@ async function onMouseWindow(win) {
 function updateBadge() {
   if (!api.action || !api.action.setBadgeText) return;
   var txt = "", color = "#4f46e5";
-  if (!config.enabled) { txt = "off"; color = "#475569"; }
+  if (!monitoringEnabled()) { txt = "🎓"; color = "#475569"; }   // not trained yet
   else if (state.locked) { txt = "🔒"; color = "#dc2626"; }
   else if ((state.verdict && state.verdict.status === "suspicious") || (state.mouseVerdict && state.mouseVerdict.status === "suspicious")) { txt = "!"; color = "#dc2626"; }
   else if (state.verdict && state.verdict.status === "genuine") { txt = state.verdict.mean + "%"; color = "#16a34a"; }  // live genuine confidence
@@ -243,10 +247,20 @@ function broadcastConfig() {
       // Callback reads lastError so tabs without a content script (chrome:// pages, the
       // web store) don't produce an unhandled "receiving end does not exist" rejection.
       try {
-        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: config.enabled, exclusions: config.exclusions }, function () { void api.runtime.lastError; });
+        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: monitoringEnabled(), exclusions: config.exclusions }, function () { void api.runtime.lastError; });
       } catch (e) {}
     });
   });
+}
+
+// Flip monitoring on the instant training completes — broadcasts to every open tab so
+// capture starts without a page refresh (mirrors the earlier auto-inject fix).
+function setModelPersonal(v) {
+  v = !!v;
+  if (v === state.modelPersonal) return;
+  state.modelPersonal = v;
+  broadcastConfig();
+  updateBadge();
 }
 
 api.runtime.onMessage.addListener(function (msg, sender, reply) {
@@ -261,10 +275,10 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       scores = [];            // old packet was scored by the previous model
       state.verdict = null;
       return;
-    case "cg:model-ready": state.modelReady = true; state.modelError = null; state.modelPersonal = !!msg.personal; state.mouseReady = !!msg.mouse; return;
+    case "cg:model-ready": state.modelReady = true; state.modelError = null; setModelPersonal(msg.personal); state.mouseReady = !!msg.mouse; return;
     case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":
-      reply({ enabled: config.enabled, excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey });
+      reply({ enabled: monitoringEnabled(), excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey });
       return true;
     case "cg:open-verify":
       openRpPage("/ext/verify.html");
@@ -288,7 +302,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       }
       return;
     case "cg:activity":
-      if (config.enabled) { state.steps = msg.steps || 0; state.needSteps = msg.need || 50; state.lastWindowAt = Date.now(); updateBadge(); }
+      if (monitoringEnabled()) { state.steps = msg.steps || 0; state.needSteps = msg.need || 50; state.lastWindowAt = Date.now(); updateBadge(); }
       return;
     case "cg:windows":
       if (msg.latest) onWindow(msg.latest);
@@ -301,7 +315,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
         // Make sure the offscreen doc exists, then ask it directly whether the model loaded.
         ensureOffscreen().then(function () {
           pingOffscreen(function (r) {
-            if (r && r.ready) { state.modelReady = true; state.modelError = null; state.modelPersonal = !!r.personal; state.mouseReady = !!r.mouse; }
+            if (r && r.ready) { state.modelReady = true; state.modelError = null; setModelPersonal(r.personal); state.mouseReady = !!r.mouse; }
             else if (r && r.error) { state.modelError = r.error; }
             reply(statusObj());
           });
@@ -309,13 +323,6 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
         return true; // async reply
       }
       reply(statusObj());
-      return true;
-    case "cg:setEnabled":
-      config.enabled = !!msg.value;
-      api.storage.local.set({ cg_enabled: config.enabled });
-      broadcastConfig();
-      updateBadge();
-      reply({ ok: true });
       return true;
     case "cg:toggleExclude": {
       var i = config.exclusions.indexOf(msg.origin);

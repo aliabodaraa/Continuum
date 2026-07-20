@@ -15,12 +15,12 @@ function refresh() {
   api.runtime.sendMessage({ type: "cg:status" }, function (s) {
     if (!s) return;
     var excluded = (s.exclusions || []).indexOf(curOrigin) >= 0;
-    q("state").textContent = s.enabled ? "on" : "off";
+    q("state").textContent = s.enabled ? "monitoring" : "off — train first";
     q("dot").className = "dot" + (s.enabled ? "" : " off");
     q("wins").textContent = s.totalWindows;
     var st = s.steps || 0, nd = s.needSteps || 50;
     q("steps").textContent = st >= nd ? "ready ✓" : st + "/" + nd;
-    q("profile").textContent = s.modelPersonal ? "personalized ✓" : (s.enrolled ? "trained ✓" : "not trained (base model)");
+    q("profile").textContent = s.modelPersonal ? "personalized ✓" : (s.enrolled ? "training…" : "not trained yet");
     var mv = s.mouseVerdict;
     q("mouse").textContent = !s.mouseReady ? "not trained"
       : !mv ? "watching…"
@@ -32,24 +32,16 @@ function refresh() {
 
     // Verdict banner
     var vd = q("verdict"), v = s.verdict;
-    if (!s.enabled) { vd.textContent = "⏸ paused"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
+    if (!s.enabled) { vd.textContent = "🎓 Train your profile below to start monitoring"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
     else if (!s.modelReady) { vd.textContent = s.modelError ? ("⚠ model error: " + s.modelError) : "⏳ loading model…"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
     else if (s.locked) { vd.textContent = "🔒 locked — passkey verification required"; vd.style.background = "rgba(239,68,68,.18)"; vd.style.borderColor = "rgba(239,68,68,.45)"; }
     else if (!v) { vd.textContent = "idle — type on any web page to begin"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
     else if (v.status === "analyzing") { vd.textContent = "analyzing your typing… (" + v.packet + "/" + v.need + ")"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
     else if (v.status === "suspicious") { vd.textContent = "⚠ suspicious — " + v.mean + "%"; vd.style.background = "rgba(239,68,68,.18)"; vd.style.borderColor = "rgba(239,68,68,.45)"; }
     else { vd.textContent = "✓ verified — " + v.mean + "%"; vd.style.background = "rgba(22,163,74,.18)"; vd.style.borderColor = "rgba(22,163,74,.45)"; }
-    q("toggle").textContent = s.enabled ? "Turn off" : "Turn on";
-    q("toggle").className = s.enabled ? "btn-primary" : "btn-slate";
     q("exclude").textContent = excluded ? "Include this site" : "Exclude this site";
   });
 }
-
-q("toggle").addEventListener("click", function () {
-  api.runtime.sendMessage({ type: "cg:status" }, function (s) {
-    api.runtime.sendMessage({ type: "cg:setEnabled", value: !(s && s.enabled) }, refresh);
-  });
-});
 
 q("exclude").addEventListener("click", function () {
   if (!curOrigin) return;
