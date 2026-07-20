@@ -175,8 +175,13 @@ async function onMouseWindow(win) {
         packet: mouseScores.length,
         need: RECENT,
       };
-      // FUSION: either modality's full suspicious packet locks the session.
-      if (state.mouseVerdict.status === "suspicious" && !state.locked) engageLock();
+      // NOT enforcement (yet): the mouse model is trained on the wizard's chase-the-dot
+      // game — directed movement toward a target, frequent clicks — which doesn't resemble
+      // natural browsing (scrolling, reading pauses, moving across a wide page). Mouse
+      // events also fire far more often than keystrokes, so its packet fills first; letting
+      // it lock caused false lockouts seconds into a session, before typing even started.
+      // Verdict stays visible in the popup as a secondary signal; only keystrokes enforce
+      // until the mouse enrollment task is redesigned to capture natural movement.
       updateBadge();
     }
   } catch (e) { console.error("[continuum-guard] mouse scoring error:", e && e.message); }
@@ -189,7 +194,7 @@ function updateBadge() {
   var txt = "", color = "#4f46e5";
   if (!monitoringEnabled()) { txt = "🎓"; color = "#475569"; }   // not trained yet
   else if (state.locked) { txt = "🔒"; color = "#dc2626"; }
-  else if ((state.verdict && state.verdict.status === "suspicious") || (state.mouseVerdict && state.mouseVerdict.status === "suspicious")) { txt = "!"; color = "#dc2626"; }
+  else if (state.verdict && state.verdict.status === "suspicious") { txt = "!"; color = "#dc2626"; }   // keystroke only — see onMouseWindow for why
   else if (state.verdict && state.verdict.status === "genuine") { txt = state.verdict.mean + "%"; color = "#16a34a"; }  // live genuine confidence
   else if (state.steps > 0) { txt = String(Math.min(state.steps, 99)); }  // steps toward first window
   try { api.action.setBadgeText({ text: txt }); api.action.setBadgeBackgroundColor({ color: color }); } catch (e) {}
