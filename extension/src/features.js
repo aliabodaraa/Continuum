@@ -7,7 +7,13 @@
   var WINDOW_SIZE = 50, STRIDE = 10;
   var MIN_DD = 0.015;      // drop event-batching artifacts, not fast typing
   var MIN_DWELL = 0.01;
-  var PAUSE_DD = 1.0;      // gaps > 1s are composition pauses, not rhythm
+  // Gaps beyond this are treated as a real composition pause (hard segment break), not
+  // rhythm. 1.0s fragmented copy-typing badly: reading a displayed passage naturally means
+  // glancing up to read the next phrase before typing it, and those brief glances were
+  // getting counted as "pauses" every ~5-6 words (confirmed: 28 segments from one
+  // continuous typing session). 2.5s tolerates that glance-and-type rhythm while still
+  // treating a genuine multi-second stop (actually pausing to think) as a real break.
+  var PAUSE_DD = 2.5;
 
   function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 
