@@ -99,16 +99,25 @@ async function fetchStoryParagraphs() {
     return storyParagraphsCache;
   } catch (e) { return null; }
 }
+// A single 150-450 char paragraph tops out around ~400 raw digraphs — plenty in theory,
+// but a few natural reading-ahead pauses (very likely on UNFAMILIAR text, unlike a
+// memorized passage) split it into segments and can leave every one under the 160 steps
+// a full 12-window packet needs. Join TWO passages (each independently fixed for
+// all-caps/complexity) so there's comfortably enough length even after some splitting.
 async function fetchStoryText() {
   var paras = await fetchStoryParagraphs();
   if (!paras) return null;
   var candidates = [];
-  for (var i = 0; i < 6; i++) {
+  for (var i = 0; i < 8; i++) {
     var p = paras[Math.floor(Math.random() * paras.length)];
     candidates.push({ text: p, score: complexityScore(p) });
   }
   candidates.sort(function (a, b) { return a.score - b.score; });
-  return candidates[0].score < Infinity ? fixAllCapsOpening(candidates[0].text) : null;
+  var good = candidates.filter(function (c) { return c.score < Infinity; });
+  if (!good.length) return null;
+  var first = fixAllCapsOpening(good[0].text);
+  var second = good[1] ? fixAllCapsOpening(good[1].text) : null;
+  return second ? (first + " _ " + second) : first;
 }
 
 // FALLBACK: Simple English Wikipedia — used only if the story source is unreachable.
@@ -128,7 +137,7 @@ async function fetchWikipediaText() {
   }
   if (!candidates.length) return null;
   candidates.sort(function (a, b) { return a.score - b.score; });
-  return candidates[0].text;
+  return candidates[1] ? (candidates[0].text + " _ " + candidates[1].text) : candidates[0].text;
 }
 
 async function fetchRandomText() { return (await fetchStoryText()) || (await fetchWikipediaText()); }
