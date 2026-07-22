@@ -18,6 +18,7 @@
     "default_popup": "src/popup/popup.html",
     "default_title": "Continuum Guard"
   },
+  "options_page": "src/options.html",
   "browser_specific_settings": {
     "gecko": { "id": "guard@continuum.dev", "strict_min_version": "115.0" }
   }

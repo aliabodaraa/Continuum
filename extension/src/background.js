@@ -19,7 +19,10 @@ function decide(scores) {
 
 // The FIXED Continuum relying party: passkeys live on this origin (site passkeys are
 // origin-bound, so the extension keeps its own RP — served by the passkey-service).
-var RP_BASE = "http://localhost:4000";
+// Configurable via the options page (src/options.html) so a real deployment doesn't
+// need to edit source/repackage — defaults to localhost for local dev/demo use.
+var RP_BASE_DEFAULT = "http://localhost:4000";
+var RP_BASE = RP_BASE_DEFAULT;
 
 var config = { exclusions: [] };
 var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0 };
@@ -38,11 +41,12 @@ function numericUid(pid) {
   return (h >>> 0) + 1;   // +1: never 0 (service treats 0 as missing)
 }
 
-api.storage.local.get(["cg_exclusions", "cg_enrolled_at", "cg_passkey", "cg_profile_id"], function (d) {
+api.storage.local.get(["cg_exclusions", "cg_enrolled_at", "cg_passkey", "cg_profile_id", "cg_rp_base"], function (d) {
   d = d || {};
   config.exclusions = d.cg_exclusions || [];
   state.enrolled = !!d.cg_enrolled_at;
   state.hasPasskey = !!d.cg_passkey;
+  RP_BASE = (d.cg_rp_base || RP_BASE_DEFAULT).replace(/\/+$/, "");
   var pid = d.cg_profile_id;
   if (!pid) {   // same format the enrollment wizard uses; whoever runs first creates it
     pid = "p_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -68,6 +72,15 @@ function injectAll() {
 }
 if (api.runtime.onInstalled) api.runtime.onInstalled.addListener(injectAll);
 if (api.runtime.onStartup) api.runtime.onStartup.addListener(injectAll);
+
+// Pick up an RP_BASE change from the options page without needing a full reload.
+if (api.storage.onChanged) {
+  api.storage.onChanged.addListener(function (changes, area) {
+    if (area === "local" && changes.cg_rp_base) {
+      RP_BASE = (changes.cg_rp_base.newValue || RP_BASE_DEFAULT).replace(/\/+$/, "");
+    }
+  });
+}
 
 // ---- offscreen document that hosts TF.js (Chromium; Firefox has no offscreen API) ----
 async function ensureOffscreen() {
