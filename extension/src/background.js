@@ -41,12 +41,22 @@ function numericUid(pid) {
   return (h >>> 0) + 1;   // +1: never 0 (service treats 0 as missing)
 }
 
-api.storage.local.get(["cg_exclusions", "cg_enrolled_at", "cg_passkey", "cg_profile_id", "cg_rp_base"], function (d) {
+api.storage.local.get(["cg_exclusions", "cg_enrolled_at", "cg_passkey", "cg_profile_id", "cg_rp_base", "cg_model_personal", "cg_mouse_ready"], function (d) {
   d = d || {};
   config.exclusions = d.cg_exclusions || [];
   state.enrolled = !!d.cg_enrolled_at;
   state.hasPasskey = !!d.cg_passkey;
   RP_BASE = (d.cg_rp_base || RP_BASE_DEFAULT).replace(/\/+$/, "");
+  // MV3 service workers are terminated after ~30s idle and re-run from scratch on the next
+  // event — every in-memory var above resets, INCLUDING this one, while the offscreen
+  // document (which actually holds the trained model) survives independently and nobody
+  // re-pings it automatically. Since monitoringEnabled() gates both scoring AND the step
+  // counter, a restart mid-session (very likely during a passkey flow — waiting on Windows
+  // Hello easily exceeds 30s) silently killed everything until the popup happened to be
+  // reopened. Restore the last-known value immediately so there's no gap; still corrected
+  // for real by the offscreen ping below / on the next cg:model-ready.
+  state.modelPersonal = !!d.cg_model_personal;
+  state.mouseReady = !!d.cg_mouse_ready;
   var pid = d.cg_profile_id;
   if (!pid) {   // same format the enrollment wizard uses; whoever runs first creates it
     pid = "p_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -278,8 +288,16 @@ function setModelPersonal(v) {
   v = !!v;
   if (v === state.modelPersonal) return;
   state.modelPersonal = v;
+  api.storage.local.set({ cg_model_personal: v });   // survives the next service-worker restart
   broadcastConfig();
   updateBadge();
+}
+
+function setMouseReady(v) {
+  v = !!v;
+  if (v === state.mouseReady) return;
+  state.mouseReady = v;
+  api.storage.local.set({ cg_mouse_ready: v });
 }
 
 api.runtime.onMessage.addListener(function (msg, sender, reply) {
@@ -298,7 +316,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       // The wizard just deleted the stored windows + trained heads (IndexedDB) — mirror
       // that here: drop back to untrained (monitoring off) until the user retrains.
       state.enrolled = false;
-      state.mouseReady = false;
+      setMouseReady(false);
       state.mouseVerdict = null;
       scores = [];
       mouseScores = [];
@@ -314,7 +332,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       updateBadge();
       return;
     }
-    case "cg:model-ready": state.modelReady = true; state.modelError = null; setModelPersonal(msg.personal); state.mouseReady = !!msg.mouse; return;
+    case "cg:model-ready": state.modelReady = true; state.modelError = null; setModelPersonal(msg.personal); setMouseReady(msg.mouse); return;
     case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":
       reply({ enabled: monitoringEnabled(), excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey });
@@ -354,7 +372,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
         // Make sure the offscreen doc exists, then ask it directly whether the model loaded.
         ensureOffscreen().then(function () {
           pingOffscreen(function (r) {
-            if (r && r.ready) { state.modelReady = true; state.modelError = null; setModelPersonal(r.personal); state.mouseReady = !!r.mouse; }
+            if (r && r.ready) { state.modelReady = true; state.modelError = null; setModelPersonal(r.personal); setMouseReady(r.mouse); }
             else if (r && r.error) { state.modelError = r.error; }
             reply(statusObj());
           });
