@@ -2,56 +2,92 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Continuum Guard — Train on your typing</title>
+    <title>Continuum Guard — Train</title>
     <style>
-      body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; color: #0f172a; background: #f8fafc; }
-      h1 { font-size: 22px; margin: 0 0 6px; }
-      p.sub { color: #475569; margin: 0 0 20px; }
-      blockquote { background: #eef2ff; border-left: 4px solid #4f46e5; margin: 0 0 14px; padding: 12px 16px; border-radius: 8px; color: #1e293b; }
-      textarea { width: 100%; min-height: 150px; padding: 12px 14px; border: 1.5px solid #cbd5e1; border-radius: 10px; font: inherit; line-height: 1.6; resize: vertical; box-sizing: border-box; }
-      textarea:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,.15); }
-      .bar { height: 12px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin: 16px 0 8px; }
-      .bar i { display: block; height: 100%; width: 0; background: #4f46e5; transition: width .2s; }
-      .status { font-weight: 700; margin-bottom: 16px; }
-      button { background: #4f46e5; color: #fff; border: 0; border-radius: 10px; padding: 12px 20px; font: 700 15px system-ui; cursor: pointer; }
-      button:disabled { background: #94a3b8; cursor: default; }
-      #done { display: none; margin-top: 16px; padding: 12px 16px; background: #dcfce7; border: 1px solid #86efac; border-radius: 10px; color: #065f46; font-weight: 600; }
-      .note { color: #64748b; font-size: 13px; margin-top: 18px; }
+      :root {
+        color-scheme: light dark;
+        --bg: #f4f7fc; --surface: #ffffff; --panel: #eef2ff; --border: #dbe1f0;
+        --text: #0f172a; --muted: #47546b; --faint: #6b7891;
+        --accent: #4f46e5; --accent-2: #6366f1; --teal: #0e7490; --link: #4f46e5;
+        --field-bg: #ffffff; --field-border: #cbd5e1; --bar-bg: #e2e8f0;
+        --done-bg: #ecfdf5; --done-border: #a7f3d0; --done-text: #065f46;
+        --nudge-bg: #fffbeb; --nudge-border: #fde68a; --nudge-text: #92400e;
+        --shadow: 0 1px 2px rgba(15,23,42,.05), 0 12px 32px -12px rgba(15,23,42,.14);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b1120; --surface: #141d31; --panel: #18223a; --border: #27334f;
+          --text: #e8edf7; --muted: #a2aec6; --faint: #7c8aa8;
+          --accent: #6366f1; --accent-2: #818cf8; --teal: #0891b2; --link: #a5b4fc;
+          --field-bg: #0f1729; --field-border: #2d3a5b; --bar-bg: #27334f;
+          --done-bg: rgba(16,185,129,.13); --done-border: rgba(16,185,129,.4); --done-text: #6ee7b7;
+          --nudge-bg: rgba(245,158,11,.12); --nudge-border: rgba(245,158,11,.35); --nudge-text: #fcd34d;
+          --shadow: 0 1px 2px rgba(0,0,0,.3), 0 14px 34px -12px rgba(0,0,0,.55);
+        }
+      }
+      * { box-sizing: border-box; }
+      body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 680px; margin: 40px auto; padding: 0 20px; color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; }
+      h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -.2px; }
+      p.sub { color: var(--muted); margin: 0 0 20px; }
+      blockquote { background: var(--panel); border-left: 4px solid var(--accent); margin: 0 0 14px; padding: 13px 16px; border-radius: 10px; color: var(--text); }
+      textarea { width: 100%; min-height: 150px; padding: 12px 14px; border: 1.5px solid var(--field-border); border-radius: 12px; font: inherit; line-height: 1.6; resize: vertical; background: var(--field-bg); color: var(--text); }
+      textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+      .bar { height: 12px; background: var(--bar-bg); border-radius: 999px; overflow: hidden; margin: 16px 0 8px; }
+      .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent-2), var(--accent)); transition: width .2s; }
+      .status { font-weight: 700; margin-bottom: 16px; color: var(--muted); }
+      button { background: linear-gradient(135deg, var(--accent-2), var(--accent)); color: #fff; border: 0; border-radius: 12px; padding: 12px 20px; font: 700 15px system-ui; cursor: pointer; box-shadow: var(--shadow); transition: transform .06s ease, filter .16s ease; }
+      button:hover { filter: brightness(1.07); }
+      button:active { transform: translateY(1px); }
+      button:disabled { background: var(--faint); cursor: default; box-shadow: none; filter: none; }
+      #done { display: none; margin-top: 16px; padding: 16px 18px; background: var(--done-bg); border: 1px solid var(--done-border); border-radius: 14px; color: var(--done-text); font-weight: 600; }
+      #done #regpk { background: var(--teal); }
+      .note { color: var(--faint); font-size: 13px; margin-top: 18px; }
+      .link { color: var(--link); text-decoration: none; font-weight: 600; }
+      .reset { color: #e0576b; text-decoration: none; font-weight: 600; }
+      .existing { font-size: 12.5px; color: var(--faint); margin: -4px 0 14px; }
+      .playarea { position: relative; min-height: 420px; background: var(--panel); border: 1.5px solid var(--border); border-radius: 14px; cursor: default; overflow: hidden; padding: 18px 20px; }
+      .mousetext { font-size: 14px; line-height: 1.9; color: var(--text); max-width: 620px; }
+      .mlink { color: var(--link); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font-weight: 600; }
+      .mlink.done { color: var(--faint); text-decoration: none; cursor: default; }
+      .nudge { background: var(--nudge-bg); border: 1px solid var(--nudge-border); border-radius: 10px; padding: 10px 14px; color: var(--nudge-text); font-size: 13.5px; margin-bottom: 14px; }
     </style>
   </head>
   <body>
-    <h1>Train Continuum Guard on your typing</h1>
-    <div id="existingProfile" style="display:none;font-size:12.5px;color:#64748b;margin:-4px 0 14px">
+    <h1 id="pageTitle">Train Continuum Guard</h1>
+    <div id="existingProfile" class="existing" style="display:none">
       <span id="existingCount"></span> already saved · new samples add on top of these ·
-      <a href="#" id="resetProfile" style="color:#dc2626;text-decoration:none;font-weight:600">🗑️ clear & start fresh</a>
+      <a href="#" id="resetProfile" class="reset">🗑️ clear & start fresh</a>
     </div>
-    <p class="sub">Type the passage below at your <b>normal, natural pace</b>. Continuum learns your rhythm — <b>how</b> you type, never <b>what</b> you type. Keep going until the bar fills.</p>
-    <blockquote id="passage">Loading a passage…</blockquote>
-    <div style="text-align:right;margin:-8px 0 12px">
-      <a href="#" id="newPassage" style="font-size:12px;color:#4f46e5;text-decoration:none;font-weight:600">🔄 New passage</a>
+
+    <div id="keystrokeStage" style="display:none">
+      <p class="sub">Type the passage below at your <b>normal, natural pace</b>. Continuum learns your rhythm — <b>how</b> you type, never <b>what</b> you type. Keep going until the bar fills.</p>
+      <blockquote id="passage">Loading a passage…</blockquote>
+      <div style="text-align:right;margin:-8px 0 12px">
+        <a href="#" id="newPassage" class="link" style="font-size:12px">🔄 New passage</a>
+      </div>
+      <textarea id="ta" placeholder="Start typing the passage here…" autofocus></textarea>
+      <div class="bar"><i id="prog"></i></div>
+      <div class="status" id="status">0 / 12 windows captured</div>
+      <button id="save" disabled>Save my profile &amp; train</button>
+      <div class="status" id="trainStatus" style="display:none">training…</div>
     </div>
-    <textarea id="ta" placeholder="Start typing the passage here…" autofocus></textarea>
-    <div class="bar"><i id="prog"></i></div>
-    <div class="status" id="status">0 / 12 windows captured</div>
-    <button id="save" disabled>Save my profile &amp; train</button>
-    <div class="status" id="trainStatus" style="display:none">training…</div>
 
     <div id="mouseStage" style="display:none">
-      <h1 style="font-size:19px;margin:22px 0 6px">Step 2 — your mouse style</h1>
-      <p class="sub">Chase and <b>click the dot</b> at your normal pace. Continuum learns how your hand moves — positions and timing only.</p>
-      <div id="playArea" style="position:relative;height:320px;background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:12px;cursor:crosshair;overflow:hidden">
-        <div id="dot" style="position:absolute;width:28px;height:28px;border-radius:50%;background:#4f46e5;box-shadow:0 0 0 6px rgba(79,70,229,.2);left:40%;top:40%"></div>
+      <p class="sub">Read the snippet, then click the highlighted <b>links</b> in any order, at your normal browsing pace. Continuum learns how your hand moves across a page — positions and timing only, never what you click.</p>
+      <div id="playArea" class="playarea">
+        <div id="mouseText" class="mousetext"></div>
       </div>
       <div class="bar"><i id="mprog"></i></div>
       <div class="status" id="mstatus">0 / 20 mouse windows captured</div>
       <div class="status" id="mtrainStatus" style="display:none">training…</div>
     </div>
 
-    <div id="done">✓ Your personal model is trained and active. The guard now knows your rhythm.<br /><br />
-      <div id="sessionNudge" style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;color:#92400e;font-size:13.5px;margin-bottom:14px"></div>
-      <button id="regpk" style="background:#0e7490">🔑 Set up your passkey (used when the guard locks a page)</button>
+    <div id="done">✓ <span id="doneMsg">Your personal model is trained and active. The guard now knows your rhythm.</span><br /><br />
+      <div id="sessionNudge" class="nudge" style="display:none"></div>
+      <div id="crossTrainCta" style="margin-bottom:14px;font-size:13.5px"></div>
+      <button id="regpk">🔑 Set up your passkey (used when the guard locks a page)</button>
     </div>
-    <p class="note">Only timing features (key hold + gaps) are stored locally on this device. The text you type is never saved or sent. Training runs entirely in your browser.</p>
+    <p class="note">Only timing and movement features are stored locally on this device. What you type or click is never saved or sent. Training runs entirely in your browser.</p>
     <script src="../vendor/tf-lite.js"></script>
     <script src="features.js"></script>
     <script src="features-mouse.js"></script>

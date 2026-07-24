@@ -11,34 +11,69 @@ api.tabs.query({ active: true, currentWindow: true }, function (tabs) {
 // Poll so the model-ready state and live verdict update while the popup is open.
 setInterval(refresh, 1000);
 
+function show(id, visible) { q(id).style.display = visible ? "" : "none"; }
+
 function refresh() {
   api.runtime.sendMessage({ type: "cg:status" }, function (s) {
     if (!s) return;
     var excluded = (s.exclusions || []).indexOf(curOrigin) >= 0;
-    q("state").textContent = s.enabled ? "monitoring" : "off — train first";
-    q("dot").className = "dot" + (s.enabled ? "" : " off");
-    q("wins").textContent = s.totalWindows;
-    var st = s.steps || 0, nd = s.needSteps || 50;
-    q("steps").textContent = st >= nd ? "ready ✓" : st + "/" + nd;
-    q("profile").textContent = s.modelPersonal ? "personalized ✓" : (s.enrolled ? "training…" : "not trained yet");
-    var mv = s.mouseVerdict;
-    q("mouse").textContent = !s.mouseReady ? "not trained"
-      : !mv ? "watching…"
-      : mv.status === "analyzing" ? "analyzing (" + mv.packet + "/" + mv.need + ")"
-      : mv.status === "suspicious" ? "⚠ " + mv.mean + "%"
-      : "✓ " + mv.mean + "%";
-    q("model").textContent = s.modelReady ? ("ready — " + (s.modelPersonal ? "personal" : "base")) : (s.modelError ? "error" : "loading…");
+    var ksOn = !!s.modelPersonal;       // keystroke personal model trained
+    var mouseOn = !!s.mouseReady;       // mouse personal model trained
+    var trained = ksOn || mouseOn;      // at least one modality has a personal model
+    // "live" = trained AND the on-device model is actually loaded in the offscreen doc.
+    // The service worker sleeps when idle and reloads on the next event; until its model
+    // is confirmed ready we say "starting…", never a false "monitoring".
+    var live = trained && !!s.modelReady && !s.modelError;
+    var active = trained;               // rows/verdict still keyed to what's trained
+
+    q("state").textContent = !trained ? "off — train below"
+      : s.modelError ? "error — reopen to retry"
+      : live ? "monitoring" : "starting…";
+    q("dot").className = "dot" + (live ? "" : " off");
+
+    // Per-modality rows: only show a modality's rows once THAT modality is trained.
+    show("rowModel", ksOn);
+    show("rowSteps", ksOn);
+    show("rowWins", ksOn);
+    show("rowMouse", mouseOn);
+
+    if (ksOn) {
+      q("model").textContent = s.modelReady ? "ready — personal" : (s.modelError ? "error" : "loading…");
+      q("wins").textContent = s.totalWindows;
+      var st = s.steps || 0, nd = s.needSteps || 50;
+      q("steps").textContent = st >= nd ? "ready ✓" : st + "/" + nd;
+    }
+    if (mouseOn) {
+      var mv = s.mouseVerdict;
+      q("mouse").textContent = !mv ? "watching…"
+        : mv.status === "analyzing" ? "analyzing (" + mv.packet + "/" + mv.need + ")"
+        : mv.status === "suspicious" ? "⚠ " + mv.mean + "%"
+        : "✓ " + mv.mean + "%";
+    }
+
+    q("profile").textContent = active
+      ? [ksOn ? "typing ✓" : null, mouseOn ? "mouse ✓" : null].filter(Boolean).join(" · ")
+      : (s.enrolled ? "training…" : "not trained yet");
     q("site").textContent = curOrigin ? (excluded ? curOrigin + " (excluded)" : curOrigin) : "—";
 
-    // Verdict banner
-    var vd = q("verdict"), v = s.verdict;
-    if (!s.enabled) { vd.textContent = "🎓 Train your profile below to start monitoring"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
-    else if (!s.modelReady) { vd.textContent = s.modelError ? ("⚠ model error: " + s.modelError) : "⏳ loading model…"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
-    else if (s.locked) { vd.textContent = "🔒 locked — passkey required (keystroke score: " + (v ? v.mean + "%" : "?") + ")"; vd.style.background = "rgba(239,68,68,.18)"; vd.style.borderColor = "rgba(239,68,68,.45)"; }
-    else if (!v) { vd.textContent = "idle — type on any web page to begin"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
-    else if (v.status === "analyzing") { vd.textContent = "analyzing your typing… (" + v.packet + "/" + v.need + ")"; vd.style.background = "var(--card)"; vd.style.borderColor = "var(--card-border)"; }
-    else if (v.status === "suspicious") { vd.textContent = "⚠ suspicious — " + v.mean + "%"; vd.style.background = "rgba(239,68,68,.18)"; vd.style.borderColor = "rgba(239,68,68,.45)"; }
-    else { vd.textContent = "✓ verified — " + v.mean + "%"; vd.style.background = "rgba(22,163,74,.18)"; vd.style.borderColor = "rgba(22,163,74,.45)"; }
+    // Verdict banner — theme-aware colouring via CSS classes (v-ok / v-warn / neutral).
+    var vd = q("verdict"), v = s.verdict, cls = "", txt;
+    if (!active) { txt = "🎓 Train a profile below to start monitoring"; }
+    else if (!s.modelReady) { txt = s.modelError ? ("⚠ model error: " + s.modelError) : "⏳ loading model…"; }
+    else if (s.locked) { txt = "🔒 Locked — passkey required (keystroke score " + (v ? v.mean + "%" : "?") + ")"; cls = "v-warn"; }
+    else if (ksOn) {   // keystroke is the enforcing channel — it drives the banner when trained
+      if (!v) { txt = "Idle — type on any web page to begin"; }
+      else if (v.status === "analyzing") { txt = "Analyzing your typing… (" + v.packet + "/" + v.need + ")"; }
+      else if (v.status === "suspicious") { txt = "⚠ Suspicious — " + v.mean + "%"; cls = "v-warn"; }
+      else { txt = "✓ Verified — " + v.mean + "%"; cls = "v-ok"; }
+    } else {   // mouse trained only (info-only channel, no lock)
+      var mv2 = s.mouseVerdict;
+      txt = (mv2 && mv2.status !== "analyzing")
+        ? ("🖱️ Mouse " + (mv2.status === "suspicious" ? "⚠ " : "✓ ") + mv2.mean + "% (info only)")
+        : "Monitoring your mouse movement (info only)";
+    }
+    vd.textContent = txt;
+    vd.className = cls;
     q("exclude").textContent = excluded ? "Include this site" : "Exclude this site";
   });
 }
@@ -48,6 +83,9 @@ q("exclude").addEventListener("click", function () {
   api.runtime.sendMessage({ type: "cg:toggleExclude", origin: curOrigin }, refresh);
 });
 
-q("enroll").addEventListener("click", function () {
-  api.tabs.create({ url: api.runtime.getURL("src/enroll.html") });
+q("enrollKeys").addEventListener("click", function () {
+  api.tabs.create({ url: api.runtime.getURL("src/enroll.html?mode=keystroke") });
+});
+q("enrollMouse").addEventListener("click", function () {
+  api.tabs.create({ url: api.runtime.getURL("src/enroll.html?mode=mouse") });
 });

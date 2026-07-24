@@ -10,8 +10,22 @@
   var DT_CLIP_SECONDS = 1.0;
   var WINDOW_SIZE = 50;
   var WINDOW_STRIDE = 10;
+  // Minimum cursor path a window must cover to be scored/trained. The mouse base model is a
+  // cursor-TRAJECTORY biometric (SapiMouse) — it only makes sense on windows of real movement.
+  // Natural browsing is scroll-dominated with the cursor near-static, producing near-zero-path
+  // windows that are out-of-distribution and make the verdict noisy. Grounded in real SapiMouse
+  // active windows (path p5=0.10, median 0.41): 0.08 keeps ~98% of genuine movement while
+  // dropping idle/scroll-reading windows (still cursor ≈ 0.02, ±3px drift ≈ 0.06).
+  var MIN_WINDOW_PATH = 0.08;
 
   function clip(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  // dx, dy are steps[i][0], steps[i][1] (screen-fraction displacement); path = summed magnitude.
+  function windowPathLength(win) {
+    var s = 0;
+    for (var i = 0; i < win.length; i++) s += Math.hypot(win[i][0], win[i][1]);
+    return s;
+  }
 
   function eventsToSteps(events) {
     var steps = [];
@@ -55,7 +69,8 @@
     if (steps.length < WINDOW_SIZE) return [];
     var windows = [];
     for (var s = 0; s + WINDOW_SIZE <= steps.length; s += WINDOW_STRIDE) {
-      windows.push(steps.slice(s, s + WINDOW_SIZE));
+      var win = steps.slice(s, s + WINDOW_SIZE);
+      if (windowPathLength(win) >= MIN_WINDOW_PATH) windows.push(win);   // skip near-static (idle/scroll) windows
     }
     return windows;
   }

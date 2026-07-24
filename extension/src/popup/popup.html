@@ -4,121 +4,169 @@
     <meta charset="utf-8" />
     <style>
       :root {
-        --bg: #0b1120;
-        --card: #131c31;
-        --card-border: #1f2c47;
-        --text: #e7ecf6;
-        --muted: #8b98b3;
-        --indigo: #4f46e5;
-        --indigo-hi: #6366f1;
-        --teal: #0e9488;
-        --teal-hi: #14b8a6;
-        --green: #16a34a;
-        --red: #ef4444;
-        --slate: #263248;
-        --slate-hi: #324160;
-        --radius-lg: 18px;
-        --radius-md: 12px;
-        --radius-sm: 8px;
+        color-scheme: light dark;
+        --radius-xl: 18px;
+        --radius-lg: 14px;
+        --radius-md: 11px;
+        --radius-pill: 999px;
+
+        /* ---- light theme (default) ---- */
+        --bg-1: #eef2f9;
+        --bg-2: #e4e9f3;
+        --surface: #ffffff;
+        --surface-2: #f7f9fc;
+        --border: #e5e9f1;
+        --border-strong: #d5dbe7;
+        --text: #0f172a;
+        --muted: #5c6a86;
+        --faint: #93a0b8;
+        --shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 8px 24px -6px rgba(15, 23, 42, .12);
+        --accent: #4f46e5;
+        --accent-2: #6366f1;
+        --teal: #0d9488;
+        --teal-2: #14b8a6;
+        --ok-bg: #ecfdf5; --ok-border: #a7f3d0; --ok-text: #047857;
+        --warn-bg: #fef2f2; --warn-border: #fecaca; --warn-text: #b91c1c;
+        --dot-on: #16a34a; --dot-off: #a3adc2;
+        --brand-1: #6366f1; --brand-2: #4338ca;
       }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-1: #0d1424;
+          --bg-2: #080d18;
+          --surface: #141d31;
+          --surface-2: #18223a;
+          --border: #23304d;
+          --border-strong: #2c3a5c;
+          --text: #e8edf7;
+          --muted: #93a1bd;
+          --faint: #64748b;
+          --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 26px -6px rgba(0, 0, 0, .5);
+          --accent: #6366f1;
+          --accent-2: #818cf8;
+          --teal: #14b8a6;
+          --teal-2: #2dd4bf;
+          --ok-bg: rgba(16, 185, 129, .13); --ok-border: rgba(16, 185, 129, .38); --ok-text: #6ee7b7;
+          --warn-bg: rgba(239, 68, 68, .15); --warn-border: rgba(239, 68, 68, .4); --warn-text: #fca5a5;
+          --dot-on: #22c55e; --dot-off: #55648a;
+          --brand-1: #6366f1; --brand-2: #4338ca;
+        }
+      }
+
       * { box-sizing: border-box; }
+      html { overflow: hidden; background: var(--bg-2); border-radius: 16px; }
       body {
         font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-        width: 288px; margin: 0; padding: 16px;
-        background: radial-gradient(120% 140% at 0% 0%, #101c36 0%, var(--bg) 55%);
+        width: 300px; margin: 0; padding: 15px;
+        background:
+          radial-gradient(130% 120% at 100% 0%, var(--bg-1) 0%, var(--bg-2) 60%);
         color: var(--text);
+        -webkit-font-smoothing: antialiased;
+        overflow: hidden;          /* no scrollbar inside the panel */
+        border-radius: 16px;       /* rounded panel edges */
       }
-      h1 {
-        font-size: 14.5px; font-weight: 800; letter-spacing: .1px;
-        margin: 0 0 12px; display: flex; align-items: center; gap: 9px;
+
+      header { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
+      .logo {
+        width: 30px; height: 30px; flex: none; display: block;
+        filter: drop-shadow(0 3px 8px rgba(79, 70, 229, .45));
       }
-      .badge {
-        width: 26px; height: 26px; border-radius: 9px;
-        background: linear-gradient(145deg, var(--indigo-hi), #4338ca);
-        display: flex; align-items: center; justify-content: center; font-size: 14px;
-        box-shadow: 0 2px 8px rgba(79,70,229,.45);
+      .title { font-size: 14px; font-weight: 800; letter-spacing: .15px; }
+      .sub-title { font-size: 10.5px; color: var(--faint); font-weight: 600; margin-top: 1px; }
+      .dot {
+        width: 9px; height: 9px; border-radius: 50%; margin-left: auto; flex: none;
+        background: var(--dot-on); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-on) 22%, transparent);
       }
-      .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-left: auto; box-shadow: 0 0 0 3px rgba(22,163,74,.18); }
-      .dot.off { background: #58698c; box-shadow: 0 0 0 3px rgba(88,105,140,.18); }
+      .dot.off { background: var(--dot-off); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-off) 22%, transparent); }
 
       #verdict {
         border-radius: var(--radius-lg);
-        padding: 13px 15px;
-        margin: 0 0 12px;
-        font-weight: 700;
-        font-size: 12.5px;
-        background: var(--card);
-        border: 1px solid var(--card-border);
-        transition: background .25s ease;
+        padding: 12px 14px; margin-bottom: 12px;
+        font-weight: 700; font-size: 12.5px; line-height: 1.35;
+        background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
+        box-shadow: var(--shadow);
+        transition: background .22s ease, border-color .22s ease, color .22s ease;
       }
+      #verdict.v-ok { background: var(--ok-bg); border-color: var(--ok-border); color: var(--ok-text); }
+      #verdict.v-warn { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn-text); }
 
       .card {
-        background: var(--card);
-        border: 1px solid var(--card-border);
-        border-radius: var(--radius-lg);
-        padding: 4px 13px;
-        margin-bottom: 12px;
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--radius-xl); padding: 3px 14px; margin-bottom: 13px;
+        box-shadow: var(--shadow);
       }
       .row {
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 8px 0;
-        border-bottom: 1px solid var(--card-border);
+        display: flex; justify-content: space-between; align-items: center; gap: 10px;
+        padding: 8.5px 0; border-bottom: 1px solid var(--border);
       }
       .row:last-child { border-bottom: none; }
-      .row span:first-child { color: var(--muted); font-weight: 500; }
-      .val { font-weight: 700; }
+      .row > span:first-child { color: var(--muted); font-weight: 500; white-space: nowrap; }
+      .val { font-weight: 700; text-align: right; }
 
       button {
-        border: 0; border-radius: var(--radius-md);
-        padding: 11px 14px;
-        font: 700 12.5px/1.2 system-ui;
-        cursor: pointer;
-        width: 100%;
-        color: #fff;
-        background: var(--slate);
-        transition: filter .15s ease, transform .05s ease;
-        text-align: center;
+        display: block; width: 100%; border: 0; cursor: pointer;
+        border-radius: var(--radius-md); padding: 11px 14px;
+        font: 700 12.5px/1.2 system-ui; color: #fff; text-align: center;
+        transition: transform .06s ease, filter .16s ease, background .16s ease;
       }
-      button:hover { filter: brightness(1.12); }
-      button:active { transform: scale(.985); }
-      button.stack { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; }
-      button .sub { font-weight: 500; font-size: 10.5px; opacity: .78; }
+      button:hover { filter: brightness(1.07); }
+      button:active { transform: translateY(1px) scale(.99); }
+      .train-row { display: flex; gap: 9px; }
+      .train-row button {
+        flex: 1; display: flex; flex-direction: column; gap: 3px; align-items: center;
+        text-align: center; padding: 11px 8px;
+      }
+      .train-row .lead { font-size: 12.5px; }
+      .train-row .sub { font-weight: 500; font-size: 10px; opacity: .85; }
+      .btn-keys { background: linear-gradient(135deg, var(--teal-2), var(--teal)); box-shadow: 0 4px 12px -2px color-mix(in srgb, var(--teal) 55%, transparent); }
+      .btn-mouse { background: linear-gradient(135deg, #a78bfa, #7c3aed); box-shadow: 0 4px 12px -2px color-mix(in srgb, #7c3aed 55%, transparent); }
+      .btn-ghost {
+        background: transparent; border: 1px solid var(--border-strong);
+        color: var(--muted); box-shadow: none; font-size: 12px; padding: 9px 14px;
+      }
+      .btn-ghost:hover { filter: none; background: var(--surface-2); color: var(--text); }
 
-      .btn-primary { background: linear-gradient(145deg, var(--indigo-hi), var(--indigo)); box-shadow: 0 3px 10px rgba(79,70,229,.35); }
-      .btn-teal { background: linear-gradient(145deg, var(--teal-hi), var(--teal)); box-shadow: 0 3px 10px rgba(13,148,136,.3); }
-      .btn-slate { background: var(--slate); }
-      .btn-slate:hover { background: var(--slate-hi); filter: none; }
-      .btn-outline { background: transparent; border: 1px solid var(--card-border); color: var(--muted); box-shadow: none; }
-      .btn-outline:hover { background: var(--card); filter: none; color: var(--text); }
-
-      .gap { height: 8px; }
-      .muted { color: var(--muted); font-size: 10.5px; margin-top: 12px; line-height: 1.5; }
-      .muted b { color: #b7c2dc; }
+      .gap { height: 9px; }
+      .note { color: var(--faint); font-size: 10.5px; margin-top: 13px; line-height: 1.5; }
+      .note b { color: var(--muted); }
     </style>
   </head>
   <body>
-    <h1><span class="badge">🛡️</span> Continuum Guard <span class="dot" id="dot"></span></h1>
+    <header>
+      <img class="logo" src="../../icons/icon48.png" alt="" />
+      <div>
+        <div class="title">Continuum Guard</div>
+        <div class="sub-title">continuous authentication</div>
+      </div>
+      <span class="dot" id="dot"></span>
+    </header>
 
     <div id="verdict">…</div>
 
     <div class="card">
       <div class="row"><span>Status</span><span class="val" id="state">…</span></div>
-      <div class="row"><span>Model</span><span class="val" id="model">…</span></div>
-      <div class="row"><span>Steps → 1st window</span><span class="val" id="steps">0/50</span></div>
-      <div class="row"><span>Windows scored</span><span class="val" id="wins">0</span></div>
-      <div class="row"><span>Mouse (info only)</span><span class="val" id="mouse">…</span></div>
+      <div class="row" id="rowModel"><span>Model</span><span class="val" id="model">…</span></div>
+      <div class="row" id="rowSteps"><span>Steps → 1st window</span><span class="val" id="steps">0/50</span></div>
+      <div class="row" id="rowWins"><span>Windows scored</span><span class="val" id="wins">0</span></div>
+      <div class="row" id="rowMouse"><span>Mouse (info only)</span><span class="val" id="mouse">…</span></div>
       <div class="row"><span>This site</span><span class="val" id="site">…</span></div>
       <div class="row"><span>Your profile</span><span class="val" id="profile">…</span></div>
     </div>
 
-    <button id="enroll" class="btn-teal stack">
-      <span>🎓 Train Continuum on you</span>
-      <span class="sub">~2 min · captures your typing &amp; mouse movement</span>
-    </button>
+    <div class="train-row">
+      <button id="enrollKeys" class="btn-keys">
+        <span class="lead">⌨️ Train typing</span>
+        <span class="sub">how you type</span>
+      </button>
+      <button id="enrollMouse" class="btn-mouse">
+        <span class="lead">🖱️ Train mouse</span>
+        <span class="sub">how you move</span>
+      </button>
+    </div>
     <div class="gap"></div>
-    <button id="exclude" class="btn-outline">…</button>
+    <button id="exclude" class="btn-ghost">…</button>
 
-    <div class="muted">Monitoring turns on automatically once you're trained, and stays off until then — there's no genuine profile to check against yet. Keystrokes and mouse movement stay on-device.</div>
+    <div class="note">Monitoring turns on automatically once you're trained. Keystroke &amp; mouse timing is processed <b>on-device</b> — nothing you type or click leaves your browser.</div>
     <script src="popup.js"></script>
   </body>
 </html>

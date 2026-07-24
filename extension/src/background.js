@@ -29,10 +29,38 @@ var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: n
 var scores = [];       // rolling last N keystroke window scores
 var mouseScores = [];  // rolling last N mouse window scores
 
+// Snapshot live progress to storage so it survives a service-worker restart. Throttled so
+// rapid keystrokes don't hammer storage (at most one write per ~1.2s); pass immediate=true
+// for state that must not be lost even briefly (lock/unlock).
+var _persistTimer = null;
+function progressSnapshot() {
+  return {
+    steps: state.steps, needSteps: state.needSteps, totalWindows: state.totalWindows, verdict: state.verdict,
+    scores: scores, mouseScores: mouseScores, mouseVerdict: state.mouseVerdict,
+    totalMouseWindows: state.totalMouseWindows, locked: state.locked, at: Date.now(),
+  };
+}
+function persistProgress(immediate) {
+  if (immediate) {
+    if (_persistTimer) { clearTimeout(_persistTimer); _persistTimer = null; }
+    try { api.storage.local.set({ cg_progress: progressSnapshot() }); } catch (e) {}
+    return;
+  }
+  if (_persistTimer) return;
+  _persistTimer = setTimeout(function () {
+    _persistTimer = null;
+    try { api.storage.local.set({ cg_progress: progressSnapshot() }); } catch (e) {}
+  }, 1200);
+}
+
 // Monitoring is NOT a manual toggle anymore: it stays off until the user has trained a
 // personal model (the wizard), then turns on by itself. A base-model verdict on a
 // stranger's rhythm isn't meaningful, so there is nothing useful to "turn on" before that.
+// monitoringEnabled() gates the KEYSTROKE (enforcing) channel; anyTrained() gates whether
+// the extension does ANYTHING at all — content scripts only capture when at least one
+// modality is trained, so a profile with neither is genuinely disabled.
 function monitoringEnabled() { return !!state.modelPersonal; }
+function anyTrained() { return !!state.modelPersonal || !!state.mouseReady; }
 
 // Stable NUMERIC id for the passkey-service, derived from this profile's id (FNV-1a).
 function numericUid(pid) {
@@ -41,12 +69,27 @@ function numericUid(pid) {
   return (h >>> 0) + 1;   // +1: never 0 (service treats 0 as missing)
 }
 
-api.storage.local.get(["cg_exclusions", "cg_enrolled_at", "cg_passkey", "cg_profile_id", "cg_rp_base", "cg_model_personal", "cg_mouse_ready"], function (d) {
+api.storage.local.get(["cg_exclusions", "cg_enrolled_at", "cg_passkey", "cg_profile_id", "cg_rp_base", "cg_model_personal", "cg_mouse_ready", "cg_progress"], function (d) {
   d = d || {};
   config.exclusions = d.cg_exclusions || [];
   state.enrolled = !!d.cg_enrolled_at;
   state.hasPasskey = !!d.cg_passkey;
   RP_BASE = (d.cg_rp_base || RP_BASE_DEFAULT).replace(/\/+$/, "");
+  // Restore the LIVE session progress too — the rolling packet, step counter, verdict and
+  // lock state — so a service-worker restart (e.g. opening/closing the popup, or an idle
+  // gap while typing) doesn't wipe the in-progress packet and reset the counter to 0.
+  var p = d.cg_progress;
+  if (p && (Date.now() - (p.at || 0) < 10 * 60 * 1000)) {   // ignore stale (>10 min) snapshots
+    state.steps = p.steps || 0;
+    state.needSteps = p.needSteps || 50;
+    state.totalWindows = p.totalWindows || 0;
+    state.verdict = p.verdict || null;
+    state.mouseVerdict = p.mouseVerdict || null;
+    state.totalMouseWindows = p.totalMouseWindows || 0;
+    state.locked = !!p.locked;   // a lock must survive a restart, or it'd silently drop
+    scores = Array.isArray(p.scores) ? p.scores : [];
+    mouseScores = Array.isArray(p.mouseScores) ? p.mouseScores : [];
+  }
   // MV3 service workers are terminated after ~30s idle and re-run from scratch on the next
   // event — every in-memory var above resets, INCLUDING this one, while the offscreen
   // document (which actually holds the trained model) survives independently and nobody
@@ -171,6 +214,7 @@ async function onWindow(win) {
       };
       if (state.verdict.status === "suspicious" && !state.locked) engageLock();
       updateBadge();
+      persistProgress();   // survive a SW restart mid-packet
     }
   } catch (e) { console.error("[continuum-guard] scoring error:", e && e.message); }
   finally { scoringBusy = false; }
@@ -180,7 +224,10 @@ async function onWindow(win) {
 // stage has trained a personal head (the mouse base alone can't say genuine/impostor).
 var mouseBusy = false, pendingMouseWin = null;
 async function onMouseWindow(win) {
-  if (!monitoringEnabled() || !state.mouseReady) return;
+  // Gated on its OWN readiness, independent of the keystroke model — the two modalities
+  // now enroll (and thus monitor) independently, so a profile that trained only mouse
+  // still shows a live mouse verdict. (Mouse remains info-only; keystroke drives enforcement.)
+  if (!state.mouseReady) return;
   state.totalMouseWindows += 1;
   pendingMouseWin = win;
   if (mouseBusy) return;
@@ -207,21 +254,82 @@ async function onMouseWindow(win) {
       // Verdict stays visible in the popup as a secondary signal; only keystrokes enforce
       // until the mouse enrollment task is redesigned to capture natural movement.
       updateBadge();
+      persistProgress();
     }
   } catch (e) { console.error("[continuum-guard] mouse scoring error:", e && e.message); }
   finally { mouseBusy = false; }
 }
 
-// Live status on the toolbar icon badge, so capture/verdict is visible without the popup.
+// Toolbar-icon assets: full-colour when active, greyed when the site is excluded.
+var ICON_ON = { 16: "icons/icon16.png", 32: "icons/icon32.png", 48: "icons/icon48.png", 128: "icons/icon128.png" };
+var ICON_OFF = { 16: "icons/icon-off16.png", 32: "icons/icon-off32.png", 48: "icons/icon-off48.png", 128: "icons/icon-off128.png" };
+
+// The badge value for the CURRENT verdict. The KEYSTROKE channel (the enforcing one) owns
+// the badge whenever it's trained — any %/!/🔒 shown is keystroke, so there's no ambiguity.
+// Mouse (info-only) only appears on the badge when it is the SOLE trained modality, and then
+// in a distinct CYAN so it's never mistaken for the green/red keystroke signal.
+function badgeForState() {
+  if (!anyTrained()) return { text: "🎓", color: "#475569" };          // nothing trained → idle
+  if (state.locked) return { text: "🔒", color: "#dc2626" };
+  if (state.verdict && state.verdict.status === "suspicious") return { text: "!", color: "#dc2626" };
+  if (state.verdict && state.verdict.status === "genuine") return { text: state.verdict.mean + "%", color: "#16a34a" };
+  if (monitoringEnabled()) return { text: state.steps > 0 ? String(Math.min(state.steps, 99)) : "", color: "#4f46e5" };
+  if (state.mouseReady && state.mouseVerdict && state.mouseVerdict.status !== "analyzing") {
+    return { text: state.mouseVerdict.mean + "%", color: "#0891b2" };    // cyan = mouse (info) channel
+  }
+  return { text: "", color: "#4f46e5" };
+}
+
+// Apply badge + icon for ONE tab, keyed to whether that tab's site is excluded.
+function applyBadgeToTab(tabId, url) {
+  if (!api.action || tabId == null) return;
+  var origin = "";
+  try { if (url) origin = new URL(url).origin; } catch (e) {}
+  var excluded = origin && config.exclusions.indexOf(origin) >= 0;
+  try {
+    if (excluded) {
+      api.action.setBadgeText({ tabId: tabId, text: "off" });
+      api.action.setBadgeBackgroundColor({ tabId: tabId, color: "#64748b" });
+      api.action.setTitle({ tabId: tabId, title: "Continuum Guard — off on this site" });
+      if (api.action.setIcon) api.action.setIcon({ tabId: tabId, path: ICON_OFF }, function () { void api.runtime.lastError; });
+    } else {
+      var b = badgeForState();
+      api.action.setBadgeText({ tabId: tabId, text: b.text });
+      api.action.setBadgeBackgroundColor({ tabId: tabId, color: b.color });
+      api.action.setTitle({ tabId: tabId, title: "Continuum Guard" });
+      if (api.action.setIcon) api.action.setIcon({ tabId: tabId, path: ICON_ON }, function () { void api.runtime.lastError; });
+    }
+  } catch (e) {}
+}
+
+// Verdict changed → refresh the tab the user is actually looking at.
 function updateBadge() {
-  if (!api.action || !api.action.setBadgeText) return;
-  var txt = "", color = "#4f46e5";
-  if (!monitoringEnabled()) { txt = "🎓"; color = "#475569"; }   // not trained yet
-  else if (state.locked) { txt = "🔒"; color = "#dc2626"; }
-  else if (state.verdict && state.verdict.status === "suspicious") { txt = "!"; color = "#dc2626"; }   // keystroke only — see onMouseWindow for why
-  else if (state.verdict && state.verdict.status === "genuine") { txt = state.verdict.mean + "%"; color = "#16a34a"; }  // live genuine confidence
-  else if (state.steps > 0) { txt = String(Math.min(state.steps, 99)); }  // steps toward first window
-  try { api.action.setBadgeText({ text: txt }); api.action.setBadgeBackgroundColor({ color: color }); } catch (e) {}
+  if (!api.tabs) return;
+  api.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+    if (tabs && tabs[0]) applyBadgeToTab(tabs[0].id, tabs[0].url);
+  });
+}
+
+// GLOBAL state changed (lock/unlock, training on/off) → refresh EVERY tab, not just the
+// active one. Unlock happens while the passkey popup is focused, so the tab that showed 🔒
+// isn't the active tab — without this its lock icon would linger until its next event.
+function refreshAllBadges() {
+  if (!api.tabs) return;
+  api.tabs.query({}, function (tabs) {
+    (tabs || []).forEach(function (t) { applyBadgeToTab(t.id, t.url); });
+  });
+}
+
+// Keep each tab's badge/icon correct as the user switches/navigates.
+if (api.tabs && api.tabs.onActivated) {
+  api.tabs.onActivated.addListener(function (info) {
+    api.tabs.get(info.tabId, function (t) { if (!api.runtime.lastError && t) applyBadgeToTab(t.id, t.url); });
+  });
+}
+if (api.tabs && api.tabs.onUpdated) {
+  api.tabs.onUpdated.addListener(function (tabId, ch, t) {
+    if (ch.url || ch.status === "complete") applyBadgeToTab(tabId, t && t.url);
+  });
 }
 
 // ---- lock / passkey step-up (fixed Continuum RP) ----
@@ -236,7 +344,8 @@ function broadcastAll(msg) {
 function engageLock() {
   state.locked = true;
   broadcastAll({ type: "cg:lock", hasPasskey: state.hasPasskey });
-  updateBadge();
+  refreshAllBadges();   // every monitored tab shows 🔒
+  persistProgress(true);
 }
 function releaseLock() {
   state.locked = false;
@@ -247,7 +356,8 @@ function releaseLock() {
   state.steps = 0;          // and a fresh step counter — otherwise the badge sticks at 99
   broadcastAll({ type: "cg:unlock" });
   broadcastAll({ type: "cg:reset" });   // content scripts drop their event buffers too
-  updateBadge();
+  refreshAllBadges();   // clear 🔒 on every tab now, not just when the next event fires
+  persistProgress(true);
 }
 
 // After a successful ceremony, close the RP window — Chrome hands focus straight back
@@ -276,7 +386,9 @@ function broadcastConfig() {
       // Callback reads lastError so tabs without a content script (chrome:// pages, the
       // web store) don't produce an unhandled "receiving end does not exist" rejection.
       try {
-        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: monitoringEnabled(), exclusions: config.exclusions }, function () { void api.runtime.lastError; });
+        // enabled = anyTrained(): content scripts capture (keys AND mouse) whenever at least
+        // one modality is trained; the worker then routes each window to the right channel.
+        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: anyTrained(), exclusions: config.exclusions }, function () { void api.runtime.lastError; });
       } catch (e) {}
     });
   });
@@ -290,7 +402,7 @@ function setModelPersonal(v) {
   state.modelPersonal = v;
   api.storage.local.set({ cg_model_personal: v });   // survives the next service-worker restart
   broadcastConfig();
-  updateBadge();
+  refreshAllBadges();
 }
 
 function setMouseReady(v) {
@@ -298,6 +410,8 @@ function setMouseReady(v) {
   if (v === state.mouseReady) return;
   state.mouseReady = v;
   api.storage.local.set({ cg_mouse_ready: v });
+  broadcastConfig();   // enabling mouse (even without keystroke) must turn capture on in open tabs
+  refreshAllBadges();
 }
 
 api.runtime.onMessage.addListener(function (msg, sender, reply) {
@@ -311,6 +425,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       });
       scores = [];            // old packet was scored by the previous model
       state.verdict = null;
+      persistProgress(true);
       return;
     case "cg:profile-reset": {
       // The wizard just deleted the stored windows + trained heads (IndexedDB) — mirror
@@ -330,6 +445,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
         try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model" }, function () { void api.runtime.lastError; }); } catch (e) {}
       });
       updateBadge();
+      persistProgress(true);
       return;
     }
     case "cg:model-ready": state.modelReady = true; state.modelError = null; setModelPersonal(msg.personal); setMouseReady(msg.mouse); return;
@@ -359,7 +475,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       }
       return;
     case "cg:activity":
-      if (monitoringEnabled()) { state.steps = msg.steps || 0; state.needSteps = msg.need || 50; state.lastWindowAt = Date.now(); updateBadge(); }
+      if (monitoringEnabled()) { state.steps = msg.steps || 0; state.needSteps = msg.need || 50; state.lastWindowAt = Date.now(); updateBadge(); persistProgress(); }
       return;
     case "cg:windows":
       if (msg.latest) onWindow(msg.latest);
@@ -387,6 +503,14 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       else if (msg.origin) config.exclusions.push(msg.origin);
       api.storage.local.set({ cg_exclusions: config.exclusions });
       broadcastConfig();
+      // Immediately grey/restore the toolbar icon on every tab of this site.
+      if (api.tabs && msg.origin) {
+        api.tabs.query({}, function (tabs) {
+          (tabs || []).forEach(function (t) {
+            try { if (t.url && new URL(t.url).origin === msg.origin) applyBadgeToTab(t.id, t.url); } catch (e) {}
+          });
+        });
+      }
       reply({ exclusions: config.exclusions });
       return true;
     }

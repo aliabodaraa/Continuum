@@ -33,6 +33,10 @@
     }
     handlers = [];
     try { api.runtime.onMessage.removeListener(onMsg); } catch (e) {}
+    // Don't leave a stuck lock overlay behind (e.g. after an extension reload invalidates
+    // this script), and clear the injection guard so a fresh content script can take over.
+    try { hideLock(); } catch (e) {}
+    try { window.__cgGuardActive = false; } catch (e) {}
   }
   function safeSend(msg, cb) {
     if (!alive()) { teardown(); return; }
@@ -72,12 +76,24 @@
   }
   function hideLock() { if (lockEl) { try { lockEl.remove(); } catch (e) {} lockEl = null; } }
 
-  // RP pages (the fixed Continuum passkey origin) postMessage their outcome into their own
-  // window; this relay forwards it to the worker, which checks sender.url === RP origin.
+  // RP page (fixed Continuum passkey origin) posts its outcome into its own window; the
+  // content script running there relays it to the worker, which checks sender.url === RP.
   window.addEventListener("message", function (ev) {
     var d = ev && ev.data;
     if (!d || d.type !== "continuum-ext-passkey" || !d.ok) return;
     safeSend({ type: d.action === "register" ? "cg:passkey-registered" : "cg:verified" });
+  });
+
+  // Self-heal: a background tab (esp. in another window) can miss the cg:unlock broadcast
+  // when the passkey is resolved elsewhere. When it becomes visible again, re-check the
+  // worker's lock state and drop a now-stale overlay (or show one if it locked meanwhile).
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState !== "visible" || dead) return;
+    safeSend({ type: "cg:hello", origin: origin }, function (res) {
+      if (!res) return;
+      if (!res.locked && lockEl) hideLock();
+      else if (res.locked && !lockEl) showLock(!!res.hasPasskey);
+    });
   });
 
   function onMsg(msg) {

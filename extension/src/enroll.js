@@ -4,6 +4,10 @@
 // the characters. Re-running the wizard ACCUMULATES windows on top of prior sessions (capped)
 // instead of discarding them, so the personal model gets more robust over time.
 var api = globalThis.browser || globalThis.chrome;
+// Which modality this run trains. Keystroke and mouse enroll INDEPENDENTLY (separate
+// storage, window counts, trained heads, and session counters), so the wizard runs one
+// at a time instead of forcing both every session. Defaults to keystroke for a bare URL.
+var MODE = (new URLSearchParams(location.search).get("mode") === "mouse") ? "mouse" : "keystroke";
 var TARGET = 12;                 // NEW windows this session (~700+ keystrokes)
 var MAX_STORED_KEY_WINDOWS = 60;  // cap on accumulated keystroke windows across all sessions
 var MAX_STORED_MOUSE_WINDOWS = 80;
@@ -153,7 +157,7 @@ async function loadPassage() {
   newPassageLink.style.pointerEvents = "";
 }
 newPassageLink.addEventListener("click", function (e) { e.preventDefault(); loadPassage(); });
-loadPassage();
+if (MODE === "keystroke") loadPassage();   // mouse mode uses nextPassage() directly for its link text
 
 var ta = document.getElementById("ta");
 var prog = document.getElementById("prog");
@@ -234,7 +238,7 @@ resetLink.addEventListener("click", function (e) {
   clearTimeout(resetTimer);
   resetLink.textContent = "clearing…";
   getProfileId(function (id) {
-    api.storage.local.remove(["cg_enroll_" + id, "cg_enroll_mouse_" + id, "cg_enrolled_at", "cg_enroll_sessions_" + id], function () {
+    api.storage.local.remove(["cg_enroll_" + id, "cg_enroll_mouse_" + id, "cg_enrolled_at", "cg_enroll_sessions_" + id, "cg_enroll_mouse_sessions_" + id], function () {
       ContinuumTrainer.clearTrained().then(function () {
         try { api.runtime.sendMessage({ type: "cg:profile-reset" }); } catch (e2) {}
         location.reload();
@@ -248,22 +252,44 @@ resetLink.addEventListener("click", function (e) {
 // verified genuine typing at ~45% confidence (false-rejects), 3 accumulated sessions at
 // ~84%. Track how many sessions this profile has done and nudge toward at least 3.
 var RECOMMENDED_SESSIONS = 3;
-function showSessionNudge() {
+function showSessionNudge(kind) {
   getProfileId(function (id) {
-    var key = "cg_enroll_sessions_" + id;
+    var key = (kind === "mouse" ? "cg_enroll_mouse_sessions_" : "cg_enroll_sessions_") + id;
     api.storage.local.get([key], function (d) {
       var n = ((d && d[key]) || 0) + 1;
       var rec = {}; rec[key] = n;
       api.storage.local.set(rec);
       var box = document.getElementById("sessionNudge");
+      var label = kind === "mouse" ? "mouse" : "typing";
       if (n < RECOMMENDED_SESSIONS) {
         box.style.display = "block";
-        box.textContent = "📈 Session " + n + " of " + RECOMMENDED_SESSIONS + " recommended — accuracy improves a lot with a few separate sessions (ideally at different times). Come back and train again soon.";
+        box.textContent = "📈 " + label + " session " + n + " of " + RECOMMENDED_SESSIONS + " recommended — accuracy improves a lot with a few separate sessions (ideally at different times). Come back and train again soon.";
       } else {
         box.style.display = "none";
       }
     });
   });
+}
+
+// Shared end-of-stage screen: nudge for THIS modality + a link to also train the OTHER one
+// (each modality enrolls independently), then reveal the done panel and notify the worker.
+function finishStage(kind) {
+  var done = document.getElementById("done");
+  document.getElementById("doneMsg").textContent = kind === "mouse"
+    ? "Your mouse model is trained and active."
+    : "Your typing model is trained and active. The guard now knows your rhythm.";
+  showSessionNudge(kind);
+  var cta = document.getElementById("crossTrainCta");
+  var otherMode = kind === "mouse" ? "keystroke" : "mouse";
+  var otherLabel = kind === "mouse" ? "⌨️ Also train your typing" : "🖱️ Also train your mouse movement";
+  cta.innerHTML = '<a href="#" id="crossTrain" class="link">' + otherLabel + " →</a>";
+  cta.querySelector("#crossTrain").addEventListener("click", function (e) {
+    e.preventDefault();
+    location.href = "enroll.html?mode=" + otherMode;
+  });
+  done.style.display = "block";
+  done.scrollIntoView({ behavior: "smooth" });
+  try { api.runtime.sendMessage({ type: "cg:enrolled" }); } catch (e) {}
 }
 
 saveBtn.addEventListener("click", function () {
@@ -297,7 +323,7 @@ saveBtn.addEventListener("click", function () {
           onProgress: function (p) { ts.textContent = "training… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "% (" + merged.length + " windows total)"; },
         }).then(function (r) {
           ts.style.display = "none";
-          startMouseStage();
+          finishStage("keystroke");
         }).catch(function (e) {
           ts.textContent = "training failed: " + ((e && e.message) || e) + " — your samples were saved; you can retry.";
           saveBtn.disabled = false;
@@ -308,14 +334,21 @@ saveBtn.addEventListener("click", function () {
   });
 });
 
-// ---- Step 2: mouse enrollment (chase-the-dot) ----
+// ---- Step 2: mouse enrollment (read & click links) ----
+// REDESIGNED from "chase-the-dot" (a small fixed box, one recurring target, frequent
+// clicks) to a read-and-click task over a full article-width passage with several links
+// scattered at realistic, varied positions — much closer to how someone actually moves a
+// mouse across a real page (reading, moving to a distant link, clicking, moving again)
+// than repeatedly re-centering on one recurring dot in a tiny box. The capture/feature/
+// training code is UNCHANGED; only the interaction that generates the movement changed.
 // 20 windows (validated sweep: held-out genuine windows win 95%, impostors stay low 85%
-// — 12 was too few, the head memorized). ~1 minute of dot-chasing.
+// — 12 was too few, the head memorized). ~1 minute of natural reading + clicking.
 var MOUSE_TARGET = 20;
+var MOUSE_LINKS_PER_ROUND = 6;
 function startMouseStage() {
   var stage = document.getElementById("mouseStage");
   var area = document.getElementById("playArea");
-  var dot = document.getElementById("dot");
+  var textEl = document.getElementById("mouseText");
   var mprog = document.getElementById("mprog");
   var mstatus = document.getElementById("mstatus");
   var mts = document.getElementById("mtrainStatus");
@@ -329,10 +362,45 @@ function startMouseStage() {
   area.addEventListener("mousemove", function (e) { push(e.clientX, e.clientY, down ? "Drag" : "Move"); });
   area.addEventListener("mousedown", function (e) { down = true; push(e.clientX, e.clientY, "Pressed"); });
   area.addEventListener("mouseup", function (e) { down = false; push(e.clientX, e.clientY, "Released"); });
-  dot.addEventListener("click", function () {
-    dot.style.left = (8 + Math.random() * 84) + "%";
-    dot.style.top = (8 + Math.random() * 78) + "%";
-  });
+
+  // Render a passage with MOUSE_LINKS_PER_ROUND random words turned into clickable
+  // "links" (real hyperlink styling) scattered through the natural flow of the text —
+  // clicking each requires moving to a different, unpredictable position, like following
+  // links on a real page. When every link in a round is clicked, load a fresh passage.
+  var remaining = 0;
+  async function loadRound() {
+    if (doneTraining) return;
+    textEl.style.opacity = "0.45";
+    var text = await nextPassage();
+    textEl.style.opacity = "1";
+    if (doneTraining) return;
+    var words = text.split(/\s+/);
+    var candidates = [];
+    for (var i = 0; i < words.length; i++) { if (words[i].replace(/[^a-zA-Z]/g, "").length >= 4) candidates.push(i); }
+    // Spread picks across the whole passage rather than clustering near the start.
+    var picks = [];
+    var bucket = Math.max(1, Math.floor(candidates.length / MOUSE_LINKS_PER_ROUND));
+    for (var b = 0; b < MOUSE_LINKS_PER_ROUND && b * bucket < candidates.length; b++) {
+      var slice = candidates.slice(b * bucket, (b + 1) * bucket);
+      picks.push(slice[Math.floor(Math.random() * slice.length)]);
+    }
+    remaining = picks.length;
+    var pickSet = {};
+    picks.forEach(function (idx) { pickSet[idx] = true; });
+    textEl.innerHTML = words.map(function (w, i) {
+      return pickSet[i] ? '<a href="#" class="mlink">' + w + "</a>" : w;
+    }).join(" ");
+    Array.prototype.forEach.call(textEl.querySelectorAll(".mlink"), function (a) {
+      a.addEventListener("click", function (e) {
+        e.preventDefault();
+        if (a.classList.contains("done")) return;   // theme-aware styling lives in enroll.html's .mlink/.mlink.done
+        a.classList.add("done");
+        remaining -= 1;
+        if (remaining <= 0 && !doneTraining) loadRound();   // fresh passage + links, same task
+      });
+    });
+  }
+  loadRound();
 
   function windows() { return M ? M.stepsToWindows(M.eventsToSteps(mEvents)) : []; }
   function update() {
@@ -360,19 +428,25 @@ function startMouseStage() {
               onProgress: function (p) { mts.textContent = "training mouse… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "% (" + merged.length + " windows total)"; },
             }).then(function () {
               mts.style.display = "none";
-              showSessionNudge();
-              document.getElementById("done").style.display = "block";
-              document.getElementById("done").scrollIntoView({ behavior: "smooth" });
-              try { api.runtime.sendMessage({ type: "cg:enrolled" }); } catch (e) {}
+              finishStage("mouse");
             }).catch(function (e) {
-              mts.textContent = "mouse training failed: " + ((e && e.message) || e) + " — keystroke model is active; you can re-run enrollment for mouse.";
-              showSessionNudge();
-              document.getElementById("done").style.display = "block";
-              try { api.runtime.sendMessage({ type: "cg:enrolled" }); } catch (er) {}
+              mts.textContent = "mouse training failed: " + ((e && e.message) || e) + " — your samples were saved; reload this page to try again.";
             });
           });
         });
       });
     }
   }
+}
+
+// ---- route to the requested modality (one stage per run) ----
+if (MODE === "mouse") {
+  document.title = "Continuum Guard — Train mouse";
+  document.getElementById("pageTitle").textContent = "Train Continuum on your mouse movement";
+  startMouseStage();
+} else {
+  document.title = "Continuum Guard — Train typing";
+  document.getElementById("pageTitle").textContent = "Train Continuum on your typing";
+  document.getElementById("keystrokeStage").style.display = "block";
+  document.getElementById("ta").focus();
 }
