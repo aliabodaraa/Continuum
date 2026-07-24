@@ -269,5 +269,5 @@ forcing genuinely separate, deliberate clicks.
 References
 
 - Lu, X., Zhang, S., Hui, P., & Liò, P. (2020). _Continuous authentication by free-text keystroke based on CNN and RNN_. Computers & Security, 96, 101861.
-- Prior work — BioKey capstone (Elkoby & Gutchin, 2022): https://github.com/raf545/BioKey---Keystroke-dynamics-for-user-authentication
+- Prior work — keystroke-dynamics capstone (Elkoby & Gutchin, 2022): https://github.com/raf545/BioKey---Keystroke-dynamics-for-user-authentication
 - W3C WebAuthn: https://www.w3.org/TR/webauthn-2/

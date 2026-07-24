@@ -68,7 +68,7 @@ Then log in as an existing user and type a paragraph — the guard panel should
 reach **verified** using the restored model (no re-enrollment of typing).
 
 ## Only if you will retrain or enroll NEW mouse users
-Copy the datasets over first (they're the public BioKey/SapiMouse sets; see
+Copy the datasets over first (they're the public keystroke/SapiMouse sets; see
 `docs/download_instructions.md`):
 ```bash
 # place data/mouse_only/Mouse_WS50.h5 (mouse negatives) and data/Rand_WS*.h5

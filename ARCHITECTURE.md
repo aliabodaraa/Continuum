@@ -80,7 +80,7 @@ to the CA **through** its layer, never to model-api directly.
 ## 4. Keystroke dynamics engine
 - **Features (per digraph step):** `[id1, id2, dwell1, dwell2, dd, ud]` — key codes
   ÷254, hold times of both keys, down-down and up-down flight times (seconds).
-  Faithful to Lu et al. (2020) / the referenced BioKey capstone architecture.
+  Faithful to Lu et al. (2020) / the referenced keystroke-dynamics capstone architecture.
 - **Windows:** `WINDOW_SIZE=50`, `STRIDE=10`, stride-aligned only (no padded/tail
   windows — those are out-of-distribution and destabilize scores).
 - **Model:** 1D-CNN + 2×GRU base (`artifacts/ws50-gru`), **fine-tuned per user**

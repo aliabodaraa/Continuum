@@ -11,9 +11,8 @@ A **continuous-authentication security layer** — keystroke dynamics + mouse dy
 WebAuthn passkey step-up — productized as an **embeddable service** (the Auth0 / reCAPTCHA
 model). The customer runs the Continuum services and adds two things to *their own* app: a
 client SDK (`guard.js`) and server middleware (`@continuum/node`, or the Python reference).
-It is a master's thesis project. **The committee must never see the old name "BioKey"** — it
-was renamed to Continuum everywhere (the external BioKey capstone by Elkoby & Gutchin, 2022 is
-still cited as genuine prior work).
+It is a master's thesis project named **Continuum** throughout (the external keystroke-dynamics
+capstone by Elkoby & Gutchin, 2022 is still cited as genuine prior work).
 
 ## 2. Architecture (everything runs in Docker)
 | Service | Port | Role |
@@ -60,7 +59,7 @@ Middleware: `packages/continuum-node/` (auto-detects the logged-in user; mints i
 - **Windows + Git Bash** — prefix `docker exec` with `MSYS_NO_PATHCONV=1` when passing container
   paths. Docker Desktop crashes under memory pressure; relaunch:
   `powershell -Command "Start-Process 'C:\Program Files\Docker\Docker\Docker Desktop.exe'"` then wait for the engine.
-- **Accuracy-first.** Never expose "BioKey" to the committee.
+- **Accuracy-first.** The project is named Continuum throughout.
 
 ---
 
@@ -118,13 +117,13 @@ pipeline (`services/ca-service/lib/keystrokeSecurity.js` + `server.js` + `sdk/gu
   `.dockerignore`/`.gitignore` keep per-user models and dead variants out.
 - `scripts/release.sh` (build + push all images, versioned). `DEPLOY.md` + `PC2_SETUP.md` written.
 
-### 4d. Rename BioKey → Continuum
-All internal references renamed (code identifiers like `BioKeyHandler`→`ContinuumHandler`, package
-names, docs, `results.json`, stale README defaults, removed stale buildx cache). Kept the genuine
-external citation (raf545 GitHub URL + Elkoby & Gutchin attribution). **Caution learned:** a bulk
-`sed` accidentally hit the binary SQLite DBs and corrupted them — recovered from the snapshot.
-**Never `sed` binaries.** The word "biokey" also survives inside `ca.db.text_content` (paragraphs
-users actually typed) — that's training data, byte-aligned with timings, and must stay.
+### 4d. Naming: Continuum throughout
+All internal references use the Continuum name (code identifiers, package names, docs,
+`results.json`, README defaults; stale buildx cache removed). Kept the genuine external citation
+(raf545 GitHub URL + Elkoby & Gutchin attribution). **Caution learned:** a bulk `sed` accidentally
+hit the binary SQLite DBs and corrupted them — recovered from the snapshot. **Never `sed` binaries.**
+Legacy typed-text paragraphs also survive inside `ca.db.text_content` — that's training data,
+byte-aligned with timings, and must stay untouched.
 
 ### 4e. Fresh git repo + organized history
 User **deleted the old `.git` deliberately**. Re-initialized at **`continuum/`** (branch `main`,

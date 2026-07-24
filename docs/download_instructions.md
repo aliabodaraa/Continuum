@@ -1,11 +1,11 @@
 Download instructions for Continuum `Data_HDF_files`
 
-Primary source:
+Primary source (public third-party keystroke-dynamics dataset mirror):
 https://github.com/raf545/BioKey---Keystroke-dynamics-for-user-authentication/tree/master/Data_HDF_files
 
 Options:
 
-- Clone the Continuum repo and copy the `Data_HDF_files` directory into `continuum/data/`.
+- Clone the third-party dataset repo and copy the `Data_HDF_files` directory into `continuum/data/`.
 - If direct HDF files are available, place them in `continuum/data/`.
 
 Example (git clone + copy):

@@ -17,7 +17,7 @@ venv/
 *.db-wal
 *.sqlite
 
-# ─── Training datasets (public BioKey/SapiMouse HDF sets) ───
+# ─── Training datasets (public keystroke/SapiMouse HDF sets) ───
 # Training-only and too large for GitHub (>100 MB files). Re-download or copy
 # them onto a new machine before retraining. NOTE: building the model-api image
 # also needs data/mouse_only/Mouse_WS50.h5 present locally (it is NOT in git).
