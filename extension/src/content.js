@@ -185,10 +185,17 @@
   function emitMouse() {
     var M = globalThis.ContinuumMouseFeatures;
     if (!M || !alive()) return;
-    var windows = M.stepsToWindows(M.eventsToSteps(mouseEvents));
+    var steps = M.eventsToSteps(mouseEvents);
+    var windows = M.stepsToWindows(steps);
+    if (mouseEvents.length % 40 === 0) { try { console.log("[continuum-guard] mouse events=" + mouseEvents.length + " steps=" + steps.length + " windows=" + windows.length + " (needs " + M.WINDOW_SIZE + " steps + path>=0.08 to qualify a window)"); } catch (e) {} }
     if (windows.length > lastMouseWindows) {
       lastMouseWindows = windows.length;
-      safeSend({ type: "cg:windows-mouse", origin: origin, latest: windows[windows.length - 1] });
+      var latest = windows[windows.length - 1];
+      try {
+        var path = 0; for (var i = 0; i < latest.length; i++) path += Math.hypot(latest[i][0], latest[i][1]);
+        console.log("[continuum-guard/diag] new mouse window #" + windows.length + " path=" + path.toFixed(3) + " (min 0.08 to qualify — this one did)");
+      } catch (e) {}
+      safeSend({ type: "cg:windows-mouse", origin: origin, latest: latest });
     }
   }
   function onM(type, fn) { document.addEventListener(type, fn, true); handlers.push([type, fn]); }

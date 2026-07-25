@@ -240,6 +240,7 @@ async function onMouseWindow(win) {
       mouseScores.push(s);
       if (mouseScores.length > RECENT) mouseScores.shift();
       var v = decide(mouseScores);
+      console.log("[continuum-guard/diag] mouse window score=" + s.toFixed(3) + " packet=" + JSON.stringify(mouseScores.map(function (x) { return Number(x.toFixed(3)); })) + " mean=" + v.mean.toFixed(3));
       state.mouseVerdict = {
         status: mouseScores.length < RECENT ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
         mean: Math.round(v.mean * 100),
