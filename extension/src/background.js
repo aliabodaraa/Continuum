@@ -269,7 +269,7 @@ var ICON_OFF = { 16: "icons/icon-off16.png", 32: "icons/icon-off32.png", 48: "ic
 // Mouse (info-only) only appears on the badge when it is the SOLE trained modality, and then
 // in a distinct CYAN so it's never mistaken for the green/red keystroke signal.
 function badgeForState() {
-  if (!anyTrained()) return { text: "🎓", color: "#475569" };          // nothing trained → idle
+  if (!anyTrained()) return { text: "⚙️", color: "#475569" };          // nothing trained → needs setup
   if (state.locked) return { text: "🔒", color: "#dc2626" };
   if (state.verdict && state.verdict.status === "suspicious") return { text: "!", color: "#dc2626" };
   if (state.verdict && state.verdict.status === "genuine") return { text: state.verdict.mean + "%", color: "#16a34a" };

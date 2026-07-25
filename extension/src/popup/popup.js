@@ -58,7 +58,7 @@ function refresh() {
 
     // Verdict banner — theme-aware colouring via CSS classes (v-ok / v-warn / neutral).
     var vd = q("verdict"), v = s.verdict, cls = "", txt;
-    if (!active) { txt = "🎓 Train a profile below to start monitoring"; }
+    if (!active) { txt = "⚙️ Set up your profile below to start monitoring"; }
     else if (!s.modelReady) { txt = s.modelError ? ("⚠ model error: " + s.modelError) : "⏳ loading model…"; }
     else if (s.locked) { txt = "🔒 Locked — passkey required (keystroke score " + (v ? v.mean + "%" : "?") + ")"; cls = "v-warn"; }
     else if (ksOn) {   // keystroke is the enforcing channel — it drives the banner when trained
