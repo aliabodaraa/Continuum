@@ -26,136 +26,36 @@ function logWindowStats(label, windows) {
   console.log("  max :", maxs.map(function (v) { return Number(v.toFixed(3)); }));
 }
 
-// Same source as the demo/SDK wizard (sdk/guard.js): a random Wikipedia summary so each
-// enrollment session types DIFFERENT text — varied words/letter combos teach the model
-// more of the user's rhythm, and typing the same fixed passage every time was flagged as
-// repetitive. Static fallbacks cover the offline / API-down case.
-var PASSAGE_FALLBACKS = [
-  "Continuous authentication works best when the system observes ordinary writing over time. I am typing this paragraph naturally so Continuum can learn my own rhythm from keydown and keyup timing. Every pair of keys I press carries a small piece of my personal pattern, and together these quick measurements describe how my hands move across the keyboard.",
-  "My typing pattern is personal and quite hard to imitate. The time I hold each key down and the pause between two keys creates a behavioral signal that can support account protection after login. Just like a signature on paper, the speed and flow of my fingers form a private mark that follows me whenever I write a message or a longer document.",
-  "This enrollment sample helps the application build a private rhythm profile for my account. Later, unusual typing during protected actions can require passkey verification. The more natural text I provide now, the better the model will recognize me in the future, because varied words and different letter combinations teach it the full shape of my typing.",
-  "The model should learn from repeated samples collected from the real user. These samples are separate from the password and are used only after passkey setup. When somebody else types on my account, their holding times and the gaps between their keys will not match my profile, and the system can then ask for stronger proof of identity right away.",
+// Enrollment passages, kept deliberately at A1 (beginner) English — only the most common
+// words, simple present tense, and short everyday sentences. The point of enrollment is to
+// capture the user's NATURAL rhythm, so the text must never make them stop to read, think,
+// or hunt for an unfamiliar word. We previously fetched varied text (Wikipedia, then Aesop's
+// Fables); even the "simple" fetched text still had words that made people hesitate and
+// corrupted the timing. A curated pool gives guaranteed simplicity AND variety (a different
+// one each session), with zero network dependency. Each is long enough for a full packet.
+var A1_PASSAGES = [
+  "I get up early every day. I make a cup of tea and open the window. The birds sing in the tree near my house. I like to sit and drink my tea in the morning. After that I walk to work. I say hello to my friends on the way. We talk about the day and the weather. At night I read a book and go to sleep.",
+  "My family is small but we are happy. My mum cooks good food for us. We eat dinner at the table every night. After we eat, we talk and we laugh. My dad likes to watch films. My sister plays with the dog in the garden. On the weekend we go to the park. We take some food and sit on the grass in the sun.",
+  "I like to cook easy food at home. Today I make rice and eggs for lunch. First I wash the rice and put it in a pot. Then I cook the eggs in a pan. I add some salt and a little oil. When the food is ready, I sit down to eat. I drink a glass of water with my meal. Cooking is easy and fun for me every day.",
+  "My friend and I like to walk in the park. We go there when the sun is out. We see many dogs and children play. The trees are tall and green. Some people sit on the grass and read. We walk near the lake and feed the birds. Then we buy ice cream from a small shop. We sit on a bench and talk for a long time.",
+  "I work in a small shop near my home. I open the shop at nine in the morning. People come in to buy bread, milk, and fruit. I help them find the things they need. I like to talk to the people who come in. At noon I stop and eat a sandwich for lunch. In the afternoon more people come to the shop to buy things.",
+  "The weather is nice today. The sun is out and the sky is blue. There are no clouds and there is no rain. I want to go for a walk in the park. I put on my shoes and a light coat. The air is warm and the wind is soft. I see many people out today. Some ride bikes and some walk their dogs on the long path.",
+  "I like to read books in my free time. I have many books at home on a shelf. Some are about animals and some are about far away places. In the evening I sit in my chair and read. I make a cup of tea and turn on the lamp. The house is quiet and calm at night. I read for one hour and then I go to sleep.",
+  "On Saturday I clean my house. First I open all the windows for fresh air. Then I wash the floor and the dishes. I put my clothes in the machine to wash. I make the bed and I clean the shelves. When the house is clean, I feel very good. After that I sit down and rest for a while and watch a film with my tea.",
+  "I have a small garden behind my house. I grow flowers and some green plants. Every morning I give them water. The flowers are red, yellow, and white. Bees and birds come to the garden too. I like to sit outside and look at my plants. In the summer the garden is full of colour. I pick some flowers for the table.",
+  "My town is small and quiet. There is one shop, one school, and a park. The people here are kind and friendly. In the morning I hear the birds and the wind. I walk to the shop to buy bread and milk. On the way I meet my neighbours and say hello. The streets are clean and there are many green trees on them.",
 ];
-var fbIdx = Math.floor(Math.random() * PASSAGE_FALLBACKS.length);
-
-// Lower score = simpler/more natural to type. Penalizes long/unfamiliar words, digits
-// (dates), parentheses (asides), and non-ASCII (names/diacritics) — the things that make
-// someone pause, re-read, or hunt-and-peck instead of typing at their normal rhythm.
-function complexityScore(text) {
-  var words = text.split(/\s+/).filter(Boolean);
-  if (words.length < 15) return Infinity;
-  var longWords = words.filter(function (w) { return w.replace(/[^a-zA-Z]/g, "").length > 9; }).length;
-  var digits = (text.match(/[0-9]/g) || []).length;
-  var parens = (text.match(/[()]/g) || []).length;
-  var nonAscii = (text.match(/[^\x00-\x7F]/g) || []).length;
-  var avgWordLen = words.reduce(function (s, w) { return s + w.length; }, 0) / words.length;
-  return (longWords / words.length) * 3 + (digits / text.length) * 4 + (parens / text.length) * 3 + (nonAscii / text.length) * 5 + Math.max(0, avgWordLen - 5) * 0.6;
+var lastPassageIdx = -1;
+function nextPassage() {
+  var i;
+  do { i = Math.floor(Math.random() * A1_PASSAGES.length); } while (A1_PASSAGES.length > 1 && i === lastPassageIdx);
+  lastPassageIdx = i;
+  return A1_PASSAGES[i];
 }
-
-// PRIMARY source: Aesop's Fables (Project Gutenberg, public domain) via Gutendex — real,
-// naturally-flowing simple narrative prose, not encyclopedia style. Verified against the
-// live text: complexity score ~0.00, far below Simple Wikipedia's 0.1-0.5, from 265+
-// candidate paragraphs in this one book alone. Fetched once per wizard load, then a
-// random low-complexity paragraph is picked fresh each time (session or "new passage").
-var STORY_BOOK_ID = 21;   // "Three Hundred Aesop's Fables" — gutendex.com/books/21
-var storyParagraphsCache = null;
-// Table-of-contents / index fragments ("The Fox and the Grapes The Frogs...") pass the
-// complexity filter (short, plain words) but aren't real prose — detect by how many
-// words (after the first) start with a capital letter, which real narrative rarely does.
-function looksLikeList(p) {
-  var words = p.split(/\s+/).filter(Boolean);
-  var caps = words.filter(function (w, i) { return i > 0 && /^[A-Z]/.test(w); }).length;
-  return words.length > 0 && (caps / words.length) > 0.35;
-}
-
-// These old book scans preserve the original small-caps opening of each fable ("AN EAGLE
-// stayed his flight...") — 2-4 words in ALL CAPS. Typing a sustained all-caps run needs
-// held Shift/Caps Lock the whole time, which real natural writing never requires and
-// disrupts normal digraph timing right at the start of the sample. Normalize it to
-// ordinary sentence case before showing the passage.
-function fixAllCapsOpening(p) {
-  return p.replace(/^((?:[A-Z]+[.,]?\s+){1,6})/, function (run) {
-    var words = run.trim().split(/\s+/);
-    if (!words.some(function (w) { return w.replace(/[^A-Z]/g, "").length >= 2; })) return run;   // no real all-caps word — leave alone
-    var fixed = words.map(function (w, i) {
-      var lower = w.toLowerCase();
-      return i === 0 ? lower.charAt(0).toUpperCase() + lower.slice(1) : lower;
-    });
-    return fixed.join(" ") + " ";
-  });
-}
-async function fetchStoryParagraphs() {
-  if (storyParagraphsCache) return storyParagraphsCache;
-  try {
-    var meta = await (await fetch("https://gutendex.com/books/" + STORY_BOOK_ID)).json();
-    var formats = meta.formats || {};
-    var textUrl = formats["text/plain; charset=utf-8"] || formats["text/plain; charset=us-ascii"] || formats["text/plain"];
-    if (!textUrl) return null;
-    var text = await (await fetch(textUrl)).text();
-    var sm = text.match(/\*\*\* START OF (THE|THIS) PROJECT GUTENBERG EBOOK.*?\*\*\*/is);
-    var em = text.match(/\*\*\* END OF (THE|THIS) PROJECT GUTENBERG EBOOK.*?\*\*\*/is);
-    if (sm) text = text.slice(sm.index + sm[0].length);
-    if (em) text = text.slice(0, text.indexOf(em[0]));
-    var paras = text.split(/\n\s*\n/)
-      .map(function (p) { return p.replace(/\s+/g, " ").trim(); })
-      .filter(function (p) { return p.length >= 150 && p.length <= 450 && p.indexOf("(return)") < 0 && !looksLikeList(p); });   // drop footnotes + table-of-contents fragments
-    storyParagraphsCache = paras.length ? paras : null;
-    return storyParagraphsCache;
-  } catch (e) { return null; }
-}
-// A single 150-450 char paragraph tops out around ~400 raw digraphs — plenty in theory,
-// but a few natural reading-ahead pauses (very likely on UNFAMILIAR text, unlike a
-// memorized passage) split it into segments and can leave every one under the 160 steps
-// a full 12-window packet needs. Join TWO passages (each independently fixed for
-// all-caps/complexity) so there's comfortably enough length even after some splitting.
-async function fetchStoryText() {
-  var paras = await fetchStoryParagraphs();
-  if (!paras) return null;
-  var candidates = [];
-  for (var i = 0; i < 8; i++) {
-    var p = paras[Math.floor(Math.random() * paras.length)];
-    candidates.push({ text: p, score: complexityScore(p) });
-  }
-  candidates.sort(function (a, b) { return a.score - b.score; });
-  var good = candidates.filter(function (c) { return c.score < Infinity; });
-  if (!good.length) return null;
-  var first = fixAllCapsOpening(good[0].text);
-  var second = good[1] ? fixAllCapsOpening(good[1].text) : null;
-  return second ? (first + " _ " + second) : first;
-}
-
-// FALLBACK: Simple English Wikipedia — used only if the story source is unreachable.
-async function fetchWikipediaText() {
-  var candidates = [];
-  for (var i = 0; i < 4; i++) {
-    try {
-      var res = await fetch("https://simple.wikipedia.org/api/rest_v1/page/random/summary", { cache: "no-store" });
-      if (!res.ok) continue;
-      var data = await res.json();
-      var text = (data.extract || "").replace(/\n+/g, " ").trim();
-      if (text.length >= 150 && text.indexOf("<") < 0) {
-        var t = text.slice(0, 420);
-        candidates.push({ text: t, score: complexityScore(t) });
-      }
-    } catch (e) { /* retry */ }
-  }
-  if (!candidates.length) return null;
-  candidates.sort(function (a, b) { return a.score - b.score; });
-  return candidates[1] ? (candidates[0].text + " _ " + candidates[1].text) : candidates[0].text;
-}
-
-async function fetchRandomText() { return (await fetchStoryText()) || (await fetchWikipediaText()); }
-async function nextPassage() { return (await fetchRandomText()) || PASSAGE_FALLBACKS[fbIdx++ % PASSAGE_FALLBACKS.length]; }
 
 var passageEl = document.getElementById("passage");
 var newPassageLink = document.getElementById("newPassage");
-async function loadPassage() {
-  passageEl.style.opacity = "0.45";
-  newPassageLink.style.pointerEvents = "none";
-  passageEl.textContent = await nextPassage();
-  passageEl.style.opacity = "1";
-  newPassageLink.style.pointerEvents = "";
-}
+function loadPassage() { passageEl.textContent = nextPassage(); }
 newPassageLink.addEventListener("click", function (e) { e.preventDefault(); loadPassage(); });
 if (MODE === "keystroke") loadPassage();   // mouse mode uses nextPassage() directly for its link text
 
@@ -368,12 +268,9 @@ function startMouseStage() {
   // clicking each requires moving to a different, unpredictable position, like following
   // links on a real page. When every link in a round is clicked, load a fresh passage.
   var remaining = 0;
-  async function loadRound() {
+  function loadRound() {
     if (doneTraining) return;
-    textEl.style.opacity = "0.45";
-    var text = await nextPassage();
-    textEl.style.opacity = "1";
-    if (doneTraining) return;
+    var text = nextPassage();
     var words = text.split(/\s+/);
     var candidates = [];
     for (var i = 0; i < words.length; i++) { if (words[i].replace(/[^a-zA-Z]/g, "").length >= 4) candidates.push(i); }
