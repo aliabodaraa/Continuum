@@ -23,6 +23,7 @@ function decide(scores) {
 // need to edit source/repackage — defaults to localhost for local dev/demo use.
 var RP_BASE_DEFAULT = "http://localhost:4000";
 var RP_BASE = RP_BASE_DEFAULT;
+function rpOriginOf() { try { return new URL(RP_BASE).origin; } catch (e) { return ""; } }
 
 var config = { exclusions: [] };
 // accountId starts undefined (distinct from the resolved "signed out" value, null) so the
@@ -541,7 +542,7 @@ function broadcastConfig() {
       try {
         // enabled = anyTrained(): content scripts capture (keys AND mouse) whenever at least
         // one modality is trained; the worker then routes each window to the right channel.
-        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: anyTrained(), exclusions: config.exclusions }, function () { void api.runtime.lastError; });
+        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: anyTrained(), exclusions: config.exclusions, rpOrigin: rpOriginOf() }, function () { void api.runtime.lastError; });
       } catch (e) {}
     });
   });
@@ -615,7 +616,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
     case "cg:model-ready": state.modelReady = true; state.modelError = null; setModelPersonal(msg.personal); setMouseReady(msg.mouse); return;
     case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":
-      reply({ enabled: monitoringEnabled(), excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey });
+      reply({ enabled: monitoringEnabled(), excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey, rpOrigin: rpOriginOf() });
       return true;
     case "cg:open-verify":
       openRpPage("/ext/verify.html");

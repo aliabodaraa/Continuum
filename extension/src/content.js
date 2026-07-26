@@ -14,6 +14,11 @@
   var api = globalThis.browser || globalThis.chrome;
   var enabled = true, excluded = false;
   var origin = location.origin;
+  // The fixed relying-party origin that hosts the passkey step-up pages. The lock overlay
+  // must NEVER cover this origin (nor, transitively, a sign-in page the ceremony redirects
+  // to) — otherwise a locked session can't run the very ceremony that clears the lock,
+  // deadlocking the user. Learned from the worker via cg:hello / cg:config below.
+  var rpOrigin = "";
   var events = [];              // raw key-timing — stays in THIS page, never sent
   var lastWindowCount = 0;
   var t0 = performance.now();
@@ -56,6 +61,8 @@
   window.addEventListener("beforeinput", blockWhileLocked, true);
   function showLock(hasPasskey) {
     if (lockEl || dead) return;
+    if (rpOrigin && origin === rpOrigin) return;   // never lock the step-up ceremony's own pages
+    if (isAuthOrigin(origin)) return;               // nor a sign-in page the ceremony may hand off to
     lockEl = document.createElement("div");
     lockEl.setAttribute("style",
       "position:fixed;inset:0;z-index:2147483647;background:rgba(2,6,23,.88);backdrop-filter:blur(6px);" +
@@ -91,14 +98,21 @@
     if (document.visibilityState !== "visible" || dead) return;
     safeSend({ type: "cg:hello", origin: origin }, function (res) {
       if (!res) return;
+      if (res.rpOrigin) rpOrigin = res.rpOrigin;
       if (!res.locked && lockEl) hideLock();
       else if (res.locked && !lockEl) showLock(!!res.hasPasskey);
     });
   });
 
+  // Identity-provider sign-in origins a passkey ceremony may hand off to. Excluded from the
+  // lock so a synced-passkey redirect ("Sign in again to use passkeys saved in your Google
+  // Account") isn't itself blocked, which would deadlock the unlock. Kept narrow: the IdP
+  // sign-in host only, not arbitrary Google properties.
+  function isAuthOrigin(o) { return o === "https://accounts.google.com"; }
+
   function onMsg(msg) {
     if (dead) return;
-    if (msg && msg.type === "cg:config") { enabled = msg.enabled !== false; excluded = (msg.exclusions || []).indexOf(origin) >= 0; }
+    if (msg && msg.type === "cg:config") { enabled = msg.enabled !== false; excluded = (msg.exclusions || []).indexOf(origin) >= 0; if (msg.rpOrigin) rpOrigin = msg.rpOrigin; }
     if (msg && msg.type === "cg:lock") showLock(!!msg.hasPasskey);
     if (msg && msg.type === "cg:unlock") hideLock();
     if (msg && msg.type === "cg:reset") {
@@ -116,6 +130,7 @@
     if (res) {
       enabled = res.enabled !== false;
       excluded = !!res.excluded;
+      if (res.rpOrigin) rpOrigin = res.rpOrigin;    // set before showLock so the RP guard applies
       if (res.locked) showLock(!!res.hasPasskey);   // navigated / reopened while locked
     }
   });
