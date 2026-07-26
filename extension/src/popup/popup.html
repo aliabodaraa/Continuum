@@ -141,32 +141,43 @@
       <span class="dot" id="dot"></span>
     </header>
 
-    <div id="verdict">…</div>
-
-    <div class="card">
-      <div class="row"><span>Status</span><span class="val" id="state">…</span></div>
-      <div class="row" id="rowModel"><span>Model</span><span class="val" id="model">…</span></div>
-      <div class="row" id="rowSteps"><span>Steps → 1st window</span><span class="val" id="steps">0/50</span></div>
-      <div class="row" id="rowWins"><span>Windows scored</span><span class="val" id="wins">0</span></div>
-      <div class="row" id="rowMouse"><span>Mouse (info only)</span><span class="val" id="mouse">…</span></div>
-      <div class="row"><span>This site</span><span class="val" id="site">…</span></div>
-      <div class="row"><span>Your profile</span><span class="val" id="profile">…</span></div>
+    <div id="noAccount" class="card" style="display:none">
+      <div style="padding:12px 0 4px;font-weight:700">🔒 Sign in to Chrome to activate</div>
+      <div style="padding-bottom:12px;color:var(--muted);font-size:12px;line-height:1.5">
+        Continuum Guard links your samples to whichever Google account this browser is signed
+        into. Sign in via <b>chrome://settings/people</b>, then reopen this popup.
+      </div>
     </div>
 
-    <div class="train-row">
-      <button id="enrollKeys" class="btn-keys">
-        <span class="lead">⌨️ Train typing</span>
-        <span class="sub">how you type</span>
-      </button>
-      <button id="enrollMouse" class="btn-mouse">
-        <span class="lead">🖱️ Train mouse</span>
-        <span class="sub">how you move</span>
-      </button>
-    </div>
-    <div class="gap"></div>
-    <button id="exclude" class="btn-ghost">…</button>
+    <div id="mainPanel">
+      <div id="acctLine" class="sub-title" style="display:none;margin:-8px 0 12px">…</div>
+      <div id="verdict">…</div>
 
-    <div class="note">Monitoring turns on automatically once you're trained. Keystroke &amp; mouse timing is processed <b>on-device</b> — nothing you type or click leaves your browser.</div>
+      <div class="card">
+        <div class="row"><span>Status</span><span class="val" id="state">…</span></div>
+        <div class="row" id="rowModel"><span>Model</span><span class="val" id="model">…</span></div>
+        <div class="row" id="rowSteps"><span>Steps → 1st window</span><span class="val" id="steps">0/50</span></div>
+        <div class="row" id="rowWins"><span>Windows scored</span><span class="val" id="wins">0</span></div>
+        <div class="row" id="rowMouse"><span>Mouse (info only)</span><span class="val" id="mouse">…</span></div>
+        <div class="row"><span>This site</span><span class="val" id="site">…</span></div>
+        <div class="row"><span>Your profile</span><span class="val" id="profile">…</span></div>
+      </div>
+
+      <div class="train-row">
+        <button id="enrollKeys" class="btn-keys">
+          <span class="lead">⌨️ Train typing</span>
+          <span class="sub">how you type</span>
+        </button>
+        <button id="enrollMouse" class="btn-mouse">
+          <span class="lead">🖱️ Train mouse</span>
+          <span class="sub">how you move</span>
+        </button>
+      </div>
+      <div class="gap"></div>
+      <button id="exclude" class="btn-ghost">…</button>
+
+      <div class="note">Monitoring turns on automatically once you're trained. Keystroke &amp; mouse timing is processed <b>on-device</b> — nothing you type or click leaves your browser.</div>
+    </div>
     <script src="popup.js"></script>
   </body>
 </html>

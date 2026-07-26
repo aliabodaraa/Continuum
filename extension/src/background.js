@@ -25,7 +25,11 @@ var RP_BASE_DEFAULT = "http://localhost:4000";
 var RP_BASE = RP_BASE_DEFAULT;
 
 var config = { exclusions: [] };
-var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0 };
+// accountId starts undefined (distinct from the resolved "signed out" value, null) so the
+// FIRST resolution always differs and fires onAccountChanged exactly once, even if it
+// resolves to signed-out. Falsy either way, so every gate below defaults safely to
+// "inactive" until a real resolution comes back.
+var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0, accountId: undefined, accountEmail: null, accountChecked: false };
 var scores = [];       // rolling last N keystroke window scores
 var mouseScores = [];  // rolling last N mouse window scores
 
@@ -56,24 +60,87 @@ function persistProgress(immediate) {
 // Monitoring is NOT a manual toggle anymore: it stays off until the user has trained a
 // personal model (the wizard), then turns on by itself. A base-model verdict on a
 // stranger's rhythm isn't meaningful, so there is nothing useful to "turn on" before that.
+// Both gates ALSO require a signed-in Chrome/Google account — samples and trained models
+// are keyed to that account (see refreshAccount below), so with nobody signed in there is
+// no profile to monitor against at all.
 // monitoringEnabled() gates the KEYSTROKE (enforcing) channel; anyTrained() gates whether
 // the extension does ANYTHING at all — content scripts only capture when at least one
 // modality is trained, so a profile with neither is genuinely disabled.
-function monitoringEnabled() { return !!state.modelPersonal; }
-function anyTrained() { return !!state.modelPersonal || !!state.mouseReady; }
+function monitoringEnabled() { return !!state.accountId && !!state.modelPersonal; }
+function anyTrained() { return !!state.accountId && (!!state.modelPersonal || !!state.mouseReady); }
 
-// Stable NUMERIC id for the passkey-service, derived from this profile's id (FNV-1a).
+// Stable NUMERIC id for the passkey-service, derived from this account's id (FNV-1a).
 function numericUid(pid) {
   var h = 2166136261;
   for (var i = 0; i < pid.length; i++) { h ^= pid.charCodeAt(i); h = Math.imul(h, 16777619); }
   return (h >>> 0) + 1;   // +1: never 0 (service treats 0 as missing)
 }
 
-api.storage.local.get(["cg_exclusions", "cg_enrolled_at", "cg_passkey", "cg_profile_id", "cg_rp_base", "cg_model_personal", "cg_mouse_ready", "cg_progress"], function (d) {
+// ---- browser account binding ----
+// Samples, trained heads, and the passkey link are all keyed to WHICHEVER Google account
+// this Chrome browser/profile is currently signed into (chrome.identity), NOT to any
+// website's own login. That's deliberate: switching the Chrome account is the user's own
+// signal for "a different person is at this keyboard now" — sign out and the extension
+// goes fully inactive; sign into an account with no trained samples and it stays inactive
+// (but capture-ready) until that account trains; sign into an account that already has a
+// trained model and it activates immediately, with no re-training needed.
+var _lastAccountCheck = 0;
+function refreshAccount(cb) {
+  if (!api.identity || !api.identity.getProfileUserInfo) { state.accountChecked = true; if (cb) cb(); return; }
+  try {
+    api.identity.getProfileUserInfo({ accountStatus: "ANY" }, function (info) {
+      void api.runtime.lastError;
+      var id = info && info.id ? ("g_" + info.id) : null;
+      var email = (info && info.email) || null;
+      state.accountChecked = true;
+      state.accountEmail = email;
+      if (id !== state.accountId) { state.accountId = id; onAccountChanged(cb); }
+      else if (cb) cb();
+    });
+  } catch (e) { state.accountChecked = true; if (cb) cb(); }
+}
+if (api.identity && api.identity.onSignInChanged) {
+  api.identity.onSignInChanged.addListener(function () { refreshAccount(); });
+}
+
+// The account just changed (including first resolution at startup, or going to/from
+// signed-out) — drop whatever live packet/verdict/lock belonged to the PREVIOUS account
+// and load this account's own trained flags + model before anything scores again.
+function onAccountChanged(cb) {
+  scores = []; mouseScores = [];
+  state.verdict = null; state.mouseVerdict = null;
+  state.steps = 0; state.totalWindows = 0; state.totalMouseWindows = 0;
+  if (state.locked) { state.locked = false; broadcastAll({ type: "cg:unlock" }); }
+  state.profileNum = state.accountId ? numericUid(state.accountId) : 0;
+  var id = state.accountId;
+  if (!id) {
+    state.modelPersonal = false; state.mouseReady = false; state.hasPasskey = false; state.enrolled = false;
+    finishAccountSwitch(cb);
+    return;
+  }
+  api.storage.local.get(["cg_model_personal_" + id, "cg_mouse_ready_" + id, "cg_passkey_" + id, "cg_enrolled_at_" + id], function (d) {
+    d = d || {};
+    state.modelPersonal = !!d["cg_model_personal_" + id];
+    state.mouseReady = !!d["cg_mouse_ready_" + id];
+    state.hasPasskey = !!d["cg_passkey_" + id];
+    state.enrolled = !!d["cg_enrolled_at_" + id];
+    finishAccountSwitch(cb);
+  });
+}
+function finishAccountSwitch(cb) {
+  state.modelReady = false; state.modelError = null;   // offscreen must (re)load THIS account's model
+  broadcastConfig();
+  refreshAllBadges();
+  persistProgress(true);
+  ensureOffscreen().then(function () {
+    try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model", accountId: state.accountId }, function () { void api.runtime.lastError; }); } catch (e) {}
+  });
+  if (cb) cb();
+}
+
+api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress"], function (d) {
   d = d || {};
   config.exclusions = d.cg_exclusions || [];
-  state.enrolled = !!d.cg_enrolled_at;
-  state.hasPasskey = !!d.cg_passkey;
   RP_BASE = (d.cg_rp_base || RP_BASE_DEFAULT).replace(/\/+$/, "");
   // Restore the LIVE session progress too — the rolling packet, step counter, verdict and
   // lock state — so a service-worker restart (e.g. opening/closing the popup, or an idle
@@ -91,21 +158,11 @@ api.storage.local.get(["cg_exclusions", "cg_enrolled_at", "cg_passkey", "cg_prof
     mouseScores = Array.isArray(p.mouseScores) ? p.mouseScores : [];
   }
   // MV3 service workers are terminated after ~30s idle and re-run from scratch on the next
-  // event — every in-memory var above resets, INCLUDING this one, while the offscreen
-  // document (which actually holds the trained model) survives independently and nobody
-  // re-pings it automatically. Since monitoringEnabled() gates both scoring AND the step
-  // counter, a restart mid-session (very likely during a passkey flow — waiting on Windows
-  // Hello easily exceeds 30s) silently killed everything until the popup happened to be
-  // reopened. Restore the last-known value immediately so there's no gap; still corrected
-  // for real by the offscreen ping below / on the next cg:model-ready.
-  state.modelPersonal = !!d.cg_model_personal;
-  state.mouseReady = !!d.cg_mouse_ready;
-  var pid = d.cg_profile_id;
-  if (!pid) {   // same format the enrollment wizard uses; whoever runs first creates it
-    pid = "p_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-    api.storage.local.set({ cg_profile_id: pid });
-  }
-  state.profileNum = numericUid(pid);
+  // event — every in-memory var above resets. Resolve the signed-in account (and this
+  // account's trained flags) right away; onAccountChanged fires unconditionally on this
+  // first resolution and loads everything properly, so no separate restore path is needed
+  // for modelPersonal/mouseReady/hasPasskey here.
+  refreshAccount();
 });
 
 // Inject the capture scripts into tabs that were ALREADY open when the extension was
@@ -170,6 +227,7 @@ function statusObj() {
     steps: state.steps, needSteps: state.needSteps, enrolled: state.enrolled, modelPersonal: state.modelPersonal,
     locked: state.locked, hasPasskey: state.hasPasskey,
     mouseReady: state.mouseReady, mouseVerdict: state.mouseVerdict, totalMouseWindows: state.totalMouseWindows,
+    accountId: state.accountId || null, accountEmail: state.accountEmail || null, accountChecked: state.accountChecked,
   };
 }
 
@@ -281,14 +339,21 @@ function badgeForState() {
   return { text: "", color: "#4f46e5" };
 }
 
-// Apply badge + icon for ONE tab, keyed to whether that tab's site is excluded.
+// Apply badge + icon for ONE tab, keyed to whether that tab's site is excluded OR nobody
+// is signed into Chrome (a browser-wide "off", not per-site — takes priority).
 function applyBadgeToTab(tabId, url) {
   if (!api.action || tabId == null) return;
   var origin = "";
   try { if (url) origin = new URL(url).origin; } catch (e) {}
-  var excluded = origin && config.exclusions.indexOf(origin) >= 0;
+  var noAccount = state.accountChecked && !state.accountId;
+  var excluded = !noAccount && origin && config.exclusions.indexOf(origin) >= 0;
   try {
-    if (excluded) {
+    if (noAccount) {
+      api.action.setBadgeText({ tabId: tabId, text: "" });
+      api.action.setBadgeBackgroundColor({ tabId: tabId, color: "#64748b" });
+      api.action.setTitle({ tabId: tabId, title: "Continuum Guard — sign in to Chrome with a Google account to activate" });
+      if (api.action.setIcon) api.action.setIcon({ tabId: tabId, path: ICON_OFF }, function () { void api.runtime.lastError; });
+    } else if (excluded) {
       api.action.setBadgeText({ tabId: tabId, text: "off" });
       api.action.setBadgeBackgroundColor({ tabId: tabId, color: "#64748b" });
       api.action.setTitle({ tabId: tabId, title: "Continuum Guard — off on this site" });
@@ -396,12 +461,13 @@ function broadcastConfig() {
 }
 
 // Flip monitoring on the instant training completes — broadcasts to every open tab so
-// capture starts without a page refresh (mirrors the earlier auto-inject fix).
+// capture starts without a page refresh (mirrors the earlier auto-inject fix). Persisted
+// PER ACCOUNT — a flag set while account A is active must never leak into account B.
 function setModelPersonal(v) {
   v = !!v;
   if (v === state.modelPersonal) return;
   state.modelPersonal = v;
-  api.storage.local.set({ cg_model_personal: v });   // survives the next service-worker restart
+  if (state.accountId) { var rec = {}; rec["cg_model_personal_" + state.accountId] = v; api.storage.local.set(rec); }
   broadcastConfig();
   refreshAllBadges();
 }
@@ -410,7 +476,7 @@ function setMouseReady(v) {
   v = !!v;
   if (v === state.mouseReady) return;
   state.mouseReady = v;
-  api.storage.local.set({ cg_mouse_ready: v });
+  if (state.accountId) { var rec = {}; rec["cg_mouse_ready_" + state.accountId] = v; api.storage.local.set(rec); }
   broadcastConfig();   // enabling mouse (even without keystroke) must turn capture on in open tabs
   refreshAllBadges();
 }
@@ -418,11 +484,18 @@ function setMouseReady(v) {
 api.runtime.onMessage.addListener(function (msg, sender, reply) {
   if (!msg) return;
   switch (msg.type) {
+    case "cg:get-account":
+      if (!state.accountChecked) {
+        refreshAccount(function () { reply({ id: state.accountId || null, email: state.accountEmail || null }); });
+        return true;
+      }
+      reply({ id: state.accountId || null, email: state.accountEmail || null });
+      return true;
     case "cg:enrolled":
       state.enrolled = true;
       // The wizard just trained a personal model into IndexedDB — hot-swap it in.
       ensureOffscreen().then(function () {
-        try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model" }, function () { void api.runtime.lastError; }); } catch (e) {}
+        try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model", accountId: state.accountId }, function () { void api.runtime.lastError; }); } catch (e) {}
       });
       scores = [];            // old packet was scored by the previous model
       state.verdict = null;
@@ -443,7 +516,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       if (wasLocked) broadcastAll({ type: "cg:unlock" });
       broadcastAll({ type: "cg:reset" });                // tabs drop buffered timings too
       ensureOffscreen().then(function () {
-        try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model" }, function () { void api.runtime.lastError; }); } catch (e) {}
+        try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model", accountId: state.accountId }, function () { void api.runtime.lastError; }); } catch (e) {}
       });
       updateBadge();
       persistProgress(true);
@@ -470,7 +543,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
     case "cg:passkey-registered":
       if (sender && sender.url && sender.url.indexOf(RP_BASE) === 0) {
         state.hasPasskey = true;
-        api.storage.local.set({ cg_passkey: 1 });
+        if (state.accountId) { var pkRec = {}; pkRec["cg_passkey_" + state.accountId] = 1; api.storage.local.set(pkRec); }
         if (state.locked) broadcastAll({ type: "cg:lock", hasPasskey: true });  // refresh overlay button
         closeRpTab(sender);
       }
@@ -485,6 +558,10 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       if (msg.latest) onMouseWindow(msg.latest);
       return;
     case "cg:status":
+      // Fallback safety net for chrome.identity.onSignInChanged, which isn't reliable on
+      // every platform: the popup polls every 1s, so a cheap throttled re-check here still
+      // catches an account switch within a few seconds even if the event never fires.
+      if (Date.now() - _lastAccountCheck > 4000) { _lastAccountCheck = Date.now(); refreshAccount(); }
       if (!state.modelReady) {
         // Make sure the offscreen doc exists, then ask it directly whether the model loaded.
         ensureOffscreen().then(function () {

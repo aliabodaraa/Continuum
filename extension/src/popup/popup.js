@@ -16,6 +16,15 @@ function show(id, visible) { q(id).style.display = visible ? "" : "none"; }
 function refresh() {
   api.runtime.sendMessage({ type: "cg:status" }, function (s) {
     if (!s) return;
+    // No Chrome/Google account signed in → the whole panel is inert (samples/models are
+    // keyed to that account, so there is nothing to show or train against).
+    var noAccount = s.accountChecked && !s.accountId;
+    show("noAccount", noAccount);
+    q("mainPanel").style.display = noAccount ? "none" : "";
+    if (noAccount) { q("dot").className = "dot off"; return; }
+    show("acctLine", !!s.accountEmail);
+    if (s.accountEmail) q("acctLine").textContent = s.accountEmail;
+
     var excluded = (s.exclusions || []).indexOf(curOrigin) >= 0;
     var ksOn = !!s.modelPersonal;       // keystroke personal model trained
     var mouseOn = !!s.mouseReady;       // mouse personal model trained

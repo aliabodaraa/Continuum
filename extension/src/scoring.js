@@ -52,12 +52,13 @@ var ContinuumScoring = (function () {
 
   // The wizard-trained personal classifier: a dense head saved by trainer.js to IndexedDB
   // (same chrome-extension:// origin as the offscreen doc, so both see it) that runs on
-  // top of the packaged graph feature-extractor (Conv1D+GRU cut at flatten).
-  async function loadTrained(extractorUrl) {
+  // top of the packaged graph feature-extractor (Conv1D+GRU cut at flatten). Keyed per
+  // Chrome/Google account — accountId picks out THIS account's model, never another's.
+  async function loadTrained(extractorUrl, accountId) {
     if (typeof tf === "undefined") throw new Error("tf runtime not loaded");
     try { await tf.setBackend("cpu"); } catch (e) {}
     await tf.ready();
-    head = await tf.loadLayersModel("indexeddb://cg-personal-head");  // throws if never trained
+    head = await tf.loadLayersModel("indexeddb://cg-personal-head-" + accountId);  // throws if never trained
     extractor = await tf.loadGraphModel(extractorUrl);
     model = null;
     kind = "hybrid";
@@ -66,14 +67,21 @@ var ContinuumScoring = (function () {
 
   function isReady() { return kind === "hybrid" ? !!(extractor && head) : !!model; }
 
+  // Drop every loaded model so a stale account's weights can never keep scoring after an
+  // account switch — the caller (offscreen.js) always reloads right after calling this.
+  function unload() {
+    model = null; kind = null; extractor = null; head = null;
+    mouseExtractor = null; mouseHead = null; mouseScaler = null;
+  }
+
   // ---- mouse modality (only meaningful once a personal head is trained: the mouse
   // base is a 120-user ID net, so there is no generic genuine/impostor fallback) ----
   var mouseExtractor = null, mouseHead = null, mouseScaler = null;
-  async function loadMouseTrained(extractorUrl, scalerUrl) {
+  async function loadMouseTrained(extractorUrl, scalerUrl, accountId) {
     if (typeof tf === "undefined") throw new Error("tf runtime not loaded");
     try { await tf.setBackend("cpu"); } catch (e) {}
     await tf.ready();
-    mouseHead = await tf.loadLayersModel("indexeddb://cg-personal-mouse-head");  // throws if never trained
+    mouseHead = await tf.loadLayersModel("indexeddb://cg-personal-mouse-head-" + accountId);  // throws if never trained
     mouseScaler = await (await fetch(scalerUrl)).json();
     mouseExtractor = await tf.loadGraphModel(extractorUrl);
     return true;
@@ -129,7 +137,7 @@ var ContinuumScoring = (function () {
     };
   }
 
-  return { load: load, loadTrained: loadTrained, loadScaler: loadScaler, scaleWindow: scaleWindow, isReady: isReady, scoreWindow: scoreWindow, loadMouseTrained: loadMouseTrained, isMouseReady: isMouseReady, scoreMouseWindow: scoreMouseWindow, verdict: verdict, decide: decide, RECENT_WINDOW_COUNT: RECENT_WINDOW_COUNT };
+  return { load: load, loadTrained: loadTrained, loadScaler: loadScaler, scaleWindow: scaleWindow, isReady: isReady, unload: unload, scoreWindow: scoreWindow, loadMouseTrained: loadMouseTrained, isMouseReady: isMouseReady, scoreMouseWindow: scoreMouseWindow, verdict: verdict, decide: decide, RECENT_WINDOW_COUNT: RECENT_WINDOW_COUNT };
 })();
 
 // Allow importing the pure decision logic under Node for tests.

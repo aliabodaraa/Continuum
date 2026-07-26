@@ -53,6 +53,13 @@ function nextPassage() {
   return A1_PASSAGES[i];
 }
 
+// ---- account gate: samples/models are keyed to whichever Chrome/Google account this
+// browser is signed into (background.js resolves it via chrome.identity). Without one
+// there's no account to link samples to, so the whole wizard stays hidden. ----
+var currentAccountId = null, currentAccountEmail = null;
+function getProfileId(cb) { cb(currentAccountId); }
+
+function initWizard() {
 var passageEl = document.getElementById("passage");
 var newPassageLink = document.getElementById("newPassage");
 function loadPassage() { passageEl.textContent = nextPassage(); }
@@ -94,17 +101,6 @@ function update() {
   }
 }
 
-function getProfileId(cb) {
-  api.storage.local.get(["cg_profile_id"], function (d) {
-    var id = d && d.cg_profile_id;
-    if (!id) {
-      id = "p_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-      api.storage.local.set({ cg_profile_id: id });
-    }
-    cb(id);
-  });
-}
-
 document.getElementById("regpk").addEventListener("click", function () {
   try { api.runtime.sendMessage({ type: "cg:open-register" }); } catch (e) {}
 });
@@ -138,8 +134,8 @@ resetLink.addEventListener("click", function (e) {
   clearTimeout(resetTimer);
   resetLink.textContent = "clearing…";
   getProfileId(function (id) {
-    api.storage.local.remove(["cg_enroll_" + id, "cg_enroll_mouse_" + id, "cg_enrolled_at", "cg_enroll_sessions_" + id, "cg_enroll_mouse_sessions_" + id], function () {
-      ContinuumTrainer.clearTrained().then(function () {
+    api.storage.local.remove(["cg_enroll_" + id, "cg_enroll_mouse_" + id, "cg_enrolled_at_" + id, "cg_enroll_sessions_" + id, "cg_enroll_mouse_sessions_" + id], function () {
+      ContinuumTrainer.clearTrained(id).then(function () {
         try { api.runtime.sendMessage({ type: "cg:profile-reset" }); } catch (e2) {}
         location.reload();
       });
@@ -212,14 +208,14 @@ saveBtn.addEventListener("click", function () {
 
       var rec = {};
       rec[key] = merged;
-      rec["cg_enrolled_at"] = Date.now();
+      rec["cg_enrolled_at_" + id] = Date.now();
       api.storage.local.set(rec, function () {
         // Fine-tune the base model on ALL accumulated windows, entirely in-page (trainer.js).
         ContinuumTrainer.train(merged, {
           impostorsUrl: api.runtime.getURL("data/impostors.json"),
           extractorUrl: api.runtime.getURL("model/base-extractor/model.json"),
           scalerUrl: api.runtime.getURL("model/scaler.json"),
-          saveTo: "indexeddb://cg-personal-head",
+          saveTo: "indexeddb://cg-personal-head-" + id,
           onProgress: function (p) { ts.textContent = "training… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "% (" + merged.length + " windows total)"; },
         }).then(function (r) {
           ts.style.display = "none";
@@ -320,7 +316,7 @@ function startMouseStage() {
               impostorsUrl: api.runtime.getURL("data/mouse-impostors.json"),
               extractorUrl: api.runtime.getURL("model/mouse-extractor/model.json"),
               scalerUrl: api.runtime.getURL("model/mouse-scaler.json"),
-              saveTo: "indexeddb://cg-personal-mouse-head",
+              saveTo: "indexeddb://cg-personal-mouse-head-" + id,
               jitterCols: [2, 3, 4, 5],   // never jitter the is_click flag
               onProgress: function (p) { mts.textContent = "training mouse… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "% (" + merged.length + " windows total)"; },
             }).then(function () {
@@ -347,3 +343,20 @@ if (MODE === "mouse") {
   document.getElementById("keystrokeStage").style.display = "block";
   document.getElementById("ta").focus();
 }
+} // end initWizard
+
+// ---- bootstrap: resolve the signed-in account before showing anything trainable ----
+(function () {
+  try {
+    api.runtime.sendMessage({ type: "cg:get-account" }, function (res) {
+      currentAccountId = (res && res.id) || null;
+      currentAccountEmail = (res && res.email) || null;
+      if (!currentAccountId) { document.getElementById("noAccountBlock").style.display = "block"; return; }
+      var line = document.getElementById("accountLine");
+      line.style.display = "block";
+      line.textContent = "Training for: " + (currentAccountEmail || "this Chrome account");
+      document.getElementById("wizardRoot").style.display = "block";
+      initWizard();
+    });
+  } catch (e) { document.getElementById("noAccountBlock").style.display = "block"; }
+})();

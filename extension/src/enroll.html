@@ -53,7 +53,14 @@
     </style>
   </head>
   <body>
+    <div id="noAccountBlock" style="display:none">
+      <h1>Sign in to Chrome first</h1>
+      <p class="sub">Continuum Guard links your typing &amp; mouse samples to whichever Google account this browser is signed into — so switching accounts automatically switches profiles, and signing out turns the guard off. Sign in to Chrome (<code>chrome://settings/people</code>), then reopen this page.</p>
+    </div>
+
+    <div id="wizardRoot" style="display:none">
     <h1 id="pageTitle">Train Continuum Guard</h1>
+    <div id="accountLine" class="existing" style="display:none"></div>
     <div id="existingProfile" class="existing" style="display:none">
       <span id="existingCount"></span> already saved · new samples add on top of these ·
       <a href="#" id="resetProfile" class="reset">🗑️ clear & start fresh</a>
@@ -88,6 +95,7 @@
       <button id="regpk">🔑 Set up your passkey (used when the guard locks a page)</button>
     </div>
     <p class="note">Only timing and movement features are stored locally on this device. What you type or click is never saved or sent. Training runs entirely in your browser.</p>
+    </div>
     <script src="../vendor/tf-lite.js"></script>
     <script src="features.js"></script>
     <script src="features-mouse.js"></script>

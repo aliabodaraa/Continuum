@@ -105,10 +105,13 @@ var ContinuumTrainer = (function () {
     return { accuracy: acc, genuineWindows: genuine.length, impostorWindows: impostors.length };
   }
 
-  async function clearTrained() {
+  // accountId: only THIS account's two model slots are removed — trained heads are keyed
+  // per Chrome/Google account (see background.js), so resetting one account must never
+  // touch another account's model sitting in the same IndexedDB.
+  async function clearTrained(accountId) {
     var ok = false;
-    try { await tf.io.removeModel("indexeddb://cg-personal-head"); ok = true; } catch (e) {}
-    try { await tf.io.removeModel("indexeddb://cg-personal-mouse-head"); ok = true; } catch (e) {}
+    try { await tf.io.removeModel("indexeddb://cg-personal-head-" + accountId); ok = true; } catch (e) {}
+    try { await tf.io.removeModel("indexeddb://cg-personal-mouse-head-" + accountId); ok = true; } catch (e) {}
     return ok;
   }
 
