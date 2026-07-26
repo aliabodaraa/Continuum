@@ -66,23 +66,28 @@
         border-radius: 16px;       /* rounded panel edges */
       }
 
-      header { display: flex; align-items: center; gap: 10px; margin-bottom: 13px; }
+      header { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
       .logo {
-        width: 30px; height: 30px; flex: none; display: block;
+        width: 26px; height: 26px; flex: none; display: block;
         filter: drop-shadow(0 3px 8px rgba(79, 70, 229, .45));
       }
-      .title { font-size: 14px; font-weight: 800; letter-spacing: .15px; }
-      .sub-title { font-size: 10.5px; color: var(--faint); font-weight: 600; margin-top: 1px; }
+      .title { font-size: 13.5px; font-weight: 800; letter-spacing: .15px; }
+      .sub-title { font-size: 10px; color: var(--faint); font-weight: 600; margin-top: 1px; }
       .dot {
         width: 9px; height: 9px; border-radius: 50%; margin-left: auto; flex: none;
         background: var(--dot-on); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-on) 22%, transparent);
       }
       .dot.off { background: var(--dot-off); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-off) 22%, transparent); }
 
+      /* Chrome enforces its own hard cap on popup height; once content exceeds it, Chrome
+         takes over the viewport with its OWN native scrollbar (which also flattens our
+         border-radius on the way) — no page-level CSS can suppress that. The only real fix
+         is keeping actual content shorter than the cap, hence the tight paddings below
+         rather than relying on overflow:hidden alone. */
       #verdict {
         border-radius: var(--radius-lg);
-        padding: 12px 14px; margin-bottom: 12px;
-        font-weight: 700; font-size: 12.5px; line-height: 1.35;
+        padding: 9px 12px; margin-bottom: 9px;
+        font-weight: 700; font-size: 12.5px; line-height: 1.3;
         background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
         box-shadow: var(--shadow);
         transition: background .22s ease, border-color .22s ease, color .22s ease;
@@ -92,12 +97,12 @@
 
       .card {
         background: var(--surface); border: 1px solid var(--border);
-        border-radius: var(--radius-xl); padding: 3px 14px; margin-bottom: 13px;
+        border-radius: var(--radius-xl); padding: 1px 12px; margin-bottom: 10px;
         box-shadow: var(--shadow);
       }
       .row {
         display: flex; justify-content: space-between; align-items: center; gap: 10px;
-        padding: 8.5px 0; border-bottom: 1px solid var(--border);
+        padding: 6px 0; border-bottom: 1px solid var(--border);
       }
       .row:last-child { border-bottom: none; }
       .row > span:first-child { color: var(--muted); font-weight: 500; white-space: nowrap; flex: none; }
@@ -112,29 +117,32 @@
 
       button {
         display: block; width: 100%; border: 0; cursor: pointer;
-        border-radius: var(--radius-md); padding: 11px 14px;
+        border-radius: var(--radius-md); padding: 9px 14px;
         font: 700 12.5px/1.2 system-ui; color: #fff; text-align: center;
         transition: transform .06s ease, filter .16s ease, background .16s ease;
       }
       button:hover { filter: brightness(1.07); }
       button:active { transform: translateY(1px) scale(.99); }
-      .train-row { display: flex; gap: 9px; }
+      .train-row { display: flex; gap: 8px; }
       .train-row button {
-        flex: 1; display: flex; flex-direction: column; gap: 3px; align-items: center;
-        text-align: center; padding: 11px 8px;
+        flex: 1; display: flex; flex-direction: column; gap: 2px; align-items: center;
+        text-align: center; padding: 9px 8px;
       }
-      .train-row .lead { font-size: 12.5px; }
-      .train-row .sub { font-weight: 500; font-size: 10px; opacity: .85; }
+      .train-row .lead { font-size: 12px; }
+      .train-row .sub { font-weight: 500; font-size: 9.5px; opacity: .85; }
       .btn-keys { background: linear-gradient(135deg, var(--teal-2), var(--teal)); box-shadow: 0 4px 12px -2px color-mix(in srgb, var(--teal) 55%, transparent); }
       .btn-mouse { background: linear-gradient(135deg, #a78bfa, #7c3aed); box-shadow: 0 4px 12px -2px color-mix(in srgb, #7c3aed 55%, transparent); }
       .btn-ghost {
         background: transparent; border: 1px solid var(--border-strong);
-        color: var(--muted); box-shadow: none; font-size: 12px; padding: 9px 14px;
+        color: var(--muted); box-shadow: none; font-size: 12px; padding: 8px 14px;
       }
       .btn-ghost:hover { filter: none; background: var(--surface-2); color: var(--text); }
 
-      .gap { height: 9px; }
-      .note { color: var(--faint); font-size: 10.5px; margin-top: 13px; line-height: 1.5; }
+      .gap { height: 7px; }
+      /* Onboarding tip — hidden once monitoring is actually live (popup.js), since the
+         panel is already tall with every row visible and this text isn't needed at that
+         point. Keeping it in the DOM (not deleted) so it still shows pre-training. */
+      .note { color: var(--faint); font-size: 10px; margin-top: 9px; line-height: 1.4; }
       .note b { color: var(--muted); }
     </style>
   </head>
@@ -184,7 +192,7 @@
       <div class="gap"></div>
       <button id="exclude" class="btn-ghost">…</button>
 
-      <div class="note">Monitoring turns on automatically once you're trained. Keystroke &amp; mouse timing is processed <b>on-device</b> — nothing you type or click leaves your browser.</div>
+      <div class="note" id="note">Monitoring turns on automatically once you're trained. Keystroke &amp; mouse timing is processed <b>on-device</b> — nothing you type or click leaves your browser.</div>
     </div>
     <script src="popup.js"></script>
   </body>

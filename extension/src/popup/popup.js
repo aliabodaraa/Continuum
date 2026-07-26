@@ -92,6 +92,12 @@ function refresh() {
     vd.textContent = txt;
     vd.className = cls;
     q("exclude").textContent = excluded ? "Include this site" : "Exclude this site";
+
+    // Once both modalities are trained the card alone has 8 rows — tall enough to risk
+    // Chrome's own popup-height cap (past which Chrome adds a native scrollbar AND flattens
+    // the panel's rounded corners, since it takes over the viewport). The onboarding note
+    // is only useful before that point, so drop it once things are actually live.
+    show("note", !(ksOn && mouseOn && live));
   });
 }
 
