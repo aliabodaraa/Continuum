@@ -111,25 +111,46 @@ function onAccountChanged(cb) {
   state.verdict = null; state.mouseVerdict = null;
   state.steps = 0; state.totalWindows = 0; state.totalMouseWindows = 0;
   if (state.locked) { state.locked = false; broadcastAll({ type: "cg:unlock" }); }
-  state.profileNum = state.accountId ? numericUid(state.accountId) : 0;
   var id = state.accountId;
   if (!id) {
+    state.profileNum = 0;
     state.modelPersonal = false; state.mouseReady = false; state.hasPasskey = false; state.enrolled = false;
     state.keySamples = 0; state.mouseSamples = 0;
     finishAccountSwitch(cb);
     return;
   }
   migrateLegacyProfile(id, function () {
-    api.storage.local.get(["cg_model_personal_" + id, "cg_mouse_ready_" + id, "cg_passkey_" + id, "cg_enrolled_at_" + id, "cg_enroll_" + id, "cg_enroll_mouse_" + id], function (d) {
-      d = d || {};
-      state.modelPersonal = !!d["cg_model_personal_" + id];
-      state.mouseReady = !!d["cg_mouse_ready_" + id];
-      state.hasPasskey = !!d["cg_passkey_" + id];
-      state.enrolled = !!d["cg_enrolled_at_" + id];
-      state.keySamples = ((d["cg_enroll_" + id]) || []).length;
-      state.mouseSamples = ((d["cg_enroll_mouse_" + id]) || []).length;
-      finishAccountSwitch(cb);
+    resolveProfileNum(id, function (num) {
+      state.profileNum = num;
+      api.storage.local.get(["cg_model_personal_" + id, "cg_mouse_ready_" + id, "cg_passkey_" + id, "cg_enrolled_at_" + id, "cg_enroll_" + id, "cg_enroll_mouse_" + id], function (d) {
+        d = d || {};
+        state.modelPersonal = !!d["cg_model_personal_" + id];
+        state.mouseReady = !!d["cg_mouse_ready_" + id];
+        state.hasPasskey = !!d["cg_passkey_" + id];
+        state.enrolled = !!d["cg_enrolled_at_" + id];
+        state.keySamples = ((d["cg_enroll_" + id]) || []).length;
+        state.mouseSamples = ((d["cg_enroll_mouse_" + id]) || []).length;
+        finishAccountSwitch(cb);
+      });
     });
+  });
+}
+
+// The numeric uid sent to the passkey-service (its DB keys credentials by this NUMBER,
+// not by account id) must stay FIXED for an account forever once established — recomputing
+// it from a hash of the account id (as this used to do) silently orphans any already-
+// registered passkey the moment the hashed input changes, because the service then looks
+// up a uid with zero credentials and errors before ever invoking the native WebAuthn
+// prompt. Persisted once per account; if a legacy (pre-account-binding) profile id exists,
+// reuse the uid computed the OLD way so it still matches what's already in that DB.
+function resolveProfileNum(id, cb) {
+  api.storage.local.get(["cg_profile_num_" + id, "cg_profile_id"], function (d) {
+    d = d || {};
+    var existing = d["cg_profile_num_" + id];
+    if (existing) { cb(existing); return; }
+    var num = d.cg_profile_id ? numericUid(d.cg_profile_id) : numericUid(id);
+    var rec = {}; rec["cg_profile_num_" + id] = num;
+    api.storage.local.set(rec, function () { cb(num); });
   });
 }
 
