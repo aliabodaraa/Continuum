@@ -145,6 +145,8 @@
       }
       .btn-ghost:hover { filter: none; background: var(--surface-2); color: var(--text); }
 
+      .pk-link { color: var(--accent-2); font-size: 11px; font-weight: 600; text-decoration: none; }
+      .pk-link:hover { text-decoration: underline; }
       .gap { height: 7px; }
       /* Onboarding tip — hidden once monitoring is actually live (popup.js), since the
          panel is already tall with every row visible and this text isn't needed at that
@@ -198,6 +200,9 @@
       </div>
       <div class="gap"></div>
       <button id="exclude" class="btn-ghost">…</button>
+      <div id="passkeyLine" style="text-align:center;margin-top:8px;display:none">
+        <a href="#" id="regPasskey" class="pk-link">🔑 Set up / re-register passkey</a>
+      </div>
 
       <div class="note" id="note">Monitoring turns on automatically once you're trained. Keystroke &amp; mouse timing is processed <b>on-device</b> — nothing you type or click leaves your browser.</div>
     </div>

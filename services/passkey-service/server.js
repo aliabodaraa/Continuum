@@ -113,6 +113,13 @@ app.post("/v1/register/options", async (req, res) => {
       timeout: 300000,
       attestationType: "none",
       authenticatorSelection: {
+        // "platform" pins the credential to THIS device's built-in authenticator
+        // (Windows Hello / Touch ID), NOT a roaming key or a Google-Account-synced
+        // passkey. Without it Chrome may store the passkey in Google Password Manager,
+        // which then becomes unreachable if the browser is signed out of that account —
+        // the ceremony degrades to "Sign in again to use passkeys saved in your Google
+        // Account" instead of the local biometric prompt this step-up is meant to be.
+        authenticatorAttachment: "platform",
         residentKey: "required",
         requireResidentKey: true,
         // "required" forces the platform to perform user verification (Windows

@@ -46,6 +46,9 @@ function refresh() {
     show("rowWins", ksOn);
     show("rowMouse", mouseOn);
     show("rowSamples", trained);
+    // Passkey (re)registration is only meaningful once a profile exists to protect.
+    show("passkeyLine", trained);
+    q("regPasskey").textContent = s.hasPasskey ? "🔑 Re-register passkey" : "🔑 Set up your passkey";
 
     if (trained) {
       var sampleParts = [];
@@ -111,4 +114,8 @@ q("enrollKeys").addEventListener("click", function () {
 });
 q("enrollMouse").addEventListener("click", function () {
   api.tabs.create({ url: api.runtime.getURL("src/enroll.html?mode=mouse") });
+});
+q("regPasskey").addEventListener("click", function (e) {
+  e.preventDefault();
+  api.runtime.sendMessage({ type: "cg:open-register" });
 });
