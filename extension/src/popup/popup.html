@@ -54,23 +54,23 @@
       }
 
       * { box-sizing: border-box; }
-      /* Chrome draws the popup's true outer window as a plain rectangle — that edge can
-         never be rounded from the page side. body needs a small gap from it for its OWN
-         border-radius to be visible at all (flush against an identically-sized square
-         frame, rounding has nothing to show against). html stays fully transparent in that
-         gap — Chrome's popup window supports real per-pixel transparency, so the gap reads
-         as empty space around a floating rounded card, not a second square frame. */
+      /* Turns out Chrome ALREADY draws its own rounded, shadowed frame around the popup
+         window natively, once content fits without forcing Chrome's own scrollbar (that
+         forced-scrollbar fallback is what made it look square earlier — nothing to do with
+         our CSS). The earlier margin+shadow trick was fighting that native frame and just
+         nested a second rounded box inside it. body now fills the window flush again;
+         border-radius/overflow stay only so OUR content's corners aren't visibly square
+         against Chrome's already-rounded native edge. */
       html { overflow: hidden; background: transparent; }
       body {
         font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-        width: 300px; margin: 5px; padding: 15px;
+        width: 300px; margin: 0; padding: 15px;
         background:
           radial-gradient(130% 120% at 100% 0%, var(--bg-1) 0%, var(--bg-2) 60%);
         color: var(--text);
         -webkit-font-smoothing: antialiased;
         overflow: hidden;          /* no scrollbar inside the panel */
-        border-radius: 16px;       /* rounded panel edges — now actually visible */
-        box-shadow: 0 2px 10px -2px rgba(0, 0, 0, .25);
+        border-radius: 16px;       /* match Chrome's own native popup rounding */
       }
 
       header { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
