@@ -61,8 +61,12 @@
   window.addEventListener("beforeinput", blockWhileLocked, true);
   function showLock(hasPasskey) {
     if (lockEl || dead) return;
-    if (rpOrigin && origin === rpOrigin) return;   // never lock the step-up ceremony's own pages
-    if (isAuthOrigin(origin)) return;               // nor a sign-in page the ceremony may hand off to
+    if ((rpOrigin && origin === rpOrigin) || isAuthOrigin(origin)) {
+      // never lock the step-up ceremony's own pages, nor a sign-in page it hands off to —
+      // otherwise a locked session can't run the ceremony that clears the lock.
+      try { console.log("[continuum-guard] lock suppressed on step-up/sign-in origin: " + origin); } catch (e) {}
+      return;
+    }
     lockEl = document.createElement("div");
     lockEl.setAttribute("style",
       "position:fixed;inset:0;z-index:2147483647;background:rgba(2,6,23,.88);backdrop-filter:blur(6px);" +
@@ -108,7 +112,11 @@
   // lock so a synced-passkey redirect ("Sign in again to use passkeys saved in your Google
   // Account") isn't itself blocked, which would deadlock the unlock. Kept narrow: the IdP
   // sign-in host only, not arbitrary Google properties.
-  function isAuthOrigin(o) { return o === "https://accounts.google.com"; }
+  function isAuthOrigin(o) {
+    // Google's sign-in / account origins a synced-passkey ceremony can redirect to.
+    return o === "https://accounts.google.com" || o === "https://accounts.youtube.com"
+      || o === "https://myaccount.google.com";
+  }
 
   function onMsg(msg) {
     if (dead) return;
