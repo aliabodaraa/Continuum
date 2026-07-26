@@ -54,16 +54,24 @@
       }
 
       * { box-sizing: border-box; }
-      html { overflow: hidden; background: var(--bg-2); border-radius: 16px; }
+      /* Chrome draws the popup's true outer window as a plain rectangle — that edge can
+         never be rounded from the page side. If body fills it with zero gap, body's own
+         border-radius has nothing to show against (it's clipped flush against an
+         identically-sized square frame) and just looks square. Giving body a small margin
+         insets it as a visibly separate "card" floating inside that square frame, with
+         html's flat background as the thin surrounding frame — THAT'S what actually reads
+         as rounded corners. */
+      html { overflow: hidden; background: var(--bg-2); }
       body {
         font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-        width: 300px; margin: 0; padding: 15px;
+        width: 300px; margin: 5px; padding: 15px;
         background:
           radial-gradient(130% 120% at 100% 0%, var(--bg-1) 0%, var(--bg-2) 60%);
         color: var(--text);
         -webkit-font-smoothing: antialiased;
         overflow: hidden;          /* no scrollbar inside the panel */
-        border-radius: 16px;       /* rounded panel edges */
+        border-radius: 16px;       /* rounded panel edges — now actually visible */
+        box-shadow: 0 2px 10px -2px rgba(0, 0, 0, .25);
       }
 
       header { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
