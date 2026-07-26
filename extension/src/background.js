@@ -88,7 +88,14 @@ var _lastAccountCheck = 0;
 function refreshAccount(cb) {
   if (!api.identity || !api.identity.getProfileUserInfo) { state.accountChecked = true; if (cb) cb(); return; }
   try {
-    api.identity.getProfileUserInfo({ accountStatus: "ANY" }, function (info) {
+    // accountStatus: "SYNC" (the default — NOT "ANY") is deliberate: Chrome's "ANY" mode
+    // returns the account regardless of sync status, which includes "Sync is paused" —
+    // the exact state left behind by clicking Sign out in the profile menu, since Chrome
+    // keeps the profile nominally tied to that account until it's removed outright. "SYNC"
+    // returns empty the instant sync is off/paused, which is the live signed-in/out signal
+    // this feature actually needs (verified against a real Sign-out click, "ANY" did not
+    // react to it at all — this file previously used "ANY" and had that exact bug).
+    api.identity.getProfileUserInfo({ accountStatus: "SYNC" }, function (info) {
       void api.runtime.lastError;
       var id = info && info.id ? ("g_" + info.id) : null;
       var email = (info && info.email) || null;
