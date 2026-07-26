@@ -119,15 +119,56 @@ function onAccountChanged(cb) {
     finishAccountSwitch(cb);
     return;
   }
-  api.storage.local.get(["cg_model_personal_" + id, "cg_mouse_ready_" + id, "cg_passkey_" + id, "cg_enrolled_at_" + id, "cg_enroll_" + id, "cg_enroll_mouse_" + id], function (d) {
+  migrateLegacyProfile(id, function () {
+    api.storage.local.get(["cg_model_personal_" + id, "cg_mouse_ready_" + id, "cg_passkey_" + id, "cg_enrolled_at_" + id, "cg_enroll_" + id, "cg_enroll_mouse_" + id], function (d) {
+      d = d || {};
+      state.modelPersonal = !!d["cg_model_personal_" + id];
+      state.mouseReady = !!d["cg_mouse_ready_" + id];
+      state.hasPasskey = !!d["cg_passkey_" + id];
+      state.enrolled = !!d["cg_enrolled_at_" + id];
+      state.keySamples = ((d["cg_enroll_" + id]) || []).length;
+      state.mouseSamples = ((d["cg_enroll_mouse_" + id]) || []).length;
+      finishAccountSwitch(cb);
+    });
+  });
+}
+
+// ONE-TIME migration: before account binding existed, everything lived under an unkeyed
+// (or random-per-install-id) namespace. Without this, anyone who trained before that
+// change would silently see "needs training" on their real account — the samples are
+// still there, just under the old names. Runs once (cg_legacy_migrated guards re-entry),
+// copies chrome.storage.local values across, and asks the offscreen doc to move the
+// IndexedDB model(s), which only tf (loaded there, not in this service worker) can do.
+function migrateLegacyProfile(id, cb) {
+  api.storage.local.get(["cg_profile_id", "cg_legacy_migrated"], function (d) {
     d = d || {};
-    state.modelPersonal = !!d["cg_model_personal_" + id];
-    state.mouseReady = !!d["cg_mouse_ready_" + id];
-    state.hasPasskey = !!d["cg_passkey_" + id];
-    state.enrolled = !!d["cg_enrolled_at_" + id];
-    state.keySamples = ((d["cg_enroll_" + id]) || []).length;
-    state.mouseSamples = ((d["cg_enroll_mouse_" + id]) || []).length;
-    finishAccountSwitch(cb);
+    var oldId = d.cg_profile_id;
+    if (!oldId || d.cg_legacy_migrated) { cb(); return; }
+    var oldKeys = ["cg_model_personal", "cg_mouse_ready", "cg_passkey", "cg_enrolled_at",
+      "cg_enroll_" + oldId, "cg_enroll_mouse_" + oldId, "cg_enroll_sessions_" + oldId, "cg_enroll_mouse_sessions_" + oldId];
+    api.storage.local.get(oldKeys, function (old) {
+      old = old || {};
+      var hasLegacy = !!(old.cg_model_personal || old.cg_mouse_ready
+        || (old["cg_enroll_" + oldId] || []).length || (old["cg_enroll_mouse_" + oldId] || []).length);
+      if (!hasLegacy) { api.storage.local.set({ cg_legacy_migrated: true }); cb(); return; }
+      var rec = { cg_legacy_migrated: true };
+      if (old.cg_model_personal) rec["cg_model_personal_" + id] = true;
+      if (old.cg_mouse_ready) rec["cg_mouse_ready_" + id] = true;
+      if (old.cg_passkey) rec["cg_passkey_" + id] = true;
+      if (old.cg_enrolled_at) rec["cg_enrolled_at_" + id] = old.cg_enrolled_at;
+      if (old["cg_enroll_" + oldId]) rec["cg_enroll_" + id] = old["cg_enroll_" + oldId];
+      if (old["cg_enroll_mouse_" + oldId]) rec["cg_enroll_mouse_" + id] = old["cg_enroll_mouse_" + oldId];
+      if (old["cg_enroll_sessions_" + oldId]) rec["cg_enroll_sessions_" + id] = old["cg_enroll_sessions_" + oldId];
+      if (old["cg_enroll_mouse_sessions_" + oldId]) rec["cg_enroll_mouse_sessions_" + id] = old["cg_enroll_mouse_sessions_" + oldId];
+      console.log("[continuum-guard] migrating legacy profile " + oldId + " -> " + id);
+      api.storage.local.set(rec, function () {
+        ensureOffscreen().then(function () {
+          try {
+            api.runtime.sendMessage({ target: "offscreen", type: "cg:migrate-model", accountId: id }, function () { void api.runtime.lastError; cb(); });
+          } catch (e) { cb(); }
+        });
+      });
+    });
   });
 }
 

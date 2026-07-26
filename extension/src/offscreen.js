@@ -70,4 +70,25 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
   }
   if (msg.type === "cg:ping") { reply({ ready: ready, error: loadError, personal: personal, mouse: mouseReady }); return true; }
   if (msg.type === "cg:reload-model") { loadBestModel(msg.accountId).then(function () { reply({ ok: true }); }); return true; }
+  if (msg.type === "cg:migrate-model") {
+    // One-time move of a pre-account-binding trained head from the old unsuffixed
+    // IndexedDB slot to this account's own slot — only tf (loaded here, not in the
+    // service worker) can read/write the indexeddb:// scheme. Best-effort per slot:
+    // a user might have trained only keystroke, only mouse, or neither.
+    (async function () {
+      try { await tf.ready(); } catch (e) {}
+      try {
+        var oldHead = await tf.loadLayersModel("indexeddb://cg-personal-head");
+        await oldHead.save("indexeddb://cg-personal-head-" + msg.accountId);
+        try { await tf.io.removeModel("indexeddb://cg-personal-head"); } catch (e2) {}
+      } catch (e) {}
+      try {
+        var oldMouseHead = await tf.loadLayersModel("indexeddb://cg-personal-mouse-head");
+        await oldMouseHead.save("indexeddb://cg-personal-mouse-head-" + msg.accountId);
+        try { await tf.io.removeModel("indexeddb://cg-personal-mouse-head"); } catch (e2) {}
+      } catch (e) {}
+      reply({ ok: true });
+    })();
+    return true;
+  }
 });
