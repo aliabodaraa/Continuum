@@ -55,13 +55,12 @@
 
       * { box-sizing: border-box; }
       /* Chrome draws the popup's true outer window as a plain rectangle — that edge can
-         never be rounded from the page side. If body fills it with zero gap, body's own
-         border-radius has nothing to show against (it's clipped flush against an
-         identically-sized square frame) and just looks square. Giving body a small margin
-         insets it as a visibly separate "card" floating inside that square frame, with
-         html's flat background as the thin surrounding frame — THAT'S what actually reads
-         as rounded corners. */
-      html { overflow: hidden; background: var(--bg-2); }
+         never be rounded from the page side. body needs a small gap from it for its OWN
+         border-radius to be visible at all (flush against an identically-sized square
+         frame, rounding has nothing to show against). html stays fully transparent in that
+         gap — Chrome's popup window supports real per-pixel transparency, so the gap reads
+         as empty space around a floating rounded card, not a second square frame. */
+      html { overflow: hidden; background: transparent; }
       body {
         font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
         width: 300px; margin: 5px; padding: 15px;
