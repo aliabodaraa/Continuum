@@ -77,33 +77,29 @@ function numericUid(pid) {
 }
 
 // ---- browser account binding ----
-// Samples, trained heads, and the passkey link are all keyed to WHICHEVER Google account
-// this Chrome browser/profile is currently signed into (chrome.identity), NOT to any
-// website's own login. That's deliberate: switching the Chrome account is the user's own
-// signal for "a different person is at this keyboard now" — sign out and the extension
-// goes fully inactive; sign into an account with no trained samples and it stays inactive
-// (but capture-ready) until that account trains; sign into an account that already has a
-// trained model and it activates immediately, with no re-training needed.
+// Samples, trained heads, and the passkey link are keyed to WHICHEVER Google account THIS
+// CHROME PROFILE is tied to (chrome.identity.getProfileUserInfo), not to any website login.
+//
+// TESTED LIMIT (verified against a real Sign-out click, both accountStatus modes): Chrome
+// does NOT expose a live "currently signed in vs. just signed out" signal to extensions.
+// getProfileUserInfo reports whichever account this profile is nominally associated with,
+// and keeps reporting it through "Sign out" / "Sync is paused" — Chrome only clears it if
+// the account is removed from the profile outright. So this gates on "has this Chrome
+// PROFILE ever been signed into a Google account", not "is it live right now" — a same-
+// profile sign-out click will NOT deactivate the guard, by platform limitation, not a bug.
+// What DOES give real isolation: separate Chrome PROFILES (Settings -> "Other Chrome
+// profiles"), since chrome.storage/IndexedDB are already fully siloed per profile — that's
+// the actual mechanism for "a different person is using this browser now", not sign-out.
 var _lastAccountCheck = 0;
 function refreshAccount(cb) {
   if (!api.identity || !api.identity.getProfileUserInfo) { state.accountChecked = true; if (cb) cb(); return; }
   try {
-    // accountStatus: "SYNC" (the default — NOT "ANY") is deliberate: Chrome's "ANY" mode
-    // returns the account regardless of sync status, which includes "Sync is paused" —
-    // the exact state left behind by clicking Sign out in the profile menu, since Chrome
-    // keeps the profile nominally tied to that account until it's removed outright. "SYNC"
-    // returns empty the instant sync is off/paused, which is the live signed-in/out signal
-    // this feature actually needs (verified against a real Sign-out click, "ANY" did not
-    // react to it at all — this file previously used "ANY" and had that exact bug).
-    api.identity.getProfileUserInfo({ accountStatus: "SYNC" }, function (info) {
+    // "ANY": also catch a profile that's signed in with sync deliberately turned off — the
+    // gate here is "ever associated with an account", not "currently syncing" (see above).
+    api.identity.getProfileUserInfo({ accountStatus: "ANY" }, function (info) {
       void api.runtime.lastError;
       var id = info && info.id ? ("g_" + info.id) : null;
       var email = (info && info.email) || null;
-      // DIAGNOSTIC: two consecutive theories about what getProfileUserInfo returns after a
-      // sign-out click were wrong — log the raw response so this is settled by evidence
-      // instead of a third guess. Check the SERVICE WORKER console (chrome://extensions ->
-      // Continuum Guard -> "service worker"), not the popup's console.
-      console.log("[continuum-guard/diag] getProfileUserInfo(SYNC):", JSON.stringify(info), "-> id=", id, "was=", state.accountId);
       state.accountChecked = true;
       state.accountEmail = email;
       if (id !== state.accountId) { state.accountId = id; onAccountChanged(cb); }
