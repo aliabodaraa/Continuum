@@ -100,8 +100,15 @@
         padding: 8.5px 0; border-bottom: 1px solid var(--border);
       }
       .row:last-child { border-bottom: none; }
-      .row > span:first-child { color: var(--muted); font-weight: 500; white-space: nowrap; }
-      .val { font-weight: 700; text-align: right; }
+      .row > span:first-child { color: var(--muted); font-weight: 500; white-space: nowrap; flex: none; }
+      /* Values (site origins, emails, long verdict text) must never push past the fixed
+         300px panel width — the panel hides overflow, so anything too long to wrap would
+         otherwise be silently clipped instead of visible on a second line. min-width: 0
+         lets the flex item actually shrink; overflow-wrap breaks even unbroken strings
+         (URLs, emails) that have no natural wrap point. */
+      .val { font-weight: 700; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+
+      #verdict, #acctLine, #noAccount { overflow-wrap: anywhere; }
 
       button {
         display: block; width: 100%; border: 0; cursor: pointer;
@@ -159,6 +166,7 @@
         <div class="row" id="rowSteps"><span>Steps → 1st window</span><span class="val" id="steps">0/50</span></div>
         <div class="row" id="rowWins"><span>Windows scored</span><span class="val" id="wins">0</span></div>
         <div class="row" id="rowMouse"><span>Mouse (info only)</span><span class="val" id="mouse">…</span></div>
+        <div class="row" id="rowSamples" style="display:none"><span>Trained on</span><span class="val" id="samples">…</span></div>
         <div class="row"><span>This site</span><span class="val" id="site">…</span></div>
         <div class="row"><span>Your profile</span><span class="val" id="profile">…</span></div>
       </div>

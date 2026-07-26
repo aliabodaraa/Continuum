@@ -45,6 +45,14 @@ function refresh() {
     show("rowSteps", ksOn);
     show("rowWins", ksOn);
     show("rowMouse", mouseOn);
+    show("rowSamples", trained);
+
+    if (trained) {
+      var sampleParts = [];
+      if (ksOn) sampleParts.push((s.keySamples || 0) + " typing");
+      if (mouseOn) sampleParts.push((s.mouseSamples || 0) + " mouse");
+      q("samples").textContent = sampleParts.join(" + ") + " window" + ((s.keySamples || 0) + (s.mouseSamples || 0) === 1 ? "" : "s");
+    }
 
     if (ksOn) {
       q("model").textContent = s.modelReady ? "ready — personal" : (s.modelError ? "error" : "loading…");

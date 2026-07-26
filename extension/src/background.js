@@ -29,7 +29,7 @@ var config = { exclusions: [] };
 // FIRST resolution always differs and fires onAccountChanged exactly once, even if it
 // resolves to signed-out. Falsy either way, so every gate below defaults safely to
 // "inactive" until a real resolution comes back.
-var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0, accountId: undefined, accountEmail: null, accountChecked: false };
+var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0, accountId: undefined, accountEmail: null, accountChecked: false, keySamples: 0, mouseSamples: 0 };
 var scores = [];       // rolling last N keystroke window scores
 var mouseScores = [];  // rolling last N mouse window scores
 
@@ -115,16 +115,32 @@ function onAccountChanged(cb) {
   var id = state.accountId;
   if (!id) {
     state.modelPersonal = false; state.mouseReady = false; state.hasPasskey = false; state.enrolled = false;
+    state.keySamples = 0; state.mouseSamples = 0;
     finishAccountSwitch(cb);
     return;
   }
-  api.storage.local.get(["cg_model_personal_" + id, "cg_mouse_ready_" + id, "cg_passkey_" + id, "cg_enrolled_at_" + id], function (d) {
+  api.storage.local.get(["cg_model_personal_" + id, "cg_mouse_ready_" + id, "cg_passkey_" + id, "cg_enrolled_at_" + id, "cg_enroll_" + id, "cg_enroll_mouse_" + id], function (d) {
     d = d || {};
     state.modelPersonal = !!d["cg_model_personal_" + id];
     state.mouseReady = !!d["cg_mouse_ready_" + id];
     state.hasPasskey = !!d["cg_passkey_" + id];
     state.enrolled = !!d["cg_enrolled_at_" + id];
+    state.keySamples = ((d["cg_enroll_" + id]) || []).length;
+    state.mouseSamples = ((d["cg_enroll_mouse_" + id]) || []).length;
     finishAccountSwitch(cb);
+  });
+}
+
+// Re-read just the sample-count arrays for the CURRENT account — called after a training
+// session so the popup's "Trained on" count updates immediately, without a full account
+// re-resolution (which would also reset the live packet/verdict).
+function refreshSampleCounts() {
+  var id = state.accountId;
+  if (!id) return;
+  api.storage.local.get(["cg_enroll_" + id, "cg_enroll_mouse_" + id], function (d) {
+    d = d || {};
+    state.keySamples = ((d["cg_enroll_" + id]) || []).length;
+    state.mouseSamples = ((d["cg_enroll_mouse_" + id]) || []).length;
   });
 }
 function finishAccountSwitch(cb) {
@@ -228,6 +244,7 @@ function statusObj() {
     locked: state.locked, hasPasskey: state.hasPasskey,
     mouseReady: state.mouseReady, mouseVerdict: state.mouseVerdict, totalMouseWindows: state.totalMouseWindows,
     accountId: state.accountId || null, accountEmail: state.accountEmail || null, accountChecked: state.accountChecked,
+    keySamples: state.keySamples, mouseSamples: state.mouseSamples,
   };
 }
 
@@ -493,6 +510,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       return true;
     case "cg:enrolled":
       state.enrolled = true;
+      refreshSampleCounts();   // the wizard just accumulated new windows — update the popup's count
       // The wizard just trained a personal model into IndexedDB — hot-swap it in.
       ensureOffscreen().then(function () {
         try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model", accountId: state.accountId }, function () { void api.runtime.lastError; }); } catch (e) {}
@@ -505,6 +523,8 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       // The wizard just deleted the stored windows + trained heads (IndexedDB) — mirror
       // that here: drop back to untrained (monitoring off) until the user retrains.
       state.enrolled = false;
+      state.keySamples = 0;
+      state.mouseSamples = 0;
       setMouseReady(false);
       state.mouseVerdict = null;
       scores = [];
