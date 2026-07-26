@@ -99,6 +99,11 @@ function refreshAccount(cb) {
       void api.runtime.lastError;
       var id = info && info.id ? ("g_" + info.id) : null;
       var email = (info && info.email) || null;
+      // DIAGNOSTIC: two consecutive theories about what getProfileUserInfo returns after a
+      // sign-out click were wrong — log the raw response so this is settled by evidence
+      // instead of a third guess. Check the SERVICE WORKER console (chrome://extensions ->
+      // Continuum Guard -> "service worker"), not the popup's console.
+      console.log("[continuum-guard/diag] getProfileUserInfo(SYNC):", JSON.stringify(info), "-> id=", id, "was=", state.accountId);
       state.accountChecked = true;
       state.accountEmail = email;
       if (id !== state.accountId) { state.accountId = id; onAccountChanged(cb); }
