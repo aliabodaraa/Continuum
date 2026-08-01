@@ -23,6 +23,16 @@ const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 // Optional shared secret between the app and this service. If PASSKEY_API_KEY is
 // set, callers must send it as X-Api-Key. Left unset (dev) the check is a no-op.
 const API_KEY = process.env.PASSKEY_API_KEY || "";
+// Where the passkey (private key) is stored, chosen at registration:
+//   ""         → unconstrained: the browser lets the user pick, so on Chrome signed into a
+//                Google account they can save to Google Password Manager, which SYNCS the
+//                passkey to every device on that account (needed for cross-device step-up).
+//   "platform" → pin to THIS device's built-in authenticator (Windows Hello / Touch ID):
+//                works offline and while signed OUT of Google, but is device-bound (no sync).
+// Default is unconstrained so the step-up passkey can sync with the account the extension is
+// already bound to. The logged-out deadlock this used to cause is handled separately by the
+// content script no longer locking the sign-in origin.
+const AUTHENTICATOR_ATTACHMENT = process.env.AUTHENTICATOR_ATTACHMENT || "";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -113,17 +123,15 @@ app.post("/v1/register/options", async (req, res) => {
       timeout: 300000,
       attestationType: "none",
       authenticatorSelection: {
-        // "platform" pins the credential to THIS device's built-in authenticator
-        // (Windows Hello / Touch ID), NOT a roaming key or a Google-Account-synced
-        // passkey. Without it Chrome may store the passkey in Google Password Manager,
-        // which then becomes unreachable if the browser is signed out of that account —
-        // the ceremony degrades to "Sign in again to use passkeys saved in your Google
-        // Account" instead of the local biometric prompt this step-up is meant to be.
-        authenticatorAttachment: "platform",
+        // Only constrain attachment when explicitly configured (see AUTHENTICATOR_ATTACHMENT
+        // above). Unconstrained (default) lets Chrome offer Google Password Manager, whose
+        // passkeys SYNC across the account's devices; "platform" would pin it to this
+        // device's Windows Hello / Touch ID (local, no sync).
+        ...(AUTHENTICATOR_ATTACHMENT ? { authenticatorAttachment: AUTHENTICATOR_ATTACHMENT } : {}),
         residentKey: "required",
         requireResidentKey: true,
-        // "required" forces the platform to perform user verification (Windows
-        // Hello / Touch ID prompt) — so the biometric/PIN prompt appears every time.
+        // "required" forces user verification (Windows Hello / Touch ID / device unlock),
+        // so a biometric/PIN prompt appears every time regardless of where the key lives.
         userVerification: "required",
       },
     });
