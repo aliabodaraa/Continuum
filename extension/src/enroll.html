@@ -50,6 +50,17 @@
       .mlink { color: var(--link); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font-weight: 600; }
       .mlink.done { color: var(--faint); text-decoration: none; cursor: default; }
       .nudge { background: var(--nudge-bg); border: 1px solid var(--nudge-border); border-radius: 10px; padding: 10px 14px; color: var(--nudge-text); font-size: 13.5px; margin-bottom: 14px; }
+      /* Full-viewport target layer: floating dots placed anywhere on screen so the
+         hand makes long, varied moves (like navigating a real page), not cramped
+         motion inside the text column. Movement is captured window-wide to MATCH how
+         the live guard sees the mouse during real browsing. */
+      #floatLayer { position: fixed; inset: 0; z-index: 5; pointer-events: none; }
+      .ftarget { position: fixed; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, var(--accent), var(--accent-2));
+        box-shadow: 0 2px 10px rgba(0,0,0,.25); cursor: pointer; pointer-events: auto;
+        display: flex; align-items: center; justify-content: center; color: #fff; font-size: 15px;
+        transition: transform .1s; }
+      .ftarget:hover { transform: scale(1.12); }
     </style>
   </head>
   <body>
@@ -80,14 +91,16 @@
     </div>
 
     <div id="mouseStage" style="display:none">
-      <p class="sub">Read the snippet, then click the highlighted <b>links</b> in any order, at your normal browsing pace. Continuum learns how your hand moves across a page — positions and timing only, never what you click.</p>
+      <p class="sub">Click the highlighted <b>links</b> in the snippet <i>and</i> the floating dots that appear <b>anywhere on the screen</b>, at your normal pace. Moving across the whole page — near and far, fast and slow — is what lets Continuum learn how <i>your</i> hand moves. Positions and timing only, never what you click.</p>
       <div id="playArea" class="playarea">
         <div id="mouseText" class="mousetext"></div>
       </div>
       <div class="bar"><i id="mprog"></i></div>
-      <div class="status" id="mstatus">0 / 20 mouse windows captured</div>
+      <div class="status" id="mstatus">0 / 40 windows · 0 / 12 targets clicked</div>
       <div class="status" id="mtrainStatus" style="display:none">training…</div>
     </div>
+    <!-- floating full-viewport targets live here (outside the centered column) -->
+    <div id="floatLayer"></div>
 
     <div id="done">✓ <span id="doneMsg">Your personal model is trained and active. The guard now knows your rhythm.</span><br /><br />
       <div id="sessionNudge" class="nudge" style="display:none"></div>

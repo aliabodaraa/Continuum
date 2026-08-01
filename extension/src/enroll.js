@@ -10,7 +10,7 @@ var api = globalThis.browser || globalThis.chrome;
 var MODE = (new URLSearchParams(location.search).get("mode") === "mouse") ? "mouse" : "keystroke";
 var TARGET = 12;                 // NEW windows this session (~700+ keystrokes)
 var MAX_STORED_KEY_WINDOWS = 60;  // cap on accumulated keystroke windows across all sessions
-var MAX_STORED_MOUSE_WINDOWS = 80;
+var MAX_STORED_MOUSE_WINDOWS = 120;
 var events = [], t0 = performance.now();
 
 // DIAGNOSTIC: dump per-feature stats [id1,id2,dwell1,dwell2,dd,ud] for a set of windows,
@@ -111,12 +111,22 @@ var existingBox = document.getElementById("existingProfile");
 var existingCount = document.getElementById("existingCount");
 var resetLink = document.getElementById("resetProfile");
 
+// Reset is MODALITY-SPECIFIC: keystroke and mouse are enrolled/trained/stored
+// independently, so this page (which runs ONE modality per visit) clears only ITS OWN
+// channel — wiping your mouse profile must never delete your typing profile, and vice
+// versa. The other channel's counts are shown for context but left untouched.
+var IS_MOUSE = (MODE === "mouse");
+var RESET_LABEL = IS_MOUSE ? "🗑️ clear my mouse data & start fresh" : "🗑️ clear my typing data & start fresh";
+resetLink.textContent = RESET_LABEL;
 getProfileId(function (id) {
   api.storage.local.get(["cg_enroll_" + id, "cg_enroll_mouse_" + id], function (d) {
     var nKey = ((d && d["cg_enroll_" + id]) || []).length;
     var nMouse = ((d && d["cg_enroll_mouse_" + id]) || []).length;
-    if (nKey > 0 || nMouse > 0) {
-      existingCount.textContent = nKey + " typing + " + nMouse + " mouse windows";
+    var mine = IS_MOUSE ? nMouse : nKey;
+    if (mine > 0) {
+      var other = IS_MOUSE ? (nKey + " typing") : (nMouse + " mouse");
+      existingCount.textContent = mine + (IS_MOUSE ? " mouse" : " typing") + " windows on file"
+        + (((IS_MOUSE ? nKey : nMouse) > 0) ? " (" + other + " windows kept separately)" : "");
       existingBox.style.display = "block";
     }
   });
@@ -127,15 +137,19 @@ resetLink.addEventListener("click", function (e) {
   e.preventDefault();
   if (!resetArmed) {
     resetArmed = true;
-    resetLink.textContent = "⚠ click again to confirm — deletes your trained model";
-    resetTimer = setTimeout(function () { resetArmed = false; resetLink.textContent = "🗑️ clear & start fresh"; }, 4000);
+    resetLink.textContent = "⚠ click again to confirm — deletes your trained " + (IS_MOUSE ? "mouse" : "typing") + " model";
+    resetTimer = setTimeout(function () { resetArmed = false; resetLink.textContent = RESET_LABEL; }, 4000);
     return;
   }
   clearTimeout(resetTimer);
   resetLink.textContent = "clearing…";
   getProfileId(function (id) {
-    api.storage.local.remove(["cg_enroll_" + id, "cg_enroll_mouse_" + id, "cg_enrolled_at_" + id, "cg_enroll_sessions_" + id, "cg_enroll_mouse_sessions_" + id], function () {
-      ContinuumTrainer.clearTrained(id).then(function () {
+    // Only THIS modality's storage keys + ready-flag + trained head; the other channel is preserved.
+    var keys = IS_MOUSE
+      ? ["cg_enroll_mouse_" + id, "cg_enroll_mouse_sessions_" + id, "cg_mouse_ready_" + id]
+      : ["cg_enroll_" + id, "cg_enroll_sessions_" + id, "cg_model_personal_" + id, "cg_enrolled_at_" + id];
+    api.storage.local.remove(keys, function () {
+      ContinuumTrainer.clearTrained(id, MODE).then(function () {
         try { api.runtime.sendMessage({ type: "cg:profile-reset" }); } catch (e2) {}
         location.reload();
       });
@@ -230,17 +244,31 @@ saveBtn.addEventListener("click", function () {
   });
 });
 
-// ---- Step 2: mouse enrollment (read & click links) ----
-// REDESIGNED from "chase-the-dot" (a small fixed box, one recurring target, frequent
-// clicks) to a read-and-click task over a full article-width passage with several links
-// scattered at realistic, varied positions — much closer to how someone actually moves a
-// mouse across a real page (reading, moving to a distant link, clicking, moving again)
-// than repeatedly re-centering on one recurring dot in a tiny box. The capture/feature/
-// training code is UNCHANGED; only the interaction that generates the movement changed.
-// 20 windows (validated sweep: held-out genuine windows win 95%, impostors stay low 85%
-// — 12 was too few, the head memorized). ~1 minute of natural reading + clicking.
-var MOUSE_TARGET = 20;
+// ---- Step 2: mouse enrollment (full-viewport read + target-click) ----
+// EVOLUTION: chase-the-dot (tiny box, one recurring target) -> read-and-click links in a
+// 620px text column -> THIS: window-wide capture + reading links AND floating targets
+// scattered across the WHOLE viewport. Two problems the previous version left on the table:
+//   1. Train/live MISMATCH — enrollment captured motion only inside the small play area,
+//      but the live guard (content.js) scores motion across the full browser viewport.
+//      The enrolled profile was built from cramped, low-variety motion unlike real use.
+//   2. Too little / too narrow data — 20 windows of short article-width hops under-express
+//      the fast, long, directionally-varied "navigation" moves that most distinguish users.
+// Fix: capture on `document` (full viewport, clientX/clientY — same as the guard) and drive
+// long varied moves with floating targets placed far apart anywhere on screen, alongside the
+// slow precise reading motion. This closes the mismatch so the head sees, at enrollment, the
+// same distribution it will score live — realising the mouse model's real separability instead
+// of squandering it in a box. (It does NOT change the model's inherent per-user ceiling.)
+// 40 windows (was 20): the SapiMouse enroll sweep shows verification EER keeps dropping well
+// past 20 windows (knee ~150), so more genuine motion = a stronger, better-separated profile.
+// ~2 minutes of mixed reading + target-clicking.
+var MOUSE_TARGET = 40;
 var MOUSE_LINKS_PER_ROUND = 6;
+var MOUSE_FLOATS_ACTIVE = 2;   // floating full-viewport targets kept on screen at once
+// Enforce ENOUGH REAL interaction: completion needs both MOUSE_TARGET windows AND at least
+// MOUSE_MIN_CLICKS deliberate target clicks. The click floor stops a degenerate enrollment
+// (wiggling the cursor in one spot fills windows but produces no distinctive ballistic
+// move-to-click motion) — you must actually navigate to and click targets across the screen.
+var MOUSE_MIN_CLICKS = 12;
 function startMouseStage() {
   var stage = document.getElementById("mouseStage");
   var area = document.getElementById("playArea");
@@ -252,12 +280,49 @@ function startMouseStage() {
   stage.scrollIntoView({ behavior: "smooth" });
 
   var M = globalThis.ContinuumMouseFeatures;
-  var mEvents = [], down = false, doneTraining = false;
+  var floatLayer = document.getElementById("floatLayer");
+  var mEvents = [], down = false, doneTraining = false, clickCount = 0;
+  function onTargetClick() { clickCount += 1; update(); }
 
+  // Capture WINDOW-WIDE (document, viewport clientX/clientY) — not just inside the
+  // small play area — so the enrolled motion matches exactly what the live guard sees
+  // during real full-page browsing (content.js also uses clientX/clientY). Enrolling
+  // in a cramped 620px box while the guard scores full-viewport motion was a
+  // train/live mismatch that weakened the genuine profile.
   function push(x, y, st) { if (!doneTraining) { mEvents.push({ t: performance.now(), x: x, y: y, state: st }); if (mEvents.length % 10 === 0) update(); } }
-  area.addEventListener("mousemove", function (e) { push(e.clientX, e.clientY, down ? "Drag" : "Move"); });
-  area.addEventListener("mousedown", function (e) { down = true; push(e.clientX, e.clientY, "Pressed"); });
-  area.addEventListener("mouseup", function (e) { down = false; push(e.clientX, e.clientY, "Released"); });
+  document.addEventListener("mousemove", function (e) { push(e.clientX, e.clientY, down ? "Drag" : "Move"); });
+  document.addEventListener("mousedown", function (e) { down = true; push(e.clientX, e.clientY, "Pressed"); });
+  document.addEventListener("mouseup", function (e) { down = false; push(e.clientX, e.clientY, "Released"); });
+
+  // Floating full-viewport targets: force long, varied, cross-screen moves (the fast
+  // ballistic navigation that most distinguishes users) alongside the slow, precise
+  // reading motion from the inline links. Each spawns far from the last so distances
+  // and directions stay varied; the pair keeps ~2 on screen at all times.
+  var lastFX = window.innerWidth / 2, lastFY = window.innerHeight / 2;
+  function spawnFloat() {
+    if (doneTraining) return;
+    var el = document.createElement("div");
+    el.className = "ftarget";
+    // pick a point in a random screen region that is FAR from the previous target
+    var x, y, tries = 0;
+    do {
+      x = 60 + Math.random() * (window.innerWidth - 120);
+      y = 60 + Math.random() * (window.innerHeight - 120);
+      tries++;
+    } while (Math.hypot(x - lastFX, y - lastFY) < Math.min(window.innerWidth, window.innerHeight) * 0.4 && tries < 12);
+    lastFX = x; lastFY = y;
+    el.style.left = x + "px"; el.style.top = y + "px";
+    el.textContent = "●";
+    el.addEventListener("click", function (e) {
+      e.preventDefault(); e.stopPropagation();
+      if (el.parentNode) el.parentNode.removeChild(el);
+      onTargetClick();
+      if (!doneTraining) spawnFloat();   // respawn one far away — continuous target chase
+    });
+    floatLayer.appendChild(el);
+  }
+  function clearFloats() { if (floatLayer) floatLayer.innerHTML = ""; }
+  for (var fi = 0; fi < MOUSE_FLOATS_ACTIVE; fi++) spawnFloat();
 
   // Render a passage with MOUSE_LINKS_PER_ROUND random words turned into clickable
   // "links" (real hyperlink styling) scattered through the natural flow of the text —
@@ -288,6 +353,7 @@ function startMouseStage() {
         e.preventDefault();
         if (a.classList.contains("done")) return;   // theme-aware styling lives in enroll.html's .mlink/.mlink.done
         a.classList.add("done");
+        onTargetClick();
         remaining -= 1;
         if (remaining <= 0 && !doneTraining) loadRound();   // fresh passage + links, same task
       });
@@ -298,10 +364,19 @@ function startMouseStage() {
   function windows() { return M ? M.stepsToWindows(M.eventsToSteps(mEvents)) : []; }
   function update() {
     var w = windows();
-    mprog.style.width = Math.min(100, Math.round((w.length / MOUSE_TARGET) * 100)) + "%";
-    mstatus.textContent = w.length + " / " + MOUSE_TARGET + " mouse windows captured";
-    if (w.length >= MOUSE_TARGET && !doneTraining) {
+    // Progress reflects BOTH requirements — the bar can't be maxed by movement alone; you
+    // also have to actually click targets. It fills to whichever requirement is further behind.
+    var wFrac = w.length / MOUSE_TARGET;
+    var cFrac = clickCount / MOUSE_MIN_CLICKS;
+    mprog.style.width = Math.min(100, Math.round(Math.min(wFrac, cFrac) * 100)) + "%";
+    var enough = w.length >= MOUSE_TARGET && clickCount >= MOUSE_MIN_CLICKS;
+    mstatus.textContent = enough
+      ? "enough data captured"
+      : w.length + " / " + MOUSE_TARGET + " windows · " + clickCount + " / " + MOUSE_MIN_CLICKS + " targets clicked"
+        + (w.length >= MOUSE_TARGET ? " — keep clicking the dots/links" : (clickCount >= MOUSE_MIN_CLICKS ? " — keep moving the mouse" : ""));
+    if (enough && !doneTraining) {
       doneTraining = true;
+      clearFloats();
       mts.style.display = "block";
       mts.textContent = "capturing complete — training your mouse model on-device…";
       getProfileId(function (id) {
