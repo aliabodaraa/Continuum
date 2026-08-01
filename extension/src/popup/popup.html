@@ -147,6 +147,16 @@
 
       .pk-link { color: var(--accent-2); font-size: 11px; font-weight: 600; text-decoration: none; }
       .pk-link:hover { text-decoration: underline; }
+
+      /* Compact on/off switch for the mouse-tracking row. */
+      .switch { position: relative; display: inline-block; width: 34px; height: 18px; flex: none; }
+      .switch input { opacity: 0; width: 0; height: 0; }
+      .slider { position: absolute; inset: 0; cursor: pointer; background: var(--dot-off); border-radius: var(--radius-pill); transition: background .18s; }
+      .slider::before { content: ""; position: absolute; width: 14px; height: 14px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: transform .18s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+      .switch input:checked + .slider { background: var(--dot-on); }
+      .switch input:checked + .slider::before { transform: translateX(16px); }
+      input[type=range] { accent-color: var(--accent); height: 16px; cursor: pointer; }
+      .ctrl { display: flex; align-items: center; gap: 8px; }
       .gap { height: 7px; }
       /* Onboarding tip — hidden once monitoring is actually live (popup.js), since the
          panel is already tall with every row visible and this text isn't needed at that
@@ -182,7 +192,9 @@
         <div class="row" id="rowModel"><span>Model</span><span class="val" id="model">…</span></div>
         <div class="row" id="rowSteps"><span>Steps → 1st window</span><span class="val" id="steps">0/50</span></div>
         <div class="row" id="rowWins"><span>Windows scored</span><span class="val" id="wins">0</span></div>
-        <div class="row" id="rowMouse"><span>Mouse (info only)</span><span class="val" id="mouse">…</span></div>
+        <div class="row" id="rowMouse"><span>Mouse</span><span class="val" id="mouse">…</span></div>
+        <div class="row" id="rowMouseTrack" style="display:none"><span>Mouse tracking</span><label class="switch"><input type="checkbox" id="mouseTrackToggle" /><span class="slider"></span></label></div>
+        <div class="row" id="rowMouseSens" style="display:none"><span>Lock threshold</span><span class="ctrl"><input type="range" id="mouseSensRange" min="30" max="100" step="5" title="Percent of recent mouse windows that must look suspicious before the page locks. Lower = locks more easily; higher = stricter." style="width:104px" /><span class="val" id="mouseSensVal" style="min-width:32px">75%</span></span></div>
         <div class="row" id="rowSamples" style="display:none"><span>Trained on</span><span class="val" id="samples">…</span></div>
         <div class="row"><span>This site</span><span class="val" id="site">…</span></div>
         <div class="row"><span>Your profile</span><span class="val" id="profile">…</span></div>
@@ -200,6 +212,8 @@
       </div>
       <div class="gap"></div>
       <button id="exclude" class="btn-ghost">…</button>
+      <div class="gap"></div>
+      <button id="openSettings" class="btn-ghost">⚙️ Passkey service URL…</button>
       <div id="passkeyLine" style="text-align:center;margin-top:8px;display:none">
         <a href="#" id="regPasskey" class="pk-link">🔑 Set up / re-register passkey</a>
       </div>

@@ -4,8 +4,22 @@
 // popup; it loads only the PURE decision logic from scoring.js (no tf) to apply the
 // Lu et al. packet vote. Windows arrive from every tab; the typed text never leaves the page.
 var api = globalThis.browser || globalThis.chrome;
-var RECENT = 6;                                        // packet size (mirrors ca-service)
+var RECENT = 6;                                        // keystroke packet size (mirrors ca-service)
 var WINDOW_THRESHOLD = 0.5, PACKET_VOTE_FRACTION = 0.5;
+
+// Mouse enforcement uses a SUSTAINED vote, not the 3-of-6 keystroke packet. Rationale
+// (measured via the in-browser discrimination diagnostic): the mouse head separates genuine
+// from impostor well per-window (genuine ≈0.70, impostor ≈0.32; per-window FAR ≈10%, FRR
+// ≈5%), but mouse windows are produced far more frequently than keystroke windows, so a
+// 3-of-6 rule re-evaluated that often would accumulate rare genuine false-locks into a
+// steady trickle. Requiring 15 of the last 20 windows low (75%) makes a genuine false-lock
+// practically impossible (P(≥15/20 low | 5% per-window) ≈ 0) while an impostor (≈90% low)
+// still trips it within ~20 windows — a few seconds of movement. This is what lets the
+// mouse channel ENFORCE rather than stay info-only, at a controlled false-positive cost.
+var MOUSE_SUSTAIN_WINDOW = 20;   // length of the mouse enforcement buffer
+var MOUSE_SUSTAIN_LOW = 15;      // DEFAULT low windows required to lock (75% of 20); now
+                                // user-tunable via the popup slider -> state.mouseSustainPct
+var MOUSE_SUSTAIN_PCT_DEFAULT = Math.round((MOUSE_SUSTAIN_LOW / MOUSE_SUSTAIN_WINDOW) * 100);
 
 // Pure Lu et al. packet vote, INLINED — the service worker needs no importScripts (MV3 SW
 // importScripts of a packaged file was failing and cascading into "No SW"). The offscreen
@@ -30,9 +44,9 @@ var config = { exclusions: [] };
 // FIRST resolution always differs and fires onAccountChanged exactly once, even if it
 // resolves to signed-out. Falsy either way, so every gate below defaults safely to
 // "inactive" until a real resolution comes back.
-var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0, accountId: undefined, accountEmail: null, accountChecked: false, keySamples: 0, mouseSamples: 0 };
+var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, lockReason: null, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0, mouseTracking: true, mouseSustainPct: 75, accountId: undefined, accountEmail: null, accountChecked: false, keySamples: 0, mouseSamples: 0 };
 var scores = [];       // rolling last N keystroke window scores
-var mouseScores = [];  // rolling last N mouse window scores
+var mouseScores = [];  // rolling mouse window scores (up to MOUSE_SUSTAIN_WINDOW)
 
 // Snapshot live progress to storage so it survives a service-worker restart. Throttled so
 // rapid keystrokes don't hammer storage (at most one write per ~1.2s); pass immediate=true
@@ -42,7 +56,7 @@ function progressSnapshot() {
   return {
     steps: state.steps, needSteps: state.needSteps, totalWindows: state.totalWindows, verdict: state.verdict,
     scores: scores, mouseScores: mouseScores, mouseVerdict: state.mouseVerdict,
-    totalMouseWindows: state.totalMouseWindows, locked: state.locked, at: Date.now(),
+    totalMouseWindows: state.totalMouseWindows, locked: state.locked, lockReason: state.lockReason, at: Date.now(),
   };
 }
 function persistProgress(immediate) {
@@ -225,10 +239,15 @@ function finishAccountSwitch(cb) {
   if (cb) cb();
 }
 
-api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress"], function (d) {
+api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress", "cg_mouse_tracking", "cg_mouse_sustain_pct"], function (d) {
   d = d || {};
   config.exclusions = d.cg_exclusions || [];
   RP_BASE = (d.cg_rp_base || RP_BASE_DEFAULT).replace(/\/+$/, "");
+  // User toggle for the mouse channel (default ON). Persisted so a SW restart keeps it.
+  state.mouseTracking = d.cg_mouse_tracking !== false;
+  // User-tuned mouse lock sensitivity (percent of the 20-window buffer that must be low).
+  var pct = parseInt(d.cg_mouse_sustain_pct, 10);
+  state.mouseSustainPct = (pct >= 30 && pct <= 100) ? pct : MOUSE_SUSTAIN_PCT_DEFAULT;
   // Restore the LIVE session progress too — the rolling packet, step counter, verdict and
   // lock state — so a service-worker restart (e.g. opening/closing the popup, or an idle
   // gap while typing) doesn't wipe the in-progress packet and reset the counter to 0.
@@ -241,6 +260,7 @@ api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress"], function (
     state.mouseVerdict = p.mouseVerdict || null;
     state.totalMouseWindows = p.totalMouseWindows || 0;
     state.locked = !!p.locked;   // a lock must survive a restart, or it'd silently drop
+    state.lockReason = p.lockReason || null;
     scores = Array.isArray(p.scores) ? p.scores : [];
     mouseScores = Array.isArray(p.mouseScores) ? p.mouseScores : [];
   }
@@ -298,12 +318,19 @@ ensureOffscreen();
 
 function scoreViaOffscreen(win, msgType) {
   return new Promise(function (resolve) {
+    // Guarantee the promise ALWAYS settles: a dropped/never-answered offscreen message would
+    // otherwise hang the caller's `await`, leaving scoringBusy/mouseBusy stuck true forever
+    // and silently freezing all further verdicts (esp. mouse, which fires constantly).
+    var done = false;
+    function finish(v) { if (!done) { done = true; resolve(v); } }
+    var timer = setTimeout(function () { finish(null); }, 3000);
     try {
       api.runtime.sendMessage({ target: "offscreen", type: msgType || "cg:score", win: win }, function (res) {
-        if (api.runtime.lastError || !res || res.error != null) resolve(null);
-        else resolve(res.score);
+        clearTimeout(timer);
+        if (api.runtime.lastError || !res || res.error != null) finish(null);
+        else finish(res.score);
       });
-    } catch (e) { resolve(null); }
+    } catch (e) { clearTimeout(timer); finish(null); }
   });
 }
 
@@ -313,9 +340,9 @@ function statusObj() {
     exclusions: config.exclusions, modelReady: state.modelReady, modelError: state.modelError, verdict: state.verdict,
     steps: state.steps, needSteps: state.needSteps, enrolled: state.enrolled, modelPersonal: state.modelPersonal,
     locked: state.locked, hasPasskey: state.hasPasskey,
-    mouseReady: state.mouseReady, mouseVerdict: state.mouseVerdict, totalMouseWindows: state.totalMouseWindows,
+    mouseReady: state.mouseReady, mouseVerdict: state.mouseVerdict, totalMouseWindows: state.totalMouseWindows, mouseTracking: state.mouseTracking, mouseSustainPct: state.mouseSustainPct,
     accountId: state.accountId || null, accountEmail: state.accountEmail || null, accountChecked: state.accountChecked,
-    keySamples: state.keySamples, mouseSamples: state.mouseSamples,
+    keySamples: state.keySamples, mouseSamples: state.mouseSamples, lockReason: state.lockReason,
   };
 }
 
@@ -358,7 +385,7 @@ async function onWindow(win) {
         packet: scores.length,
         need: RECENT,
       };
-      if (state.verdict.status === "suspicious" && !state.locked) engageLock();
+      if (state.verdict.status === "suspicious" && !state.locked) engageLock("keystroke");
       updateBadge();
       persistProgress();   // survive a SW restart mid-packet
     }
@@ -366,14 +393,13 @@ async function onWindow(win) {
   finally { scoringBusy = false; }
 }
 
-// Mouse windows: same packet vote, separate stream. Only runs once the wizard's mouse
-// stage has trained a personal head (the mouse base alone can't say genuine/impostor).
+// Mouse windows: separate stream, gated on its own readiness. Display verdict uses the same
+// 6-window packet as keystroke (for a comparable %); ENFORCEMENT uses the stricter sustained
+// vote (MOUSE_SUSTAIN_LOW of MOUSE_SUSTAIN_WINDOW), which is what makes a genuine false-lock
+// practically impossible despite the high mouse-window rate (see the constants above).
 var mouseBusy = false, pendingMouseWin = null;
 async function onMouseWindow(win) {
-  // Gated on its OWN readiness, independent of the keystroke model — the two modalities
-  // now enroll (and thus monitor) independently, so a profile that trained only mouse
-  // still shows a live mouse verdict. (Mouse remains info-only; keystroke drives enforcement.)
-  if (!state.mouseReady) return;
+  if (!state.mouseReady || !state.mouseTracking) return;   // user can disable the mouse channel
   state.totalMouseWindows += 1;
   pendingMouseWin = win;
   if (mouseBusy) return;
@@ -382,24 +408,32 @@ async function onMouseWindow(win) {
     while (pendingMouseWin) {
       var w = pendingMouseWin; pendingMouseWin = null;
       var s = await scoreViaOffscreen(w, "cg:score-mouse");
-      if (s == null) continue;
+      if (s == null) { ensureOffscreen(); continue; }   // recreate a torn-down offscreen doc
       mouseScores.push(s);
-      if (mouseScores.length > RECENT) mouseScores.shift();
-      var v = decide(mouseScores);
-      console.log("[continuum-guard/diag] mouse window score=" + s.toFixed(3) + " packet=" + JSON.stringify(mouseScores.map(function (x) { return Number(x.toFixed(3)); })) + " mean=" + v.mean.toFixed(3));
+      if (mouseScores.length > MOUSE_SUSTAIN_WINDOW) mouseScores.shift();
+      // Display verdict over the most recent 6 (parity with the keystroke packet %).
+      var recent = mouseScores.slice(-RECENT);
+      var v = decide(recent);
+      // Sustained enforcement count over the whole buffer.
+      var low = 0; for (var i = 0; i < mouseScores.length; i++) if (mouseScores[i] < WINDOW_THRESHOLD) low += 1;
+      // Lock threshold is user-tunable via the popup slider (percent of the buffer that must
+      // be low). Default 75% == the original 15/20; clamped to >=1 so it's never zero.
+      var lockAt = Math.max(1, Math.round((state.mouseSustainPct / 100) * MOUSE_SUSTAIN_WINDOW));
+      console.log("[continuum-guard/diag] mouse score=" + s.toFixed(3) + " recentMean=" + v.mean.toFixed(3) + " sustainedLow=" + low + "/" + mouseScores.length + " (lock at " + lockAt + "/" + MOUSE_SUSTAIN_WINDOW + " = " + state.mouseSustainPct + "%)");
       state.mouseVerdict = {
-        status: mouseScores.length < RECENT ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
+        status: recent.length < RECENT ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
         mean: Math.round(v.mean * 100),
-        packet: mouseScores.length,
+        packet: recent.length,
         need: RECENT,
       };
-      // NOT enforcement (yet): the mouse model is trained on the wizard's chase-the-dot
-      // game — directed movement toward a target, frequent clicks — which doesn't resemble
-      // natural browsing (scrolling, reading pauses, moving across a wide page). Mouse
-      // events also fire far more often than keystrokes, so its packet fills first; letting
-      // it lock caused false lockouts seconds into a session, before typing even started.
-      // Verdict stays visible in the popup as a secondary signal; only keystrokes enforce
-      // until the mouse enrollment task is redesigned to capture natural movement.
+      // ENFORCE on sustained suspicion: a full buffer with >= the configured fraction of low
+      // windows. The genuine user practically never reaches the default (per-window FRR low);
+      // an impostor (per-window ~90% low) reaches it within ~20 windows. Keystroke still
+      // enforces independently.
+      if (!state.locked && mouseScores.length >= MOUSE_SUSTAIN_WINDOW && low >= lockAt) {
+        console.log("[continuum-guard] mouse sustained-suspicion lock (" + low + "/" + mouseScores.length + " low)");
+        engageLock("mouse");
+      }
       updateBadge();
       persistProgress();
     }
@@ -495,14 +529,16 @@ function broadcastAll(msg) {
     });
   });
 }
-function engageLock() {
+function engageLock(reason) {
   state.locked = true;
+  state.lockReason = reason || "keystroke";   // which channel caught it (shown in the popup)
   broadcastAll({ type: "cg:lock", hasPasskey: state.hasPasskey });
   refreshAllBadges();   // every monitored tab shows 🔒
   persistProgress(true);
 }
 function releaseLock() {
   state.locked = false;
+  state.lockReason = null;
   scores = [];              // fresh packets after a verified step-up (probation-style reset)
   mouseScores = [];
   state.verdict = null;
@@ -542,7 +578,7 @@ function broadcastConfig() {
       try {
         // enabled = anyTrained(): content scripts capture (keys AND mouse) whenever at least
         // one modality is trained; the worker then routes each window to the right channel.
-        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: anyTrained(), exclusions: config.exclusions, rpOrigin: rpOriginOf() }, function () { void api.runtime.lastError; });
+        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: anyTrained(), mouseTracking: state.mouseTracking, exclusions: config.exclusions, rpOrigin: rpOriginOf() }, function () { void api.runtime.lastError; });
       } catch (e) {}
     });
   });
@@ -616,7 +652,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
     case "cg:model-ready": state.modelReady = true; state.modelError = null; setModelPersonal(msg.personal); setMouseReady(msg.mouse); return;
     case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":
-      reply({ enabled: monitoringEnabled(), excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey, rpOrigin: rpOriginOf() });
+      reply({ enabled: monitoringEnabled(), mouseTracking: state.mouseTracking, excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey, rpOrigin: rpOriginOf() });
       return true;
     case "cg:open-verify":
       openRpPage("/ext/verify.html");
@@ -681,6 +717,26 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
         });
       }
       reply({ exclusions: config.exclusions });
+      return true;
+    }
+    case "cg:set-mouse-tracking": {
+      state.mouseTracking = msg.on !== false;
+      api.storage.local.set({ cg_mouse_tracking: state.mouseTracking });
+      if (!state.mouseTracking) {
+        mouseScores = [];                 // drop the rolling vote so it can't lock after being turned off
+        state.mouseVerdict = null;
+      }
+      broadcastConfig();                  // tell content scripts to stop/resume capturing mouse
+      updateBadge();
+      reply({ mouseTracking: state.mouseTracking });
+      return true;
+    }
+    case "cg:set-mouse-sustain": {
+      var pct = parseInt(msg.pct, 10);
+      if (!(pct >= 30 && pct <= 100)) { reply({ mouseSustainPct: state.mouseSustainPct }); return true; }
+      state.mouseSustainPct = pct;
+      api.storage.local.set({ cg_mouse_sustain_pct: pct });
+      reply({ mouseSustainPct: state.mouseSustainPct });
       return true;
     }
   }

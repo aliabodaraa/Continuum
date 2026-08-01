@@ -45,6 +45,15 @@ function refresh() {
     show("rowSteps", ksOn);
     show("rowWins", ksOn);
     show("rowMouse", mouseOn);
+    show("rowMouseTrack", mouseOn);   // user on/off toggle, only once a mouse model exists
+    if (mouseOn) q("mouseTrackToggle").checked = s.mouseTracking !== false;
+    // Lock-sensitivity slider — only meaningful while the mouse channel is on.
+    show("rowMouseSens", mouseOn && s.mouseTracking !== false);
+    if (mouseOn && document.activeElement !== q("mouseSensRange")) {   // don't fight a live drag
+      var pct = s.mouseSustainPct || 75;
+      q("mouseSensRange").value = pct;
+      q("mouseSensVal").textContent = pct + "%";
+    }
     show("rowSamples", trained);
     // Passkey (re)registration is only meaningful once a profile exists to protect.
     show("passkeyLine", trained);
@@ -65,7 +74,8 @@ function refresh() {
     }
     if (mouseOn) {
       var mv = s.mouseVerdict;
-      q("mouse").textContent = !mv ? "watching…"
+      q("mouse").textContent = s.mouseTracking === false ? "off"
+        : !mv ? "watching…"
         : mv.status === "analyzing" ? "analyzing (" + mv.packet + "/" + mv.need + ")"
         : mv.status === "suspicious" ? "⚠ " + mv.mean + "%"
         : "✓ " + mv.mean + "%";
@@ -80,17 +90,20 @@ function refresh() {
     var vd = q("verdict"), v = s.verdict, cls = "", txt;
     if (!active) { txt = "⚙️ Set up your profile below to start monitoring"; }
     else if (!s.modelReady) { txt = s.modelError ? ("⚠ model error: " + s.modelError) : "⏳ loading model…"; }
-    else if (s.locked) { txt = "🔒 Locked — passkey required (keystroke score " + (v ? v.mean + "%" : "?") + ")"; cls = "v-warn"; }
+    else if (s.locked) {
+      var by = s.lockReason === "mouse" ? "mouse movement" : "keystroke rhythm";
+      txt = "🔒 Locked — passkey required (" + by + " didn't match)"; cls = "v-warn";
+    }
     else if (ksOn) {   // keystroke is the enforcing channel — it drives the banner when trained
       if (!v) { txt = "Idle — type on any web page to begin"; }
       else if (v.status === "analyzing") { txt = "Analyzing your typing… (" + v.packet + "/" + v.need + ")"; }
       else if (v.status === "suspicious") { txt = "⚠ Suspicious — " + v.mean + "%"; cls = "v-warn"; }
       else { txt = "✓ Verified — " + v.mean + "%"; cls = "v-ok"; }
-    } else {   // mouse trained only (info-only channel, no lock)
+    } else {   // mouse trained only — now enforcing via the sustained vote
       var mv2 = s.mouseVerdict;
-      txt = (mv2 && mv2.status !== "analyzing")
-        ? ("🖱️ Mouse " + (mv2.status === "suspicious" ? "⚠ " : "✓ ") + mv2.mean + "% (info only)")
-        : "Monitoring your mouse movement (info only)";
+      if (mv2 && mv2.status === "suspicious") { txt = "🖱️ Suspicious mouse movement — " + mv2.mean + "%"; cls = "v-warn"; }
+      else if (mv2 && mv2.status !== "analyzing") { txt = "🖱️ Mouse ✓ " + mv2.mean + "%"; cls = "v-ok"; }
+      else { txt = "Monitoring your mouse movement"; }
     }
     vd.textContent = txt;
     vd.className = cls;
@@ -118,4 +131,21 @@ q("enrollMouse").addEventListener("click", function () {
 q("regPasskey").addEventListener("click", function (e) {
   e.preventDefault();
   api.runtime.sendMessage({ type: "cg:open-register" });
+});
+
+// User on/off toggle for the mouse channel (independent of keystroke).
+q("mouseTrackToggle").addEventListener("change", function () {
+  api.runtime.sendMessage({ type: "cg:set-mouse-tracking", on: this.checked }, refresh);
+});
+
+// Mouse lock-sensitivity slider: live label on drag, persist on release.
+q("mouseSensRange").addEventListener("input", function () { q("mouseSensVal").textContent = this.value + "%"; });
+q("mouseSensRange").addEventListener("change", function () {
+  api.runtime.sendMessage({ type: "cg:set-mouse-sustain", pct: parseInt(this.value, 10) }, refresh);
+});
+
+// Open the options page where the passkey-service (RP) URL is configured.
+q("openSettings").addEventListener("click", function () {
+  if (api.runtime.openOptionsPage) api.runtime.openOptionsPage();
+  else api.tabs.create({ url: api.runtime.getURL("src/options.html") });
 });

@@ -12,7 +12,7 @@
   if (window.__cgGuardActive) return;
   window.__cgGuardActive = true;
   var api = globalThis.browser || globalThis.chrome;
-  var enabled = true, excluded = false;
+  var enabled = true, excluded = false, mouseTracking = true;   // mouseTracking = user toggle (popup)
   var origin = location.origin;
   // The fixed relying-party origin that hosts the passkey step-up pages. The lock overlay
   // must NEVER cover this origin (nor, transitively, a sign-in page the ceremony redirects
@@ -120,7 +120,7 @@
 
   function onMsg(msg) {
     if (dead) return;
-    if (msg && msg.type === "cg:config") { enabled = msg.enabled !== false; excluded = (msg.exclusions || []).indexOf(origin) >= 0; if (msg.rpOrigin) rpOrigin = msg.rpOrigin; }
+    if (msg && msg.type === "cg:config") { enabled = msg.enabled !== false; excluded = (msg.exclusions || []).indexOf(origin) >= 0; if (typeof msg.mouseTracking !== "undefined") mouseTracking = msg.mouseTracking !== false; if (msg.rpOrigin) rpOrigin = msg.rpOrigin; }
     if (msg && msg.type === "cg:lock") showLock(!!msg.hasPasskey);
     if (msg && msg.type === "cg:unlock") hideLock();
     if (msg && msg.type === "cg:reset") {
@@ -138,6 +138,7 @@
     if (res) {
       enabled = res.enabled !== false;
       excluded = !!res.excluded;
+      if (typeof res.mouseTracking !== "undefined") mouseTracking = res.mouseTracking !== false;
       if (res.rpOrigin) rpOrigin = res.rpOrigin;    // set before showLock so the RP guard applies
       if (res.locked) showLock(!!res.hasPasskey);   // navigated / reopened while locked
     }
@@ -158,7 +159,13 @@
       if (isHidden(tgt)) return;
       var kc = isPassword(tgt) ? 0 : (e.keyCode || 0);   // mask the KEY on password fields
       events.push({ keyCode: kc, type: type, t: performance.now() - t0, field: fieldOf(tgt) });
-      if (events.length > 2000) events = events.slice(-1400);
+      if (events.length > 2000) {
+        // Same re-basing as the mouse buffer: trimming shrinks the window count, so
+        // lastWindowCount must drop with it or new windows stop being emitted (verdict freeze).
+        events = events.slice(-1400);
+        var F0 = globalThis.ContinuumFeatures;
+        lastWindowCount = F0 ? F0.stepsToWindows(F0.eventSteps(events)).length : 0;
+      }
       emit();
     } catch (err) { teardown(); }
   }
@@ -199,9 +206,17 @@
   // ---- mouse capture (positions + timing only — same privacy story as keys) ----
   var mouseEvents = [], mouseDown = false, lastMouseWindows = 0;
   function recMouse(x, y, st) {
-    if (dead || !enabled || excluded || lockEl) return;
+    if (dead || !enabled || excluded || lockEl || !mouseTracking) return;
     mouseEvents.push({ t: performance.now(), x: x, y: y, state: st });
-    if (mouseEvents.length > 3000) mouseEvents = mouseEvents.slice(-2000);
+    if (mouseEvents.length > 3000) {
+      // Trimming the event buffer shrinks the window count computed from it. lastMouseWindows
+      // is compared against that count to detect a NEW window, so it must be re-based to the
+      // trimmed buffer's count — otherwise it stays stuck high, windows.length never exceeds
+      // it again, and no further windows are ever emitted (the mouse verdict freezes).
+      mouseEvents = mouseEvents.slice(-2000);
+      var M0 = globalThis.ContinuumMouseFeatures;
+      lastMouseWindows = M0 ? M0.stepsToWindows(M0.eventsToSteps(mouseEvents)).length : 0;
+    }
     // Mouse events are dense (60–120/s) — rebuild windows every 10th event, not on each.
     if (mouseEvents.length % 10 === 0) emitMouse();
   }
