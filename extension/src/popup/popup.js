@@ -2,10 +2,23 @@
 // exclusion controls.
 var api = globalThis.browser || globalThis.chrome;
 var curOrigin = "";
+var curRestricted = false;   // page where Chrome forbids content scripts entirely
 function q(id) { return document.getElementById(id); }
 
+// Chrome refuses to inject content scripts into its own pages (chrome://, the New Tab
+// page, the Web Store, devtools, other extensions) no matter what the manifest asks for.
+// Without the content script NEITHER channel receives events, so the panel would sit at
+// "0/50 steps" and "watching…" forever and look broken — say so instead.
+function isRestrictedUrl(u) {
+  if (!u) return true;
+  if (/^(chrome|edge|brave|about|chrome-extension|moz-extension|devtools|view-source|file):/i.test(u)) return true;
+  return /^https?:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)/i.test(u);
+}
+
 api.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-  try { curOrigin = new URL(tabs[0].url).origin; } catch (e) { curOrigin = ""; }
+  var url = (tabs && tabs[0] && tabs[0].url) || "";
+  curRestricted = isRestrictedUrl(url);
+  try { curOrigin = new URL(url).origin; } catch (e) { curOrigin = ""; }
   refresh();
 });
 // Poll so the model-ready state and live verdict update while the popup is open.
@@ -65,7 +78,7 @@ function refresh() {
     q("state").textContent = !trained ? "off — train below"
       : s.modelError ? "error — reopen to retry"
       : live ? "monitoring" : "starting…";
-    q("dot").className = "dot" + (live ? "" : " off");
+    q("dot").className = "dot" + (live && !curRestricted ? "" : " off");
 
     // Per-modality rows: only show a modality's rows once THAT modality is trained.
     show("rowModel", ksOn);
@@ -123,11 +136,18 @@ function refresh() {
     q("profile").textContent = active
       ? [ksOn ? "typing ✓" : null, mouseOn ? "mouse ✓" : null].filter(Boolean).join(" · ")
       : (s.enrolled ? "training…" : "not trained yet");
-    q("site").textContent = curOrigin ? (excluded ? curOrigin + " (excluded)" : curOrigin) : "—";
+    q("site").textContent = curRestricted ? (curOrigin || "browser page") + " (not monitorable)"
+      : curOrigin ? (excluded ? curOrigin + " (excluded)" : curOrigin) : "—";
 
     // Verdict banner — theme-aware colouring via CSS classes (v-ok / v-warn / neutral).
     var vd = q("verdict"), v = s.verdict, cls = "", txt;
-    if (!active) { txt = "⚙️ Set up your profile below to start monitoring"; }
+    // Restricted page first: on chrome:// / the New Tab page / the Web Store, Chrome blocks
+    // the content script, so no typing or pointer events reach the worker at all. Without
+    // this the panel just shows 0/50 and "watching…" and reads as a broken model.
+    if (curRestricted) {
+      txt = "⚠ Chrome blocks extensions on this page — open a normal website (http/https) to monitor";
+    }
+    else if (!active) { txt = "⚙️ Set up your profile below to start monitoring"; }
     else if (!s.modelReady) { txt = s.modelError ? ("⚠ model error: " + s.modelError) : "⏳ loading model…"; }
     else if (s.locked) {
       var by = s.lockReason === "mouse" ? "mouse movement" : "keystroke rhythm";
