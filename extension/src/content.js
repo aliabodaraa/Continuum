@@ -141,6 +141,15 @@
       if (typeof res.mouseTracking !== "undefined") mouseTracking = res.mouseTracking !== false;
       if (res.rpOrigin) rpOrigin = res.rpOrigin;    // set before showLock so the RP guard applies
       if (res.locked) showLock(!!res.hasPasskey);   // navigated / reopened while locked
+      // The ACTIVE log below prints before this reply lands, so it can only show the
+      // optimistic defaults. This is the authoritative line: if capture is off, it says why.
+      try {
+        console.log("[continuum-guard] handshake: capture=" + (enabled && !excluded ? "ON" : "OFF")
+          + " (enabled=" + enabled + ", excluded=" + excluded + ", mouseTracking=" + mouseTracking + ")"
+          + (enabled ? "" : " — no modality trained for this account, or account not resolved yet"));
+      } catch (e) {}
+    } else {
+      try { console.warn("[continuum-guard] handshake got NO reply — the service worker did not answer; reload the extension"); } catch (e) {}
     }
   });
   if (alive()) { try { api.runtime.onMessage.addListener(onMsg); } catch (e) { teardown(); } }

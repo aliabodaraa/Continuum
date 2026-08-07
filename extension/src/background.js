@@ -652,7 +652,11 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
     case "cg:model-ready": state.modelReady = true; state.modelError = null; setModelPersonal(msg.personal); setMouseReady(msg.mouse); return;
     case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":
-      reply({ enabled: monitoringEnabled(), mouseTracking: state.mouseTracking, excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey, rpOrigin: rpOriginOf() });
+      // enabled = anyTrained(), matching broadcastConfig: this flag gates CAPTURE in the
+      // content script, and capture must run whenever EITHER modality is trained. Using
+      // monitoringEnabled() here (keystroke-only) meant a mouse-only profile captured
+      // nothing on a fresh page load until some later broadcast happened to re-enable it.
+      reply({ enabled: anyTrained(), mouseTracking: state.mouseTracking, excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey, rpOrigin: rpOriginOf() });
       return true;
     case "cg:open-verify":
       openRpPage("/ext/verify.html");
