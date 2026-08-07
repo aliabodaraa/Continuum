@@ -13,6 +13,33 @@ setInterval(refresh, 1000);
 
 function show(id, visible) { q(id).style.display = visible ? "" : "none"; }
 
+// ---- collapsible per-modality sections ----
+// Open/closed is remembered across popup openings (the popup is torn down every time it
+// closes, so without this every open would reset to the default and undo the user's choice).
+// localStorage is synchronous, so the state is applied before first paint — no flash of the
+// wrong state, and no animation on load: the .anim class that enables the transition is
+// added only after the initial state is set.
+function initSection(sectId, headId, storeKey) {
+  var sect = q(sectId), head = q(headId);
+  var stored = null;
+  try { stored = localStorage.getItem(storeKey); } catch (e) {}   // never let storage break the panel
+  // Default COLLAPSED: both sections open is ~730px, past Chrome's ~600px popup cap (which
+  // forces Chrome's own scrollbar and flattens the panel's rounded corners). Collapsed the
+  // panel is ~420px, and the header summary still shows each channel's verdict at a glance.
+  var open = stored === "1";
+  sect.classList.toggle("open", open);
+  head.setAttribute("aria-expanded", String(open));
+  requestAnimationFrame(function () { sect.classList.add("anim"); });   // animate only from here on
+  head.addEventListener("click", function () {
+    var nowOpen = !sect.classList.contains("open");
+    sect.classList.toggle("open", nowOpen);
+    head.setAttribute("aria-expanded", String(nowOpen));
+    try { localStorage.setItem(storeKey, nowOpen ? "1" : "0"); } catch (e) {}
+  });
+}
+initSection("sectKeys", "headKeys", "cg_sect_keys");
+initSection("sectMouse", "headMouse", "cg_sect_mouse");
+
 function refresh() {
   api.runtime.sendMessage({ type: "cg:status" }, function (s) {
     if (!s) return;
@@ -54,17 +81,14 @@ function refresh() {
       q("mouseSensRange").value = pct;
       q("mouseSensVal").textContent = pct + "%";
     }
-    show("rowSamples", trained);
+    // Each modality reports its own sample count inside its own section.
+    show("rowKeySamples", ksOn);
+    show("rowMouseSamples", mouseOn);
+    if (ksOn) q("keySamples").textContent = (s.keySamples || 0) + " window" + ((s.keySamples || 0) === 1 ? "" : "s");
+    if (mouseOn) q("mouseSamples").textContent = (s.mouseSamples || 0) + " window" + ((s.mouseSamples || 0) === 1 ? "" : "s");
     // Passkey (re)registration is only meaningful once a profile exists to protect.
     show("passkeyLine", trained);
     q("regPasskey").textContent = s.hasPasskey ? "🔑 Re-register passkey" : "🔑 Set up your passkey";
-
-    if (trained) {
-      var sampleParts = [];
-      if (ksOn) sampleParts.push((s.keySamples || 0) + " typing");
-      if (mouseOn) sampleParts.push((s.mouseSamples || 0) + " mouse");
-      q("samples").textContent = sampleParts.join(" + ") + " window" + ((s.keySamples || 0) + (s.mouseSamples || 0) === 1 ? "" : "s");
-    }
 
     if (ksOn) {
       q("model").textContent = s.modelReady ? "ready — personal" : (s.modelError ? "error" : "loading…");
@@ -80,6 +104,21 @@ function refresh() {
         : mv.status === "suspicious" ? "⚠ " + mv.mean + "%"
         : "✓ " + mv.mean + "%";
     }
+
+    // Section headers carry a one-glance summary so a COLLAPSED section is still informative.
+    var kvs = s.verdict;   // NOT the `v` below — that is assigned later in this function
+    q("sumKeys").textContent = !ksOn ? "not trained"
+      : !kvs ? "idle"
+      : kvs.status === "analyzing" ? "analyzing " + kvs.packet + "/" + kvs.need
+      : kvs.status === "suspicious" ? "⚠ " + kvs.mean + "%"
+      : "✓ " + kvs.mean + "%";
+    var mvs = s.mouseVerdict;
+    q("sumMouse").textContent = !mouseOn ? "not trained"
+      : s.mouseTracking === false ? "off"
+      : !mvs ? "idle"
+      : mvs.status === "analyzing" ? "analyzing " + mvs.packet + "/" + mvs.need
+      : mvs.status === "suspicious" ? "⚠ " + mvs.mean + "%"
+      : "✓ " + mvs.mean + "%";
 
     q("profile").textContent = active
       ? [ksOn ? "typing ✓" : null, mouseOn ? "mouse ✓" : null].filter(Boolean).join(" · ")

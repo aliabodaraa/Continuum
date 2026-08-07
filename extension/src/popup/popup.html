@@ -130,13 +130,6 @@
       }
       button:hover { filter: brightness(1.07); }
       button:active { transform: translateY(1px) scale(.99); }
-      .train-row { display: flex; gap: 8px; }
-      .train-row button {
-        flex: 1; display: flex; flex-direction: column; gap: 2px; align-items: center;
-        text-align: center; padding: 9px 8px;
-      }
-      .train-row .lead { font-size: 12px; }
-      .train-row .sub { font-weight: 500; font-size: 9.5px; opacity: .85; }
       .btn-keys { background: linear-gradient(135deg, var(--teal-2), var(--teal)); box-shadow: 0 4px 12px -2px color-mix(in srgb, var(--teal) 55%, transparent); }
       .btn-mouse { background: linear-gradient(135deg, #a78bfa, #7c3aed); box-shadow: 0 4px 12px -2px color-mix(in srgb, #7c3aed 55%, transparent); }
       .btn-ghost {
@@ -158,6 +151,43 @@
       input[type=range] { accent-color: var(--accent); height: 16px; cursor: pointer; }
       .ctrl { display: flex; align-items: center; gap: 8px; }
       .gap { height: 7px; }
+
+      /* ---- collapsible per-modality sections ----
+         Each modality owns its own status rows, its settings and its train button, so the
+         panel stays short and each channel reads as a self-contained unit. The open/close
+         height animates via grid-template-rows 0fr -> 1fr, which eases to the content's
+         NATURAL height — no hard-coded max-height to guess wrong when rows are hidden. */
+      .sect {
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--radius-xl); box-shadow: var(--shadow);
+        margin-bottom: 9px; overflow: hidden;
+      }
+      .sect-head {
+        display: flex; align-items: center; gap: 8px; width: 100%;
+        padding: 9px 12px; background: transparent; border: 0; border-radius: 0;
+        color: var(--text); font: 700 12.5px/1.2 system-ui; text-align: left; cursor: pointer;
+        transition: background .16s ease;
+      }
+      .sect-head:hover { background: var(--surface-2); filter: none; }
+      .sect-head:active { transform: none; }
+      .chev { flex: none; font-size: 9px; color: var(--faint); }
+      .sect.open .chev { transform: rotate(90deg); }
+      .sect-sum { margin-left: auto; font-weight: 600; font-size: 11px; color: var(--muted); }
+      .sect-body { display: grid; grid-template-rows: 0fr; }
+      .sect.open .sect-body { grid-template-rows: 1fr; }
+      /* Transitions are enabled by .anim, which popup.js adds only AFTER the remembered
+         open/closed state is applied — otherwise a section restored as "open" would animate
+         itself open every time the popup is shown. */
+      .sect.anim .sect-body { transition: grid-template-rows .26s ease; }
+      .sect.anim .chev { transition: transform .26s ease; }
+      .sect-inner { min-height: 0; overflow: hidden; }
+      .sect-pad { padding: 0 12px 11px; border-top: 1px solid var(--border); }
+      .sect-pad .row:first-child { padding-top: 7px; }
+      .sect-pad button { margin-top: 9px; }
+      /* Respect the OS "reduce motion" setting — collapse still works, just instantly. */
+      @media (prefers-reduced-motion: reduce) {
+        .sect-body, .chev, .slider, .slider::before { transition: none; }
+      }
       /* Onboarding tip — hidden once monitoring is actually live (popup.js), since the
          panel is already tall with every row visible and this text isn't needed at that
          point. Keeping it in the DOM (not deleted) so it still shows pre-training. */
@@ -189,28 +219,44 @@
 
       <div class="card">
         <div class="row"><span>Status</span><span class="val" id="state">…</span></div>
-        <div class="row" id="rowModel"><span>Model</span><span class="val" id="model">…</span></div>
-        <div class="row" id="rowSteps"><span>Steps → 1st window</span><span class="val" id="steps">0/50</span></div>
-        <div class="row" id="rowWins"><span>Windows scored</span><span class="val" id="wins">0</span></div>
-        <div class="row" id="rowMouse"><span>Mouse</span><span class="val" id="mouse">…</span></div>
-        <div class="row" id="rowMouseTrack" style="display:none"><span>Mouse tracking</span><label class="switch"><input type="checkbox" id="mouseTrackToggle" /><span class="slider"></span></label></div>
-        <div class="row" id="rowMouseSens" style="display:none"><span>Lock threshold</span><span class="ctrl"><input type="range" id="mouseSensRange" min="30" max="100" step="5" title="Percent of recent mouse windows that must look suspicious before the page locks. Lower = locks more easily; higher = stricter." style="width:104px" /><span class="val" id="mouseSensVal" style="min-width:32px">75%</span></span></div>
-        <div class="row" id="rowSamples" style="display:none"><span>Trained on</span><span class="val" id="samples">…</span></div>
         <div class="row"><span>This site</span><span class="val" id="site">…</span></div>
         <div class="row"><span>Your profile</span><span class="val" id="profile">…</span></div>
       </div>
 
-      <div class="train-row">
-        <button id="enrollKeys" class="btn-keys">
-          <span class="lead">⌨️ Train typing</span>
-          <span class="sub">how you type</span>
+      <div class="sect" id="sectKeys">
+        <button class="sect-head" id="headKeys" aria-expanded="true" aria-controls="bodyKeys">
+          <span class="chev">▶</span><span>⌨️ Typing</span><span class="sect-sum" id="sumKeys">…</span>
         </button>
-        <button id="enrollMouse" class="btn-mouse">
-          <span class="lead">🖱️ Train mouse</span>
-          <span class="sub">how you move</span>
-        </button>
+        <div class="sect-body" id="bodyKeys">
+          <div class="sect-inner">
+            <div class="sect-pad">
+              <div class="row" id="rowModel"><span>Model</span><span class="val" id="model">…</span></div>
+              <div class="row" id="rowSteps"><span>Steps → 1st window</span><span class="val" id="steps">0/50</span></div>
+              <div class="row" id="rowWins"><span>Windows scored</span><span class="val" id="wins">0</span></div>
+              <div class="row" id="rowKeySamples" style="display:none"><span>Trained on</span><span class="val" id="keySamples">…</span></div>
+              <button id="enrollKeys" class="btn-keys">⌨️ Train typing</button>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="gap"></div>
+
+      <div class="sect" id="sectMouse">
+        <button class="sect-head" id="headMouse" aria-expanded="true" aria-controls="bodyMouse">
+          <span class="chev">▶</span><span>🖱️ Mouse</span><span class="sect-sum" id="sumMouse">…</span>
+        </button>
+        <div class="sect-body" id="bodyMouse">
+          <div class="sect-inner">
+            <div class="sect-pad">
+              <div class="row" id="rowMouse"><span>Verdict</span><span class="val" id="mouse">…</span></div>
+              <div class="row" id="rowMouseTrack" style="display:none"><span>Mouse tracking</span><label class="switch"><input type="checkbox" id="mouseTrackToggle" /><span class="slider"></span></label></div>
+              <div class="row" id="rowMouseSens" style="display:none"><span>Lock threshold</span><span class="ctrl"><input type="range" id="mouseSensRange" min="30" max="100" step="5" title="Percent of recent mouse windows that must look suspicious before the page locks. Lower = locks more easily; higher = stricter." style="width:104px" /><span class="val" id="mouseSensVal" style="min-width:32px">75%</span></span></div>
+              <div class="row" id="rowMouseSamples" style="display:none"><span>Trained on</span><span class="val" id="mouseSamples">…</span></div>
+              <button id="enrollMouse" class="btn-mouse">🖱️ Train mouse</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <button id="exclude" class="btn-ghost">…</button>
       <div class="gap"></div>
       <button id="openSettings" class="btn-ghost">⚙️ Passkey service URL…</button>
