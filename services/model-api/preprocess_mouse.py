@@ -8,14 +8,21 @@ We convert each user's event stream into a sequence of per-point MOTION vectors
 build a pooled binary genuine/impostor set — exactly the (N, WS, F) + binary y
 format that data_loader.py / train.py / api.py already consume.
 
-Per-point feature vector  F = 7:
-    [dx, dy, v, a, dtheta, dt, is_click]
+Per-point feature vector  F = 11 (enriched trajectory dynamics — the 7-feature
+kinematic set under-expressed identity vs keystroke timings; curvature/jerk/angular
+velocity and split click/drag channels are the standard discriminative mouse features
+in the literature, cf. SapiMouse / Chao Shen):
+    [dx, dy, v, a, jerk, dtheta, ang_vel, curvature, dt, is_click, is_drag]
       dx, dy    : normalized displacement since previous point  (screen-scaled -> ~[-1,1])
       v         : speed (pixels/ms), log-compressed
-      a         : |speed change| (accel magnitude), log-compressed
+      a         : |speed change| (tangential accel magnitude), log-compressed
+      jerk      : |accel change| (motion smoothness), log-compressed
       dtheta    : turning angle between consecutive moves (radians, [-pi,pi] -> [-1,1])
+      ang_vel   : dtheta/dt (rad/s) — time-normalized turn rate, clipped to +/-1
+      curvature : dtheta/dist (rad/px) — speed-independent path curvature, clipped to +/-1
       dt        : time gap since previous point (s), clipped
-      is_click  : 1 if this point is a Pressed/Released/Drag button event else 0
+      is_click  : 1 if this point is a Pressed/Released button event else 0
+      is_drag   : 1 if this point is a Drag (moving with button held) else 0
 
 Design choices mirroring the keystroke model:
   * long idle gaps (dt > IDLE) split the stream (like composition-pause drops) —
@@ -38,7 +45,17 @@ try:
 except Exception:  # pragma: no cover
     h5py = None
 
-MOUSE_FEATURE_NAMES = ["dx", "dy", "v", "a", "dtheta", "dt", "is_click"]
+# Feature-set version. The DEPLOYED mouse base and the SDK/extension JS extractors
+# (sdk/js/mouse-features.js, extension/src/features-mouse.js) emit the ORIGINAL 7-feature
+# vector, so v1 stays the default — regenerating data as v2 would silently stop matching
+# the shipped extractor. v2 is the enriched 11-feature set from the accuracy experiments
+# (jerk / angular velocity / curvature / split click-drag); opt in with MOUSE_FEATURES=11.
+# Measured on SapiMouse with the same sweep protocol: v2 gives EER 22.3% vs v1's 23.8% —
+# a real but marginal gain, which is why it is offered rather than switched on.
+MOUSE_FEATURE_SET = 11 if os.getenv("MOUSE_FEATURES") == "11" else 7
+MOUSE_FEATURE_NAMES_V1 = ["dx", "dy", "v", "a", "dtheta", "dt", "is_click"]
+MOUSE_FEATURE_NAMES_V2 = ["dx", "dy", "v", "a", "jerk", "dtheta", "ang_vel", "curvature", "dt", "is_click", "is_drag"]
+MOUSE_FEATURE_NAMES = MOUSE_FEATURE_NAMES_V2 if MOUSE_FEATURE_SET == 11 else MOUSE_FEATURE_NAMES_V1
 
 # Screen scale for normalizing displacement into roughly [-1, 1]. SapiMouse was
 # collected at 1920x1080; we scale by a common diagonal-ish constant so dx/dy
@@ -46,6 +63,10 @@ MOUSE_FEATURE_NAMES = ["dx", "dy", "v", "a", "dtheta", "dt", "is_click"]
 SCREEN_SCALE = 1920.0
 IDLE_SPLIT_SECONDS = 2.0   # gap above this splits the motion stream
 DT_CLIP_SECONDS = 1.0      # per-point time gap is clipped to this
+# Clip scales for the enriched turn features so a single tiny-dt / tiny-dist sample
+# can't produce an outlier that dominates the z-score scaler. Both map to +/-1.
+ANG_VEL_SCALE = 30.0       # rad/s: human direction-change rate rarely exceeds this
+CURV_SCALE = 0.2           # rad/px: 1/R for R~5px is already a very sharp corner
 
 
 def _read_events(path):
@@ -71,10 +92,11 @@ def events_to_steps(events):
     steps = []
     prev = None       # (t, x, y)
     prev_v = 0.0
+    prev_a = 0.0
     prev_dir = None   # previous movement angle
     for (t, button, state, x, y) in events:
         if prev is None:
-            prev = (t, x, y); prev_dir = None; prev_v = 0.0
+            prev = (t, x, y); prev_dir = None; prev_v = 0.0; prev_a = 0.0
             continue
         dt_ms = t - prev[0]
         dt = dt_ms / 1000.0
@@ -84,31 +106,51 @@ def events_to_steps(events):
             continue
         if dt > IDLE_SPLIT_SECONDS:
             # long idle -> break the stream; start fresh after the pause
-            prev = (t, x, y); prev_dir = None; prev_v = 0.0
+            prev = (t, x, y); prev_dir = None; prev_v = 0.0; prev_a = 0.0
             continue
 
         dx_px = x - prev[1]
         dy_px = y - prev[2]
         dist = float(np.hypot(dx_px, dy_px))
         v = dist / max(dt_ms, 1.0)                 # px per ms
-        a = abs(v - prev_v)
+        a = abs(v - prev_v)                        # tangential accel magnitude
+        jerk = abs(a - prev_a)                     # rate of accel change (smoothness)
         direction = np.arctan2(dy_px, dx_px) if dist > 0 else (prev_dir or 0.0)
         dtheta = 0.0
         if prev_dir is not None and dist > 0:
             d = direction - prev_dir
             dtheta = float((d + np.pi) % (2 * np.pi) - np.pi)  # wrap to [-pi, pi]
-        is_click = 1.0 if state in ("Pressed", "Released", "Drag") else 0.0
+        ang_vel = dtheta / max(dt, 1e-3)           # rad/s (time-normalized turn rate)
+        curvature = dtheta / max(dist, 1.0)        # rad/px (speed-independent turn)
+        is_click = 1.0 if state in ("Pressed", "Released") else 0.0
+        is_drag = 1.0 if state == "Drag" else 0.0
 
-        steps.append([
-            np.clip(dx_px / SCREEN_SCALE, -1.0, 1.0),
-            np.clip(dy_px / SCREEN_SCALE, -1.0, 1.0),
-            float(np.log1p(v)),                    # log-compress heavy tail
-            float(np.log1p(a)),
-            dtheta / np.pi,                        # -> [-1, 1]
-            min(dt, DT_CLIP_SECONDS),
-            is_click,
-        ])
-        prev = (t, x, y); prev_v = v
+        if MOUSE_FEATURE_SET == 11:
+            steps.append([
+                np.clip(dx_px / SCREEN_SCALE, -1.0, 1.0),
+                np.clip(dy_px / SCREEN_SCALE, -1.0, 1.0),
+                float(np.log1p(v)),                    # log-compress heavy tail
+                float(np.log1p(a)),
+                float(np.log1p(jerk)),
+                dtheta / np.pi,                        # -> [-1, 1]
+                float(np.clip(ang_vel / ANG_VEL_SCALE, -1.0, 1.0)),
+                float(np.clip(curvature / CURV_SCALE, -1.0, 1.0)),
+                min(dt, DT_CLIP_SECONDS),
+                is_click,
+                is_drag,
+            ])
+        else:
+            # v1 (deployed): click and drag share one flag, no jerk/ang_vel/curvature.
+            steps.append([
+                np.clip(dx_px / SCREEN_SCALE, -1.0, 1.0),
+                np.clip(dy_px / SCREEN_SCALE, -1.0, 1.0),
+                float(np.log1p(v)),                    # log-compress heavy tail
+                float(np.log1p(a)),
+                dtheta / np.pi,                        # -> [-1, 1]
+                min(dt, DT_CLIP_SECONDS),
+                1.0 if (is_click or is_drag) else 0.0,
+            ])
+        prev = (t, x, y); prev_v = v; prev_a = a
         if dist > 0:
             prev_dir = direction
     return steps

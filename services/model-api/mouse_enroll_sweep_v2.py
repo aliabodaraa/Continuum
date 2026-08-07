@@ -35,7 +35,7 @@ from preprocess_mouse import events_to_steps, steps_to_windows, _read_events  # 
 
 MODEL_API = "http://localhost:5000"
 DATA_DIR = "/app/data/sapimouse"
-ART_DIR = "/app/artifacts/mouse-ws50-gru"
+ART_DIR = os.getenv("SWEEP_ART_DIR", "/app/artifacts/mouse-ws50-gru")
 BASE_MODEL = f"{ART_DIR}/best_model.h5"
 SCALER = f"{ART_DIR}/scaler.json"
 WS, STRIDE = 50, 10
