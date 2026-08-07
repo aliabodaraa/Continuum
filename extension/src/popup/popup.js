@@ -2,6 +2,7 @@
 // exclusion controls.
 var api = globalThis.browser || globalThis.chrome;
 var curOrigin = "";
+var curUrl = "";
 var curRestricted = false;   // page where Chrome forbids content scripts entirely
 function q(id) { return document.getElementById(id); }
 
@@ -17,6 +18,7 @@ function isRestrictedUrl(u) {
 
 api.tabs.query({ active: true, currentWindow: true }, function (tabs) {
   var url = (tabs && tabs[0] && tabs[0].url) || "";
+  curUrl = url;
   curRestricted = isRestrictedUrl(url);
   try { curOrigin = new URL(url).origin; } catch (e) { curOrigin = ""; }
   refresh();
@@ -145,7 +147,12 @@ function refresh() {
     // the content script, so no typing or pointer events reach the worker at all. Without
     // this the panel just shows 0/50 and "watching…" and reads as a broken model.
     if (curRestricted) {
-      txt = "⚠ Chrome blocks extensions on this page — open a normal website (http/https) to monitor";
+      // Name the New Tab page explicitly: it shows the Google logo and a search box, so it
+      // is routinely mistaken for google.com — but it is a chrome:// page where no extension
+      // can run, and the resulting "nothing happens" reads as a broken model.
+      txt = /^chrome:\/\/(newtab|new-tab-page)/i.test(curUrl)
+        ? "⚠ This is Chrome's New Tab page (not google.com) — extensions can't run here. Type a site in the address bar to monitor."
+        : "⚠ Chrome blocks extensions on this page — open a normal website (http/https) to monitor";
     }
     else if (!active) { txt = "⚙️ Set up your profile below to start monitoring"; }
     else if (!s.modelReady) { txt = s.modelError ? ("⚠ model error: " + s.modelError) : "⏳ loading model…"; }
