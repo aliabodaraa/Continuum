@@ -8,10 +8,24 @@ var api = globalThis.browser || globalThis.chrome;
 // storage, window counts, trained heads, and session counters), so the wizard runs one
 // at a time instead of forcing both every session. Defaults to keystroke for a bare URL.
 var MODE = (new URLSearchParams(location.search).get("mode") === "mouse") ? "mouse" : "keystroke";
-var TARGET = 12;                 // NEW windows this session (~700+ keystrokes)
+// Keystroke enrollment captures TWO tasks, because copy-typing and free composition are
+// different motor behaviours and the guard only ever sees the latter. Measured with
+// diag-keystroke.html on a passage-only profile: copy-typing scored 0.84 mean (100% of
+// windows accepted) while the same person composing freely scored 0.60 (78% accepted).
+// At that 22% per-window low rate the 3-of-6 packet vote false-locks with ~13% probability
+// per evaluation — i.e. the genuine user gets locked out while writing normally. The head
+// was tuned to the enrolment task, not to real typing. Free composition therefore carries
+// the larger share of the session; the passage is kept as a short warm-up that guarantees
+// a clean rhythm baseline even from a hesitant typist.
+var COPY_TARGET = 4;              // NEW copy-typed windows this session
+var FREE_TARGET = 8;              // NEW free-composition windows this session (the task scored live)
+var TARGET = COPY_TARGET + FREE_TARGET;
 var MAX_STORED_KEY_WINDOWS = 60;  // cap on accumulated keystroke windows across all sessions
 var MAX_STORED_MOUSE_WINDOWS = 120;
-var events = [], t0 = performance.now();
+// Separate buffers per phase: windows are cut from a contiguous event stream, so a single
+// buffer would emit hybrid windows straddling the copy->free boundary — half one rhythm,
+// half the other, representing neither.
+var events = [], freeEvents = [], t0 = performance.now();
 
 // DIAGNOSTIC: dump per-feature stats [id1,id2,dwell1,dwell2,dd,ud] for a set of windows,
 // so real captured data can be compared across sessions (open this page's DevTools
@@ -45,6 +59,29 @@ var A1_PASSAGES = [
   "I have a small garden behind my house. I grow flowers and some green plants. Every morning I give them water. The flowers are red, yellow, and white. Bees and birds come to the garden too. I like to sit outside and look at my plants. In the summer the garden is full of colour. I pick some flowers for the table.",
   "My town is small and quiet. There is one shop, one school, and a park. The people here are kind and friendly. In the morning I hear the birds and the wind. I walk to the shop to buy bread and milk. On the way I meet my neighbours and say hello. The streets are clean and there are many green trees on them.",
 ];
+// Prompts for the free-composition phase. Chosen so the answer needs no research and no
+// recall effort — the goal is the user's natural composing rhythm (think-pauses, bursts,
+// backspaces), not a hard question that would stall them into unrepresentative timing.
+var FREE_PROMPTS = [
+  "What did you do this morning, before sitting down here?",
+  "Reply to a friend who just asked how your week is going.",
+  "Describe the room you are sitting in right now.",
+  "What are you working on at the moment? Explain it to someone who knows nothing about it.",
+  "Where would you like to travel next, and why?",
+  "Tell someone about a film, show, or book you enjoyed recently.",
+  "Write a short note to a colleague saying you will be late and why.",
+  "What does your ideal weekend look like?",
+  "What is something you would like to learn, and what is stopping you?",
+  "Describe a meal you know how to cook, in your own words.",
+];
+var lastPromptIdx = -1;
+function nextFreePrompt() {
+  var i;
+  do { i = Math.floor(Math.random() * FREE_PROMPTS.length); } while (FREE_PROMPTS.length > 1 && i === lastPromptIdx);
+  lastPromptIdx = i;
+  return FREE_PROMPTS[i];
+}
+
 var lastPassageIdx = -1;
 function nextPassage() {
   var i;
@@ -71,33 +108,68 @@ var prog = document.getElementById("prog");
 var status = document.getElementById("status");
 var saveBtn = document.getElementById("save");
 
-ta.addEventListener("keydown", function (e) { rec("keydown", e); }, true);
-ta.addEventListener("keyup", function (e) { rec("keyup", e); }, true);
+var freeTa = document.getElementById("freeTa");
+var copyPhaseEl = document.getElementById("copyPhase");
+var freePhaseEl = document.getElementById("freePhase");
+var freePromptEl = document.getElementById("freePrompt");
+var newPromptLink = document.getElementById("newPrompt");
+function loadFreePrompt() { freePromptEl.textContent = nextFreePrompt(); }
+newPromptLink.addEventListener("click", function (e) { e.preventDefault(); loadFreePrompt(); });
 
-function rec(type, e) {
-  events.push({ keyCode: e.keyCode || 0, type: type, t: performance.now() - t0, field: "enroll" });
+ta.addEventListener("keydown", function (e) { rec("keydown", e, events); }, true);
+ta.addEventListener("keyup", function (e) { rec("keyup", e, events); }, true);
+freeTa.addEventListener("keydown", function (e) { rec("keydown", e, freeEvents); }, true);
+freeTa.addEventListener("keyup", function (e) { rec("keyup", e, freeEvents); }, true);
+
+function rec(type, e, buf) {
+  buf.push({ keyCode: e.keyCode || 0, type: type, t: performance.now() - t0, field: "enroll" });
   update();
 }
 
-function currentWindows() {
+function windowsOf(buf) {
   var F = globalThis.ContinuumFeatures;
   if (!F) return [];
-  return F.stepsToWindows(F.eventSteps(events));
+  return F.stepsToWindows(F.eventSteps(buf));
+}
+// Both phases' windows, each capped to its target so one long phase can't crowd the other
+// out of the stored profile.
+function currentWindows() {
+  return windowsOf(events).slice(0, COPY_TARGET).concat(windowsOf(freeEvents).slice(0, FREE_TARGET));
 }
 
+var freeUnlocked = false;
 function update() {
   var F = globalThis.ContinuumFeatures;
   var segments = F ? F.eventSteps(events) : [];
-  var w = F ? F.stepsToWindows(segments) : [];
-  var n = w.length;
+  var nCopy = (F ? F.stepsToWindows(segments) : []).length;
+  var nFree = windowsOf(freeEvents).length;
+
+  // Part 1 done -> reveal part 2. The copy box stays visible and live (extra copy windows
+  // are simply not counted) so nothing the user typed appears to vanish.
+  if (!freeUnlocked && nCopy >= COPY_TARGET) {
+    freeUnlocked = true;
+    loadFreePrompt();
+    freePhaseEl.style.display = "block";
+    freePhaseEl.scrollIntoView({ behavior: "smooth" });
+    setTimeout(function () { try { freeTa.focus(); } catch (e) {} }, 350);
+  }
+
+  var doneCopy = Math.min(nCopy, COPY_TARGET), doneFree = Math.min(nFree, FREE_TARGET);
+  var n = doneCopy + doneFree;
   prog.style.width = Math.min(100, Math.round((n / TARGET) * 100)) + "%";
-  status.textContent = n + " / " + TARGET + " windows captured";
-  saveBtn.disabled = n < TARGET;
+  status.textContent = !freeUnlocked
+    ? "Part 1 — " + doneCopy + " / " + COPY_TARGET + " passage windows"
+    : "Part 2 — " + doneFree + " / " + FREE_TARGET + " of your own words"
+      + (doneFree >= FREE_TARGET ? " ✓ ready to save" : "") + "  ·  " + n + " / " + TARGET + " total";
+  saveBtn.disabled = !(doneCopy >= COPY_TARGET && doneFree >= FREE_TARGET);
   // DIAGNOSTIC: why is the count stuck? Shows every 20 keystrokes — segment lengths
   // reveal whether typing is being fragmented (many short pause-separated runs) instead
   // of accumulating into one run of 50+.
-  if (events.length % 20 === 0) {
-    console.log("[continuum-guard/diag] enroll: keys=" + events.length + " segments=" + JSON.stringify(segments.map(function (s) { return s.length; })) + " windows=" + n);
+  var totalKeys = events.length + freeEvents.length;
+  if (totalKeys % 20 === 0) {
+    var freeSegs = F ? F.eventSteps(freeEvents) : [];
+    console.log("[continuum-guard/diag] enroll: copy keys=" + events.length + " segments=" + JSON.stringify(segments.map(function (s) { return s.length; })) + " windows=" + nCopy
+      + " | free keys=" + freeEvents.length + " segments=" + JSON.stringify(freeSegs.map(function (s) { return s.length; })) + " windows=" + nFree);
   }
 }
 
@@ -207,6 +279,11 @@ saveBtn.addEventListener("click", function () {
   var ts = document.getElementById("trainStatus");
   saveBtn.disabled = true;
   ta.disabled = true;
+  freeTa.disabled = true;
+  // Log the two regimes separately: if a future profile drifts back toward passage-only,
+  // this is where it shows up (see diag-keystroke.html for the enrol/use comparison).
+  logWindowStats("this-session-copy", windowsOf(events).slice(0, COPY_TARGET));
+  logWindowStats("this-session-free", windowsOf(freeEvents).slice(0, FREE_TARGET));
   ts.style.display = "block";
   ts.textContent = "capturing complete — training your personal model on-device…";
   getProfileId(function (id) {
@@ -238,6 +315,7 @@ saveBtn.addEventListener("click", function () {
           ts.textContent = "training failed: " + ((e && e.message) || e) + " — your samples were saved; you can retry.";
           saveBtn.disabled = false;
           ta.disabled = false;
+          freeTa.disabled = false;
         });
       });
     });

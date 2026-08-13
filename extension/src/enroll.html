@@ -78,12 +78,27 @@
     </div>
 
     <div id="keystrokeStage" style="display:none">
-      <p class="sub">Type the passage below at your <b>normal, natural pace</b>. Continuum learns your rhythm — <b>how</b> you type, never <b>what</b> you type. Keep going until the bar fills.</p>
-      <blockquote id="passage">Loading a passage…</blockquote>
-      <div style="text-align:right;margin:-8px 0 12px">
-        <a href="#" id="newPassage" class="link" style="font-size:12px">🔄 New passage</a>
+      <p class="sub">Type at your <b>normal, natural pace</b>. Continuum learns your rhythm — <b>how</b> you type, never <b>what</b> you type. There are two short parts: copying a passage, then writing in your own words.</p>
+
+      <div id="copyPhase">
+        <p class="sub" style="font-weight:600">Part 1 of 2 — copy this passage</p>
+        <blockquote id="passage">Loading a passage…</blockquote>
+        <div style="text-align:right;margin:-8px 0 12px">
+          <a href="#" id="newPassage" class="link" style="font-size:12px">🔄 New passage</a>
+        </div>
+        <textarea id="ta" placeholder="Start typing the passage here…" autofocus></textarea>
       </div>
-      <textarea id="ta" placeholder="Start typing the passage here…" autofocus></textarea>
+
+      <div id="freePhase" style="display:none">
+        <p class="sub" style="font-weight:600">Part 2 of 2 — now write in your own words</p>
+        <p class="sub">This part matters most: it is how you type when you are <i>composing</i> — pausing to think, going back, typing in bursts — which is what Continuum sees in real use. Answer the prompt however you like; there is no right answer, and spelling does not matter.</p>
+        <blockquote id="freePrompt">…</blockquote>
+        <div style="text-align:right;margin:-8px 0 12px">
+          <a href="#" id="newPrompt" class="link" style="font-size:12px">🔄 Another prompt</a>
+        </div>
+        <textarea id="freeTa" placeholder="Write your own words here — don't copy anything…"></textarea>
+      </div>
+
       <div class="bar"><i id="prog"></i></div>
       <div class="status" id="status">0 / 12 windows captured</div>
       <button id="save" disabled>Save my profile &amp; train</button>
