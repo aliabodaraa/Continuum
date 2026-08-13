@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Continuum — keystroke enrol/use diagnostic</title>
+    <style>
+      :root { color-scheme: light dark; --bg:#0b1120; --card:#141d31; --border:#27334f; --text:#e8edf7; --muted:#93a1bd; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --accent:#818cf8; }
+      * { box-sizing: border-box; }
+      body { font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; max-width: 820px; margin: 32px auto; padding: 0 20px; background: var(--bg); color: var(--text); }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      h2 { font-size: 15px; margin: 22px 0 8px; }
+      p.sub { color: var(--muted); margin: 0 0 18px; }
+      .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+      .muted { color: var(--muted); }
+      .row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+      .row:last-child { border-bottom: none; }
+      .val { font-weight: 700; font-variant-numeric: tabular-nums; }
+      button { background: linear-gradient(135deg,#818cf8,#4f46e5); color:#fff; border:0; border-radius:10px; padding:11px 18px; font:700 14px system-ui; cursor:pointer; }
+      button:disabled { opacity:.5; cursor:default; }
+      textarea { width: 100%; min-height: 110px; padding: 11px 13px; border: 1.5px solid var(--border); border-radius: 10px; background: #0e1626; color: var(--text); font: inherit; line-height: 1.6; resize: vertical; }
+      .passage { background: rgba(255,255,255,.04); border-left: 3px solid var(--accent); padding: 10px 13px; border-radius: 0 8px 8px 0; margin: 8px 0; color: var(--muted); }
+      .hist { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 12px; line-height: 1.5; white-space: pre; overflow-x: auto; }
+      .bar-ok { color: var(--ok); } .bar-bad { color: var(--bad); }
+      .verdict { font-weight: 700; padding: 12px 14px; border-radius: 10px; margin-top: 8px; }
+      .v-ok { background: rgba(34,197,94,.12); border:1px solid rgba(34,197,94,.4); color:#6ee7b7; }
+      .v-bad { background: rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.4); color:#fca5a5; }
+      .v-warn { background: rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.4); color:#fcd34d; }
+      code { background: rgba(255,255,255,.06); padding: 1px 5px; border-radius: 5px; }
+    </style>
+  </head>
+  <body>
+    <h1>🔬 Keystroke enrol/use diagnostic</h1>
+    <p class="sub">Enrollment trains your typing model on <b>copy-typed passages</b>, but the guard scores <b>free composition</b> — different motor tasks. This measures whether that gap costs accuracy, the same way the mouse diagnostic exposed the enrol/use mismatch there. Scores are the genuine-class probability [0..1]; a window counts as accepted at ≥ 0.50 (the packet-vote boundary). Nothing you type is stored or sent — only timing becomes features.</p>
+
+    <div class="card">
+      <div class="row"><span>Account / profile</span><span class="val" id="acct">…</span></div>
+      <div class="row"><span>Trained typing head</span><span class="val" id="headState">loading…</span></div>
+      <div class="row"><span>Stored enrollment windows</span><span class="val" id="enrollCount">…</span></div>
+      <div class="row"><span>Bundled impostor windows</span><span class="val" id="impCount">…</span></div>
+    </div>
+
+    <h2>Step 1 — copy-type this passage (the enrolment task)</h2>
+    <p class="muted">Type the passage below into the box, as you did during enrollment. Keep going until you have ~10 windows.</p>
+    <div class="passage" id="passage">…</div>
+    <textarea id="copyBox" placeholder="copy the passage here…"></textarea>
+    <div class="row"><span>Copy-typing windows</span><span class="val" id="copyCount">0 windows</span></div>
+
+    <h2>Step 2 — now write freely (what the guard actually scores)</h2>
+    <p class="muted">Compose your own text from your head — describe your day, draft an email, explain your project. Think, pause, backspace, work naturally. Do <b>not</b> copy anything. Aim for a similar number of windows as Step 1 so the comparison is fair.</p>
+    <textarea id="freeBox" placeholder="write whatever you want, in your own words…"></textarea>
+    <div class="row"><span>Free-composition windows</span><span class="val" id="freeCount">0 windows</span></div>
+
+    <h2>Step 3 — run the comparison</h2>
+    <button id="run" disabled>Run diagnostic</button>
+    <div id="results"></div>
+
+    <script src="../vendor/tf-lite.js"></script>
+    <script src="features.js"></script>
+    <script src="diag-keystroke.js"></script>
+  </body>
+</html>
