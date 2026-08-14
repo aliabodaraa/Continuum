@@ -99,7 +99,7 @@ function refresh() {
     // Keystroke lock sensitivity, same control the mouse section has.
     show("rowKsSens", ksOn);
     if (ksOn && document.activeElement !== q("ksSensRange")) {
-      var kpct = s.ksSustainPct || 75;
+      var kpct = s.ksMeanLockPct || 35;
       q("ksSensRange").value = kpct;
       q("ksSensVal").textContent = kpct + "%";
     }
@@ -214,7 +214,7 @@ q("mouseTrackToggle").addEventListener("change", function () {
 // Keystroke lock-sensitivity slider: live label on drag, persist on release.
 q("ksSensRange").addEventListener("input", function () { q("ksSensVal").textContent = this.value + "%"; });
 q("ksSensRange").addEventListener("change", function () {
-  api.runtime.sendMessage({ type: "cg:set-ks-sustain", pct: parseInt(this.value, 10) }, refresh);
+  api.runtime.sendMessage({ type: "cg:set-ks-threshold", pct: parseInt(this.value, 10) }, refresh);
 });
 
 // Mouse lock-sensitivity slider: live label on drag, persist on release.

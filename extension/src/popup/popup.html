@@ -233,7 +233,7 @@
               <div class="row" id="rowModel"><span>Model</span><span class="val" id="model">…</span></div>
               <div class="row" id="rowSteps"><span>Steps → 1st window</span><span class="val" id="steps">0/50</span></div>
               <div class="row" id="rowWins"><span>Windows scored</span><span class="val" id="wins">0</span></div>
-              <div class="row" id="rowKsSens" style="display:none"><span>Lock threshold</span><span class="ctrl"><input type="range" id="ksSensRange" min="30" max="100" step="5" title="Percent of your recent typing windows that must look suspicious before the page locks. Lower = locks more easily; higher = stricter." style="width:104px" /><span class="val" id="ksSensVal" style="min-width:32px">75%</span></span></div>
+              <div class="row" id="rowKsSens" style="display:none"><span>Lock below</span><span class="ctrl"><input type="range" id="ksSensRange" min="20" max="50" step="5" title="Locks when your recent typing confidence falls below this. Lower = more tolerant (fewer false locks); higher = stricter." style="width:104px" /><span class="val" id="ksSensVal" style="min-width:32px">35%</span></span></div>
               <div class="row" id="rowKeySamples" style="display:none"><span>Trained on</span><span class="val" id="keySamples">…</span></div>
               <button id="enrollKeys" class="btn-keys">⌨️ Train typing</button>
             </div>
