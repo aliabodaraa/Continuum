@@ -179,11 +179,23 @@ q("run").addEventListener("click", async function () {
     } else if (gap <= -0.10) {
       v = "⚠ Free composition scores HIGHER than copy-typing (" + freeS.mean.toFixed(2) + " vs " + copyS.mean.toFixed(2)
         + "). Unexpected — worth repeating with more text before drawing a conclusion.";
-    } else if (freeS.mean < 0.5) {
+    } else if (enrS && (enrS.mean - Math.max(copyS.mean, freeS.mean)) >= 0.20) {
+      // No task gap, but in-sample scores far above BOTH live tasks: the head has memorised
+      // its (too few) training windows rather than learned the user. Checked before the
+      // acceptance test below, because this diagnoses the cause rather than the symptom.
       cls = "v-bad";
-      v = "❌ Genuine-in-use failure: impostors are rejected (" + impS.acceptedPct.toFixed(0) + "% accepted) but YOUR free "
-        + "typing averages only " + freeS.mean.toFixed(2) + " — you would be falsely flagged. Not a task mismatch (copy-typing "
-        + "scores similarly); the personal head itself is weak. Re-enrol with more sessions.";
+      v = "❌ OVERFITTING, not a task mismatch: enrolment windows score " + enrS.mean.toFixed(2)
+        + " in-sample but your live typing only ~" + ((copyS.mean + freeS.mean) / 2).toFixed(2)
+        + " (gap " + (enrS.mean - (copyS.mean + freeS.mean) / 2).toFixed(2) + "), from just " + enrS.n
+        + " stored windows. Copy and free now match, so the enrolment TASK is fine — there is simply too "
+        + "little data. Run the enrollment wizard again a few times: windows accumulate across sessions "
+        + "(cap 60) and the gap should close. Do NOT clear your data between sessions.";
+    } else if (freeS.acceptedPct < 85) {
+      cls = "v-bad";
+      v = "❌ Genuine-in-use failure: impostors are rejected (" + impS.acceptedPct.toFixed(0) + "% accepted) but only "
+        + freeS.acceptedPct.toFixed(0) + "% of YOUR free-typing windows are accepted (mean " + freeS.mean.toFixed(2)
+        + "). At that rate the 3-of-6 packet vote false-locks you often while you simply write. Not a task mismatch "
+        + "(copy-typing scores similarly) — the personal head needs more enrolment data.";
     } else {
       cls = "v-ok";
       v = "✅ No mismatch: copy-typing " + copyS.mean.toFixed(2) + " vs free composition " + freeS.mean.toFixed(2)
