@@ -16,10 +16,9 @@ var WINDOW_THRESHOLD = 0.5, PACKET_VOTE_FRACTION = 0.5;
 // practically impossible (P(≥15/20 low | 5% per-window) ≈ 0) while an impostor (≈90% low)
 // still trips it within ~20 windows — a few seconds of movement. This is what lets the
 // mouse channel ENFORCE rather than stay info-only, at a controlled false-positive cost.
-// Keystroke locks on the packet MEAN rather than a count of low windows — see the rationale
-// at the enforcement site in onWindow. Expressed as a percentage so the popup can expose it:
-// lock when the mean of the last RECENT windows falls below this fraction.
-var KS_MEAN_LOCK_PCT_DEFAULT = 35;
+// Keystroke keeps the Lu et al. packet vote. The fraction of low windows required to lock
+// is exposed in the popup; the default reproduces the published rule (>=50% of the packet).
+var KS_VOTE_PCT_DEFAULT = Math.round(PACKET_VOTE_FRACTION * 100);
 
 var MOUSE_SUSTAIN_WINDOW = 20;   // length of the mouse enforcement buffer
 var MOUSE_SUSTAIN_LOW = 15;      // DEFAULT low windows required to lock (75% of 20); now
@@ -49,7 +48,7 @@ var config = { exclusions: [] };
 // FIRST resolution always differs and fires onAccountChanged exactly once, even if it
 // resolves to signed-out. Falsy either way, so every gate below defaults safely to
 // "inactive" until a real resolution comes back.
-var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, lockReason: null, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0, mouseTracking: true, mouseSustainPct: 75, ksMeanLockPct: 35, accountId: undefined, accountEmail: null, accountChecked: false, keySamples: 0, mouseSamples: 0 };
+var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, lockReason: null, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0, mouseTracking: true, mouseSustainPct: 75, ksVotePct: 50, accountId: undefined, accountEmail: null, accountChecked: false, keySamples: 0, mouseSamples: 0 };
 var scores = [];       // rolling last N keystroke window scores
 var mouseScores = [];  // rolling mouse window scores (up to MOUSE_SUSTAIN_WINDOW)
 
@@ -244,7 +243,7 @@ function finishAccountSwitch(cb) {
   if (cb) cb();
 }
 
-api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress", "cg_mouse_tracking", "cg_mouse_sustain_pct", "cg_ks_mean_lock_pct"], function (d) {
+api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress", "cg_mouse_tracking", "cg_mouse_sustain_pct", "cg_ks_vote_pct"], function (d) {
   d = d || {};
   config.exclusions = d.cg_exclusions || [];
   RP_BASE = (d.cg_rp_base || RP_BASE_DEFAULT).replace(/\/+$/, "");
@@ -253,8 +252,8 @@ api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress", "cg_mouse_t
   // User-tuned mouse lock sensitivity (percent of the 20-window buffer that must be low).
   var pct = parseInt(d.cg_mouse_sustain_pct, 10);
   state.mouseSustainPct = (pct >= 30 && pct <= 100) ? pct : MOUSE_SUSTAIN_PCT_DEFAULT;
-  var kpct = parseInt(d.cg_ks_mean_lock_pct, 10);
-  state.ksMeanLockPct = (kpct >= 20 && kpct <= 50) ? kpct : KS_MEAN_LOCK_PCT_DEFAULT;
+  var kpct = parseInt(d.cg_ks_vote_pct, 10);
+  state.ksVotePct = (kpct >= 50 && kpct <= 100) ? kpct : KS_VOTE_PCT_DEFAULT;
   // Restore the LIVE session progress too — the rolling packet, step counter, verdict and
   // lock state — so a service-worker restart (e.g. opening/closing the popup, or an idle
   // gap while typing) doesn't wipe the in-progress packet and reset the counter to 0.
@@ -347,7 +346,7 @@ function statusObj() {
     exclusions: config.exclusions, modelReady: state.modelReady, modelError: state.modelError, verdict: state.verdict,
     steps: state.steps, needSteps: state.needSteps, enrolled: state.enrolled, modelPersonal: state.modelPersonal,
     locked: state.locked, hasPasskey: state.hasPasskey,
-    mouseReady: state.mouseReady, mouseVerdict: state.mouseVerdict, totalMouseWindows: state.totalMouseWindows, mouseTracking: state.mouseTracking, mouseSustainPct: state.mouseSustainPct, ksMeanLockPct: state.ksMeanLockPct,
+    mouseReady: state.mouseReady, mouseVerdict: state.mouseVerdict, totalMouseWindows: state.totalMouseWindows, mouseTracking: state.mouseTracking, mouseSustainPct: state.mouseSustainPct, ksVotePct: state.ksVotePct,
     accountId: state.accountId || null, accountEmail: state.accountEmail || null, accountChecked: state.accountChecked,
     keySamples: state.keySamples, mouseSamples: state.mouseSamples, lockReason: state.lockReason,
   };
@@ -382,9 +381,9 @@ async function onWindow(win) {
       scores.push(s);
       if (scores.length > RECENT) scores.shift();
       var v = decide(scores);
-      var lockBelow = state.ksMeanLockPct / 100;
+      var voteFrac = state.ksVotePct / 100;
       console.log("[continuum-guard/diag] window score=" + s.toFixed(3) + " packet=" + JSON.stringify(scores.map(function (x) { return Number(x.toFixed(3)); }))
-        + " mean=" + v.mean.toFixed(3) + " (lock below " + lockBelow.toFixed(2) + ")");
+        + " mean=" + v.mean.toFixed(3) + " low=" + Math.round(v.lowFraction * 100) + "% (lock at " + state.ksVotePct + "%)");
       // Verdict only on a FULL packet (6 windows ≈ 100 keystrokes) — early provisional
       // verdicts were tried and reverted: they surface "!" on thin evidence without
       // making the decision meaningfully faster.
@@ -394,23 +393,20 @@ async function onWindow(win) {
         packet: scores.length,
         need: RECENT,
       };
-      // ENFORCE on the packet MEAN, not on a count of windows below 0.5.
+      // ENFORCE with the Lu et al. packet vote, unchanged: lock when at least
+      // PACKET_VOTE_FRACTION of the last RECENT windows score below WINDOW_THRESHOLD.
+      // This is deliberately the same rule ca-service applies (its own PACKET_VOTE_FRACTION
+      // 0.50 / WINDOW_DECISION_THRESHOLD 0.50), so the SDK and the extension reach the same
+      // verdict from the same evidence and the thesis can describe one decision procedure.
       //
-      // Counting binarised lows throws away magnitude: a genuine window at 0.45 is counted
-      // exactly like an impostor window at 0.02. Measured free composition sits at mean 0.57
-      // with ~33% of windows under 0.5, so a 3-of-6 count fired every few evaluations and
-      // locked the legitimate user mid-sentence. Widening the buffer to 20 windows fixes that
-      // but costs detection speed the keystroke channel cannot afford: a window is only 10
-      // digraphs apart, so 20 windows means an impostor types ~240 characters first — a whole
-      // message. The mouse channel can afford it because its windows arrive constantly.
-      //
-      // The mean keeps the magnitude, and the two classes are far apart in it (genuine ~0.57
-      // vs impostor ~0.15). Replayed against the measured distributions, locking when the
-      // 6-window mean falls below 0.35 gives 0.00 genuine false-locks per 200 windows while
-      // still catching an impostor at window 6 — same ~100-digraph latency as the original
-      // rule, without its false locks.
-      if (!state.locked && scores.length >= RECENT && v.mean < lockBelow) {
-        console.log("[continuum-guard] keystroke lock — packet mean " + v.mean.toFixed(3) + " < " + lockBelow.toFixed(2));
+      // A mean-of-packet rule was tried here and reverted: it behaves better against the
+      // measured score distributions (it keeps the magnitude that binarising at 0.5 throws
+      // away) but it is NOT the published method, and having the extension decide differently
+      // from the service would undercut that claim. The vote fraction is exposed as a knob
+      // instead — the default 50% reproduces the original behaviour exactly, and raising it
+      // demands broader agreement before locking without leaving the method.
+      if (!state.locked && scores.length >= RECENT && v.lowFraction >= voteFrac) {
+        console.log("[continuum-guard] keystroke packet-vote lock — " + Math.round(v.lowFraction * 100) + "% of the packet low");
         engageLock("keystroke");
       }
       updateBadge();
@@ -772,12 +768,12 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       reply({ mouseTracking: state.mouseTracking });
       return true;
     }
-    case "cg:set-ks-threshold": {
+    case "cg:set-ks-vote": {
       var kp = parseInt(msg.pct, 10);
-      if (!(kp >= 20 && kp <= 50)) { reply({ ksMeanLockPct: state.ksMeanLockPct }); return true; }
-      state.ksMeanLockPct = kp;
-      api.storage.local.set({ cg_ks_mean_lock_pct: kp });
-      reply({ ksMeanLockPct: state.ksMeanLockPct });
+      if (!(kp >= 50 && kp <= 100)) { reply({ ksVotePct: state.ksVotePct }); return true; }
+      state.ksVotePct = kp;
+      api.storage.local.set({ cg_ks_vote_pct: kp });
+      reply({ ksVotePct: state.ksVotePct });
       return true;
     }
     case "cg:set-mouse-sustain": {

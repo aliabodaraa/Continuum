@@ -100,7 +100,12 @@ function initWizard() {
 var passageEl = document.getElementById("passage");
 var newPassageLink = document.getElementById("newPassage");
 function loadPassage() { passageEl.textContent = nextPassage(); }
-newPassageLink.addEventListener("click", function (e) { e.preventDefault(); loadPassage(); });
+// One link for both parts, since there is one box: it re-rolls whichever text the current
+// phase is showing — a passage in part 1, a composition prompt in part 2.
+newPassageLink.addEventListener("click", function (e) {
+  e.preventDefault();
+  passageEl.textContent = (typeof phase !== "undefined" && phase === "free") ? nextFreePrompt() : nextPassage();
+});
 if (MODE === "keystroke") loadPassage();   // mouse mode uses nextPassage() directly for its link text
 
 var ta = document.getElementById("ta");
@@ -108,23 +113,39 @@ var prog = document.getElementById("prog");
 var status = document.getElementById("status");
 var saveBtn = document.getElementById("save");
 
-var freeTa = document.getElementById("freeTa");
 var copyDoneEl = document.getElementById("copyDone");
-var copyPhaseEl = document.getElementById("copyPhase");
-var freePhaseEl = document.getElementById("freePhase");
-var freePromptEl = document.getElementById("freePrompt");
-var newPromptLink = document.getElementById("newPrompt");
-function loadFreePrompt() { freePromptEl.textContent = nextFreePrompt(); }
-newPromptLink.addEventListener("click", function (e) { e.preventDefault(); loadFreePrompt(); });
+var phaseTitleEl = document.getElementById("phaseTitle");
+var phaseHintEl = document.getElementById("phaseHint");
 
-ta.addEventListener("keydown", function (e) { rec("keydown", e, events); }, true);
-ta.addEventListener("keyup", function (e) { rec("keyup", e, events); }, true);
-freeTa.addEventListener("keydown", function (e) { rec("keydown", e, freeEvents); }, true);
-freeTa.addEventListener("keyup", function (e) { rec("keyup", e, freeEvents); }, true);
+// ONE input for both parts: the box stays put and only the instruction above it changes.
+// Two textareas were tried and reverted — a second field appearing mid-session is startling,
+// and the focus hand-off it needed could divert passage text into the free-composition
+// buffer. The two buffers below are still separate: windows are cut from a contiguous event
+// stream, so sharing one buffer would emit windows straddling the boundary, half one rhythm
+// and half the other, representing neither.
+var phase = "copy";
+function activeBuf() { return phase === "copy" ? events : freeEvents; }
+
+ta.addEventListener("keydown", function (e) { rec("keydown", e, activeBuf()); }, true);
+ta.addEventListener("keyup", function (e) { rec("keyup", e, activeBuf()); }, true);
 
 function rec(type, e, buf) {
   buf.push({ keyCode: e.keyCode || 0, type: type, t: performance.now() - t0, field: "enroll" });
   update();
+}
+
+// Switching mid-word would wipe a half-typed sentence, so this only ever runs from a pause.
+function switchToFreePhase() {
+  if (phase === "free") return;
+  phase = "free";
+  copyDoneEl.style.display = "none";
+  phaseTitleEl.textContent = "Part 2 of 2 — now write in your own words";
+  phaseHintEl.style.display = "block";
+  passageEl.textContent = nextFreePrompt();
+  newPassageLink.textContent = "🔄 Another prompt";
+  ta.value = "";
+  ta.placeholder = "Write your own words here — don't copy anything…";
+  try { ta.focus(); } catch (e) {}
 }
 
 function windowsOf(buf) {
@@ -138,21 +159,7 @@ function currentWindows() {
   return windowsOf(events).slice(0, COPY_TARGET).concat(windowsOf(freeEvents).slice(0, FREE_TARGET));
 }
 
-var freeUnlocked = false, handedOver = false, handoverTimer = null;
-// Scroll to part 2 and focus it — only ever called from a typing pause (see update), and
-// never if the user has already put the caret somewhere themselves.
-function handOverToFreePhase() {
-  if (handedOver) return;
-  handedOver = true;
-  try {
-    freePhaseEl.scrollIntoView({ behavior: "smooth", block: "center" });
-    if (document.activeElement !== freeTa) freeTa.focus();
-  } catch (e) {}
-}
-// Clicking into either box is the user taking control: stop any pending auto-handover.
-function takeControl() { handedOver = true; clearTimeout(handoverTimer); }
-ta.addEventListener("mousedown", takeControl);
-freeTa.addEventListener("mousedown", takeControl);
+var switchTimer = null;
 
 function update() {
   var F = globalThis.ContinuumFeatures;
@@ -160,29 +167,18 @@ function update() {
   var nCopy = (F ? F.stepsToWindows(segments) : []).length;
   var nFree = windowsOf(freeEvents).length;
 
-  // Part 1 done -> reveal part 2. The copy box stays visible and live (extra copy windows
-  // are simply not counted) so nothing the user typed appears to vanish.
-  //
-  // The reveal must NOT interrupt typing. Moving focus while the user is mid-sentence
-  // sends the rest of their passage-copying into the free-composition box, which both
-  // startles them and contaminates the phase separation these two buffers exist to keep.
-  // So: show part 2 immediately (and mark part 1 done) but hand over focus only once the
-  // user has actually stopped typing for a moment.
-  if (!freeUnlocked && nCopy >= COPY_TARGET) {
-    freeUnlocked = true;
-    loadFreePrompt();
+  // Part 1 done -> hand the same box over to part 2, but only once the user has stopped
+  // typing for a moment, so a half-finished sentence is never wiped mid-word.
+  if (phase === "copy" && nCopy >= COPY_TARGET) {
     copyDoneEl.style.display = "block";
-    freePhaseEl.style.display = "block";
-  }
-  if (freeUnlocked && !handedOver) {
-    clearTimeout(handoverTimer);
-    handoverTimer = setTimeout(handOverToFreePhase, 1400);   // fires on a natural pause
+    clearTimeout(switchTimer);
+    switchTimer = setTimeout(switchToFreePhase, 1400);
   }
 
   var doneCopy = Math.min(nCopy, COPY_TARGET), doneFree = Math.min(nFree, FREE_TARGET);
   var n = doneCopy + doneFree;
   prog.style.width = Math.min(100, Math.round((n / TARGET) * 100)) + "%";
-  status.textContent = !freeUnlocked
+  status.textContent = phase === "copy"
     ? "Part 1 — " + doneCopy + " / " + COPY_TARGET + " passage windows"
     : "Part 2 — " + doneFree + " / " + FREE_TARGET + " of your own words"
       + (doneFree >= FREE_TARGET ? " ✓ ready to save" : "") + "  ·  " + n + " / " + TARGET + " total";
@@ -326,7 +322,6 @@ saveBtn.addEventListener("click", function () {
   var ts = document.getElementById("trainStatus");
   saveBtn.disabled = true;
   ta.disabled = true;
-  freeTa.disabled = true;
   // Log the two regimes separately: if a future profile drifts back toward passage-only,
   // this is where it shows up (see diag-keystroke.html for the enrol/use comparison).
   logWindowStats("this-session-copy", windowsOf(events).slice(0, COPY_TARGET));
@@ -362,7 +357,6 @@ saveBtn.addEventListener("click", function () {
           ts.textContent = "training failed: " + ((e && e.message) || e) + " — your samples were saved; you can retry.";
           saveBtn.disabled = false;
           ta.disabled = false;
-          freeTa.disabled = false;
         });
       });
     });
