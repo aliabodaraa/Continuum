@@ -78,16 +78,13 @@
     </div>
 
     <div id="keystrokeStage" style="display:none">
-      <p class="sub">Type at your <b>normal, natural pace</b>. Continuum learns your rhythm — <b>how</b> you type, never <b>what</b> you type. There are two short parts: copying a passage, then writing in your own words.</p>
+      <p class="sub">Answer the prompt below <b>in your own words</b>, at your normal pace — think, pause, backspace, write naturally. Continuum learns your rhythm — <b>how</b> you type, never <b>what</b> you type. Keep going until the bar fills.</p>
 
-      <p class="sub" id="phaseTitle" style="font-weight:600">Part 1 of 2 — copy this passage</p>
-      <p class="sub" id="phaseHint" style="display:none">This part matters most: it is how you type when <i>composing</i> — pausing to think, going back, typing in bursts — which is what Continuum sees in real use. Answer however you like; there is no right answer and spelling does not matter.</p>
-      <blockquote id="passage">Loading a passage…</blockquote>
+      <blockquote id="passage">Loading a prompt…</blockquote>
       <div style="text-align:right;margin:-8px 0 12px">
-        <a href="#" id="newPassage" class="link" style="font-size:12px">🔄 New passage</a>
+        <a href="#" id="newPassage" class="link" style="font-size:12px">🔄 Another prompt</a>
       </div>
-      <textarea id="ta" placeholder="Start typing the passage here…" autofocus></textarea>
-      <div id="copyDone" class="nudge" style="display:none;margin-top:10px">✓ Part 1 done — finish your sentence; Part 2 starts in this same box.</div>
+      <textarea id="ta" placeholder="Write your answer here, in your own words…" autofocus></textarea>
 
       <div class="bar"><i id="prog"></i></div>
       <div class="status" id="status">0 / 12 windows captured</div>

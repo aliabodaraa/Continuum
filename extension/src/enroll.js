@@ -8,24 +8,15 @@ var api = globalThis.browser || globalThis.chrome;
 // storage, window counts, trained heads, and session counters), so the wizard runs one
 // at a time instead of forcing both every session. Defaults to keystroke for a bare URL.
 var MODE = (new URLSearchParams(location.search).get("mode") === "mouse") ? "mouse" : "keystroke";
-// Keystroke enrollment captures TWO tasks, because copy-typing and free composition are
-// different motor behaviours and the guard only ever sees the latter. Measured with
-// diag-keystroke.html on a passage-only profile: copy-typing scored 0.84 mean (100% of
-// windows accepted) while the same person composing freely scored 0.60 (78% accepted).
-// At that 22% per-window low rate the 3-of-6 packet vote false-locks with ~13% probability
-// per evaluation — i.e. the genuine user gets locked out while writing normally. The head
-// was tuned to the enrolment task, not to real typing. Free composition therefore carries
-// the larger share of the session; the passage is kept as a short warm-up that guarantees
-// a clean rhythm baseline even from a hesitant typist.
-var COPY_TARGET = 4;              // NEW copy-typed windows this session
-var FREE_TARGET = 8;              // NEW free-composition windows this session (the task scored live)
-var TARGET = COPY_TARGET + FREE_TARGET;
+// Keystroke enrollment captures FREE COMPOSITION only: the user answers a prompt in their
+// own words. Copy-typing a supplied passage was measured (diag-keystroke.html) to be a
+// different motor task from real use — a passage-only profile scored 0.84 on copy-typing but
+// 0.60 on the same person composing freely, and the guard only ever sees composition. So the
+// enrolment task is now the task that gets scored, with nothing to copy at all.
+var TARGET = 12;                  // NEW windows this session
 var MAX_STORED_KEY_WINDOWS = 60;  // cap on accumulated keystroke windows across all sessions
 var MAX_STORED_MOUSE_WINDOWS = 120;
-// Separate buffers per phase: windows are cut from a contiguous event stream, so a single
-// buffer would emit hybrid windows straddling the copy->free boundary — half one rhythm,
-// half the other, representing neither.
-var events = [], freeEvents = [], t0 = performance.now();
+var events = [], t0 = performance.now();
 
 // DIAGNOSTIC: dump per-feature stats [id1,id2,dwell1,dwell2,dd,ud] for a set of windows,
 // so real captured data can be compared across sessions (open this page's DevTools
@@ -99,13 +90,8 @@ function getProfileId(cb) { cb(currentAccountId); }
 function initWizard() {
 var passageEl = document.getElementById("passage");
 var newPassageLink = document.getElementById("newPassage");
-function loadPassage() { passageEl.textContent = nextPassage(); }
-// One link for both parts, since there is one box: it re-rolls whichever text the current
-// phase is showing — a passage in part 1, a composition prompt in part 2.
-newPassageLink.addEventListener("click", function (e) {
-  e.preventDefault();
-  passageEl.textContent = (typeof phase !== "undefined" && phase === "free") ? nextFreePrompt() : nextPassage();
-});
+function loadPassage() { passageEl.textContent = nextFreePrompt(); }
+newPassageLink.addEventListener("click", function (e) { e.preventDefault(); loadPassage(); });
 if (MODE === "keystroke") loadPassage();   // mouse mode uses nextPassage() directly for its link text
 
 var ta = document.getElementById("ta");
@@ -113,39 +99,12 @@ var prog = document.getElementById("prog");
 var status = document.getElementById("status");
 var saveBtn = document.getElementById("save");
 
-var copyDoneEl = document.getElementById("copyDone");
-var phaseTitleEl = document.getElementById("phaseTitle");
-var phaseHintEl = document.getElementById("phaseHint");
+ta.addEventListener("keydown", function (e) { rec("keydown", e); }, true);
+ta.addEventListener("keyup", function (e) { rec("keyup", e); }, true);
 
-// ONE input for both parts: the box stays put and only the instruction above it changes.
-// Two textareas were tried and reverted — a second field appearing mid-session is startling,
-// and the focus hand-off it needed could divert passage text into the free-composition
-// buffer. The two buffers below are still separate: windows are cut from a contiguous event
-// stream, so sharing one buffer would emit windows straddling the boundary, half one rhythm
-// and half the other, representing neither.
-var phase = "copy";
-function activeBuf() { return phase === "copy" ? events : freeEvents; }
-
-ta.addEventListener("keydown", function (e) { rec("keydown", e, activeBuf()); }, true);
-ta.addEventListener("keyup", function (e) { rec("keyup", e, activeBuf()); }, true);
-
-function rec(type, e, buf) {
-  buf.push({ keyCode: e.keyCode || 0, type: type, t: performance.now() - t0, field: "enroll" });
+function rec(type, e) {
+  events.push({ keyCode: e.keyCode || 0, type: type, t: performance.now() - t0, field: "enroll" });
   update();
-}
-
-// Switching mid-word would wipe a half-typed sentence, so this only ever runs from a pause.
-function switchToFreePhase() {
-  if (phase === "free") return;
-  phase = "free";
-  copyDoneEl.style.display = "none";
-  phaseTitleEl.textContent = "Part 2 of 2 — now write in your own words";
-  phaseHintEl.style.display = "block";
-  passageEl.textContent = nextFreePrompt();
-  newPassageLink.textContent = "🔄 Another prompt";
-  ta.value = "";
-  ta.placeholder = "Write your own words here — don't copy anything…";
-  try { ta.focus(); } catch (e) {}
 }
 
 function windowsOf(buf) {
@@ -153,44 +112,18 @@ function windowsOf(buf) {
   if (!F) return [];
   return F.stepsToWindows(F.eventSteps(buf));
 }
-// Both phases' windows, each capped to its target so one long phase can't crowd the other
-// out of the stored profile.
-function currentWindows() {
-  return windowsOf(events).slice(0, COPY_TARGET).concat(windowsOf(freeEvents).slice(0, FREE_TARGET));
-}
-
-var switchTimer = null;
+function currentWindows() { return windowsOf(events); }
 
 function update() {
   var F = globalThis.ContinuumFeatures;
   var segments = F ? F.eventSteps(events) : [];
-  var nCopy = (F ? F.stepsToWindows(segments) : []).length;
-  var nFree = windowsOf(freeEvents).length;
-
-  // Part 1 done -> hand the same box over to part 2, but only once the user has stopped
-  // typing for a moment, so a half-finished sentence is never wiped mid-word.
-  if (phase === "copy" && nCopy >= COPY_TARGET) {
-    copyDoneEl.style.display = "block";
-    clearTimeout(switchTimer);
-    switchTimer = setTimeout(switchToFreePhase, 1400);
-  }
-
-  var doneCopy = Math.min(nCopy, COPY_TARGET), doneFree = Math.min(nFree, FREE_TARGET);
-  var n = doneCopy + doneFree;
+  var w = F ? F.stepsToWindows(segments) : [];
+  var n = w.length;
   prog.style.width = Math.min(100, Math.round((n / TARGET) * 100)) + "%";
-  status.textContent = phase === "copy"
-    ? "Part 1 — " + doneCopy + " / " + COPY_TARGET + " passage windows"
-    : "Part 2 — " + doneFree + " / " + FREE_TARGET + " of your own words"
-      + (doneFree >= FREE_TARGET ? " ✓ ready to save" : "") + "  ·  " + n + " / " + TARGET + " total";
-  saveBtn.disabled = !(doneCopy >= COPY_TARGET && doneFree >= FREE_TARGET);
-  // DIAGNOSTIC: why is the count stuck? Shows every 20 keystrokes — segment lengths
-  // reveal whether typing is being fragmented (many short pause-separated runs) instead
-  // of accumulating into one run of 50+.
-  var totalKeys = events.length + freeEvents.length;
-  if (totalKeys % 20 === 0) {
-    var freeSegs = F ? F.eventSteps(freeEvents) : [];
-    console.log("[continuum-guard/diag] enroll: copy keys=" + events.length + " segments=" + JSON.stringify(segments.map(function (s) { return s.length; })) + " windows=" + nCopy
-      + " | free keys=" + freeEvents.length + " segments=" + JSON.stringify(freeSegs.map(function (s) { return s.length; })) + " windows=" + nFree);
+  status.textContent = n + " / " + TARGET + " windows captured";
+  saveBtn.disabled = n < TARGET;
+  if (events.length % 20 === 0) {
+    console.log("[continuum-guard/diag] enroll: keys=" + events.length + " segments=" + JSON.stringify(segments.map(function (s) { return s.length; })) + " windows=" + n);
   }
 }
 
@@ -324,8 +257,6 @@ saveBtn.addEventListener("click", function () {
   ta.disabled = true;
   // Log the two regimes separately: if a future profile drifts back toward passage-only,
   // this is where it shows up (see diag-keystroke.html for the enrol/use comparison).
-  logWindowStats("this-session-copy", windowsOf(events).slice(0, COPY_TARGET));
-  logWindowStats("this-session-free", windowsOf(freeEvents).slice(0, FREE_TARGET));
   ts.style.display = "block";
   ts.textContent = "capturing complete — training your personal model on-device…";
   getProfileId(function (id) {

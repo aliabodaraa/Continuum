@@ -96,13 +96,6 @@ function refresh() {
       q("mouseSensRange").value = pct;
       q("mouseSensVal").textContent = pct + "%";
     }
-    // Keystroke lock sensitivity, same control the mouse section has.
-    show("rowKsSens", ksOn);
-    if (ksOn && document.activeElement !== q("ksSensRange")) {
-      var kpct = s.ksVotePct || 50;
-      q("ksSensRange").value = kpct;
-      q("ksSensVal").textContent = kpct + "%";
-    }
     // Each modality reports its own sample count inside its own section.
     show("rowKeySamples", ksOn);
     show("rowMouseSamples", mouseOn);
@@ -209,12 +202,6 @@ q("regPasskey").addEventListener("click", function (e) {
 // User on/off toggle for the mouse channel (independent of keystroke).
 q("mouseTrackToggle").addEventListener("change", function () {
   api.runtime.sendMessage({ type: "cg:set-mouse-tracking", on: this.checked }, refresh);
-});
-
-// Keystroke lock-sensitivity slider: live label on drag, persist on release.
-q("ksSensRange").addEventListener("input", function () { q("ksSensVal").textContent = this.value + "%"; });
-q("ksSensRange").addEventListener("change", function () {
-  api.runtime.sendMessage({ type: "cg:set-ks-vote", pct: parseInt(this.value, 10) }, refresh);
 });
 
 // Mouse lock-sensitivity slider: live label on drag, persist on release.
