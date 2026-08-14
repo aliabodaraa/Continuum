@@ -109,6 +109,7 @@ var status = document.getElementById("status");
 var saveBtn = document.getElementById("save");
 
 var freeTa = document.getElementById("freeTa");
+var copyDoneEl = document.getElementById("copyDone");
 var copyPhaseEl = document.getElementById("copyPhase");
 var freePhaseEl = document.getElementById("freePhase");
 var freePromptEl = document.getElementById("freePrompt");
@@ -137,7 +138,22 @@ function currentWindows() {
   return windowsOf(events).slice(0, COPY_TARGET).concat(windowsOf(freeEvents).slice(0, FREE_TARGET));
 }
 
-var freeUnlocked = false;
+var freeUnlocked = false, handedOver = false, handoverTimer = null;
+// Scroll to part 2 and focus it — only ever called from a typing pause (see update), and
+// never if the user has already put the caret somewhere themselves.
+function handOverToFreePhase() {
+  if (handedOver) return;
+  handedOver = true;
+  try {
+    freePhaseEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (document.activeElement !== freeTa) freeTa.focus();
+  } catch (e) {}
+}
+// Clicking into either box is the user taking control: stop any pending auto-handover.
+function takeControl() { handedOver = true; clearTimeout(handoverTimer); }
+ta.addEventListener("mousedown", takeControl);
+freeTa.addEventListener("mousedown", takeControl);
+
 function update() {
   var F = globalThis.ContinuumFeatures;
   var segments = F ? F.eventSteps(events) : [];
@@ -146,12 +162,21 @@ function update() {
 
   // Part 1 done -> reveal part 2. The copy box stays visible and live (extra copy windows
   // are simply not counted) so nothing the user typed appears to vanish.
+  //
+  // The reveal must NOT interrupt typing. Moving focus while the user is mid-sentence
+  // sends the rest of their passage-copying into the free-composition box, which both
+  // startles them and contaminates the phase separation these two buffers exist to keep.
+  // So: show part 2 immediately (and mark part 1 done) but hand over focus only once the
+  // user has actually stopped typing for a moment.
   if (!freeUnlocked && nCopy >= COPY_TARGET) {
     freeUnlocked = true;
     loadFreePrompt();
+    copyDoneEl.style.display = "block";
     freePhaseEl.style.display = "block";
-    freePhaseEl.scrollIntoView({ behavior: "smooth" });
-    setTimeout(function () { try { freeTa.focus(); } catch (e) {} }, 350);
+  }
+  if (freeUnlocked && !handedOver) {
+    clearTimeout(handoverTimer);
+    handoverTimer = setTimeout(handOverToFreePhase, 1400);   // fires on a natural pause
   }
 
   var doneCopy = Math.min(nCopy, COPY_TARGET), doneFree = Math.min(nFree, FREE_TARGET);
