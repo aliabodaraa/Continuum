@@ -294,6 +294,28 @@ function finishStage(kind) {
     e.preventDefault();
     location.href = "enroll.html?mode=" + otherMode;
   });
+  // Passkey control. This block is shared by BOTH modalities, so finishing mouse training
+  // used to re-offer "Set up your passkey" to someone who already had one — and every click
+  // ran a fresh WebAuthn ceremony, piling up duplicate credentials for the same account.
+  // One passkey is all the step-up needs, so offer creation only when there ISN'T one, and
+  // put re-registration behind a deliberate, clearly-labelled link.
+  var regBtn = document.getElementById("regpk");
+  var pkNote = document.getElementById("pkNote");
+  api.runtime.sendMessage({ type: "cg:status" }, function (s) {
+    var has = !!(s && s.hasPasskey);
+    regBtn.style.display = has ? "none" : "block";
+    pkNote.style.display = has ? "block" : "none";
+    if (has) {
+      pkNote.innerHTML = "🔑 Passkey already set up — it's used when the guard locks a page. "
+        + "<a href='#' id='rereg' class='link'>Replace it</a> only if it stopped working.";
+      pkNote.querySelector("#rereg").addEventListener("click", function (e) {
+        e.preventDefault();
+        if (!confirm("Register a NEW passkey for this account?\n\nYour existing one keeps working; this adds another. Only do this if the current passkey stopped working.")) return;
+        try { api.runtime.sendMessage({ type: "cg:open-register" }); } catch (e2) {}
+      });
+    }
+  });
+
   done.style.display = "block";
   done.scrollIntoView({ behavior: "smooth" });
   try { api.runtime.sendMessage({ type: "cg:enrolled" }); } catch (e) {}
