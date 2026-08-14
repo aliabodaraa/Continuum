@@ -461,6 +461,18 @@ function badgeForState() {
   return { text: "", color: "#4f46e5" };
 }
 
+// Called WITHOUT a callback, the action.* APIs return a promise that REJECTS with
+// "No tab with id: N" when the tab closed between being enumerated and having its badge
+// painted — a routine race, since refreshAllBadges walks every tab and the user can close
+// one at any moment. A surrounding try/catch cannot catch that: the rejection is async, so
+// it surfaces as an "Uncaught (in promise)" error on the extensions page. Passing a callback
+// switches these back to callback style, where the failure arrives as runtime.lastError and
+// is absorbed here — the tab is gone, so there is nothing to paint and nothing to report.
+function actionSafe(fn, arg) {
+  if (typeof fn !== "function") return;
+  try { fn.call(api.action, arg, function () { void api.runtime.lastError; }); } catch (e) {}
+}
+
 // Apply badge + icon for ONE tab, keyed to whether that tab's site is excluded OR nobody
 // is signed into Chrome (a browser-wide "off", not per-site — takes priority).
 function applyBadgeToTab(tabId, url) {
@@ -469,25 +481,23 @@ function applyBadgeToTab(tabId, url) {
   try { if (url) origin = new URL(url).origin; } catch (e) {}
   var noAccount = state.accountChecked && !state.accountId;
   var excluded = !noAccount && origin && config.exclusions.indexOf(origin) >= 0;
-  try {
-    if (noAccount) {
-      api.action.setBadgeText({ tabId: tabId, text: "" });
-      api.action.setBadgeBackgroundColor({ tabId: tabId, color: "#64748b" });
-      api.action.setTitle({ tabId: tabId, title: "Continuum Guard — sign in to Chrome with a Google account to activate" });
-      if (api.action.setIcon) api.action.setIcon({ tabId: tabId, path: ICON_OFF }, function () { void api.runtime.lastError; });
-    } else if (excluded) {
-      api.action.setBadgeText({ tabId: tabId, text: "off" });
-      api.action.setBadgeBackgroundColor({ tabId: tabId, color: "#64748b" });
-      api.action.setTitle({ tabId: tabId, title: "Continuum Guard — off on this site" });
-      if (api.action.setIcon) api.action.setIcon({ tabId: tabId, path: ICON_OFF }, function () { void api.runtime.lastError; });
-    } else {
-      var b = badgeForState();
-      api.action.setBadgeText({ tabId: tabId, text: b.text });
-      api.action.setBadgeBackgroundColor({ tabId: tabId, color: b.color });
-      api.action.setTitle({ tabId: tabId, title: "Continuum Guard" });
-      if (api.action.setIcon) api.action.setIcon({ tabId: tabId, path: ICON_ON }, function () { void api.runtime.lastError; });
-    }
-  } catch (e) {}
+  if (noAccount) {
+    actionSafe(api.action.setBadgeText, { tabId: tabId, text: "" });
+    actionSafe(api.action.setBadgeBackgroundColor, { tabId: tabId, color: "#64748b" });
+    actionSafe(api.action.setTitle, { tabId: tabId, title: "Continuum Guard — sign in to Chrome with a Google account to activate" });
+    actionSafe(api.action.setIcon, { tabId: tabId, path: ICON_OFF });
+  } else if (excluded) {
+    actionSafe(api.action.setBadgeText, { tabId: tabId, text: "off" });
+    actionSafe(api.action.setBadgeBackgroundColor, { tabId: tabId, color: "#64748b" });
+    actionSafe(api.action.setTitle, { tabId: tabId, title: "Continuum Guard — off on this site" });
+    actionSafe(api.action.setIcon, { tabId: tabId, path: ICON_OFF });
+  } else {
+    var b = badgeForState();
+    actionSafe(api.action.setBadgeText, { tabId: tabId, text: b.text });
+    actionSafe(api.action.setBadgeBackgroundColor, { tabId: tabId, color: b.color });
+    actionSafe(api.action.setTitle, { tabId: tabId, title: "Continuum Guard" });
+    actionSafe(api.action.setIcon, { tabId: tabId, path: ICON_ON });
+  }
 }
 
 // Verdict changed → refresh the tab the user is actually looking at.
