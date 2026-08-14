@@ -134,7 +134,10 @@ function rec(type, e, buf) {
   update();
 }
 
-// Switching mid-word would wipe a half-typed sentence, so this only ever runs from a pause.
+// Only ever called from the explicit "Continue to Part 2" button. An earlier version
+// switched automatically after 1.4s without a keystroke, but ordinary copy-typing pauses
+// for longer than that (reading ahead, thinking), so it fired mid-task and cleared the box
+// under the user. Nothing wipes their text now except their own click.
 function switchToFreePhase() {
   if (phase === "free") return;
   phase = "free";
@@ -159,7 +162,10 @@ function currentWindows() {
   return windowsOf(events).slice(0, COPY_TARGET).concat(windowsOf(freeEvents).slice(0, FREE_TARGET));
 }
 
-var switchTimer = null;
+document.getElementById("toPart2").addEventListener("click", function (e) {
+  e.preventDefault();
+  switchToFreePhase();
+});
 
 function update() {
   var F = globalThis.ContinuumFeatures;
@@ -167,13 +173,8 @@ function update() {
   var nCopy = (F ? F.stepsToWindows(segments) : []).length;
   var nFree = windowsOf(freeEvents).length;
 
-  // Part 1 done -> hand the same box over to part 2, but only once the user has stopped
-  // typing for a moment, so a half-finished sentence is never wiped mid-word.
-  if (phase === "copy" && nCopy >= COPY_TARGET) {
-    copyDoneEl.style.display = "block";
-    clearTimeout(switchTimer);
-    switchTimer = setTimeout(switchToFreePhase, 1400);
-  }
+  // Part 1 done -> offer part 2. The user decides when to move on; see switchToFreePhase.
+  if (phase === "copy" && nCopy >= COPY_TARGET) copyDoneEl.style.display = "block";
 
   var doneCopy = Math.min(nCopy, COPY_TARGET), doneFree = Math.min(nFree, FREE_TARGET);
   var n = doneCopy + doneFree;
