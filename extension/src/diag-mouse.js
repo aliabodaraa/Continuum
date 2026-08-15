@@ -62,6 +62,7 @@ function histLine(scores) {
 // ---- bootstrap: account, models, data ----
 (function init() {
   api.runtime.sendMessage({ type: "cg:get-account" }, function (res) {
+    void api.runtime.lastError;   // worker may be asleep; res is then undefined
     accountId = res && res.id;
     q("acct").textContent = (res && res.email) || accountId || "not signed in";
     if (!accountId) { q("headState").textContent = "no account — sign in & train first"; return; }

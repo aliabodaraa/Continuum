@@ -299,6 +299,7 @@ function finishStage(kind) {
   var regBtn = document.getElementById("regpk");
   var pkNote = document.getElementById("pkNote");
   api.runtime.sendMessage({ type: "cg:status" }, function (s) {
+    if (api.runtime.lastError) return;   // worker asleep — leave the passkey control as it is
     var has = !!(s && s.hasPasskey);
     regBtn.style.display = has ? "none" : "block";
     pkNote.style.display = has ? "block" : "none";
@@ -544,6 +545,7 @@ if (MODE === "mouse") {
 (function () {
   try {
     api.runtime.sendMessage({ type: "cg:get-account" }, function (res) {
+      void api.runtime.lastError;   // worker may be asleep; res is then undefined
       currentAccountId = (res && res.id) || null;
       currentAccountEmail = (res && res.email) || null;
       if (!currentAccountId) { document.getElementById("noAccountBlock").style.display = "block"; return; }

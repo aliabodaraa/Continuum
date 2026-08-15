@@ -57,7 +57,11 @@ initSection("sectMouse", "headMouse", "cg_sect_mouse");
 
 function refresh() {
   api.runtime.sendMessage({ type: "cg:status" }, function (s) {
-    if (!s) return;
+    // Reading lastError is what marks the failure handled. The popup polls once a second,
+    // so every moment the MV3 worker is asleep or restarting would otherwise log
+    // "Unchecked runtime.lastError: No SW". There is nothing to do about it — the next poll
+    // wakes the worker and succeeds — but it has to be read rather than ignored.
+    if (api.runtime.lastError || !s) return;
     // No Chrome/Google account signed in → the whole panel is inert (samples/models are
     // keyed to that account, so there is nothing to show or train against).
     var noAccount = s.accountChecked && !s.accountId;
