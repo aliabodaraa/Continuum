@@ -7,22 +7,32 @@
   var WINDOW_SIZE = 50, STRIDE = 10;
   var MIN_DD = 0.015;      // drop event-batching artifacts, not fast typing
   var MIN_DWELL = 0.01;
-  // Gaps beyond this are treated as a real composition pause (hard segment break), not
-  // rhythm. 1.0s fragmented copy-typing badly: reading a displayed passage naturally means
-  // glancing up to read the next phrase before typing it, and those brief glances were
-  // getting counted as "pauses" every ~5-6 words (confirmed: 28 segments from one
-  // continuous typing session). 2.5s tolerates that glance-and-type rhythm while still
-  // treating a genuine multi-second stop (actually pausing to think) as a real break.
-  var PAUSE_DD = 2.5;
+  // Gaps beyond this are composition pauses (thinking between phrases), not typing rhythm,
+  // so the digraph is DROPPED and the surrounding fluent typing is spliced together. This
+  // matches ca-service (keystrokeSecurity.js PAUSE_DD_SECONDS), which reached the same rule
+  // after observing the same failure: "windows containing several 0.8-1.9s gaps scored
+  // 0.19-0.21 for the genuine user -> false locks".
+  //
+  // The extension previously used 2.5s AND made the pause a hard segment BREAK. Both parts
+  // were wrong for real use. Copy-typing a displayed passage has almost no gaps over 1s, so
+  // an enrolled profile contains no such rows at all; free composition is full of them, and
+  // at 2.5s every one of those 1-2.5s gaps was kept as a feature row INSIDE a live window.
+  // The head therefore scored windows containing a pattern it had never been trained on —
+  // measured as 0.84 on copy-typing versus 0.60 on the same person composing. Lowering the
+  // threshold alone is not enough either: as a hard break, 1.0s shatters composition into
+  // sub-window fragments and yields almost no windows. Dropping without breaking fixes both
+  // (simulated on 900 keystrokes of composition: 50 windows with 95 pause rows -> 75 windows
+  // with none), and leaves copy-typing byte-identical because it has no such gaps to drop.
+  var PAUSE_DD = 1.0;
 
   function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 
   // events: [{ keyCode, type: "keydown"|"keyup", t (ms), field }]
-  // A composition pause (dd > PAUSE_DD) is a HARD BREAK, not just a dropped digraph: the
-  // steps right before and right after a real pause (stopped to think, then resumed) are
-  // a different behavioral moment than sustained typing, so they must never end up in the
-  // same 50-step window. Returned as segments (arrays of runs), not one flat array, so
-  // stepsToWindows can never slide a window across a pause boundary.
+  // A composition pause (dd > PAUSE_DD) DROPS that digraph and keeps going, so the fluent
+  // typing either side of the pause is spliced into one continuous run. Only the silence is
+  // removed; every sub-second digraph — where the rhythm signature actually lives — is kept,
+  // so impostor detection is unaffected. Still returned as segments (arrays of runs) because
+  // a field change genuinely does break the sequence.
   function eventSteps(events) {
     var lastDown = {}, keyUps = new Map(), downs = [];
     for (var i = 0; i < events.length; i++) {
@@ -40,10 +50,7 @@
       var dd = (b.t - a.t) / 1000, ud = (b.t - au.t) / 1000;
       if (dwell1 < 0 || dwell2 < 0 || dd < 0) continue;
       if (dd < MIN_DD || dwell1 < MIN_DWELL || dwell2 < MIN_DWELL) continue;  // artifact — skip, no break
-      if (dd > PAUSE_DD) {                                                    // composition pause — hard break
-        if (current.length) { segments.push(current); current = []; }
-        continue;
-      }
+      if (dd > PAUSE_DD) continue;              // composition pause — drop the digraph, don't break
       current.push([clamp01(a.keyCode / 254), clamp01(b.keyCode / 254), dwell1, dwell2, dd, ud]);
     }
     if (current.length) segments.push(current);
