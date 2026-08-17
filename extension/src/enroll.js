@@ -8,24 +8,10 @@ var api = globalThis.browser || globalThis.chrome;
 // storage, window counts, trained heads, and session counters), so the wizard runs one
 // at a time instead of forcing both every session. Defaults to keystroke for a bare URL.
 var MODE = (new URLSearchParams(location.search).get("mode") === "mouse") ? "mouse" : "keystroke";
-// Keystroke enrollment captures TWO tasks, because copy-typing and free composition are
-// different motor behaviours and the guard only ever sees the latter. Measured with
-// diag-keystroke.html on a passage-only profile: copy-typing scored 0.84 mean (100% of
-// windows accepted) while the same person composing freely scored 0.60 (78% accepted).
-// At that 22% per-window low rate the 3-of-6 packet vote false-locks with ~13% probability
-// per evaluation — i.e. the genuine user gets locked out while writing normally. The head
-// was tuned to the enrolment task, not to real typing. Free composition therefore carries
-// the larger share of the session; the passage is kept as a short warm-up that guarantees
-// a clean rhythm baseline even from a hesitant typist.
-var COPY_TARGET = 4;              // NEW copy-typed windows this session
-var FREE_TARGET = 8;              // NEW free-composition windows this session (the task scored live)
-var TARGET = COPY_TARGET + FREE_TARGET;
+var TARGET = 12;                 // NEW windows this session (~700+ keystrokes)
 var MAX_STORED_KEY_WINDOWS = 60;  // cap on accumulated keystroke windows across all sessions
-var MAX_STORED_MOUSE_WINDOWS = 120;
-// Separate buffers per phase: windows are cut from a contiguous event stream, so a single
-// buffer would emit hybrid windows straddling the copy->free boundary — half one rhythm,
-// half the other, representing neither.
-var events = [], freeEvents = [], t0 = performance.now();
+var MAX_STORED_MOUSE_WINDOWS = 80;
+var events = [], t0 = performance.now();
 
 // DIAGNOSTIC: dump per-feature stats [id1,id2,dwell1,dwell2,dd,ud] for a set of windows,
 // so real captured data can be compared across sessions (open this page's DevTools
@@ -59,29 +45,6 @@ var A1_PASSAGES = [
   "I have a small garden behind my house. I grow flowers and some green plants. Every morning I give them water. The flowers are red, yellow, and white. Bees and birds come to the garden too. I like to sit outside and look at my plants. In the summer the garden is full of colour. I pick some flowers for the table.",
   "My town is small and quiet. There is one shop, one school, and a park. The people here are kind and friendly. In the morning I hear the birds and the wind. I walk to the shop to buy bread and milk. On the way I meet my neighbours and say hello. The streets are clean and there are many green trees on them.",
 ];
-// Prompts for the free-composition phase. Chosen so the answer needs no research and no
-// recall effort — the goal is the user's natural composing rhythm (think-pauses, bursts,
-// backspaces), not a hard question that would stall them into unrepresentative timing.
-var FREE_PROMPTS = [
-  "What did you do this morning, before sitting down here?",
-  "Reply to a friend who just asked how your week is going.",
-  "Describe the room you are sitting in right now.",
-  "What are you working on at the moment? Explain it to someone who knows nothing about it.",
-  "Where would you like to travel next, and why?",
-  "Tell someone about a film, show, or book you enjoyed recently.",
-  "Write a short note to a colleague saying you will be late and why.",
-  "What does your ideal weekend look like?",
-  "What is something you would like to learn, and what is stopping you?",
-  "Describe a meal you know how to cook, in your own words.",
-];
-var lastPromptIdx = -1;
-function nextFreePrompt() {
-  var i;
-  do { i = Math.floor(Math.random() * FREE_PROMPTS.length); } while (FREE_PROMPTS.length > 1 && i === lastPromptIdx);
-  lastPromptIdx = i;
-  return FREE_PROMPTS[i];
-}
-
 var lastPassageIdx = -1;
 function nextPassage() {
   var i;
@@ -100,12 +63,7 @@ function initWizard() {
 var passageEl = document.getElementById("passage");
 var newPassageLink = document.getElementById("newPassage");
 function loadPassage() { passageEl.textContent = nextPassage(); }
-// One link for both parts, since there is one box: it re-rolls whichever text the current
-// phase is showing — a passage in part 1, a composition prompt in part 2.
-newPassageLink.addEventListener("click", function (e) {
-  e.preventDefault();
-  passageEl.textContent = (typeof phase !== "undefined" && phase === "free") ? nextFreePrompt() : nextPassage();
-});
+newPassageLink.addEventListener("click", function (e) { e.preventDefault(); loadPassage(); });
 if (MODE === "keystroke") loadPassage();   // mouse mode uses nextPassage() directly for its link text
 
 var ta = document.getElementById("ta");
@@ -113,85 +71,33 @@ var prog = document.getElementById("prog");
 var status = document.getElementById("status");
 var saveBtn = document.getElementById("save");
 
-var copyDoneEl = document.getElementById("copyDone");
-var phaseTitleEl = document.getElementById("phaseTitle");
-var phaseHintEl = document.getElementById("phaseHint");
+ta.addEventListener("keydown", function (e) { rec("keydown", e); }, true);
+ta.addEventListener("keyup", function (e) { rec("keyup", e); }, true);
 
-// ONE input for both parts: the box stays put and only the instruction above it changes.
-// Two textareas were tried and reverted — a second field appearing mid-session is startling,
-// and the focus hand-off it needed could divert passage text into the free-composition
-// buffer. The two buffers below are still separate: windows are cut from a contiguous event
-// stream, so sharing one buffer would emit windows straddling the boundary, half one rhythm
-// and half the other, representing neither.
-var phase = "copy";
-function activeBuf() { return phase === "copy" ? events : freeEvents; }
-
-ta.addEventListener("keydown", function (e) { rec("keydown", e, activeBuf()); }, true);
-ta.addEventListener("keyup", function (e) { rec("keyup", e, activeBuf()); }, true);
-
-function rec(type, e, buf) {
-  buf.push({ keyCode: e.keyCode || 0, type: type, t: performance.now() - t0, field: "enroll" });
+function rec(type, e) {
+  events.push({ keyCode: e.keyCode || 0, type: type, t: performance.now() - t0, field: "enroll" });
   update();
 }
 
-// Only ever called from the explicit "Continue to Part 2" button. An earlier version
-// switched automatically after 1.4s without a keystroke, but ordinary copy-typing pauses
-// for longer than that (reading ahead, thinking), so it fired mid-task and cleared the box
-// under the user. Nothing wipes their text now except their own click.
-function switchToFreePhase() {
-  if (phase === "free") return;
-  phase = "free";
-  copyDoneEl.style.display = "none";
-  phaseTitleEl.textContent = "Part 2 of 2 — now write in your own words";
-  phaseHintEl.style.display = "block";
-  passageEl.textContent = nextFreePrompt();
-  newPassageLink.textContent = "🔄 Another prompt";
-  ta.value = "";
-  ta.placeholder = "Write your own words here — don't copy anything…";
-  try { ta.focus(); } catch (e) {}
-}
-
-function windowsOf(buf) {
+function currentWindows() {
   var F = globalThis.ContinuumFeatures;
   if (!F) return [];
-  return F.stepsToWindows(F.eventSteps(buf));
+  return F.stepsToWindows(F.eventSteps(events));
 }
-// Both phases' windows, each capped to its target so one long phase can't crowd the other
-// out of the stored profile.
-function currentWindows() {
-  return windowsOf(events).slice(0, COPY_TARGET).concat(windowsOf(freeEvents).slice(0, FREE_TARGET));
-}
-
-document.getElementById("toPart2").addEventListener("click", function (e) {
-  e.preventDefault();
-  switchToFreePhase();
-});
 
 function update() {
   var F = globalThis.ContinuumFeatures;
   var segments = F ? F.eventSteps(events) : [];
-  var nCopy = (F ? F.stepsToWindows(segments) : []).length;
-  var nFree = windowsOf(freeEvents).length;
-
-  // Part 1 done -> offer part 2. The user decides when to move on; see switchToFreePhase.
-  if (phase === "copy" && nCopy >= COPY_TARGET) copyDoneEl.style.display = "block";
-
-  var doneCopy = Math.min(nCopy, COPY_TARGET), doneFree = Math.min(nFree, FREE_TARGET);
-  var n = doneCopy + doneFree;
+  var w = F ? F.stepsToWindows(segments) : [];
+  var n = w.length;
   prog.style.width = Math.min(100, Math.round((n / TARGET) * 100)) + "%";
-  status.textContent = phase === "copy"
-    ? "Part 1 — " + doneCopy + " / " + COPY_TARGET + " passage windows"
-    : "Part 2 — " + doneFree + " / " + FREE_TARGET + " of your own words"
-      + (doneFree >= FREE_TARGET ? " ✓ ready to save" : "") + "  ·  " + n + " / " + TARGET + " total";
-  saveBtn.disabled = !(doneCopy >= COPY_TARGET && doneFree >= FREE_TARGET);
+  status.textContent = n + " / " + TARGET + " windows captured";
+  saveBtn.disabled = n < TARGET;
   // DIAGNOSTIC: why is the count stuck? Shows every 20 keystrokes — segment lengths
   // reveal whether typing is being fragmented (many short pause-separated runs) instead
   // of accumulating into one run of 50+.
-  var totalKeys = events.length + freeEvents.length;
-  if (totalKeys % 20 === 0) {
-    var freeSegs = F ? F.eventSteps(freeEvents) : [];
-    console.log("[continuum-guard/diag] enroll: copy keys=" + events.length + " segments=" + JSON.stringify(segments.map(function (s) { return s.length; })) + " windows=" + nCopy
-      + " | free keys=" + freeEvents.length + " segments=" + JSON.stringify(freeSegs.map(function (s) { return s.length; })) + " windows=" + nFree);
+  if (events.length % 20 === 0) {
+    console.log("[continuum-guard/diag] enroll: keys=" + events.length + " segments=" + JSON.stringify(segments.map(function (s) { return s.length; })) + " windows=" + n);
   }
 }
 
@@ -205,22 +111,12 @@ var existingBox = document.getElementById("existingProfile");
 var existingCount = document.getElementById("existingCount");
 var resetLink = document.getElementById("resetProfile");
 
-// Reset is MODALITY-SPECIFIC: keystroke and mouse are enrolled/trained/stored
-// independently, so this page (which runs ONE modality per visit) clears only ITS OWN
-// channel — wiping your mouse profile must never delete your typing profile, and vice
-// versa. The other channel's counts are shown for context but left untouched.
-var IS_MOUSE = (MODE === "mouse");
-var RESET_LABEL = IS_MOUSE ? "🗑️ clear my mouse data & start fresh" : "🗑️ clear my typing data & start fresh";
-resetLink.textContent = RESET_LABEL;
 getProfileId(function (id) {
   api.storage.local.get(["cg_enroll_" + id, "cg_enroll_mouse_" + id], function (d) {
     var nKey = ((d && d["cg_enroll_" + id]) || []).length;
     var nMouse = ((d && d["cg_enroll_mouse_" + id]) || []).length;
-    var mine = IS_MOUSE ? nMouse : nKey;
-    if (mine > 0) {
-      var other = IS_MOUSE ? (nKey + " typing") : (nMouse + " mouse");
-      existingCount.textContent = mine + (IS_MOUSE ? " mouse" : " typing") + " windows on file"
-        + (((IS_MOUSE ? nKey : nMouse) > 0) ? " (" + other + " windows kept separately)" : "");
+    if (nKey > 0 || nMouse > 0) {
+      existingCount.textContent = nKey + " typing + " + nMouse + " mouse windows";
       existingBox.style.display = "block";
     }
   });
@@ -231,19 +127,15 @@ resetLink.addEventListener("click", function (e) {
   e.preventDefault();
   if (!resetArmed) {
     resetArmed = true;
-    resetLink.textContent = "⚠ click again to confirm — deletes your trained " + (IS_MOUSE ? "mouse" : "typing") + " model";
-    resetTimer = setTimeout(function () { resetArmed = false; resetLink.textContent = RESET_LABEL; }, 4000);
+    resetLink.textContent = "⚠ click again to confirm — deletes your trained model";
+    resetTimer = setTimeout(function () { resetArmed = false; resetLink.textContent = "🗑️ clear & start fresh"; }, 4000);
     return;
   }
   clearTimeout(resetTimer);
   resetLink.textContent = "clearing…";
   getProfileId(function (id) {
-    // Only THIS modality's storage keys + ready-flag + trained head; the other channel is preserved.
-    var keys = IS_MOUSE
-      ? ["cg_enroll_mouse_" + id, "cg_enroll_mouse_sessions_" + id, "cg_mouse_ready_" + id]
-      : ["cg_enroll_" + id, "cg_enroll_sessions_" + id, "cg_model_personal_" + id, "cg_enrolled_at_" + id];
-    api.storage.local.remove(keys, function () {
-      ContinuumTrainer.clearTrained(id, MODE).then(function () {
+    api.storage.local.remove(["cg_enroll_" + id, "cg_enroll_mouse_" + id, "cg_enrolled_at_" + id, "cg_enroll_sessions_" + id, "cg_enroll_mouse_sessions_" + id], function () {
+      ContinuumTrainer.clearTrained(id).then(function () {
         try { api.runtime.sendMessage({ type: "cg:profile-reset" }); } catch (e2) {}
         location.reload();
       });
@@ -291,29 +183,6 @@ function finishStage(kind) {
     e.preventDefault();
     location.href = "enroll.html?mode=" + otherMode;
   });
-  // Passkey control. This block is shared by BOTH modalities, so finishing mouse training
-  // used to re-offer "Set up your passkey" to someone who already had one — and every click
-  // ran a fresh WebAuthn ceremony, piling up duplicate credentials for the same account.
-  // One passkey is all the step-up needs, so offer creation only when there ISN'T one, and
-  // put re-registration behind a deliberate, clearly-labelled link.
-  var regBtn = document.getElementById("regpk");
-  var pkNote = document.getElementById("pkNote");
-  api.runtime.sendMessage({ type: "cg:status" }, function (s) {
-    if (api.runtime.lastError) return;   // worker asleep — leave the passkey control as it is
-    var has = !!(s && s.hasPasskey);
-    regBtn.style.display = has ? "none" : "block";
-    pkNote.style.display = has ? "block" : "none";
-    if (has) {
-      pkNote.innerHTML = "🔑 Passkey already set up — it's used when the guard locks a page. "
-        + "<a href='#' id='rereg' class='link'>Replace it</a> only if it stopped working.";
-      pkNote.querySelector("#rereg").addEventListener("click", function (e) {
-        e.preventDefault();
-        if (!confirm("Register a NEW passkey for this account?\n\nYour existing one keeps working; this adds another. Only do this if the current passkey stopped working.")) return;
-        try { api.runtime.sendMessage({ type: "cg:open-register" }); } catch (e2) {}
-      });
-    }
-  });
-
   done.style.display = "block";
   done.scrollIntoView({ behavior: "smooth" });
   try { api.runtime.sendMessage({ type: "cg:enrolled" }); } catch (e) {}
@@ -324,10 +193,6 @@ saveBtn.addEventListener("click", function () {
   var ts = document.getElementById("trainStatus");
   saveBtn.disabled = true;
   ta.disabled = true;
-  // Log the two regimes separately: if a future profile drifts back toward passage-only,
-  // this is where it shows up (see diag-keystroke.html for the enrol/use comparison).
-  logWindowStats("this-session-copy", windowsOf(events).slice(0, COPY_TARGET));
-  logWindowStats("this-session-free", windowsOf(freeEvents).slice(0, FREE_TARGET));
   ts.style.display = "block";
   ts.textContent = "capturing complete — training your personal model on-device…";
   getProfileId(function (id) {
@@ -365,31 +230,17 @@ saveBtn.addEventListener("click", function () {
   });
 });
 
-// ---- Step 2: mouse enrollment (full-viewport read + target-click) ----
-// EVOLUTION: chase-the-dot (tiny box, one recurring target) -> read-and-click links in a
-// 620px text column -> THIS: window-wide capture + reading links AND floating targets
-// scattered across the WHOLE viewport. Two problems the previous version left on the table:
-//   1. Train/live MISMATCH — enrollment captured motion only inside the small play area,
-//      but the live guard (content.js) scores motion across the full browser viewport.
-//      The enrolled profile was built from cramped, low-variety motion unlike real use.
-//   2. Too little / too narrow data — 20 windows of short article-width hops under-express
-//      the fast, long, directionally-varied "navigation" moves that most distinguish users.
-// Fix: capture on `document` (full viewport, clientX/clientY — same as the guard) and drive
-// long varied moves with floating targets placed far apart anywhere on screen, alongside the
-// slow precise reading motion. This closes the mismatch so the head sees, at enrollment, the
-// same distribution it will score live — realising the mouse model's real separability instead
-// of squandering it in a box. (It does NOT change the model's inherent per-user ceiling.)
-// 40 windows (was 20): the SapiMouse enroll sweep shows verification EER keeps dropping well
-// past 20 windows (knee ~150), so more genuine motion = a stronger, better-separated profile.
-// ~2 minutes of mixed reading + target-clicking.
-var MOUSE_TARGET = 40;
+// ---- Step 2: mouse enrollment (read & click links) ----
+// REDESIGNED from "chase-the-dot" (a small fixed box, one recurring target, frequent
+// clicks) to a read-and-click task over a full article-width passage with several links
+// scattered at realistic, varied positions — much closer to how someone actually moves a
+// mouse across a real page (reading, moving to a distant link, clicking, moving again)
+// than repeatedly re-centering on one recurring dot in a tiny box. The capture/feature/
+// training code is UNCHANGED; only the interaction that generates the movement changed.
+// 20 windows (validated sweep: held-out genuine windows win 95%, impostors stay low 85%
+// — 12 was too few, the head memorized). ~1 minute of natural reading + clicking.
+var MOUSE_TARGET = 20;
 var MOUSE_LINKS_PER_ROUND = 6;
-var MOUSE_FLOATS_ACTIVE = 2;   // floating full-viewport targets kept on screen at once
-// Enforce ENOUGH REAL interaction: completion needs both MOUSE_TARGET windows AND at least
-// MOUSE_MIN_CLICKS deliberate target clicks. The click floor stops a degenerate enrollment
-// (wiggling the cursor in one spot fills windows but produces no distinctive ballistic
-// move-to-click motion) — you must actually navigate to and click targets across the screen.
-var MOUSE_MIN_CLICKS = 12;
 function startMouseStage() {
   var stage = document.getElementById("mouseStage");
   var area = document.getElementById("playArea");
@@ -401,49 +252,12 @@ function startMouseStage() {
   stage.scrollIntoView({ behavior: "smooth" });
 
   var M = globalThis.ContinuumMouseFeatures;
-  var floatLayer = document.getElementById("floatLayer");
-  var mEvents = [], down = false, doneTraining = false, clickCount = 0;
-  function onTargetClick() { clickCount += 1; update(); }
+  var mEvents = [], down = false, doneTraining = false;
 
-  // Capture WINDOW-WIDE (document, viewport clientX/clientY) — not just inside the
-  // small play area — so the enrolled motion matches exactly what the live guard sees
-  // during real full-page browsing (content.js also uses clientX/clientY). Enrolling
-  // in a cramped 620px box while the guard scores full-viewport motion was a
-  // train/live mismatch that weakened the genuine profile.
   function push(x, y, st) { if (!doneTraining) { mEvents.push({ t: performance.now(), x: x, y: y, state: st }); if (mEvents.length % 10 === 0) update(); } }
-  document.addEventListener("mousemove", function (e) { push(e.clientX, e.clientY, down ? "Drag" : "Move"); });
-  document.addEventListener("mousedown", function (e) { down = true; push(e.clientX, e.clientY, "Pressed"); });
-  document.addEventListener("mouseup", function (e) { down = false; push(e.clientX, e.clientY, "Released"); });
-
-  // Floating full-viewport targets: force long, varied, cross-screen moves (the fast
-  // ballistic navigation that most distinguishes users) alongside the slow, precise
-  // reading motion from the inline links. Each spawns far from the last so distances
-  // and directions stay varied; the pair keeps ~2 on screen at all times.
-  var lastFX = window.innerWidth / 2, lastFY = window.innerHeight / 2;
-  function spawnFloat() {
-    if (doneTraining) return;
-    var el = document.createElement("div");
-    el.className = "ftarget";
-    // pick a point in a random screen region that is FAR from the previous target
-    var x, y, tries = 0;
-    do {
-      x = 60 + Math.random() * (window.innerWidth - 120);
-      y = 60 + Math.random() * (window.innerHeight - 120);
-      tries++;
-    } while (Math.hypot(x - lastFX, y - lastFY) < Math.min(window.innerWidth, window.innerHeight) * 0.4 && tries < 12);
-    lastFX = x; lastFY = y;
-    el.style.left = x + "px"; el.style.top = y + "px";
-    el.textContent = "●";
-    el.addEventListener("click", function (e) {
-      e.preventDefault(); e.stopPropagation();
-      if (el.parentNode) el.parentNode.removeChild(el);
-      onTargetClick();
-      if (!doneTraining) spawnFloat();   // respawn one far away — continuous target chase
-    });
-    floatLayer.appendChild(el);
-  }
-  function clearFloats() { if (floatLayer) floatLayer.innerHTML = ""; }
-  for (var fi = 0; fi < MOUSE_FLOATS_ACTIVE; fi++) spawnFloat();
+  area.addEventListener("mousemove", function (e) { push(e.clientX, e.clientY, down ? "Drag" : "Move"); });
+  area.addEventListener("mousedown", function (e) { down = true; push(e.clientX, e.clientY, "Pressed"); });
+  area.addEventListener("mouseup", function (e) { down = false; push(e.clientX, e.clientY, "Released"); });
 
   // Render a passage with MOUSE_LINKS_PER_ROUND random words turned into clickable
   // "links" (real hyperlink styling) scattered through the natural flow of the text —
@@ -474,7 +288,6 @@ function startMouseStage() {
         e.preventDefault();
         if (a.classList.contains("done")) return;   // theme-aware styling lives in enroll.html's .mlink/.mlink.done
         a.classList.add("done");
-        onTargetClick();
         remaining -= 1;
         if (remaining <= 0 && !doneTraining) loadRound();   // fresh passage + links, same task
       });
@@ -485,19 +298,10 @@ function startMouseStage() {
   function windows() { return M ? M.stepsToWindows(M.eventsToSteps(mEvents)) : []; }
   function update() {
     var w = windows();
-    // Progress reflects BOTH requirements — the bar can't be maxed by movement alone; you
-    // also have to actually click targets. It fills to whichever requirement is further behind.
-    var wFrac = w.length / MOUSE_TARGET;
-    var cFrac = clickCount / MOUSE_MIN_CLICKS;
-    mprog.style.width = Math.min(100, Math.round(Math.min(wFrac, cFrac) * 100)) + "%";
-    var enough = w.length >= MOUSE_TARGET && clickCount >= MOUSE_MIN_CLICKS;
-    mstatus.textContent = enough
-      ? "enough data captured"
-      : w.length + " / " + MOUSE_TARGET + " windows · " + clickCount + " / " + MOUSE_MIN_CLICKS + " targets clicked"
-        + (w.length >= MOUSE_TARGET ? " — keep clicking the dots/links" : (clickCount >= MOUSE_MIN_CLICKS ? " — keep moving the mouse" : ""));
-    if (enough && !doneTraining) {
+    mprog.style.width = Math.min(100, Math.round((w.length / MOUSE_TARGET) * 100)) + "%";
+    mstatus.textContent = w.length + " / " + MOUSE_TARGET + " mouse windows captured";
+    if (w.length >= MOUSE_TARGET && !doneTraining) {
       doneTraining = true;
-      clearFloats();
       mts.style.display = "block";
       mts.textContent = "capturing complete — training your mouse model on-device…";
       getProfileId(function (id) {
@@ -545,7 +349,6 @@ if (MODE === "mouse") {
 (function () {
   try {
     api.runtime.sendMessage({ type: "cg:get-account" }, function (res) {
-      void api.runtime.lastError;   // worker may be asleep; res is then undefined
       currentAccountId = (res && res.id) || null;
       currentAccountEmail = (res && res.email) || null;
       if (!currentAccountId) { document.getElementById("noAccountBlock").style.display = "block"; return; }

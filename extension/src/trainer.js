@@ -108,17 +108,10 @@ var ContinuumTrainer = (function () {
   // accountId: only THIS account's two model slots are removed — trained heads are keyed
   // per Chrome/Google account (see background.js), so resetting one account must never
   // touch another account's model sitting in the same IndexedDB.
-  //   modality: "keystroke" | "mouse" | undefined. Clears only that channel's trained
-  //   head; undefined clears BOTH (backwards-compatible full reset). The two channels are
-  //   trained/stored independently, so a user must be able to wipe one without the other.
-  async function clearTrained(accountId, modality) {
+  async function clearTrained(accountId) {
     var ok = false;
-    if (modality !== "mouse") {
-      try { await tf.io.removeModel("indexeddb://cg-personal-head-" + accountId); ok = true; } catch (e) {}
-    }
-    if (modality !== "keystroke") {
-      try { await tf.io.removeModel("indexeddb://cg-personal-mouse-head-" + accountId); ok = true; } catch (e) {}
-    }
+    try { await tf.io.removeModel("indexeddb://cg-personal-head-" + accountId); ok = true; } catch (e) {}
+    try { await tf.io.removeModel("indexeddb://cg-personal-mouse-head-" + accountId); ok = true; } catch (e) {}
     return ok;
   }
 
