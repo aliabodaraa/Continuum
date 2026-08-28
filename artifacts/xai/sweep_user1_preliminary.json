@@ -1,0 +1,56 @@
+{
+  "userId": 1,
+  "modelPath": "/app/artifacts/users/user-1/final_model",
+  "protocol": "subject-disjoint (impostors = unseen Aalto participants; genuine = user's is_training=0 samples)",
+  "impostorSource": "Aalto 136M keystrokes (Dhakal et al., CHI 2018)",
+  "nGenuineWindows": 196,
+  "nImpostorWindows": 4000,
+  "nImpostorSubjects": 34,
+  "genuineMean": 0.9516674231129642,
+  "impostorMean": 0.059478811782862025,
+  "auc": 0.9919145408163266,
+  "aucCI": [
+    0.9886879145408163,
+    0.994577200255102
+  ],
+  "eer": 0.04078316326530612,
+  "eerCI": [
+    0.03055612244897959,
+    0.05606122448979592
+  ],
+  "eerThreshold": 0.6037734150886536,
+  "atLiveThreshold": {
+    "threshold": 0.5,
+    "far": 0.046,
+    "frr": 0.030612244897959183,
+    "tar": 0.9693877551020408,
+    "packetFalseLockRate": 0.000535182244879278,
+    "packetImpostorCatchRate": 0.999937686528455
+  },
+  "tarAtFar": {
+    "1%": {
+      "tar": 0.8214285714285714,
+      "threshold": 0.9717558950185775,
+      "ci": [
+        0.7551020408163265,
+        0.8826530612244898
+      ]
+    },
+    "5%": {
+      "tar": 0.9693877551020408,
+      "threshold": 0.45778415799140854,
+      "ci": [
+        0.9438775510204082,
+        0.9897959183673469
+      ]
+    },
+    "10%": {
+      "tar": 0.9897959183673469,
+      "threshold": 0.13148994743824002,
+      "ci": [
+        0.9744897959183674,
+        1.0
+      ]
+    }
+  }
+}

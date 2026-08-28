@@ -25,6 +25,13 @@ data/*.h5
 data/**/*.h5
 data/*.zip
 data/sapimouse/
+# Third-party impostor datasets fetched for subject-disjoint evaluation. Redistributable
+# under their own licences (KeyRecs CC-BY 4.0, Aalto research-use) but not ours to vendor,
+# and large — re-download with the converters in services/model-api/ when needed.
+data/keyrecs/
+data/Keystrokes/
+data/*.csv
+
 
 # ─── Runtime-generated per-user models (biometric) ───
 # Base models under artifacts/ ARE tracked (needed to build the image); only the
