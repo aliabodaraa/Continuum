@@ -95,10 +95,12 @@ function refresh() {
     if (mouseOn) q("mouseTrackToggle").checked = s.mouseTracking !== false;
     // Lock-sensitivity slider — only meaningful while the mouse channel is on.
     show("rowMouseSens", mouseOn && s.mouseTracking !== false);
+    show("mouseSensHint", mouseOn && s.mouseTracking !== false);
     if (mouseOn && document.activeElement !== q("mouseSensRange")) {   // don't fight a live drag
       var pct = s.mouseSustainPct || 75;
       q("mouseSensRange").value = pct;
       q("mouseSensVal").textContent = pct + "%";
+      setMouseHint(pct);
     }
     // Each modality reports its own sample count inside its own section.
     show("rowKeySamples", ksOn);
@@ -116,12 +118,15 @@ function refresh() {
       q("steps").textContent = st >= nd ? "ready ✓" : st + "/" + nd;
     }
     if (mouseOn) {
+      // What the user needs to see is how close the channel is to asking for the passkey —
+      // i.e. how much of the sustained buffer is low against their configured threshold.
+      // The old readout was the mean of the last 6 windows, which jumps on every movement
+      // and never reveals the distance to a lock.
       var mv = s.mouseVerdict;
       q("mouse").textContent = s.mouseTracking === false ? "off"
         : !mv ? "watching…"
-        : mv.status === "analyzing" ? "analyzing (" + mv.packet + "/" + mv.need + ")"
-        : mv.status === "suspicious" ? "⚠ " + mv.mean + "%"
-        : "✓ " + mv.mean + "%";
+        : mv.low == null ? (mv.status === "suspicious" ? "⚠ " + mv.mean + "%" : "✓ " + mv.mean + "%")
+        : mv.low + " / " + mv.bufferMax + " low (" + mv.riskPct + "%)";
     }
 
     // Section headers carry a one-glance summary so a COLLAPSED section is still informative.
@@ -135,9 +140,9 @@ function refresh() {
     q("sumMouse").textContent = !mouseOn ? "not trained"
       : s.mouseTracking === false ? "off"
       : !mvs ? "idle"
-      : mvs.status === "analyzing" ? "analyzing " + mvs.packet + "/" + mvs.need
-      : mvs.status === "suspicious" ? "⚠ " + mvs.mean + "%"
-      : "✓ " + mvs.mean + "%";
+      : mvs.low == null ? (mvs.status === "suspicious" ? "⚠ " + mvs.mean + "%" : "✓ " + mvs.mean + "%")
+      : (mvs.riskPct >= (s.mouseSustainPct || 75) - 15 ? "⚠ " : "") + mvs.riskPct + "% of "
+        + (s.mouseSustainPct || 75) + "%";
 
     q("profile").textContent = active
       ? [ksOn ? "typing ✓" : null, mouseOn ? "mouse ✓" : null].filter(Boolean).join(" · ")
@@ -208,8 +213,18 @@ q("mouseTrackToggle").addEventListener("change", function () {
   api.runtime.sendMessage({ type: "cg:set-mouse-tracking", on: this.checked }, refresh);
 });
 
-// Mouse lock-sensitivity slider: live label on drag, persist on release.
-q("mouseSensRange").addEventListener("input", function () { q("mouseSensVal").textContent = this.value + "%"; });
+// Mouse lock-sensitivity slider: live label on drag, persist on release. The hint spells the
+// percentage out in windows — the number that actually decides when the passkey is demanded.
+var MOUSE_BUFFER = 20;   // MOUSE_SUSTAIN_WINDOW in background.js
+function setMouseHint(pct) {
+  var n = Math.max(1, Math.round((pct / 100) * MOUSE_BUFFER));
+  q("mouseSensHint").textContent = "Asks for your passkey after " + n + " of the last "
+    + MOUSE_BUFFER + " mouse windows look wrong.";
+}
+q("mouseSensRange").addEventListener("input", function () {
+  q("mouseSensVal").textContent = this.value + "%";
+  setMouseHint(parseInt(this.value, 10));
+});
 q("mouseSensRange").addEventListener("change", function () {
   api.runtime.sendMessage({ type: "cg:set-mouse-sustain", pct: parseInt(this.value, 10) }, refresh);
 });

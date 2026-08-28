@@ -419,9 +419,35 @@ async function onMouseWindow(win) {
       // Lock threshold is user-tunable via the popup slider (percent of the buffer that must
       // be low). Default 75% == the original 15/20; clamped to >=1 so it's never zero.
       var lockAt = Math.max(1, Math.round((state.mouseSustainPct / 100) * MOUSE_SUSTAIN_WINDOW));
-      console.log("[continuum-guard/diag] mouse score=" + s.toFixed(3) + " recentMean=" + v.mean.toFixed(3) + " sustainedLow=" + low + "/" + mouseScores.length + " (lock at " + lockAt + "/" + MOUSE_SUSTAIN_WINDOW + " = " + state.mouseSustainPct + "%)");
+      // Describe the WINDOW as well as its score. When live scores sit far below what the
+      // diagnostic measured on the same model, the difference has to be in the input, and
+      // these are the two properties that separate browsing from deliberate movement:
+      // path = total normalised distance travelled (amplitude), spd = mean log1p(px/ms).
+      var wPath = 0, wSpd = 0;
+      for (var wi = 0; wi < w.length; wi++) { wPath += Math.hypot(w[wi][0], w[wi][1]); wSpd += w[wi][2]; }
+      console.log("[continuum-guard/diag] mouse score=" + s.toFixed(3)
+        + " path=" + wPath.toFixed(3) + " spd=" + (wSpd / w.length).toFixed(3)
+        + " recentMean=" + v.mean.toFixed(3) + " sustainedLow=" + low + "/" + mouseScores.length
+        + " (lock at " + lockAt + "/" + MOUSE_SUSTAIN_WINDOW + " = " + state.mouseSustainPct + "%)");
+      // Report the SUSTAINED buffer, not just the 6-window mean. The mean moves on every
+      // mouse window and says nothing about how close the channel is to demanding a passkey;
+      // what decides that is the fraction of the buffer sitting low, against the user's
+      // configured threshold. Surfacing low/buffer/lockAt lets the panel show the number that
+      // actually drives the decision rather than a per-movement score.
+      // Averaged over the GROUP that the user's threshold actually decides on — lockAt
+      // windows, not a fixed 6. The toolbar badge shows this, so at a 50% threshold it is the
+      // mean of the last 10 windows and at 70% the last 14. Averaging over the decision group
+      // both matches what triggers the passkey and stops the badge flickering with every
+      // single mouse movement, which a 6-window mean recomputed per window did.
+      var groupN = Math.min(lockAt, mouseScores.length);
+      var groupSum = 0;
+      for (var gi = mouseScores.length - groupN; gi < mouseScores.length; gi++) groupSum += mouseScores[gi];
+      var groupMean = groupN ? groupSum / groupN : 0;
       state.mouseVerdict = {
         status: recent.length < RECENT ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
+        low: low, buffer: mouseScores.length, bufferMax: MOUSE_SUSTAIN_WINDOW,
+        lockAt: lockAt, riskPct: Math.round((100 * low) / MOUSE_SUSTAIN_WINDOW),
+        groupN: groupN, groupMean: Math.round(groupMean * 100),
         mean: Math.round(v.mean * 100),
         packet: recent.length,
         need: RECENT,
@@ -456,7 +482,12 @@ function badgeForState() {
   if (state.verdict && state.verdict.status === "genuine") return { text: state.verdict.mean + "%", color: "#16a34a" };
   if (monitoringEnabled()) return { text: state.steps > 0 ? String(Math.min(state.steps, 99)) : "", color: "#4f46e5" };
   if (state.mouseReady && state.mouseVerdict && state.mouseVerdict.status !== "analyzing") {
-    return { text: state.mouseVerdict.mean + "%", color: "#0891b2" };    // cyan = mouse (info) channel
+    // groupMean averages the decision group (lockAt windows), not the 6-window packet, so the
+    // badge reflects the evidence the lock is actually weighed against instead of twitching
+    // on each movement. Falls back to the packet mean for a verdict saved before this field.
+    var mvB = state.mouseVerdict;
+    var pctB = mvB.groupMean != null ? mvB.groupMean : mvB.mean;
+    return { text: pctB + "%", color: "#0891b2" };    // cyan = mouse (info) channel
   }
   return { text: "", color: "#4f46e5" };
 }
@@ -562,12 +593,23 @@ function releaseLock() {
 
 // After a successful ceremony, close the RP window — Chrome hands focus straight back
 // to the window/tab the user was on. Short delay so the ✓ message is visible.
+// Close the ceremony window IMMEDIATELY. This used to wait 1200ms so the page's "✓" was
+// visible, but a setTimeout in an MV3 service worker is not guaranteed to run: the worker
+// can be terminated before the timer fires, and the pending callback dies with it. That is
+// why the window only *sometimes* closed after Windows Hello succeeded. The unlock itself is
+// the user-visible confirmation, so nothing is lost by closing at once.
 function closeRpTab(sender) {
-  if (!(sender && sender.tab && sender.tab.id != null && api.tabs)) return;
-  var tabId = sender.tab.id;
-  setTimeout(function () {
-    try { api.tabs.remove(tabId, function () { void api.runtime.lastError; }); } catch (e) {}
-  }, 1200);
+  if (!api.tabs) return;
+  function remove(id) { try { api.tabs.remove(id, function () { void api.runtime.lastError; }); } catch (e) {} }
+  if (sender && sender.tab && sender.tab.id != null) { remove(sender.tab.id); return; }
+  // No sender tab (message not relayed from a tab context) — fall back to closing whatever
+  // RP page is open, so the ceremony window never gets orphaned.
+  try {
+    api.tabs.query({}, function (tabs) {
+      void api.runtime.lastError;
+      (tabs || []).forEach(function (t) { if (t.url && t.url.indexOf(RP_BASE) === 0) remove(t.id); });
+    });
+  } catch (e) {}
 }
 
 // Open the RP ceremony as a small dialog-style popup window (falls back to a tab).
@@ -597,20 +639,32 @@ function broadcastConfig() {
 // Flip monitoring on the instant training completes — broadcasts to every open tab so
 // capture starts without a page refresh (mirrors the earlier auto-inject fix). Persisted
 // PER ACCOUNT — a flag set while account A is active must never leak into account B.
-function setModelPersonal(v) {
+// persist: whether this value should be written to storage as a DURABLE fact.
+//
+// These flags record "this account has enrolled and trained a model" — something only the
+// wizard establishes and only a reset revokes. They must never be derived from whether the
+// offscreen document happened to load the model successfully just now. It used to be: on
+// every extension reload the offscreen doc is recreated and runs loadBestModel BEFORE the
+// background has resolved the account (chrome.identity is async), so it reported
+// personal:false / mouse:false, and those transient falses were written straight to storage.
+// The result looked exactly like losing your training data — capture switched off, the panel
+// showed "not trained" — while the windows and the IndexedDB heads were still sitting there
+// untouched. Only a successful load (v === true) is proof, so only that is persisted.
+function setModelPersonal(v, persist) {
   v = !!v;
   if (v === state.modelPersonal) return;
   state.modelPersonal = v;
-  if (state.accountId) { var rec = {}; rec["cg_model_personal_" + state.accountId] = v; api.storage.local.set(rec); }
+  if (persist !== false && state.accountId) { var rec = {}; rec["cg_model_personal_" + state.accountId] = v; api.storage.local.set(rec); }
   broadcastConfig();
   refreshAllBadges();
 }
 
-function setMouseReady(v) {
+// See setModelPersonal: only a successful load is proof, so only that is persisted.
+function setMouseReady(v, persist) {
   v = !!v;
   if (v === state.mouseReady) return;
   state.mouseReady = v;
-  if (state.accountId) { var rec = {}; rec["cg_mouse_ready_" + state.accountId] = v; api.storage.local.set(rec); }
+  if (persist !== false && state.accountId) { var rec = {}; rec["cg_mouse_ready_" + state.accountId] = v; api.storage.local.set(rec); }
   broadcastConfig();   // enabling mouse (even without keystroke) must turn capture on in open tabs
   refreshAllBadges();
 }
@@ -632,8 +686,14 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       ensureOffscreen().then(function () {
         try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model", accountId: state.accountId }, function () { void api.runtime.lastError; }); } catch (e) {}
       });
-      scores = [];            // old packet was scored by the previous model
+      // BOTH rolling buffers must be dropped: every score in them was produced by the model
+      // that was just replaced. Only the keystroke packet used to be cleared, so after mouse
+      // retraining the 20-window mouse buffer still held the OLD model's low scores and could
+      // trigger a lock immediately — before the newly trained head had scored a single window.
+      scores = [];
+      mouseScores = [];
       state.verdict = null;
+      state.mouseVerdict = null;
       persistProgress(true);
       return;
     case "cg:profile-reset": {
@@ -659,7 +719,15 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       persistProgress(true);
       return;
     }
-    case "cg:model-ready": state.modelReady = true; state.modelError = null; setModelPersonal(msg.personal); setMouseReady(msg.mouse); return;
+    case "cg:model-ready":
+      // A load RESULT, not an enrollment fact: persist only the positive case. A false here
+      // means "could not load right now" — the account was not resolved yet, or the offscreen
+      // document was just recreated — and must never overwrite the stored record that this
+      // account has a trained model.
+      state.modelReady = true; state.modelError = null;
+      setModelPersonal(msg.personal, msg.personal === true);
+      setMouseReady(msg.mouse, msg.mouse === true);
+      return;
     case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":
       // enabled = anyTrained(), matching broadcastConfig: this flag gates CAPTURE in the
@@ -707,7 +775,14 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
         // Make sure the offscreen doc exists, then ask it directly whether the model loaded.
         ensureOffscreen().then(function () {
           pingOffscreen(function (r) {
-            if (r && r.ready) { state.modelReady = true; state.modelError = null; setModelPersonal(r.personal); setMouseReady(r.mouse); }
+            // Same rule as cg:model-ready — this is a load result, so persist only a success.
+            // The popup polls this once a second, so persisting a false here would rewrite the
+            // "trained" record every second the offscreen doc had not loaded the head yet.
+            if (r && r.ready) {
+              state.modelReady = true; state.modelError = null;
+              setModelPersonal(r.personal, r.personal === true);
+              setMouseReady(r.mouse, r.mouse === true);
+            }
             else if (r && r.error) { state.modelError = r.error; }
             reply(statusObj());
           });

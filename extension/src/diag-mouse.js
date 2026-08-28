@@ -35,6 +35,21 @@ async function scoreMany(wins, onProg) {
   return scores;
 }
 
+// The live enforcement rule this tool is measuring against — must match background.js
+// (MOUSE_SUSTAIN_LOW of MOUSE_SUSTAIN_WINDOW recent windows below WINDOW_THRESHOLD).
+var SUSTAIN_WINDOW = 20, SUSTAIN_LOW = 15;
+// P(at least k of n windows low) for a per-window low rate p — turns the measured rates
+// into the number that actually matters: how often the rule fires.
+function atLeast(n, k, p) {
+  var s = 0;
+  for (var i = k; i <= n; i++) {
+    var c = 1;
+    for (var j = 0; j < i; j++) c = c * (n - j) / (j + 1);
+    s += c * Math.pow(p, i) * Math.pow(1 - p, n - i);
+  }
+  return s;
+}
+
 function stats(scores) {
   if (!scores.length) return null;
   var s = scores.slice().sort(function (a, b) { return a - b; });
@@ -107,9 +122,13 @@ function pushEv(x, y, st) {
     maybeEnableRun();
   }
 }
-area.addEventListener("mousemove", function (e) { pushEv(e.clientX, e.clientY, down ? "Drag" : "Move"); });
-area.addEventListener("mousedown", function (e) { down = true; pushEv(e.clientX, e.clientY, "Pressed"); });
-area.addEventListener("mouseup", function (e) { down = false; pushEv(e.clientX, e.clientY, "Released"); });
+// Capture WINDOW-WIDE, not just inside the box. content.js scores motion across the whole
+// viewport, so sampling the genuine user through a small box measures a different (cramped,
+// low-variety) distribution and reports them as worse than they are — the very mismatch this
+// tool exists to detect. The box below is only a visual target to move around.
+document.addEventListener("mousemove", function (e) { pushEv(e.clientX, e.clientY, down ? "Drag" : "Move"); });
+document.addEventListener("mousedown", function (e) { down = true; pushEv(e.clientX, e.clientY, "Pressed"); });
+document.addEventListener("mouseup", function (e) { down = false; pushEv(e.clientX, e.clientY, "Released"); });
 
 function maybeEnableRun() { q("run").disabled = !(head && impostorWins.length); }
 
@@ -157,11 +176,25 @@ q("run").addEventListener("click", async function () {
         "only scores " + liveMean.toFixed(2) + " mean — you'd be falsely flagged while browsing. This is the enroll-task vs " +
         "use-task mismatch. Fix: re-enroll on natural browsing movement.";
     } else if (liveS) {
+      // Report what the measured rates actually imply for the live rule, rather than a
+      // generic "looks promising". The mouse channel enforces on a SUSTAINED vote —
+      // MOUSE_SUSTAIN_LOW of MOUSE_SUSTAIN_WINDOW recent windows below 0.5 — so the useful
+      // question is how often that trips for the genuine user versus an impostor.
       cls = "v-ok";
-      v = "✅ Promising: impostors accepted only " + impAcc.toFixed(0) + "%, your live browsing mean " + liveMean.toFixed(2) + ". " +
-        "There is real separation → mouse could contribute to enforcement via FUSION (sustained + corroborated), not solo instant lock.";
+      var pGen = 1 - liveS.acceptedPct / 100, pImp = 1 - impAcc / 100;
+      var fl = atLeast(SUSTAIN_WINDOW, SUSTAIN_LOW, pGen) * 100;
+      var det = atLeast(SUSTAIN_WINDOW, SUSTAIN_LOW, pImp) * 100;
+      v = "✅ Working: impostors accepted " + impAcc.toFixed(0) + "%, your live browsing accepted "
+        + liveS.acceptedPct.toFixed(0) + "% (mean " + liveMean.toFixed(2) + ", separation "
+        + (liveMean - impS.mean).toFixed(2) + "). Under the live rule (" + SUSTAIN_LOW + " of "
+        + SUSTAIN_WINDOW + " recent windows low) that is a genuine false-lock chance of "
+        + (fl < 0.01 ? fl.toExponential(1) : fl.toFixed(3)) + "% per evaluation, while an impostor is caught "
+        + det.toFixed(1) + "% of the time within about " + SUSTAIN_WINDOW + " windows."
+        + (enrS ? "  In-sample " + enrS.mean.toFixed(2) + " vs live " + liveMean.toFixed(2) + " (gap "
+          + (enrS.mean - liveMean).toFixed(2) + ") — "
+          + (enrS.mean - liveMean > 0.20 ? "large, add more enrollment windows." : "small, the head generalises.") : "");
     } else {
-      v = "⚠ Impostors accepted " + impAcc.toFixed(0) + "%, but no live-browsing sample captured — move the mouse in the box and re-run for the real genuine test.";
+      v = "⚠ Impostors accepted " + impAcc.toFixed(0) + "%, but no live-browsing sample captured — move the mouse around the screen and re-run for the real genuine test.";
     }
   } else { v = "⚠ No impostor scores — cannot conclude."; }
   res.innerHTML = "<div class='verdict " + cls + "'>" + v + "</div>" + html;

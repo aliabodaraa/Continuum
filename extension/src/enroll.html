@@ -50,6 +50,15 @@
       .mlink { color: var(--link); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font-weight: 600; }
       .mlink.done { color: var(--faint); text-decoration: none; cursor: default; }
       .nudge { background: var(--nudge-bg); border: 1px solid var(--nudge-border); border-radius: 10px; padding: 10px 14px; color: var(--nudge-text); font-size: 13.5px; margin-bottom: 14px; }
+      /* Click targets placed anywhere on screen (fixed, outside the centered column) so the
+         hand makes moves of varied length — the amplitude range the guard sees in real use. */
+      #floatLayer { position: fixed; inset: 0; z-index: 5; pointer-events: none; }
+      .ftarget { position: fixed; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, var(--accent), var(--accent-2));
+        box-shadow: 0 2px 10px rgba(0,0,0,.25); cursor: pointer; pointer-events: auto;
+        display: flex; align-items: center; justify-content: center; color: #fff; font-size: 15px;
+        transition: transform .1s; }
+      .ftarget:hover { transform: scale(1.12); }
     </style>
   </head>
   <body>
@@ -80,14 +89,17 @@
     </div>
 
     <div id="mouseStage" style="display:none">
-      <p class="sub">Read the snippet, then click the highlighted <b>links</b> in any order, at your normal browsing pace. Continuum learns how your hand moves across a page — positions and timing only, never what you click.</p>
+      <p class="sub">Click the highlighted <b>links</b> in the snippet <i>and</i> the <b>dots</b> that appear anywhere on the screen, at your normal pace. The dots deliberately vary in distance — some close, some far — so Continuum sees the full range of how your hand moves. Positions and timing only, never what you click.</p>
       <div id="playArea" class="playarea">
         <div id="mouseText" class="mousetext"></div>
       </div>
       <div class="bar"><i id="mprog"></i></div>
       <div class="status" id="mstatus">0 / 20 mouse windows captured</div>
+      <button id="msave" disabled>Save my mouse profile &amp; train</button>
       <div class="status" id="mtrainStatus" style="display:none">training…</div>
     </div>
+    <!-- screen-wide click targets live here, outside the centered column -->
+    <div id="floatLayer"></div>
 
     <div id="done">✓ <span id="doneMsg">Your personal model is trained and active. The guard now knows your rhythm.</span><br /><br />
       <div id="sessionNudge" class="nudge" style="display:none"></div>

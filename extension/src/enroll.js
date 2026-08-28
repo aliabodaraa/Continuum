@@ -8,9 +8,18 @@ var api = globalThis.browser || globalThis.chrome;
 // storage, window counts, trained heads, and session counters), so the wizard runs one
 // at a time instead of forcing both every session. Defaults to keystroke for a bare URL.
 var MODE = (new URLSearchParams(location.search).get("mode") === "mouse") ? "mouse" : "keystroke";
-var TARGET = 12;                 // NEW windows this session (~700+ keystrokes)
+var TARGET = 12;                 // NEW windows per ROUND (~700+ keystrokes)
 var MAX_STORED_KEY_WINDOWS = 60;  // cap on accumulated keystroke windows across all sessions
-var MAX_STORED_MOUSE_WINDOWS = 80;
+// Windows the ACCUMULATED profile should reach before it generalises well. Measured with
+// diag-keystroke on real profiles: at 12 stored windows the head scored 0.89 in-sample but
+// only 0.56 on live typing (a 0.33 generalisation gap — memorising, not learning); at 47 the
+// gap was 0.16; at 60 it was 0.01. So 60 is where a profile stops overfitting, and it is
+// also the storage cap — there is no reason to aim lower.
+var RECOMMENDED_KEY_WINDOWS = MAX_STORED_KEY_WINDOWS;
+var profileTotal = 0;             // accumulated windows already stored for this account
+// Raised from 80: sessions can now contribute more than MOUSE_TARGET windows, and the
+// profile needs room to span short/medium/long movement rather than one amplitude.
+var MAX_STORED_MOUSE_WINDOWS = 200;
 var events = [], t0 = performance.now();
 
 // DIAGNOSTIC: dump per-feature stats [id1,id2,dwell1,dwell2,dd,ud] for a set of windows,
@@ -91,7 +100,12 @@ function update() {
   var w = F ? F.stepsToWindows(segments) : [];
   var n = w.length;
   prog.style.width = Math.min(100, Math.round((n / TARGET) * 100)) + "%";
-  status.textContent = n + " / " + TARGET + " windows captured";
+  // Show BOTH numbers: progress through this round, and where the accumulated profile stands
+  // against the point where it stops overfitting. Without the second number the user has no
+  // way to know whether one round was enough — which is how profiles ended up at 12 windows.
+  status.textContent = n + " / " + TARGET + " windows this round"
+    + "  ·  profile: " + profileTotal + " / " + RECOMMENDED_KEY_WINDOWS
+    + (profileTotal >= RECOMMENDED_KEY_WINDOWS ? " ✓" : "");
   saveBtn.disabled = n < TARGET;
   // DIAGNOSTIC: why is the count stuck? Shows every 20 keystrokes — segment lengths
   // reveal whether typing is being fragmented (many short pause-separated runs) instead
@@ -115,6 +129,8 @@ getProfileId(function (id) {
   api.storage.local.get(["cg_enroll_" + id, "cg_enroll_mouse_" + id], function (d) {
     var nKey = ((d && d["cg_enroll_" + id]) || []).length;
     var nMouse = ((d && d["cg_enroll_mouse_" + id]) || []).length;
+    profileTotal = (MODE === "mouse") ? nMouse : nKey;   // drives the "profile: N / M" readout
+    if (typeof update === "function") { try { update(); } catch (e) {} }
     if (nKey > 0 || nMouse > 0) {
       existingCount.textContent = nKey + " typing + " + nMouse + " mouse windows";
       existingBox.style.display = "block";
@@ -218,8 +234,27 @@ saveBtn.addEventListener("click", function () {
           saveTo: "indexeddb://cg-personal-head-" + id,
           onProgress: function (p) { ts.textContent = "training… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "% (" + merged.length + " windows total)"; },
         }).then(function (r) {
-          ts.style.display = "none";
-          finishStage("keystroke");
+          // Set up the NEXT round rather than ending the session. Building a profile to the
+          // recommended size used to mean reloading the wizard once per round, which is why
+          // profiles stalled at a single round's worth of windows. Now the box clears, a
+          // fresh passage loads, and the running total is shown, so rounds can simply
+          // continue until the profile is big enough.
+          profileTotal = merged.length;
+          events = [];                 // next round is captured from scratch
+          ta.value = "";
+          ta.disabled = false;
+          loadPassage();               // new text, so the round isn't retyping the same words
+          saveBtn.disabled = true;     // re-earned once TARGET windows are captured again
+          var remaining = RECOMMENDED_KEY_WINDOWS - profileTotal;
+          ts.style.display = "block";
+          ts.textContent = remaining > 0
+            ? "✓ Saved and retrained — your profile now has " + profileTotal + " windows. About "
+              + remaining + " more recommended: a new passage is ready below."
+            : "✓ Saved and retrained — your profile now has " + profileTotal
+              + " windows, enough for a stable model. You can stop here or keep adding.";
+          update();
+          try { ta.focus(); } catch (e2) {}
+          if (profileTotal >= RECOMMENDED_KEY_WINDOWS) finishStage("keystroke");
         }).catch(function (e) {
           ts.textContent = "training failed: " + ((e && e.message) || e) + " — your samples were saved; you can retry.";
           saveBtn.disabled = false;
@@ -248,6 +283,7 @@ function startMouseStage() {
   var mprog = document.getElementById("mprog");
   var mstatus = document.getElementById("mstatus");
   var mts = document.getElementById("mtrainStatus");
+  var msaveBtn = document.getElementById("msave");
   stage.style.display = "block";
   stage.scrollIntoView({ behavior: "smooth" });
 
@@ -255,9 +291,54 @@ function startMouseStage() {
   var mEvents = [], down = false, doneTraining = false;
 
   function push(x, y, st) { if (!doneTraining) { mEvents.push({ t: performance.now(), x: x, y: y, state: st }); if (mEvents.length % 10 === 0) update(); } }
-  area.addEventListener("mousemove", function (e) { push(e.clientX, e.clientY, down ? "Drag" : "Move"); });
-  area.addEventListener("mousedown", function (e) { down = true; push(e.clientX, e.clientY, "Pressed"); });
-  area.addEventListener("mouseup", function (e) { down = false; push(e.clientX, e.clientY, "Released"); });
+  // Capture on DOCUMENT, not the play area. content.js scores motion across the whole
+  // viewport, so recording only inside a 620x420 box enrols a distribution the guard never
+  // sees — measured live, browsing windows scored ~0.29 against 0.61 for the movement this
+  // page used to capture.
+  document.addEventListener("mousemove", function (e) { push(e.clientX, e.clientY, down ? "Drag" : "Move"); });
+  document.addEventListener("mousedown", function (e) { down = true; push(e.clientX, e.clientY, "Pressed"); });
+  document.addEventListener("mouseup", function (e) { down = false; push(e.clientX, e.clientY, "Released"); });
+
+  // Targets placed anywhere on screen, at DELIBERATELY VARIED distances from the previous
+  // one — roughly a third short (~120px), a third medium, a third long (cross-screen).
+  // Amplitude is the property that separates real browsing (short, precise corrections)
+  // from a directed task (long sweeps), and a profile enrolled on only one of them fails on
+  // the other. Alternating distances makes the profile span the range the guard will see.
+  var lastTX = window.innerWidth / 2, lastTY = window.innerHeight / 2, hop = 0;
+  function spawnTarget() {
+    if (doneTraining) return;
+    var el = document.createElement("div");
+    el.className = "ftarget";
+    // Weighted toward SHORT hops (2 of every 4), because that is what real browsing is
+    // mostly made of — small precise corrections — while the medium and long hops keep the
+    // ballistic end of the range represented. Fractions are of the screen diagonal.
+    var tier = hop % 4;
+    var minD = [0.02, 0.03, 0.15, 0.50][tier], maxD = [0.09, 0.12, 0.40, 0.90][tier];
+    hop += 1;
+    var diag = Math.hypot(window.innerWidth, window.innerHeight);
+    var x, y, tries = 0;
+    do {
+      var ang = Math.random() * Math.PI * 2;
+      var dist = diag * (minD + Math.random() * (maxD - minD));
+      x = lastTX + Math.cos(ang) * dist;
+      y = lastTY + Math.sin(ang) * dist;
+      tries += 1;
+    } while ((x < 40 || y < 40 || x > window.innerWidth - 40 || y > window.innerHeight - 40) && tries < 30);
+    x = Math.max(40, Math.min(window.innerWidth - 40, x));
+    y = Math.max(40, Math.min(window.innerHeight - 40, y));
+    lastTX = x; lastTY = y;
+    el.style.left = x + "px"; el.style.top = y + "px";
+    el.textContent = "●";
+    el.addEventListener("click", function (e) {
+      e.preventDefault(); e.stopPropagation();
+      if (el.parentNode) el.parentNode.removeChild(el);
+      spawnTarget();
+    });
+    floatLayer.appendChild(el);
+  }
+  var floatLayer = document.getElementById("floatLayer");
+  function clearTargets() { if (floatLayer) floatLayer.innerHTML = ""; }
+  spawnTarget();
 
   // Render a passage with MOUSE_LINKS_PER_ROUND random words turned into clickable
   // "links" (real hyperlink styling) scattered through the natural flow of the text —
@@ -299,16 +380,32 @@ function startMouseStage() {
   function update() {
     var w = windows();
     mprog.style.width = Math.min(100, Math.round((w.length / MOUSE_TARGET) * 100)) + "%";
-    mstatus.textContent = w.length + " / " + MOUSE_TARGET + " mouse windows captured";
-    if (w.length >= MOUSE_TARGET && !doneTraining) {
-      doneTraining = true;
-      mts.style.display = "block";
-      mts.textContent = "capturing complete — training your mouse model on-device…";
-      getProfileId(function (id) {
-        var key = "cg_enroll_mouse_" + id;
-        api.storage.local.get([key], function (d) {
-          var prior = (d && d[key]) || [];
-          var merged = prior.concat(w.slice(0, MOUSE_TARGET));
+    // MOUSE_TARGET is a MINIMUM, not a cap. The old flow trained automatically the instant it
+    // was reached and then kept only the first MOUSE_TARGET windows, so a session could never
+    // contribute more than 20 however long the user kept going — and with targets now cycling
+    // through short/medium/long hops, 20 windows barely covers the amplitude range the profile
+    // is supposed to span. Keystroke already worked this way (minimum, then a save button);
+    // mouse now matches.
+    mstatus.textContent = doneTraining ? mstatus.textContent
+      : w.length < MOUSE_TARGET
+        ? w.length + " / " + MOUSE_TARGET + " mouse windows captured"
+        : w.length + " windows captured ✓ — keep going for a stronger profile, or save now";
+    msaveBtn.disabled = doneTraining || w.length < MOUSE_TARGET;
+  }
+
+  msaveBtn.addEventListener("click", function () {
+    var w = windows();
+    if (doneTraining || w.length < MOUSE_TARGET) return;
+    doneTraining = true;
+    msaveBtn.disabled = true;
+    clearTargets();
+    mts.style.display = "block";
+    mts.textContent = "capturing complete — training your mouse model on-device…";
+    getProfileId(function (id) {
+      var key = "cg_enroll_mouse_" + id;
+      api.storage.local.get([key], function (d) {
+        var prior = (d && d[key]) || [];
+        var merged = prior.concat(w);   // keep EVERY window captured this session
           if (merged.length > MAX_STORED_MOUSE_WINDOWS) merged = merged.slice(-MAX_STORED_MOUSE_WINDOWS);
           var rec = {}; rec[key] = merged;
           api.storage.local.set(rec, function () {
@@ -325,11 +422,10 @@ function startMouseStage() {
             }).catch(function (e) {
               mts.textContent = "mouse training failed: " + ((e && e.message) || e) + " — your samples were saved; reload this page to try again.";
             });
-          });
         });
       });
-    }
-  }
+    });
+  });
 }
 
 // ---- route to the requested modality (one stage per run) ----

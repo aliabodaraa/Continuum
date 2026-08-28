@@ -150,6 +150,9 @@
       .switch input:checked + .slider::before { transform: translateX(16px); }
       input[type=range] { accent-color: var(--accent); height: 16px; cursor: pointer; }
       .ctrl { display: flex; align-items: center; gap: 8px; }
+      /* Sub-label under a control: spells out what the slider setting actually means in
+         windows, so "70%" is not left as an abstraction. */
+      .hint { color: var(--faint); font-size: 10.5px; line-height: 1.35; padding: 0 0 6px; margin-top: -2px; }
       .gap { height: 7px; }
 
       /* ---- collapsible per-modality sections ----
@@ -250,6 +253,7 @@
               <div class="row" id="rowMouse"><span>Verdict</span><span class="val" id="mouse">…</span></div>
               <div class="row" id="rowMouseTrack" style="display:none"><span>Mouse tracking</span><label class="switch"><input type="checkbox" id="mouseTrackToggle" /><span class="slider"></span></label></div>
               <div class="row" id="rowMouseSens" style="display:none"><span>Lock threshold</span><span class="ctrl"><input type="range" id="mouseSensRange" min="30" max="100" step="5" title="Percent of recent mouse windows that must look suspicious before the page locks. Lower = locks more easily; higher = stricter." style="width:104px" /><span class="val" id="mouseSensVal" style="min-width:32px">75%</span></span></div>
+              <div class="hint" id="mouseSensHint" style="display:none">…</div>
               <div class="row" id="rowMouseSamples" style="display:none"><span>Trained on</span><span class="val" id="mouseSamples">…</span></div>
               <button id="enrollMouse" class="btn-mouse">🖱️ Train mouse</button>
             </div>
