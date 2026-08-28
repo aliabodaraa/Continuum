@@ -101,6 +101,10 @@ router.post("/auth/complete", async (req, res) => {
     // App-side outcome: record the verification + lift the risk lock for a
     // matching in-session user (both keystroke and mouse guards read this).
     req.session.passkeyVerifiedUserId = Number(userId);
+    // WHEN it happened, not just that it did. Destructive actions (profile reset) require a
+    // verification from moments ago, not one left over from an unlock earlier in the session
+    // — otherwise a single step-up would authorise deletion for as long as the session lives.
+    req.session.passkeyVerifiedAt = Date.now();
     if (req.session.userId && Number(req.session.userId) === Number(userId)) {
       delete req.session.continuousAuthLocked;
       ca.lockClear(req.caUid).catch(() => {});

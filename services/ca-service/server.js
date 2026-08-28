@@ -483,6 +483,16 @@ app.post("/v1/mouse/check", async (req, res) => {
   } catch (err) { console.error("mouse check:", err); res.status(500).json({ ok: false, error: err.message }); }
 });
 app.get("/v1/mouse/status/:userId", (req, res) => res.json(mouse.mouseStatus(uid(req))));
+// Destructive: drops the trained mouse profile and every stored session. The CALLER is
+// responsible for having verified a passkey first — this service is stateless about auth and
+// trusts its caller (same contract as /v1/keystroke/reset).
+app.post("/v1/mouse/reset", (req, res) => {
+  try {
+    const userId = uid(req);
+    const r = mouse.resetMouseProfile(userId);
+    res.json({ ok: true, message: "Mouse enrollment was reset", removedSessions: r.removedSessions, mouseStatus: mouse.mouseStatus(userId) });
+  } catch (err) { console.error("mouse reset:", err); res.status(500).json({ ok: false, error: err.message }); }
+});
 
 // Shared step-up lock (see lib/lock.js). Mouse callers (apps/demo, the
 // gateway) each run their own consecutive-strike debounce, so they set/clear

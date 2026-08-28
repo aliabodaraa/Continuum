@@ -6,6 +6,7 @@
 const express = require("express");
 const db = require("../../db/init");
 const ca = require("../../services/caClient");
+const { requireFreshPasskey } = require("../../middleware/requireFreshPasskey");
 
 const router = express.Router();
 
@@ -52,7 +53,11 @@ router.get("/typing-status", requireAuth, async (req, res, next) => {
   try { passthrough(res, await ca.keystrokeStatus(req.caUid)); } catch (e) { next(e); }
 });
 
-router.post("/typing-reset", requireAuth, requireUnlockedSession, async (req, res, next) => {
+// Destructive: drops the trained typing profile and unmarks its training texts. Now also
+// requires a passkey verified in the last couple of minutes — deleting an enrolled profile is
+// precisely what an impostor at an unlocked machine would do, since it lets them re-enroll as
+// themselves. requireUnlockedSession alone only checked that a passkey EXISTS.
+router.post("/typing-reset", requireAuth, requireUnlockedSession, requireFreshPasskey, async (req, res, next) => {
   try { passthrough(res, await ca.keystrokeReset(req.caUid)); } catch (e) { next(e); }
 });
 
