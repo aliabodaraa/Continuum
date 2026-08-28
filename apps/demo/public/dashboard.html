@@ -639,9 +639,9 @@
           <div class="stat-sub">passkey triggered</div>
         </div>
         <div class="stat-box">
-          <div class="stat-label">Avg Score</div>
+          <div class="stat-label">Mean Confidence</div>
           <div class="stat-value" id="statAvgScore">--</div>
-          <div class="stat-sub">mean confidence</div>
+          <div class="stat-sub" title="Average of the model's genuine-probability across all checks. NOT a percentage of checks — compare it with the score distribution, not with the genuine/suspicious counts.">avg model score (not % of checks)</div>
         </div>
       </div>
 
@@ -668,9 +668,9 @@
             <div class="stat-sub">accumulated training data</div>
           </div>
           <div class="stat-box">
-            <div class="stat-label">Model Accuracy</div>
+            <div class="stat-label">Training Fit</div>
             <div class="stat-value" id="mouseAcc" style="color: var(--success)">--</div>
-            <div class="stat-sub">balanced (validation)</div>
+            <div class="stat-sub" title="Balanced accuracy on the validation split of this user's own fine-tuning run (choose_user_threshold in model-api). It is a training diagnostic, NOT live accuracy — live performance is lower and must be measured against unseen impostors.">balanced acc. on train split</div>
           </div>
         </div>
       </div>
@@ -794,13 +794,19 @@
               <thead>
                 <tr>
                   <th>User</th>
-                  <th title="True Accept Rate = genuine verdicts / total">
-                    TAR
+                  <th title="Accept rate on this user's OWN sessions = genuine verdicts / total. A usability measure. It says nothing about security: a model that accepted everything would also score high here.">
+                    Accept rate
+                    <span style="font-weight:400;color:var(--muted);font-size:10px">(own sessions)</span>
                   </th>
                   <th
-                    title="False Rejection Rate = suspicious verdicts on genuine user / total"
+                    title="Reject rate = 1 - accept rate, computed over the same rows. NOT an independent measurement — the two always sum to 100%."
                   >
-                    FRR
+                    Reject rate
+                    <span style="font-weight:400;color:var(--muted);font-size:10px">(= 1 - accept)</span>
+                  </th>
+                  <th title="False Accept Rate — the security half. Cannot be computed from auth_decisions, which contains only this user's own sessions. Measured separately, subject-disjoint, by services/model-api/keystroke_user_sweep.py against unseen participants.">
+                    FAR
+                    <span style="font-weight:400;color:var(--muted);font-size:10px">(see sweep)</span>
                   </th>
                   <th title="Average confidence score across all checks">
                     Avg Score
@@ -1456,6 +1462,7 @@
               <td style="font-weight:700">${u.username}</td>
               <td>${tar}</td>
               <td>${frr}</td>
+              <td style="color:var(--muted)" title="Not derivable from this table: auth_decisions holds only this user's own sessions. Run services/model-api/keystroke_user_sweep.py for a subject-disjoint FAR.">not measured</td>
               <td>${avgScore}</td>
               <td>${thr}</td>
               <td>${acc}</td>
