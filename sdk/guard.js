@@ -47,7 +47,11 @@
 
   // window math (overwritten from config)
   var WINDOW_SIZE = 50, WINDOW_STRIDE = 10, RECENT_WINDOW_COUNT = 6, KS_MIN_CHARS = 80;
-  var MOUSE_CHECK_MS = 1600, MOUSE_MIN_WINDOWS = 6, MOUSE_ENROLL_TARGET = 160;
+  // MOUSE_MIN_WINDOWS must equal the server's MOUSE_SUSTAIN_WINDOW (ca-service/lib/mouse.js)
+  // and the extension's MOUSE_SUSTAIN_WINDOW. It was 6, sized for the old 6-window packet
+  // vote; with the sustained rule the server stays in warmup until it has 20, so a lower
+  // value here just makes the panel claim it is ready while the server disagrees.
+  var MOUSE_CHECK_MS = 1600, MOUSE_MIN_WINDOWS = 20, MOUSE_ENROLL_TARGET = 160;
   // The mouse feature vector includes is_click, so enrollment needs real clicks —
   // not just movement — or the model never learns the user's click dynamics.
   var MOUSE_ENROLL_CLICKS = 10;
@@ -78,12 +82,14 @@
   var EP = MODE === "gateway" ? {
     config: "/v1/sdk/keystroke/config", ksStatus: "/v1/sdk/keystroke/status", ksEnroll: "/v1/sdk/keystroke/enroll", ksCheck: "/v1/sdk/keystroke/check", ksContribute: "/v1/sdk/keystroke/contribute",
     mouseEnroll: "/v1/sdk/mouse/enroll", mouseCheck: "/v1/sdk/mouse/check", mouseStatus: "/v1/sdk/mouse/status", onboarding: "/v1/sdk/onboarding",
+    ksReset: "/v1/sdk/keystroke/reset", mouseReset: "/v1/sdk/mouse/reset",
     pkRegOpts: "/v1/sdk/passkey/register/options", pkRegDone: "/v1/sdk/passkey/register/complete",
     pkAuthOpts: "/v1/sdk/passkey/auth/options", pkAuthDone: "/v1/sdk/passkey/auth/complete",
     lockStatus: "/v1/sdk/lock/status",
   } : {
     config: "/api/text/config", ksStatus: "/api/text/typing-status", ksEnroll: "/api/text/enroll", ksCheck: "/api/text/check", ksContribute: "/api/text/contribute",
     mouseEnroll: "/api/mouse/enroll", mouseCheck: "/api/mouse/check", mouseStatus: "/api/mouse/status",
+    ksReset: "/api/text/typing-reset", mouseReset: "/api/mouse/reset",
   };
 
   // ---------- dependency loader ----------
@@ -138,6 +144,10 @@
       ".passage{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;font-size:13px;color:#334155;line-height:1.6;margin-bottom:10px;user-select:none}" +
       ".ta{width:100%;min-height:96px;border:1px solid #cbd5e1;border-radius:10px;padding:11px;font:inherit;resize:none}" +
       ".pad{position:relative;overflow:hidden;height:260px;border:2px dashed #c7d2fe;border-radius:12px;background:#eef2ff;display:flex;align-items:center;justify-content:center;color:#6366f1;font-weight:700;margin-bottom:12px;text-align:center}" +
+      // Mouse enrollment gets a much larger card. The click target spawns inside the pad, so
+      // its size sets how far apart consecutive hops can be — and a 480px card taught the
+      // model one cramped amplitude that never matched full-page movement.
+      ".card.wide{max-width:min(1100px,94vw)}.card.wide .pad{height:min(60vh,520px)}" +
       ".pt{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#4f46e5;box-shadow:0 0 0 6px rgba(79,70,229,.18);cursor:pointer;animation:cptpulse 1s ease-in-out infinite}@keyframes cptpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}" +
       ".bar{height:8px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin:10px 0}.bar>i{display:block;height:100%;background:#4f46e5;width:0}" +
       ".steps{display:flex;gap:6px;margin-bottom:14px}.steps .s{flex:1;height:5px;border-radius:999px;background:#e2e8f0}.steps .s.on{background:#4f46e5}.steps .s.done{background:#22c55e}" +
@@ -219,6 +229,12 @@
   }
 
   function pulse() { if (dotEl) { dotEl.classList.add("pulse"); setTimeout(function () { dotEl.classList.remove("pulse"); }, 220); } }
+  // Last scored verdict per channel, kept so TRANSIENT states ("analyzing…", "checking…")
+  // can still show it. Dropping the number mid-check made the panel look like it had lost
+  // track of the user, when in fact the previous verdict is exactly what is still in force
+  // until the next one lands.
+  var lastKsPct = null, lastMousePct = null;
+  function withLast(h, pct) { return pct == null ? h : h + " · <b>" + pct + "%</b>"; }
   function setKb(c, h) { if (kbEl) { kbEl.className = "st " + c; kbEl.innerHTML = "keystroke: " + h; } }
   function setMouseRow(c, h) { if (mouseEl) { mouseEl.className = "st " + c; mouseEl.innerHTML = "mouse: " + h; } }
   var stepUpOnSuccess = null; // optional callback for external step-up requests
@@ -249,6 +265,47 @@
       : await reqJson("/api/webauthn/register/complete", "POST", { credential: att });
     if (!done.ok) throw new Error(done.d.error || "Registration failed");
     return true;
+  }
+
+  // A bare passkey ceremony for authorising a DESTRUCTIVE action (profile reset). Deliberately
+  // separate from stepUp(): that one is bound to the lock modal's UI and also resets the
+  // trackers/counters to resume monitoring, none of which applies here. Returns true only on a
+  // verified assertion. The server re-checks freshness independently (middleware/
+  // requireFreshPasskey) — this call exists to PROMPT the user, not to be the authorisation.
+  async function verifyPasskeyForAction() {
+    var W = webauthn(), opt, ver;
+    if (MODE === "gateway") {
+      opt = await reqJson(EP.pkAuthOpts, "POST", {});
+      if (!opt.ok) throw new Error((opt.d && opt.d.error) || "Could not start verification");
+      var as1 = await W.startAuthentication(opt.d);
+      ver = await reqJson(EP.pkAuthDone, "POST", { challengeId: opt.d.challengeId, assertion: as1 });
+    } else {
+      var me = await req("/api/auth/me").then(function (r) { return r.json(); });
+      opt = await reqJson("/api/webauthn/auth/options", "POST", { userId: me.userId });
+      if (!opt.ok) throw new Error((opt.d && opt.d.error) || "Could not start verification");
+      var as2 = await W.startAuthentication(opt.d);
+      ver = await reqJson("/api/webauthn/auth/complete", "POST", { userId: me.userId, challengeId: opt.d.challengeId, assertion: as2 });
+    }
+    if (!ver.ok) throw new Error((ver.d && ver.d.error) || "Verification failed");
+    return true;
+  }
+
+  // Shared by both training popups. Order matters: confirm, then verify, then delete — the
+  // user is told exactly what is about to be destroyed before the ceremony, and nothing is
+  // deleted if they cancel the prompt or the assertion fails.
+  async function resetProfile(kind, errEl, onDone) {
+    var label = kind === "mouse" ? "mouse movement" : "typing rhythm";
+    if (!window.confirm("Delete your enrolled " + label + " profile?\n\nThis cannot be undone — you will need to train again from scratch. You will be asked for your passkey to confirm.")) return;
+    errEl.style.display = "none";
+    try {
+      await verifyPasskeyForAction();
+      var r = await reqJson(kind === "mouse" ? EP.mouseReset : EP.ksReset, "POST", {});
+      if (!r.ok) throw new Error((r.d && r.d.error) || "Reset failed");
+      if (onDone) onDone(r.d);
+    } catch (err) {
+      errEl.textContent = (err && err.message) || "Reset failed";
+      errEl.style.display = "block";
+    }
   }
 
   async function stepUp() {
@@ -337,8 +394,12 @@
   }
   // onClose defaults to logout (onboarding/step-up can only be escaped by signing
   // out); optional popups (reinforcement) pass closeWiz to just dismiss.
-  function openWiz(html, onClose) {
-    wizEl.innerHTML = '<div class="card"><button class="wizx" title="Sign out">×</button><div class="brand"><span class="b2"></span>CONTINUUM · secure onboarding</div>' + html + "</div>";
+  // cls: optional extra class on the card. "wide" is used by the mouse steps — the click
+  // target spawns inside the pad, so a narrow pad confines every hop to a small area and
+  // teaches the model one cramped amplitude. A wide pad lets the target land far apart, which
+  // is what produces the range of movement the guard actually sees on a full page.
+  function openWiz(html, onClose, cls) {
+    wizEl.innerHTML = '<div class="card' + (cls ? " " + cls : "") + '"><button class="wizx" title="Sign out">×</button><div class="brand"><span class="b2"></span>CONTINUUM · secure onboarding</div>' + html + "</div>";
     wizEl.querySelector(".wizx").addEventListener("click", onClose || doLogout);
     wizEl.style.display = "flex";
   }
@@ -429,9 +490,28 @@
   // `optional`: lazy-mode standalone use — dismissable × (no logout), no step bar.
   function wizMouse(optional) {
     return new Promise(function (resolve) {
-      openWiz((optional ? "" : wizStepBar(2, 3, 2)) + '<div class="t">Teach your mouse motion</div><div class="d">Move naturally AND click the target as it appears — clicks are part of your mouse signature.</div><div class="pad" id="cpad"><span class="padlabel">move & click the dot</span></div><div class="bar"><i id="mbar"></i></div><div id="mdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">movement 0% · clicks 0/' + MOUSE_ENROLL_CLICKS + '</div><button class="b" id="ms" disabled>Finish enrollment</button><div class="e"></div>', optional ? function () { closeWiz(); resolve(false); } : null);
+      openWiz((optional ? "" : wizStepBar(2, 3, 2)) + '<div class="t">Teach your mouse motion</div><div class="d">Move naturally AND click the target as it appears — clicks are part of your mouse signature.</div><div class="pad" id="cpad"><span class="padlabel">move & click the dot</span></div><div class="bar"><i id="mbar"></i></div><div id="mdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">movement 0% · clicks 0/' + MOUSE_ENROLL_CLICKS + '</div><button class="b" id="ms" disabled>Finish enrollment</button><div class="e"></div>', optional ? function () { closeWiz(); resolve(false); } : null, "wide");
+      // Show what is already on file. The reinforcement popup always did; onboarding did not,
+      // so a user re-running it could not tell whether they were starting from nothing or
+      // adding to an existing profile.
+      (function () {
+        var d0 = wizEl.querySelector(".d");
+        if (!d0) return;
+        var sc = document.createElement("div");
+        sc.className = "samplecount";
+        sc.innerHTML = 'Mouse sessions on file: <b id="mtot">…</b>';
+        d0.parentNode.insertBefore(sc, d0.nextSibling);
+        reqJson(EP.mouseStatus).then(function (st) {
+          var t = wizEl.querySelector("#mtot");
+          if (t) t.textContent = String((st && st.d && st.d.sessions) || 0);
+        }).catch(function () { var t = wizEl.querySelector("#mtot"); if (t) t.textContent = "?"; });
+      })();
       var pad = wizEl.querySelector("#cpad"), label = pad.querySelector(".padlabel"), bar = wizEl.querySelector("#mbar"), btn = wizEl.querySelector("#ms"), e = wizEl.querySelector(".e"), diag = wizEl.querySelector("#mdiag");
-      var tracker = window.mouseFeatures.createMouseTracker(pad);
+      // Track on documentElement, NOT the pad — the live guard does exactly that (see the
+      // guard loop's createMouseTracker call), and enrolling inside a small box teaches the
+      // model a cramped, low-amplitude distribution it will never see again once monitoring
+      // starts on the real page. The pad stays as the visual target to move around and click.
+      var tracker = window.mouseFeatures.createMouseTracker(document.documentElement);
       var clicks = 0; spawnClickTarget(pad, MOUSE_ENROLL_CLICKS, function (n) { clicks = n; });
       var iv = null;
       function tick() {
@@ -485,13 +565,20 @@
     if (!window.continuumKeystrokes) return;
     var added = 0, total = null;
     function render() {
-      openWiz('<div class="wizload" id="cwl"><span class="wizspin"></span>Saving sample…</div><div class="t">Strengthen your typing rhythm</div><div class="d">Type the passage naturally, then save it as a training sample. <a href="#" id="cnew" style="color:#4f46e5;font-weight:700;text-decoration:none">new text</a></div><div class="samplecount">Samples on file: <b id="ctot">' + (total == null ? "…" : total) + '</b> · added now: <b>' + added + '</b></div><div class="passage" id="cpass">Fetching text…</div><textarea class="ta" id="cta" placeholder="Type it here…"></textarea><div class="bar"><i id="cbar"></i></div><div id="cdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">typed 0 · captured 0 keystrokes</div><div style="display:flex;gap:8px"><button class="b" id="cs" disabled style="flex:1">Save sample</button><button class="b" id="cdone" style="flex:0 0 96px;background:#475569">Done</button></div><div class="e"></div>', closeWiz);
+      openWiz('<div class="wizload" id="cwl"><span class="wizspin"></span>Saving sample…</div><div class="t">Strengthen your typing rhythm</div><div class="d">Type the passage naturally, then save it as a training sample. <a href="#" id="cnew" style="color:#4f46e5;font-weight:700;text-decoration:none">new text</a></div><div class="samplecount">Samples on file: <b id="ctot">' + (total == null ? "…" : total) + '</b> · added now: <b>' + added + '</b></div><div class="passage" id="cpass">Fetching text…</div><textarea class="ta" id="cta" placeholder="Type it here…"></textarea><div class="bar"><i id="cbar"></i></div><div id="cdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">typed 0 · captured 0 keystrokes</div><div style="display:flex;gap:8px"><button class="b" id="cs" disabled style="flex:1">Save sample</button><button class="b" id="cdone" style="flex:0 0 96px;background:#475569">Done</button></div><div style="text-align:center;margin-top:10px"><a href="#" id="creset" style="color:#dc2626;font-size:12px;font-weight:700;text-decoration:none">🗑️ Reset my typing profile</a></div><div class="e"></div>', closeWiz);
       var ta = wizEl.querySelector("#cta"), bar = wizEl.querySelector("#cbar"), btn = wizEl.querySelector("#cs"), done = wizEl.querySelector("#cdone"), e = wizEl.querySelector(".e"), diag = wizEl.querySelector("#cdiag"), pass = wizEl.querySelector("#cpass"), newBtn = wizEl.querySelector("#cnew"), load = wizEl.querySelector("#cwl");
       var tracker = window.continuumKeystrokes.createTracker(ta);
       var NEED_KEYS = 100, NEED_CHARS = 120;
       async function loadPassage() { pass.style.opacity = "0.4"; pass.textContent = await nextPassage(); pass.style.opacity = "1"; }
       newBtn.addEventListener("click", function (ev) { ev.preventDefault(); loadPassage(); });
       done.addEventListener("click", closeWiz);
+      wizEl.querySelector("#creset").addEventListener("click", function (ev2) {
+        ev2.preventDefault();
+        resetProfile("keystroke", e, function () {
+          setKb("mut", "not enrolled — add samples");
+          total = 0; added = 0; render();
+        });
+      });
       function refresh() { var chars = ta.value.trim().length, keys = window.continuumKeystrokes.analyze(tracker.getEvents()).keyCount || 0; bar.style.width = Math.min(100, Math.round((keys / NEED_KEYS) * 100)) + "%"; diag.textContent = "typed " + chars + " · captured " + keys + " keystrokes"; btn.disabled = keys < NEED_KEYS || chars < NEED_CHARS; }
       ta.addEventListener("input", refresh); ta.addEventListener("keyup", refresh);
       btn.addEventListener("click", async function () {
@@ -510,9 +597,10 @@
     if (!window.mouseFeatures) return;
     var added = 0, total = null;
     function render() {
-      openWiz('<div class="wizload" id="mwl"><span class="wizspin"></span>Saving session…</div><div class="t">Strengthen your mouse motion</div><div class="d">Move naturally AND click the target as it appears — clicks are part of your signature.</div><div class="samplecount">Sessions on file: <b>' + (total == null ? "…" : total) + '</b> · added now: <b>' + added + '</b></div><div class="pad" id="cpad"><span class="padlabel">move & click the dot</span></div><div class="bar"><i id="mbar"></i></div><div id="mdiag2" style="font-size:11px;color:#64748b;margin:6px 0 8px">movement 0% · clicks 0/' + MOUSE_ENROLL_CLICKS + '</div><div style="display:flex;gap:8px"><button class="b" id="ms" disabled style="flex:1">Save session</button><button class="b" id="mdone" style="flex:0 0 96px;background:#475569">Done</button></div><div class="e"></div>', closeWiz);
+      openWiz('<div class="wizload" id="mwl"><span class="wizspin"></span>Saving session…</div><div class="t">Strengthen your mouse motion</div><div class="d">Move naturally AND click the target as it appears — clicks are part of your signature.</div><div class="samplecount">Sessions on file: <b>' + (total == null ? "…" : total) + '</b> · added now: <b>' + added + '</b></div><div class="pad" id="cpad"><span class="padlabel">move & click the dot</span></div><div class="bar"><i id="mbar"></i></div><div id="mdiag2" style="font-size:11px;color:#64748b;margin:6px 0 8px">movement 0% · clicks 0/' + MOUSE_ENROLL_CLICKS + '</div><div style="display:flex;gap:8px"><button class="b" id="ms" disabled style="flex:1">Save session</button><button class="b" id="mdone" style="flex:0 0 96px;background:#475569">Done</button></div><div style="text-align:center;margin-top:10px"><a href="#" id="mreset" style="color:#dc2626;font-size:12px;font-weight:700;text-decoration:none">🗑️ Reset my mouse profile</a></div><div class="e"></div>', closeWiz, "wide");
       var pad = wizEl.querySelector("#cpad"), label = pad.querySelector(".padlabel"), bar = wizEl.querySelector("#mbar"), btn = wizEl.querySelector("#ms"), done = wizEl.querySelector("#mdone"), e = wizEl.querySelector(".e"), load = wizEl.querySelector("#mwl"), diag = wizEl.querySelector("#mdiag2");
-      var tracker = window.mouseFeatures.createMouseTracker(pad), iv = null;
+      // documentElement, matching the live guard and wizMouse — see the note there.
+      var tracker = window.mouseFeatures.createMouseTracker(document.documentElement), iv = null;
       var clicks = 0; spawnClickTarget(pad, MOUSE_ENROLL_CLICKS, function (n) { clicks = n; });
       function tick() {
         var w = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(tracker.getEvents())); var n = w ? w.length : 0;
@@ -524,6 +612,16 @@
       }
       iv = setInterval(tick, 400);
       done.addEventListener("click", function () { clearInterval(iv); closeWiz(); });
+      wizEl.querySelector("#mreset").addEventListener("click", function (ev2) {
+        ev2.preventDefault();
+        resetProfile("mouse", e, function () {
+          clearInterval(iv);
+          // Stop the live guard: the model it was scoring against no longer exists.
+          try { stopMouse(); } catch (e3) {}
+          mouseOn = false; updateToggle(); setMouseRow("mut", "not enrolled");
+          total = 0; added = 0; render();
+        });
+      });
       btn.addEventListener("click", async function () {
         e.style.display = "none"; clearInterval(iv); load.classList.add("on");
         var w = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(tracker.getEvents()));
@@ -568,7 +666,7 @@
     if (text.length < KS_MIN_CHARS) { setKb("mut", "type " + text.length + "/" + KS_MIN_CHARS + " chars to start"); return; }
     // Live feedback while the user keeps writing between verdicts (feels engaged
     // instead of frozen on the last "verified ✓").
-    if (!checkInFlight) setKb("mut", "analyzing…");
+    if (!checkInFlight) setKb("mut", withLast("analyzing…", lastKsPct));
     if (ksWindowCount(ksKeyCount(ksTracker.getEvents())) <= lastCheckedWindowCount) return; // no new window yet
     if (checkInFlight) { ksMissedWindow = true; return; }
     runKsCheck();
@@ -577,7 +675,7 @@
     if (locked || !ksOn || !ksTracker) return;
     var events = ksTracker.getEvents(), text = currentTypedText();
     if (text.length < KS_MIN_CHARS) return;
-    checkInFlight = true; ksMissedWindow = false; pulse(); setKb("mut", "checking…");
+    checkInFlight = true; ksMissedWindow = false; pulse(); setKb("mut", withLast("checking…", lastKsPct));
     try {
       var timings = window.continuumKeystrokes.analyze(events);
       var r = await reqJson(EP.ksCheck, "POST", { textContent: text, keystrokeEvents: events.slice(-700), keystrokeTimings: timings, sourcePath: location.pathname });
@@ -585,11 +683,12 @@
       lastCheckedWindowCount = ksWindowCount(ksKeyCount(events));
       var ev = d.typingEvaluation || {};
       var wc = ev.windowCount || 0, pct = d.modelConfidence != null ? Math.round(d.modelConfidence * 100) : null;
+      if (pct != null) lastKsPct = pct;   // survives into the next transient state
       if (r.status === 423) { setKb("bad", "<b>locked</b> — verify"); maybeChallenge(d, "keystroke", onProbation); return; }
       // During post-step-up probation, ANY suspicious verdict re-challenges — even a
       // warmup one — so passing step-up grants no grace window to a persisting impostor.
       if (maybeChallenge(d, "keystroke", onProbation)) { setKb("bad", "<b>rhythm mismatch</b>"); cleanRun = 0; hideLearn(); return; }
-      if (d.checked === false) { setKb("mut", "gathering…"); return; }
+      if (d.checked === false) { setKb("mut", withLast("gathering…", lastKsPct)); return; }
       // No trained model for THIS identity yet → not "warming", it needs enrollment.
       // (Otherwise the row sat forever at "warming 0/7 · 0%".)
       if (ev.modelAvailable === false) { setKb("mut", "not enrolled — add samples"); cleanRun = 0; return; }
@@ -710,17 +809,30 @@
     if (locked || !mouseTracker) return;
     var count = mouseTracker.eventCount(); if (count <= lastMouseEvents) return; lastMouseEvents = count;
     var windows; try { windows = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(mouseTracker.getEvents())); } catch (e) { return; }
-    if (!windows || windows.length < MOUSE_MIN_WINDOWS) { setMouseRow("mut", "warming " + (windows ? windows.length : 0) + "/6"); return; }
+    if (!windows || windows.length < MOUSE_MIN_WINDOWS) { setMouseRow("mut", withLast("warming " + (windows ? windows.length : 0) + "/" + MOUSE_MIN_WINDOWS, lastMousePct)); return; }
     pulse();
     try {
-      var r = await reqJson(EP.mouseCheck, "POST", { windows: windows.slice(-18) });
+      // Send at least MOUSE_MIN_WINDOWS: the server's sustained vote needs a full buffer, and
+      // sending fewer (this was 18, sized for the old packet rule) leaves it in warmup forever
+      // — mouse would silently never challenge.
+      var r = await reqJson(EP.mouseCheck, "POST", { windows: windows.slice(-MOUSE_MIN_WINDOWS) });
       var d = r.d; if (d && d.riskToken) latestRiskToken = d.riskToken;
       if (d && d.enrolled === false) { setMouseRow("mut", "not enrolled"); stopMouse(); mouseOn = false; updateToggle(); return; }
       if (maybeChallenge(d, "mouse", onProbation)) { setMouseRow("bad", "<b>mouse mismatch</b>"); return; }
-      if (d.checked === false) { setMouseRow("mut", "move to check"); return; }
+      if (d.checked === false) { setMouseRow("mut", withLast("move to check", lastMousePct)); return; }
       var pct = d.meanScore != null ? Math.round(d.meanScore * 100) : null;
+      if (pct != null) lastMousePct = pct;   // shown during transient states, same as keystroke
       if (d.isSuspicious) setMouseRow("warn", "suspicious " + (d.suspiciousStreak || 1) + "/" + (d.strikesToLock || 3));
-      else { onProbation = false; setMouseRow("ok", "watching <b>" + (pct != null ? pct + "%" : "") + "</b>"); }
+      else if (d.warmup) { setMouseRow("mut", withLast("warming " + (d.windowCount || 0) + "/" + (d.bufferMax || MOUSE_MIN_WINDOWS), lastMousePct)); }
+      else {
+        onProbation = false;
+        // Same reading the extension panel shows: how much of the sustained buffer is low,
+        // against the count that triggers the step-up. That is the number which actually
+        // predicts a challenge; a per-window mean does not.
+        setMouseRow("ok", d.lowWindows != null && d.bufferMax
+          ? "<b>" + d.lowWindows + "/" + d.bufferMax + "</b> low · locks at " + d.lockAt
+          : "watching <b>" + (pct != null ? pct + "%" : "") + "</b>");
+      }
     } catch (e) { setMouseRow("mut", "offline"); }
   }
 

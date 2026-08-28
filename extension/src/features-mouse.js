@@ -6,7 +6,17 @@
 // Feature vector F=7: [dx, dy, v, a, dtheta, dt, is_click]
 (function () {
   var SCREEN_SCALE = 1920.0;
-  var IDLE_SPLIT_SECONDS = 2.0;
+  // Gaps above this emit NO motion vector — the pointer was parked, not moving. 2.0s was too
+  // permissive: every 1-2s reading pause still produced a row, with dt clipped to 1.0 and
+  // velocity near zero. Enrollment (continuous clicking) contains almost no such rows, and
+  // neither does the SapiMouse base (unbroken 1-3 min tasks), so live browsing — move, read,
+  // move — fed the head a pattern it had never seen. Measured live during real browsing:
+  // windows scored 0.25-0.51 (mean ~0.30) against 0.61 for continuous movement in the
+  // diagnostic, which is what drives the sustained vote to a false lock.
+  // 0.5s removes every such row while costing ~1% of windows (simulated browsing: 184 -> 182),
+  // because the stream is NOT broken here — prev is reset and the run continues, so windows
+  // simply splice across the pause instead of recording it.
+  var IDLE_SPLIT_SECONDS = 0.5;
   var DT_CLIP_SECONDS = 1.0;
   var WINDOW_SIZE = 50;
   var WINDOW_STRIDE = 10;
@@ -40,6 +50,18 @@
       var dxPx = e.x - prev.x;
       var dyPx = e.y - prev.y;
       var dist = Math.hypot(dxPx, dyPx);
+      // A mousemove that did not actually move the pointer carries no motion. Chrome emits
+      // these in bulk while the page SCROLLS — the cursor is stationary but the element under
+      // it changes — and each one used to become an all-zero feature row [0,0,0,0,0,dt,0].
+      // Real browsing is full of scrolling, while the enrollment page and the diagnostic page
+      // never scroll, so live windows filled with a pattern the model had never been trained
+      // on: measured at 52% of all rows inside a window during simulated browsing, versus 0%
+      // on either training surface. That is what pinned live scores near 0.28 with almost no
+      // variance while the same model scored 0.61 in the diagnostic. Clicks are kept even at
+      // zero displacement, since their timing is real. prev is deliberately NOT advanced, so
+      // the next genuine movement measures dx/dy/dt from the last real position — a long
+      // stationary spell then falls to the IDLE_SPLIT rule above, as it should.
+      if (dist === 0 && e.state !== "Pressed" && e.state !== "Released") continue;
       var v = dist / Math.max(dtMs, 1.0);
       var a = Math.abs(v - prevV);
       var direction = dist > 0 ? Math.atan2(dyPx, dxPx) : (prevDir || 0);
