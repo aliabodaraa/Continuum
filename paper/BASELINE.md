@@ -8,7 +8,7 @@ if any of it must change, #6 is re-run from scratch rather than compared across 
 
 | | |
 |---|---|
-| commit | `d0a3f46c2db4`, tag `baseline-keystroke-v1` |
+| commit | tag `baseline-keystroke-v1` = `d0a3ba20009c` (authoritative). Content landed in `d0a3f46c2db4`; the tag additionally carries this hash pin. |
 | split | `api.py::split_no_overlap` + `api.py::dedupe_windows` |
 | negatives | `keystrokeSecurity.js::negativeSampleRows` (alias-filtered) |
 | decision rule | `keystrokeSecurity.js::LU_WINDOW_THRESHOLD` = 0.50, ≥3 of last 6 |
