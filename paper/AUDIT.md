@@ -46,7 +46,7 @@ reproduced inside the deployed per-user training pipeline.
 | `balancedAccuracy` 97.5% (dashboard "Training Fit") | ❌ meaningless |
 | calibrated threshold 0.132 | ❌ chosen on near-duplicates (mitigated: not used live) |
 | early-stopping epoch choice | ⚠️ optimistic — model may be overfit |
-| **subject-disjoint AUC 0.979 / EER 7.1%** | ✅ **unaffected** — genuine from `is_training=0` (never trained on), impostors from KeyRecs (never seen) |
+| **subject-disjoint AUC 0.979 / EER 7.1%** | ✅ unaffected *by §1* — genuine from `is_training=0`, impostors from KeyRecs (never seen). **But affected by a separate defect: §6b finds the held-out set contaminated; corrected EER 8.42%** |
 
 **Fix:** group windows by source sample (`keystroke_text_id`) and split by group, exactly as
 `compute_overlap_groups` does for the base model. Then re-fit and re-measure.
@@ -80,6 +80,18 @@ in doubt — positive autocorrelation must inflate the tail of a majority vote, 
 **Fix:** report empirical packet rates measured over real sessions; keep the binomial only as an
 explicitly-labelled lower bound. Correct `EVALUATION.md` and the manuscript.
 
+**✅ RESOLVED** — `services/model-api/packet_eval.py`, commit 0941333. Measured with a
+session-level cluster bootstrap over 16 genuine / 40 impostor sessions:
+
+| | per-window | binomial | **measured** |
+|---|---|---|---|
+| genuine false-lock | 3.41% | 0.073% | **4.04%**  CI 0.0 – 10.2% |
+| impostor caught | 94.67% | 99.99% | **95.8%**  CI 91.1 – 99.2% |
+
+Correlation moves *both* figures in the pessimistic direction — impostor capture is also lower
+than the independent model predicted, not just false locks. `EVALUATION.md` §4 and manuscript
+§4-7 corrected; the docx was rebuilt.
+
 ---
 
 ## 3. Split-protocol classification
@@ -88,9 +100,9 @@ explicitly-labelled lower bound. Correct `EVALUATION.md` and the manuscript.
 |---|---|---|---|---|
 | sample-disjoint | ✅ | ❌ (§1) | ✅ | ✅ |
 | window-disjoint | ✅ | ❌ | ✅ | ✅ |
-| session-disjoint | unknown | ❌ | ⚠️ unverified | ✅ |
+| session-disjoint | unknown | ❌ | ✅ *(verified §6b)* | ✅ |
 | **user-disjoint** | **❌** | ❌ | **✅** | **✅** |
-| time-disjoint | ❌ | ❌ | ⚠️ unverified | ✅ |
+| time-disjoint | ❌ | ❌ | **❌ verified false (§6b)** — train window *encloses* the held-out window | ✅ |
 
 **What each supports**
 
@@ -110,7 +122,7 @@ explicitly-labelled lower bound. Correct `EVALUATION.md` and the manuscript.
 |---|---|
 | enrollment | user's `is_training=1` samples; 37 used for user 1 |
 | genuine test | `is_training=0`, never used in training ✅ |
-| genuine independence | ⚠️ **unverified** whether held-out samples are from *different sessions/days* — only that they were not trained on. Time-disjointness is not established. |
+| genuine independence | ⚠️ **partly fails (§6b)**: sessions are distinct, but the training window *encloses* the held-out window in time, and 5 enrolment prompts appear on both sides. 20 of 78 samples yield windows at all; the largest 7 supply half. |
 | impostors | 99 KeyRecs participants, unseen by base and head ✅ |
 | impostor diversity | 99 people, 20 nationalities — reasonable, but a single collection context |
 | task type | **open-set verification** (correctly described) |
@@ -147,6 +159,52 @@ user's 7.1% cannot be assumed representative.
 per-user head on their windows, evaluate against the other 98 as impostors. That yields a
 distribution (median, IQR, min, max) across ~99 users. This is the single most valuable
 outstanding experiment.
+
+---
+
+## 6b. 🔴 The held-out set is contaminated — and it is not a temporal holdout
+
+Item 5 below was listed as "time-disjointness unverified". It has now been checked, and it
+fails on three counts. `services/model-api/holdout_audit.py` quantifies each.
+
+**Not a temporal holdout.** The training samples span 12 Jun – 4 Jul; the held-out samples span
+6 Jun – 20 Jun. The training window *encloses* the held-out window: **all 78 held-out samples
+predate the last training sample.** The protocol is therefore "enrol on some sessions, verify on
+others", not "enrol now, verify later" — it cannot support any claim about behavioural drift.
+
+**Prompt reuse across the split.** The five fixed enrolment prompts were typed twice: ids 56–60
+into the held-out side (8 Jun) and ids 74–78 into the training side (12 Jun). No row is
+duplicated — full-text comparison finds zero exact matches — so this is not window leakage. But
+the model sees the same words on both sides, and §8 measures key identity as ~22% of its
+discriminative weight, so shared content is a live inflation mechanism.
+
+**Degenerate and duplicate samples.** Ids 66 and 67 are byte-identical (together 17% of all
+held-out windows). Id 73 is the letter `x` repeated 182 times.
+
+**Effective sample size is 20, not 196.** Only 20 of the 78 held-out samples are long enough to
+yield a single 50-digraph window; 58 produce none. The largest 7 supply half of all 196 windows.
+A bootstrap over windows therefore treats ~20 correlated clusters as 196 independent draws.
+
+### Measured effect
+
+| variant | samples | windows | EER | 95% CI |
+|---|---|---|---|---|
+| as published | 20 | 196 | 7.07% | 5.61 – 8.67%  *(window bootstrap)* |
+| contamination removed | 14 | 118 | 8.42% | 6.59 – 10.05%  *(window bootstrap)* |
+| **contamination removed, sample bootstrap** | **14** | **118** | **8.42%** | **6.03 – 11.37%** |
+
+Contamination inflated the headline by **1.35 points**; the wrong bootstrap unit made the
+interval **1.5× too narrow**. The honest single-user headline is **EER 8.42%, CI 6.0 – 11.4%**.
+
+*Stated precisely:* the two intervals overlap (5.1 – 9.0% vs 6.0 – 11.4%), so with 14 samples
+the 1.35-point shift is **suggestive, not statistically decisive**. What *is* decisive is that
+the contamination exists and the published interval was computed on the wrong unit; the honest
+figure must therefore be the wider one regardless of whether the point estimate moved.
+
+> This is a correction, not a collapse. The result survives the audit — which is the outcome
+> worth reporting, because it is now defensible under questioning.
+
+**Resolves items 4 and 5 in §B.**
 
 ---
 
@@ -247,10 +305,10 @@ Permutation importance + occlusion agree: timing **78%**, key identity **22%**.
 | # | problem | severity | effect | fix | time |
 |---|---|---|---|---|---|
 | 1 | per-user split leakage | 🔴 | inflates training metrics, corrupts threshold + early stopping | group-by-sample split | 2 h |
-| 2 | binomial packet claim | 🔴 | understates false-lock 58× | report empirical | 1 h |
+| 2 | ~~binomial packet claim~~ | ✅ | understated false-lock 55× | **done** — `packet_eval.py`, §2 | — |
 | 3 | n = 1 | 🔴 | no generalisation evidence | KeyRecs multi-user sweep | 4 h |
-| 4 | window-level bootstrap | 🟠 | CIs too narrow | cluster bootstrap | 1 h |
-| 5 | time-disjointness unverified | 🟠 | genuine set may be same-session | check timestamps | 30 m |
+| 4 | ~~window-level bootstrap~~ | ✅ | CIs 1.5× too narrow | **done** — cluster bootstrap, §6b | — |
+| 5 | held-out set contaminated | ✅→🔴 | **verified and it failed**: prompt reuse + duplicate + not temporal; EER 7.07% → **8.42%** | **measured** — `holdout_audit.py`, §6b | — |
 | 6 | no trained ablations | 🟡 | attribution alone is weaker | timing-only / id-only models | 3 h |
 
 ---
