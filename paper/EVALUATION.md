@@ -77,25 +77,35 @@ since those app users were training negatives.
 
 ## 4. How a verdict is actually reached — the packet vote
 
-Model outputs are **per window**; the decision is **≥3 of the last 6 windows low**. Being a
-majority rule it *suppresses* error rates below 50% and amplifies above — the crossover at 50%
-is the whole design.
+Model outputs are **per window**; the decision is **≥3 of the last 6 windows low**.
 
-`packet_rate` takes **P(window is low)**, so genuine and impostor rows must both be expressed
-that way — a FAR is an *accept* rate and has to be converted (P(low) = 1 − FAR) before it can
-be fed in.
+### Measured end-to-end, not derived
 
-| whose windows | P(window low) | → P(packet fires) | meaning |
+Decision rates were previously obtained from the per-window rate with a binomial transform,
+which assumes the six windows are independent draws. **They are not:** consecutive windows
+overlap by 80% and describe adjacent moments of the same behaviour — measured lag-1
+autocorrelation of consecutive scores is **0.282**. Low windows therefore arrive in *runs*,
+which fattens the tail of a majority vote. The rates below are measured by sliding the live
+rule over real consecutive windows.
+
+| | per-window | per-decision (binomial) | **per-decision (measured)** |
 |---|---|---|---|
-| user 1, genuine | 3.1% (= FRR) | **0.056%** | 1 false lock per ~1,800 decisions |
-| user 1, impostor | 90.3% (= 1 − 9.7% FAR) | **99.9%** | impostor accepted only **0.1%** of the time |
-| base model, impostor | 79.9% (= 1 − 20.1% FAR) | 98.3% | impostor accepted 1.7% of the time |
+| genuine false-lock | 3.41% low | 0.073% | **4.04%**  CI 0.0 – 10.2% |
+| impostor caught | 94.67% low | 99.99% | **95.8%**  CI 91.1 – 99.2% |
 
-**The vote is what turns a mediocre per-window model into a usable system**: a per-window FAR
-of ~10% becomes a per-decision impostor-accept of ~0.1%, while the genuine user's 3.1%
-per-window rejection almost never becomes an actual lock.
+**The binomial understated false locks by ~55×** and overstated impostor capture. Correlation
+moves both figures in the pessimistic direction. Any binomial number may only be quoted as an
+explicitly-labelled independence *lower bound*.
 
----
+Confidence intervals here resample **sessions**, not windows: windows within a session are
+correlated, so a window-level bootstrap would understate uncertainty. Measured over 16 genuine
+sessions (99 packets) and 40 impostor participants (21,261 packets) — the genuine interval is
+wide because 16 sessions is a small sample, and that width is part of the result.
+
+> Practical reading: the packet vote still converts a 3.4% per-window rejection into a
+> **~96% impostor catch**, but it does **not** deliver the near-zero false-lock rate the
+> independent model predicted. At ~4% per decision the legitimate user is challenged
+> noticeably, and reducing that is a genuine open problem rather than a solved one.
 
 ## 5. Mouse
 
