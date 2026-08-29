@@ -152,18 +152,75 @@ than the independent model predicted, not just false locks. `EVALUATION.md` §4 
 
 ---
 
-## 6. Generalisation across users — the largest gap
+## 6. Generalisation across users — ✅ RESOLVED, and the headline does not generalise
 
-Only **user 1** has usable held-out data (78 samples). Every other enrolled user has 0–1.
-So the headline result is **n = 1**.
+Previously n = 1: only user 1 had usable held-out data, so nothing could be said about whether
+7.1% (corrected: 8.42%) was typical. `services/model-api/population_sweep.py` closes this by
+re-running the entire enrol-and-verify pipeline for **each of the 99 KeyRecs participants**.
 
-The mouse channel is the cautionary precedent: per-user EER there ranged **0%–47%**. A single
-user's 7.1% cannot be assumed representative.
+**Protocol — the leakage-free version of what production does.** Positives split *temporally*
+(70% enrol / 30% held out) with a **5-window gap** discarded at every boundary, because windows
+overlap 80% and indices closer than 5 share rows. Training negatives come from a 40-participant
+pool, evaluation impostors from a **disjoint** 40-participant pool, with the target removed from
+both. Recipe copied from `api.py`: transfer from the 2-class base, Conv1D frozen, Adam 3e-4,
+batch 16, 30 epochs, EarlyStopping(patience 6, restore best). The base is **reloaded per target** —
+for keystroke `api.py` does `model_instance = base`, so fine-tuning mutates the loaded object and
+a loop that loaded it once would have each user inherit the previous user's identity.
 
-**Feasible fix with data already on disk:** treat each KeyRecs participant as a target — train a
-per-user head on their windows, evaluate against the other 98 as impostors. That yields a
-distribution (median, IQR, min, max) across ~99 users. This is the single most valuable
-outstanding experiment.
+### Result — 99 users, 51.6 minutes
+
+| statistic | value |
+|---|---|
+| EER median | **14.53%** |
+| EER IQR | 9.33% – 18.27% |
+| EER p10 / p90 | 6.12% / 25.90% |
+| EER range | 3.80% – 38.60% |
+| users above 10% EER | **68 / 99** |
+| users above 20% EER | **21 / 99** |
+| users below 5% EER | 5 / 99 |
+| FAR @ 0.50, median | 11.13% (p90 22.73%) |
+| TAR @ 0.50, median | 84.42% (p10 58.21%) |
+| **TAR @ FAR = 1%, median** | **12.4%** (p10 0.6%) |
+
+The distribution is unimodal and right-skewed — not bimodal like the mouse channel, so there is
+no clean "goats" subpopulation, just a long tail of progressively harder users.
+
+### Three consequences
+
+**1. The published headline is a favourable case.** User 1's corrected 8.42% sits at the
+**19th percentile** of this distribution (7.07% would be the 15th). Four users in five do worse.
+The median deployment user faces **14.53%**, not 8%.
+
+**2. More enrolment data is not the fix.** Correlation between enrolment size and EER across the
+99 users is **r = +0.04** — indistinguishable from zero. The spread is intrinsic per-user
+difficulty, not a data-volume problem, which is the same conclusion the mouse channel reached.
+
+**3. TAR@FAR=1% collapses at the population level.** User 1's 55.6% is wildly atypical; the
+median user achieves **12.4%**, and the 10th percentile **0.6%**. At a strict security budget the
+system accepts almost nobody. This is the single most important number for a deployment claim and
+it was never measured before.
+
+### The "personalisation halves the error" claim is wrong — in both directions
+
+The manuscript stated 14.9% (generic base) → 7.1% (per-user head), "roughly halving". Those two
+numbers are not commensurable: the 14.9% comes from Buffalo under an overlap-aware split, and it
+is not a *per-user verification* figure at all.
+
+Tested directly — scoring 20 KeyRecs targets' held-out windows against unseen impostors with the
+**generic base model**, no personalisation:
+
+| model | AUC (verifying a specific unseen user) |
+|---|---|
+| generic base | **0.552 mean / 0.627 median** — chance |
+| per-user heads (n=99) | **0.930 median** (p10 0.817, p90 0.986) |
+
+So the base model **cannot verify a specific user at all** — it has no notion of *which* person it
+is looking at, and its per-target AUC ranges 0.05–0.97 essentially at random. Personalisation does
+not halve an error; it takes verification **from chance to AUC 0.93**. That is a far stronger
+argument for the per-user architecture than the one in the manuscript — while simultaneously
+showing the *final* quality (median EER 14.5%) is worse than the single-user headline implied.
+
+**Resolves item 3 in §B — the highest-priority experiment.**
 
 ---
 
@@ -278,30 +335,47 @@ Permutation importance + occlusion agree: timing **78%**, key identity **22%**.
 
 ## A. What is scientifically proven now
 
+*Updated after the population sweep, the held-out audit and the empirical packet measurement.*
+
 **Strongly supported**
 1. The base model's reported accuracy collapses from >99% to 85.8% under overlap-aware
    splitting — the leakage finding. Directly measured.
-2. For user 1, the personal model separates genuine from 99 unseen people at **window level**:
-   AUC 0.979 [0.974–0.984], EER 7.1% [5.6–8.8]. Clean protocol on both sides.
-3. The model relies mainly on **timing** (78%) rather than key identity.
-4. `ud` is algebraically redundant (`ud ≡ dd − dwell1`); the 6-feature set has 5 independent
+2. **Per-user personalisation is what makes verification possible at all.** The generic base
+   scores AUC 0.552 (chance) when asked to verify a specific unseen user; per-user heads reach
+   **median AUC 0.930** across 99 subjects. Measured on the same protocol (§6).
+3. For user 1, the personal model separates genuine from unseen people at window level:
+   **EER 8.42%, CI 6.0–11.4%** after removing contamination and using the correct bootstrap
+   unit (§6b).
+4. **The approach generalises, but far less well than the headline suggested.** Across 99
+   subject-disjoint targets: median EER **14.53%** (IQR 9.3–18.3), 68/99 above 10%, 21/99
+   above 20% (§6).
+5. The model relies mainly on **timing** (78%) rather than key identity.
+6. `ud` is algebraically redundant (`ud ≡ dd − dwell1`); the 6-feature set has 5 independent
    features.
-5. Mouse: four methods plateau at 22–28% with the same users hard — an intrinsic ceiling.
+7. Mouse: four methods plateau at 22–28% with the same users hard — an intrinsic ceiling.
+8. **The packet vote does not deliver a near-zero false-lock rate.** Measured 4.04% (all
+   held-out) / 7.84% (decontaminated) per decision, against 0.07% predicted binomially (§2).
+9. **Enrolment volume does not explain per-user difficulty** — r = +0.04 across 99 users. The
+   spread is intrinsic, so "collect more data" is not the remedy (§6).
 
 **Partially supported**
-6. "Personalisation halves the error" — compares a level-2 base (14.9%) with a level-3 per-user
-   result (7.1%). Different protocols; directionally sound, not a clean comparison.
-7. Mimicry resistance — one attack family (moment-matching), one user.
-8. Domain shift is not driving separation — suggestive; the same-app impostors were training
-   negatives.
+10. Mimicry resistance — one attack family (moment-matching), one user.
+11. Domain shift is not driving separation — suggestive; the same-app impostors were training
+    negatives.
 
 **NOT currently supported — do not claim**
-9. ❌ "Works for users in general." n = 1.
-10. ❌ Any packet/decision-level false-lock figure derived binomially (58× optimistic).
-11. ❌ `trainingAccuracy`/`balancedAccuracy` as generalisation.
-12. ❌ Resistance to replay or generative attacks.
-13. ❌ Keystroke base generalises to unseen users (protocol cannot support it).
-14. ❌ "Keystroke outperforms mouse" — different protocols.
+12. ❌ **"Personalisation halves the error" (14.9% → 7.1%).** Retracted: the two figures are not
+    commensurable, and the base cannot verify a specific user at all. Replace with the
+    chance → AUC 0.93 statement in §6.
+13. ❌ **"EER ≈ 7%" as a general result.** That is the 15th percentile of the population; the
+    median is 14.53%.
+14. ❌ Any packet/decision-level false-lock figure derived binomially (27–55× optimistic).
+15. ❌ `trainingAccuracy`/`balancedAccuracy` as generalisation.
+16. ❌ Resistance to replay or generative attacks.
+17. ❌ Keystroke base generalises to unseen users (protocol cannot support it).
+18. ❌ "Keystroke outperforms mouse" — different protocols.
+19. ❌ Any claim about behavioural drift over time: the held-out set is not a temporal
+    holdout (§6b).
 
 ---
 
@@ -311,7 +385,7 @@ Permutation importance + occlusion agree: timing **78%**, key identity **22%**.
 |---|---|---|---|---|---|
 | 1 | per-user split leakage | 🔴 | inflates training metrics, corrupts threshold + early stopping | group-by-sample split | 2 h |
 | 2 | ~~binomial packet claim~~ | ✅ | understated false-lock 55× | **done** — `packet_eval.py`, §2 | — |
-| 3 | n = 1 | 🔴 | no generalisation evidence | KeyRecs multi-user sweep | 4 h |
+| 3 | ~~n = 1~~ | ✅ | headline was the 19th percentile; median user EER **14.53%** | **done** — `population_sweep.py`, §6 | — |
 | 4 | ~~window-level bootstrap~~ | ✅ | CIs 1.5× too narrow | **done** — cluster bootstrap, §6b | — |
 | 5 | held-out set contaminated | ✅→🔴 | **verified and it failed**: prompt reuse + duplicate + not temporal; EER 7.07% → **8.42%** | **measured** — `holdout_audit.py`, §6b | — |
 | 6 | no trained ablations | 🟡 | attribution alone is weaker | timing-only / id-only models | 3 h |
@@ -333,18 +407,30 @@ Permutation importance + occlusion agree: timing **78%**, key identity **22%**.
 
 ## D. Final verdict
 
-### 3 — Promising results but methodology must be corrected
+### 2 — Sound method, corrected results, honest limits
 
-**Why not "strong and defensible":** two reported quantities are wrong. The per-user training
-pipeline leaks (96.2% of validation windows are near-duplicates of training windows), and the
-decision-level false-lock rate — the metric that describes what the system actually does — was
-computed under an independence assumption the data violates by a factor of ~58.
+*Revised upward from category 3 after four of the six defects were measured and fixed, and
+downward in the claims those measurements support.*
 
-**Why not "cannot be trusted":** the core window-level result is measured under a clean
-subject-disjoint protocol with genuine data never used in training and impostors never seen by
-any model, with confidence intervals and unit-tested metric code. It survives this audit intact.
-The leakage affects *training-time reporting*, not that measurement.
+**What changed.** Three quantities that had been published were wrong and are now measured:
+the decision-level false-lock rate (0.07% → **4.04%/7.84%**), the confidence interval unit
+(1.5× too narrow), and the generalisation claim (n=1 at the 19th percentile → **median EER
+14.53%** across 99 subjects). A fourth, "personalisation halves the error", was retracted and
+replaced by a stronger and better-supported statement: personalisation moves verification from
+chance to median AUC 0.93.
 
-**What must happen before presenting:** fix #1 and #2 (3 hours), run the multi-user sweep (#3),
-and restate every claim in section A's "not supported" list as future work. With those done, the
-work moves to category 2 and plausibly 1 for the keystroke channel.
+**Why category 2 rather than 3.** The defects were in the *reporting*, not the science. Every
+corrected number was obtained under a clean protocol — subject-disjoint, temporally split with
+an overlap gap, disjoint negative and impostor pools, cluster bootstraps on the correct unit —
+and the system still works: median AUC 0.930, 95.8% impostor capture per decision. The results
+survived the audit with corrections rather than retractions.
+
+**Why not category 1.** One defect remains open: the per-user train/val split still leaks
+(§1), which corrupts the calibrated threshold and early-stopping choice in the *deployed*
+pipeline. And the honest headline is uncomfortable: at a 1% FAR budget the median user is
+accepted **12.4%** of the time. As a step-up trigger fused with a passkey that is defensible;
+as a standalone authenticator it is not, and the thesis should say so plainly.
+
+**Remaining work, in order:** fix #1 (group-by-sample split, 2 h) and #6 (timing-only vs
+identity-only retrains, 3 h). Neither changes the results above; #1 fixes the live threshold and
+#6 upgrades the attribution from correlational to causal.
