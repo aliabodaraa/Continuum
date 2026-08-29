@@ -1,0 +1,38 @@
+{
+  "userId": 1,
+  "excludedSamples": [
+    56,
+    57,
+    58,
+    59,
+    60,
+    67
+  ],
+  "rule": ">=3 of 6 windows below 0.5",
+  "perWindow": {
+    "genuineLowRate": 0.05454545454545454,
+    "impostorLowRate": 0.9466855335932817
+  },
+  "perDecisionEmpirical": {
+    "falseLockRate": 0.0784313725490196,
+    "falseLockCI": [
+      0.0,
+      0.19358772619984244
+    ],
+    "nGenuinePackets": 51,
+    "impostorCatchRate": 0.9579511782136306,
+    "impostorCatchCI": [
+      0.9113311364138399,
+      0.9920688704138565
+    ],
+    "nImpostorPackets": 21261,
+    "nGenuineSessions": 10,
+    "nImpostorSessions": 40
+  },
+  "perDecisionBinomial": {
+    "falseLockRate": 0.0028644649549182887,
+    "impostorCatchRate": 0.9998889170259608,
+    "note": "assumes independent windows; consecutive windows overlap 80% and are positively correlated, so this is a LOWER BOUND on false locks"
+  },
+  "ciMethod": "session-level cluster bootstrap (windows within a session are correlated, so resampling windows would understate uncertainty)"
+}

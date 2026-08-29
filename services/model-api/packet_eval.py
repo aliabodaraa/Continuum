@@ -48,13 +48,18 @@ RECENT = 6        # packet length, mirrors ca-service RECENT_WINDOW_COUNT
 VOTE_LOW = 3      # >= this many low windows fires the step-up (PACKET_VOTE_FRACTION 0.5)
 
 
-def genuine_sessions(user_id, training_flag=0):
+def genuine_sessions(user_id, training_flag=0, exclude=()):
     """One list of consecutive windows per stored sample. Each sample is a continuous typing
-    act, so packets never span two of them."""
+    act, so packets never span two of them.
+
+    `exclude` drops sample ids by keystroke_text_id — used to rerun on the clean subset after
+    holdout_audit.py identified prompt reuse, a byte-identical duplicate and a
+    repeated-character sample in user 1's held-out data."""
     con = sqlite3.connect(f"file:{CA_DB}?mode=ro", uri=True)
     ids = [r[0] for r in con.execute(
         "SELECT id FROM keystroke_texts WHERE user_id=? AND is_training=? ORDER BY id",
         (user_id, training_flag)).fetchall()]
+    ids = [i for i in ids if i not in set(exclude)]
     out = []
     for i in ids:
         ev = con.execute(
@@ -113,13 +118,19 @@ def main():
     ap.add_argument("--impostors", required=True)
     ap.add_argument("--out", default=None)
     ap.add_argument("--max-impostor-subjects", type=int, default=40)
+    ap.add_argument("--exclude", default="",
+                    help="comma-separated keystroke_text_ids to drop (contaminated samples "
+                         "identified by holdout_audit.py)")
     args = ap.parse_args()
     if h5py is None:
         raise SystemExit("h5py is required")
 
     model_path, _ = model_path_for(args.user_id)
 
-    gsess = genuine_sessions(args.user_id, 0)
+    exclude = [int(x) for x in args.exclude.split(",") if x.strip()]
+    gsess = genuine_sessions(args.user_id, 0, exclude)
+    if exclude:
+        print(f"excluding contaminated samples: {exclude}")
     isess = impostor_sessions(args.impostors, args.max_impostor_subjects)
     print(f"genuine sessions: {len(gsess)}  impostor participants: {len(isess)}")
 
@@ -159,7 +170,7 @@ def main():
           f"{len(isess)} impostor sessions")
 
     res = {
-        "userId": args.user_id, "rule": f">={VOTE_LOW} of {RECENT} windows below {LIVE_THRESHOLD}",
+        "userId": args.user_id, "excludedSamples": exclude, "rule": f">={VOTE_LOW} of {RECENT} windows below {LIVE_THRESHOLD}",
         "perWindow": {"genuineLowRate": gw, "impostorLowRate": iw},
         "perDecisionEmpirical": {
             "falseLockRate": g_rate, "falseLockCI": g_ci, "nGenuinePackets": g_n,

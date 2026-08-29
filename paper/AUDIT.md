@@ -83,10 +83,15 @@ explicitly-labelled lower bound. Correct `EVALUATION.md` and the manuscript.
 **✅ RESOLVED** — `services/model-api/packet_eval.py`, commit 0941333. Measured with a
 session-level cluster bootstrap over 16 genuine / 40 impostor sessions:
 
-| | per-window | binomial | **measured** |
-|---|---|---|---|
-| genuine false-lock | 3.41% | 0.073% | **4.04%**  CI 0.0 – 10.2% |
-| impostor caught | 94.67% | 99.99% | **95.8%**  CI 91.1 – 99.2% |
+| genuine set | sessions | packets | per-window | binomial | **measured** |
+|---|---|---|---|---|---|
+| all held-out | 16 | 99 | 3.41% | 0.073% | **4.04%**  CI 0.0 – 10.2% |
+| clean (§6b) | 10 | 51 | 5.46% | 0.286% | **7.84%**  CI 0.0 – 19.4% |
+
+Impostor capture, 40 unseen participants / 21,261 packets: per-window 94.67%, binomial 99.99%,
+**measured 95.8%** CI 91.1 – 99.2%. Removing the contaminated samples raises the false-lock rate
+for the same reason it raises the EER; with 51 packets the interval is too wide to pin down, so
+the defensible claim is an order of magnitude (several percent), not a point estimate.
 
 Correlation moves *both* figures in the pessimistic direction — impostor capture is also lower
 than the independent model predicted, not just false locks. `EVALUATION.md` §4 and manuscript

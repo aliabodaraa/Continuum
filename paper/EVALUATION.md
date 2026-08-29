@@ -88,14 +88,24 @@ autocorrelation of consecutive scores is **0.282**. Low windows therefore arrive
 which fattens the tail of a majority vote. The rates below are measured by sliding the live
 rule over real consecutive windows.
 
-| | per-window | per-decision (binomial) | **per-decision (measured)** |
-|---|---|---|---|
-| genuine false-lock | 3.41% low | 0.073% | **4.04%**  CI 0.0 – 10.2% |
-| impostor caught | 94.67% low | 99.99% | **95.8%**  CI 91.1 – 99.2% |
+| genuine set | sessions | packets | per-window low | binomial | **measured** |
+|---|---|---|---|---|---|
+| all held-out samples | 16 | 99 | 3.41% | 0.073% | **4.04%**  CI 0.0 – 10.2% |
+| **contamination removed** (§3a) | 10 | 51 | 5.46% | 0.286% | **7.84%**  CI 0.0 – 19.4% |
 
-**The binomial understated false locks by ~55×** and overstated impostor capture. Correlation
-moves both figures in the pessimistic direction. Any binomial number may only be quoted as an
-explicitly-labelled independence *lower bound*.
+| impostors | participants | packets | per-window low | binomial | **measured** |
+|---|---|---|---|---|---|
+| KeyRecs, unseen | 40 | 21,261 | 94.67% | 99.99% | **95.8%**  CI 91.1 – 99.2% |
+
+**The binomial understated false locks by 27 – 55×** and overstated impostor capture.
+Correlation moves both figures in the pessimistic direction. Any binomial number may only be
+quoted as an explicitly-labelled independence *lower bound*.
+
+Removing the contaminated samples raises the false-lock rate as well as the EER — the same
+direction as §3a, from the same cause. The clean figure is the honest protocol, but it rests on
+**51 packets from 10 sessions**, and its interval (0 – 19.4%) is too wide to pin the rate down.
+The defensible statement is a bound, not a point: *the genuine user is challenged on the order
+of several percent of decisions, not a fraction of one percent.*
 
 Confidence intervals here resample **sessions**, not windows: windows within a session are
 correlated, so a window-level bootstrap would understate uncertainty. Measured over 16 genuine
