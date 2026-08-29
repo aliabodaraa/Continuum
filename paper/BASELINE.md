@@ -8,7 +8,7 @@ if any of it must change, #6 is re-run from scratch rather than compared across 
 
 | | |
 |---|---|
-| commit | see `git log -1` at freeze — tagged `baseline-keystroke-v1` |
+| commit | `d0a3f46c2db4`, tag `baseline-keystroke-v1` |
 | split | `api.py::split_no_overlap` + `api.py::dedupe_windows` |
 | negatives | `keystrokeSecurity.js::negativeSampleRows` (alias-filtered) |
 | decision rule | `keystrokeSecurity.js::LU_WINDOW_THRESHOLD` = 0.50, ≥3 of last 6 |
