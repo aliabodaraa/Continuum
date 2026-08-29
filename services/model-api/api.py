@@ -115,6 +115,7 @@ def scale_windows(windows, scaler_path=None):
 
 
 _dataset_negatives_cache = {}
+_dataset_negative_errors = {}
 
 
 def get_dataset_negatives(window_size, num_features, max_windows=2000, dataset_path=None):
@@ -136,15 +137,45 @@ def get_dataset_negatives(window_size, num_features, max_windows=2000, dataset_p
                 rng = np.random.default_rng(13)
                 idx = np.sort(rng.choice(len(data), size=min(max_windows, len(data)), replace=False))
                 _dataset_negatives_cache[path] = np.array(data[idx], dtype=np.float32)
+            _dataset_negative_errors.pop(path, None)
             print(f"Loaded {len(_dataset_negatives_cache[path])} impostor windows from {path}")
         except Exception as exc:
-            print(f"Warning: could not load dataset negatives from {path}: {exc}")
+            # This used to print a warning and hand back an empty array, so a
+            # mistyped path degraded every retrain to app-user-only (or synthetic)
+            # negatives with nothing visible to the caller. Record the reason so
+            # it reaches the training response and the stored profile.
+            _dataset_negative_errors[path] = f"{type(exc).__name__}: {exc}"
+            print(f"ERROR: dataset negatives unavailable at {path}: {exc}")
             _dataset_negatives_cache[path] = np.empty((0, window_size, num_features), dtype=np.float32)
 
     neg = _dataset_negatives_cache[path]
     if neg.shape[1:] != (window_size, num_features):
+        # Previously returned empty with no message at all — the most silent of
+        # the two failure modes, and the one a modality mix-up would hit.
+        if len(neg):
+            _dataset_negative_errors[path] = (
+                f"shape mismatch: dataset holds {neg.shape[1:]}, "
+                f"model needs {(window_size, num_features)}")
+            print(f"ERROR: {_dataset_negative_errors[path]} ({path})")
         return np.empty((0, window_size, num_features), dtype=np.float32)
     return neg
+
+
+def dataset_negative_status(path=None):
+    """Why dataset negatives are unavailable, or None when they loaded."""
+    return _dataset_negative_errors.get(path or NEGATIVE_DATASET_PATH)
+
+
+def preflight_negatives():
+    """Check the configured negatives dataset at STARTUP, so a misconfigured path
+    is caught at boot rather than silently degrading the next retrain."""
+    path = NEGATIVE_DATASET_PATH
+    if not os.path.exists(path):
+        print(f"PREFLIGHT FAIL: negatives dataset missing: {path}")
+        _dataset_negative_errors[path] = f"file does not exist: {path}"
+        return False
+    print(f"PREFLIGHT OK: negatives dataset present: {path}")
+    return True
 
 
 def init_model():
@@ -290,6 +321,31 @@ def _group_split(groups, val_fraction, seed):
     return (train, val) if train and val else None
 
 
+def dedupe_windows(X, groups=None):
+    """Drop exact-duplicate windows, keeping the first occurrence.
+
+    Grouping by source sample stops windows from one sample straddling the split, but it cannot
+    help when the SAME content is filed under two different sample ids — a session submitted
+    twice. Those produce byte-identical windows in two different groups, so a group split
+    happily puts one copy on each side and the validation set again contains its own training
+    data. Observed live: 23 of user 1's 165 validation windows were exact copies of training
+    windows, from a duplicate sample pair.
+
+    Deduplicating is preferable to merging the groups: a session recorded twice is not twice the
+    evidence, and keeping both would over-weight that content in the fit.
+
+    Returns (kept_indices, n_dropped)."""
+    seen = {}
+    keep = []
+    for i, w in enumerate(X):
+        h = np.asarray(w, dtype=np.float32).tobytes()
+        if h in seen:
+            continue
+        seen[h] = i
+        keep.append(i)
+    return keep, len(X) - len(keep)
+
+
 def split_no_overlap(n, groups=None, val_fraction=DEFAULT_VAL_FRACTION,
                      gap=DEFAULT_OVERLAP_GAP, seed=7):
     """Train/validation indices that never place overlapping windows on both sides.
@@ -410,6 +466,21 @@ def train_user_payload(payload):
             # so the supplied ids cover only the first block; pad the remainder
             # with one distinct group each rather than dropping the grouping.
             neg_groups = list(neg_groups) + [f"pad-{i}" for i in range(len(negatives) - len(neg_groups))]
+
+        # Remove exact duplicates BEFORE splitting: identical content filed under two
+        # sample ids defeats grouping and puts copies on both sides.
+        p_keep, p_dropped = dedupe_windows(positives)
+        n_keep, n_dropped = dedupe_windows(negatives) if len(negatives) else ([], 0)
+        if p_dropped or n_dropped:
+            print(f"dedupe: dropped {p_dropped} duplicate positive, {n_dropped} duplicate "
+                  f"negative windows before splitting")
+        positives = positives[p_keep]
+        if len(negatives):
+            negatives = negatives[n_keep]
+        if pos_groups is not None and len(pos_groups) >= len(p_keep):
+            pos_groups = [pos_groups[i] for i in p_keep]
+        if neg_groups is not None and len(neg_groups) >= len(n_keep):
+            neg_groups = [neg_groups[i] for i in n_keep]
 
         p_tr, p_va, p_how = split_no_overlap(len(positives), pos_groups, val_fraction, gap)
         n_tr, n_va, n_how = split_no_overlap(len(negatives), neg_groups, val_fraction, gap)
@@ -551,6 +622,7 @@ def train_user_payload(payload):
             "positiveWindowCount": int(len(positives)),
             "negativeWindowCount": int(len(negatives)),
             "negativeSource": negative_source,
+            "datasetNegativeError": dataset_negative_status(neg_dataset_path),
             "trainedFrom": trained_from,
             "inputShape": [int(window_size), int(num_features)],
             "accuracy": float(eval_acc),
@@ -559,6 +631,7 @@ def train_user_payload(payload):
             "thresholdSource": "eer" if balanced_accuracy is not None else "default",
             "splitStrategy": split_strategy,
             "validationWindowCount": int(len(X_val)),
+            "duplicateWindowsDropped": int(p_dropped + n_dropped),
             "validationPositiveCount": int(np.sum(y_val == 1)) if len(y_val) else 0,
             "balancedAccuracy": balanced_accuracy,
             "epochsTrained": len(history.history.get("loss", [])),
@@ -709,6 +782,7 @@ class ContinuumHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     init_model()
+    preflight_negatives()
     if Flask is not None:
         debug = os.getenv("MODEL_DEBUG", "1") == "1"
         print(f"Starting Flask model API on http://localhost:{PORT} (debug={debug})")

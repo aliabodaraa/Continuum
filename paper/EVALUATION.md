@@ -44,10 +44,14 @@ Protocol: **level 3.** Genuine = 196 windows from user 1's `is_training=0` sampl
 to fit the head. Impostors = 4,000 windows sampled from **99 KeyRecs participants** never seen
 by the base model or any per-user head.
 
-| metric | value | 95% CI (bootstrap) |
+> **Superseded — kept for the record.** Every figure in this table is pre-audit: §3a corrects
+> the EER to **8.42% [6.0 – 11.4%]** and §3b shows this user is the **19th percentile** of 99.
+> Do not quote this table on its own.
+
+| metric | value *(superseded)* | 95% CI (window bootstrap — wrong unit) |
 |---|---|---|
-| AUC | **0.979** | 0.974 – 0.984 |
-| EER | **7.1%** | 5.6 – 8.8% |
+| AUC | 0.979 | 0.974 – 0.984 |
+| EER | 7.1% | 5.6 – 8.8% |
 | TAR @ threshold 0.50 | 96.9% | — |
 | FAR @ threshold 0.50 | 9.7% | — |
 | TAR @ FAR = 1% | 55.6% | 49.0 – 65.8% |

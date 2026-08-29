@@ -401,12 +401,14 @@ function aliasUserIds(userId, db) {
   return aliases;
 }
 
-// Same grouping requirement as the positives (see above).
-function getNegativeWindowsGrouped(userId, db) {
+// THE definition of which samples may serve as negatives for a user. Exported for
+// validation so a test asserts against the shipped selection rather than a copy of
+// the query that could drift away from it.
+function negativeSampleRows(userId, db) {
   const aliases = aliasUserIds(userId, db);
-  const rows = db
+  return db
     .prepare(
-      `SELECT id, user_id
+      `SELECT id, user_id, text_content
        FROM keystroke_texts
        WHERE user_id <> ?
          AND is_training = 1
@@ -416,6 +418,11 @@ function getNegativeWindowsGrouped(userId, db) {
     )
     .all(userId, MAX_TRAINING_SAMPLES)
     .filter((r) => !aliases.has(r.user_id));
+}
+
+// Same grouping requirement as the positives (see above).
+function getNegativeWindowsGrouped(userId, db) {
+  const rows = negativeSampleRows(userId, db);
   const windows = [];
   const groups = [];
   for (const row of rows) {
@@ -507,6 +514,16 @@ async function trainUserTypingProfile(userId, db) {
     epochs: 25,
     batchSize: 16,
   });
+
+  // A degraded negative pool produces a weak model that still trains "successfully".
+  // It used to pass unremarked; surface it so a broken dataset path is visible in
+  // the service log instead of only in the resulting accuracy months later.
+  if (result && (result.datasetNegativeError || result.negativeSource === "synthetic")) {
+    console.error(
+      `[train] DEGRADED NEGATIVES user=${userId} source=${result.negativeSource} ` +
+        `reason=${result.datasetNegativeError || "no dataset negatives available"}`,
+    );
+  }
 
   // ---- Model-update ACCEPTANCE TEST (validation-gated update) ----
   // Retraining is stochastic: on identical data, successive fits scored a
@@ -873,6 +890,7 @@ module.exports = {
   getUserTypingProfile,
   getUserTypingStatus,
   maybeRetrainForNewImpostors,
+  negativeSampleRows,
   normalizeEvents,
   resetUserTypingProfile,
   trainUserTypingProfile,

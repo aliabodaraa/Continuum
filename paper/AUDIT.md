@@ -32,7 +32,7 @@ consecutive windows share 40 of their 50 rows.
 
 **Measured on user 1's real training data (797 windows):**
 
-- **96.2%** of validation windows have an immediate same-sample neighbour in training
+- **96.2%** of validation windows have an immediate same-sample neighbour in training *(first estimate; direct row-level measurement later gave **100%** — see the resolution below)*
 - those pairs share **100%** of the overlapping 40 rows — byte-identical
 
 This is precisely the leakage the thesis's headline finding condemns (>99% → 85.8%),
@@ -133,6 +133,36 @@ against memorised windows.
 
 ---
 
+## 1d. 🔴 Duplicate samples defeated the group split — found by validating the fix
+
+The group split was verified first by index arithmetic, which passed. Re-verifying it at **row
+level** — comparing actual window contents rather than reasoning about positions — failed:
+
+| | validation windows overlapping training |
+|---|---|
+| old random shuffle | **160 / 160 (100%)** |
+| group split alone | **23 / 165** |
+| group split + dedupe | **0 / 156** |
+
+The shared-row distribution was bimodal: 5 windows shared exactly 1 row (a genuine coincidence
+of six float timings), and **23 shared all 50** — byte-identical windows on both sides.
+
+The cause is not overlap. Grouping by `keystroke_text_id` stops one sample straddling the split,
+but the *same content* was filed under **two different sample ids** (user 1: ids 82 and 83; the
+alias account: 217 and 218), so a group split cheerfully puts one copy on each side. Four such
+duplicate pairs exist in the held-out data too — 66/67, already known from §6b.
+
+**Fix:** `dedupe_windows()` drops exact-duplicate windows before splitting, keeping the first
+occurrence. Deduplication is preferable to merging the two groups: a session recorded twice is
+not twice the evidence, and keeping both over-weights that content in the fit. On user 1 it
+removes 41 of 797 positive windows.
+
+> The lesson is methodological. A leakage check that reasons about *indices* validates the
+> mental model, not the data. Only comparing the actual contents caught this, and it was caught
+> solely because the fix was verified rather than assumed.
+
+---
+
 ## 2. 🔴 CRITICAL — the packet-vote calculation assumed independence, and windows are correlated
 
 The binomial transform `P(≥3 of 6 low)` assumes windows are independent draws. They are not:
@@ -144,11 +174,12 @@ they overlap 80% and describe adjacent moments of the same behaviour.
 |---|---|
 | per-window low rate | 3.35% |
 | **lag-1 autocorrelation of consecutive scores** | **0.282** |
-| packet false-lock, binomial (independent) | **0.070%** |
+| packet false-lock, binomial (independent) | **0.073%** |
 | **packet false-lock, empirical** | **4.04%** |
 
-**The binomial figure is optimistic by roughly 58×.** The previously reported "1 false lock per
-~1,800 decisions" should be closer to **1 per 25**.
+**The binomial figure is optimistic by 27–55×.** The previously reported "1 false lock per
+~1,800 decisions" is closer to **1 per 25** on all held-out samples, and **1 per 13** once the
+contaminated samples are removed (§6b).
 
 *Caveat:* 99 packets is a small sample; 4.04% carries wide uncertainty. But the direction is not
 in doubt — positive autocorrelation must inflate the tail of a majority vote, and the mechanism
@@ -393,13 +424,13 @@ Permutation importance + occlusion agree: timing **78%**, key identity **22%**.
 | area | what we do | best practice | evidence | risk | action |
 |---|---|---|---|---|---|
 | base split | overlap-aware | subject-disjoint | groups verified | 🟠 | disclose; needs raw Buffalo |
-| per-user split | random over overlapping windows | group by sample | measured 96.2% leak | 🔴 | fix + re-measure |
+| per-user split | random over overlapping windows | group by sample + dedupe | measured **100%** leak | ✅ fixed | done, §1 |
 | scaler | fit on train only | same | code read | ✅ | — |
 | enrollment/test separation | `is_training` flag | session-disjoint | flag verified | 🟡 | verify time-disjointness |
 | impostors | 99 unseen | ≥50 unseen | ✅ | ✅ | — |
 | threshold | EER on leaky val; live uses fixed 0.50 | calibrate on clean held-out | — | 🟠 | recalibrate after §1 fix |
 | model selection | early stop on leaky val | clean val | — | 🟠 | fix with §1 |
-| aggregation | binomial claim | empirical | measured 58× gap | 🔴 | report empirical |
+| aggregation | binomial claim | empirical | measured 27–55× gap | ✅ fixed | done, §2 |
 | metrics | window-level | window **and** decision | partly | 🟠 | add end-to-end |
 | statistics | window bootstrap | cluster bootstrap | — | 🟡 | switch to session-level |
 | generalisation | n=1 | many users | — | 🔴 | KeyRecs multi-user sweep |
@@ -462,7 +493,8 @@ Permutation importance + occlusion agree: timing **78%**, key identity **22%**.
 |---|---|---|---|---|---|
 | 1 | ~~per-user split leakage~~ | ✅ | leakage was **100%**; threshold calibrated at 0.132 instead of ~0.45 | **done** — `split_no_overlap()`, §1 | — |
 | 1b | ~~target's own data used as negatives~~ | ✅ | alias id contributed 44 negative samples; retrain collapsed | **done** — `aliasUserIds()`, §1b | — |
-| 1c | ~~dataset negatives never loaded~~ | ✅ | wrong default path; live retrains had app-user negatives only | **done** — derive from `DATA_DIR`, §1c | — |
+| 1c | ~~dataset negatives never loaded~~ | ✅ | wrong default path; live retrains had app-user negatives only | **done** — derive from `DATA_DIR` + preflight, §1c | — |
+| 1d | ~~duplicate samples defeated grouping~~ | ✅ | same content under two sample ids; 23/165 val windows were exact copies | **done** — `dedupe_windows()`, §1d | — |
 | 2 | ~~binomial packet claim~~ | ✅ | understated false-lock 55× | **done** — `packet_eval.py`, §2 | — |
 | 3 | ~~n = 1~~ | ✅ | headline was the 19th percentile; median user EER **14.53%** | **done** — `population_sweep.py`, §6 | — |
 | 4 | ~~window-level bootstrap~~ | ✅ | CIs 1.5× too narrow | **done** — cluster bootstrap, §6b | — |
@@ -476,7 +508,7 @@ Permutation importance + occlusion agree: timing **78%**, key identity **22%**.
 | experiment | proves | risk addressed | time | priority |
 |---|---|---|---|---|
 | KeyRecs multi-user sweep (~99 targets) | per-user distribution of EER | generalisation (n=1) | 4 h | **1** |
-| Empirical packet rates over sessions | true decision-level FAR/FRR | 58× error | 1 h | **2** |
+| ~~Empirical packet rates over sessions~~ | true decision-level FAR/FRR | 27–55× error | done | ✅ |
 | Group-by-sample per-user split | honest training metrics + threshold | leakage | 2 h | **3** |
 | Session-level bootstrap | correct CIs | correlated resampling | 1 h | 4 |
 | Timing-only vs identity-only retrain | what carries the signal | causal-ish evidence | 3 h | 5 |

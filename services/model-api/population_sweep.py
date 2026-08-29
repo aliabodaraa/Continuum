@@ -158,6 +158,9 @@ def run_target(tid, windows, pid, neg_pool, imp_pool, scaler, rng, epochs, max_i
     K.clear_session()
 
     return {
+        # raw scores kept so callers can compute decision-level (packet) rates without
+        # refitting; held_out is in temporal order, so packets may slide over it
+        "_genuineScores": g.tolist(), "_impostorScores": i.tolist(),
         "participant": int(tid),
         "nEnrol": int(len(pos_tr)), "nHeldOut": int(len(held_out)), "nImpostor": int(len(imp)),
         "auc": float(auc_of(g, i)), "eer": float(eer_of(g, i)[0]),
