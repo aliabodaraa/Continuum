@@ -23,6 +23,9 @@ const MAX_TRAIN_WINDOWS = 1200;
 // (WINDOW_SIZE - WINDOW_STRIDE) steps, so clicks are reconstructed from the
 // non-overlapping slice of each window rather than summed across all of them.
 const WINDOW_STRIDE = 10;
+// Window length, matching sdk/js/mouse-features.js WINDOW_SIZE. Used to derive the
+// overlap gap sent to the model-api: windows closer than SIZE/STRIDE share rows.
+const MOUSE_WINDOW_SIZE = 50;
 // is_click (feature index 6) is a trained model feature, not just movement —
 // mirrors MOUSE_ENROLL_CLICKS in sdk/guard.js. Enforced here because the client
 // gate is UI-only and can be bypassed by calling the endpoint directly.
@@ -100,20 +103,30 @@ async function enrollMouse(userId, windows) {
   const rows = db
     .prepare("SELECT windows FROM mouse_samples WHERE user_id = ? ORDER BY id DESC")
     .all(userId);
+  // Mouse windows also slide with an overlap, so windows from one recording
+  // session are near-duplicates of each other. Tag each window with its session
+  // so the model-api can split by session instead of splitting near-duplicates
+  // across the train/validation boundary.
   let positiveWindows = [];
-  for (const row of rows) {
-    const w = JSON.parse(row.windows);
+  let positiveGroups = [];
+  for (const [sessionIndex, row] of rows.entries()) {
+    let w = JSON.parse(row.windows);
     if (positiveWindows.length + w.length > MAX_TRAIN_WINDOWS) {
-      positiveWindows = positiveWindows.concat(w.slice(0, MAX_TRAIN_WINDOWS - positiveWindows.length));
+      w = w.slice(0, MAX_TRAIN_WINDOWS - positiveWindows.length);
+      positiveWindows = positiveWindows.concat(w);
+      positiveGroups = positiveGroups.concat(w.map(() => sessionIndex));
       break;
     }
     positiveWindows = positiveWindows.concat(w);
+    positiveGroups = positiveGroups.concat(w.map(() => sessionIndex));
   }
   const sessionCount = rows.length;
 
   const result = await postModelApi("/api/user/train", {
     userId,
     positiveWindows,
+    positiveGroups,
+    overlapGap: Math.ceil(MOUSE_WINDOW_SIZE / WINDOW_STRIDE),
     minPositiveWindows: MIN_ENROLL_WINDOWS,
     modality: "mouse",
     epochs: 25,

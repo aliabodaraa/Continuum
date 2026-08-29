@@ -51,8 +51,85 @@ reproduced inside the deployed per-user training pipeline.
 **Fix:** group windows by source sample (`keystroke_text_id`) and split by group, exactly as
 `compute_overlap_groups` does for the base model. Then re-fit and re-measure.
 
+**✅ RESOLVED.** `split_no_overlap()` in `api.py` replaces the shuffle. Callers
+(`keystrokeSecurity.js`, `mouse.js`) now send one group id per window — the source sample for
+keystroke, the recording session for mouse — plus the overlap gap they built the windows with.
+Whole groups go to one side. When no groups are supplied the fallback is contiguous-with-gap,
+never a shuffle.
+
+Measured on user 1's real training data, 3 fits per arm (`split_ab_test.py`):
+
+| | validation leakage | reported val acc | calibrated threshold | held-out EER |
+|---|---|---|---|---|
+| old (random shuffle) | **100.0%** | 0.981 | **0.268** | 13.84% |
+| new (group split) | **0.0%** | 0.977 | **0.541** | 12.71% |
+
+Leakage was *total*: every validation window had a near-duplicate in training — worse than the
+96.2% first estimated.
+
+**Honest reading of the accuracy column:** the held-out set is 118 windows, so EER moves in
+steps of ~0.85% and the 1.1-point difference is about one step. Re-running the live retrain
+end-to-end gave 8.99% [6.46–11.84] against 8.42% [6.03–11.37] before — overlapping intervals in
+the other direction. **There is no measurable accuracy change.** This fix is justified on
+correctness, not on a performance gain: a validation set that contains its own training data
+cannot calibrate anything, and it was calibrating the per-user threshold to less than half its
+proper value.
+
+*Blast radius, stated precisely:* the calibrated threshold is **not** the live cutoff — both
+modalities decide at a fixed 0.50 (`LU_WINDOW_THRESHOLD`), and the retrain rollback gate scores
+`is_training=0, sample_purpose='activity'` samples, which the split never touched. So the leak
+corrupted early stopping, the reported `balancedAccuracy` ("Training Fit" on the dashboard) and
+the logged `profile.threshold` — not live accept/reject decisions. Severity is real but narrower
+than 🔴 implied.
+
 **Verification:** after the fix, `balancedAccuracy` should *drop* materially. If it does not,
 the split is still leaking.
+
+---
+
+## 1b. 🔴 CRITICAL — the genuine user's own data was training their model to reject them
+
+Found while verifying the split fix, and worse than the defect that surfaced it.
+
+The first clean retrain of user 1 was **rolled back** by the acceptance gate: genuine mean
+0.958 → 0.544, low windows 0 → 22. The cause was not the split.
+
+`getNegativeWindows` takes every *other* `user_id` as an impostor. But one human can hold more
+than one id — a demo account id and a hashed CA uid. For user 1 the negative pool contained
+id `739935229538144`, which shares **71 of user 1's 71 distinct texts** (>40 chars) and whose
+samples resume exactly where user 1's stop (user 1: 6 Jun – 4 Jul; the alias: 11 Jul – 25 Aug).
+It is the same person. **44 of their samples were being fed in as negatives**, explicitly
+teaching the model that the owner's typing is an impostor.
+
+The leaky split had been partially masking this: overfitting near-duplicate windows let the model
+satisfy contradictory labels. With an honest split the contradiction surfaces as a collapsed fit.
+
+**Fix:** `aliasUserIds()` drops any candidate whose distinct long texts are *majority*-shared
+with the target. The threshold cannot be "shares any text" — the five fixed enrolment prompts
+are typed by everyone by design, so a genuine impostor legitimately shares a handful. An alias
+shares nearly all. Requires ≥4 texts before the ratio is trusted.
+
+## 1c. 🟠 Live retrains had no dataset negatives at all
+
+`NEGATIVE_DATASET_PATH` defaulted to `BASE_DIR/data/Rand_WS50.h5` → `/app/services/model-api/
+data/`, which does not exist; compose sets `DATA_DIR=/app/data`, where the file actually is.
+`get_dataset_negatives` caught the failure and returned an empty array, so **every live retrain
+ran on app-user negatives only** — a handful of people, one of whom was the target themselves —
+falling through to synthetic noise when there were none. Default now derives from `DATA_DIR`.
+
+### Combined effect on the live pipeline
+
+| | before | after |
+|---|---|---|
+| validation leakage | 100% | 0% |
+| alias in negative pool | 44 samples of the target | excluded |
+| negative windows | 1424 (app-users only) | 1594, incl. real dataset impostors |
+| calibrated threshold | **0.132** | **0.454** |
+| retrain gate | ROLLBACK | **accept** (lows 2 vs 0) |
+
+The threshold moving from 0.132 to 0.454 is the clearest single indicator: a per-user threshold
+of 0.13 means "accept almost anything", and it was that low because it had been calibrated
+against memorised windows.
 
 ---
 
@@ -383,7 +460,9 @@ Permutation importance + occlusion agree: timing **78%**, key identity **22%**.
 
 | # | problem | severity | effect | fix | time |
 |---|---|---|---|---|---|
-| 1 | per-user split leakage | 🔴 | inflates training metrics, corrupts threshold + early stopping | group-by-sample split | 2 h |
+| 1 | ~~per-user split leakage~~ | ✅ | leakage was **100%**; threshold calibrated at 0.132 instead of ~0.45 | **done** — `split_no_overlap()`, §1 | — |
+| 1b | ~~target's own data used as negatives~~ | ✅ | alias id contributed 44 negative samples; retrain collapsed | **done** — `aliasUserIds()`, §1b | — |
+| 1c | ~~dataset negatives never loaded~~ | ✅ | wrong default path; live retrains had app-user negatives only | **done** — derive from `DATA_DIR`, §1c | — |
 | 2 | ~~binomial packet claim~~ | ✅ | understated false-lock 55× | **done** — `packet_eval.py`, §2 | — |
 | 3 | ~~n = 1~~ | ✅ | headline was the 19th percentile; median user EER **14.53%** | **done** — `population_sweep.py`, §6 | — |
 | 4 | ~~window-level bootstrap~~ | ✅ | CIs 1.5× too narrow | **done** — cluster bootstrap, §6b | — |
@@ -425,12 +504,17 @@ an overlap gap, disjoint negative and impostor pools, cluster bootstraps on the 
 and the system still works: median AUC 0.930, 95.8% impostor capture per decision. The results
 survived the audit with corrections rather than retractions.
 
-**Why not category 1.** One defect remains open: the per-user train/val split still leaks
-(§1), which corrupts the calibrated threshold and early-stopping choice in the *deployed*
-pipeline. And the honest headline is uncomfortable: at a 1% FAR budget the median user is
-accepted **12.4%** of the time. As a step-up trigger fused with a passkey that is defensible;
-as a standalone authenticator it is not, and the thesis should say so plainly.
+**Why not category 1.** The honest headline is uncomfortable: at a 1% FAR budget the median
+user is accepted **12.4%** of the time. As a step-up trigger fused with a passkey that is
+defensible; as a standalone authenticator it is not, and the thesis should say so plainly. The
+population result also rests on 98 KeyRecs transcription subjects and one real in-app user, and
+the held-out set is not a temporal holdout — so nothing here speaks to drift over time, the
+question a deployment cares most about.
 
-**Remaining work, in order:** fix #1 (group-by-sample split, 2 h) and #6 (timing-only vs
-identity-only retrains, 3 h). Neither changes the results above; #1 fixes the live threshold and
-#6 upgrades the attribution from correlational to causal.
+**Fixed since the first pass:** the per-user split (§1), the target's own data appearing in its
+negative pool (§1b), and dataset negatives never loading (§1c). The last two were found *by*
+fixing the first — the honest split turned a silent contradiction into a visible training
+collapse, which is the argument for clean protocols in miniature.
+
+**Remaining work:** #6 (timing-only vs identity-only retrains, 3 h), which upgrades the
+attribution from correlational to causal. Nothing else is outstanding.

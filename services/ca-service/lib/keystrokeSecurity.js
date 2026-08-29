@@ -333,15 +333,80 @@ function getTrainingSampleRows(userId, db) {
     .all(userId, MAX_TRAINING_SAMPLES);
 }
 
-function getTrainingWindows(userId, db) {
+// Windows slide with an 80% overlap, so two windows from the SAME sample share
+// most of their rows. The model-api needs to know which sample each window came
+// from, or its train/validation split puts near-duplicates on both sides and
+// every validation figure — including the calibrated threshold — is measured
+// against data the model already saw. So carry the sample id alongside.
+function getTrainingWindowsGrouped(userId, db) {
   const rows = getTrainingSampleRows(userId, db);
-  return rows.flatMap((row) => eventsToFeatureWindows(getSampleEvents(row.id, db)));
+  const windows = [];
+  const groups = [];
+  for (const row of rows) {
+    for (const w of eventsToFeatureWindows(getSampleEvents(row.id, db))) {
+      windows.push(w);
+      groups.push(row.id);
+    }
+  }
+  return { windows, groups };
 }
 
-function getNegativeWindows(userId, db) {
+function getTrainingWindows(userId, db) {
+  return getTrainingWindowsGrouped(userId, db).windows;
+}
+
+// A user may exist under more than one id — a demo account id and a hashed CA
+// uid for the same human. Those aliases land in the negative pool, so the model
+// is trained to reject its own owner's typing. Observed live: 44 of user 1's
+// negative samples belonged to an id sharing all 71 of user 1's distinct texts.
+//
+// Aliases are detected by verbatim text overlap, but the test cannot be "shares
+// any text": the fixed enrolment prompts are typed by EVERY user by design, so a
+// genuine impostor legitimately shares a handful. An alias shares nearly
+// everything. So compare the SHARE of the candidate's own distinct long texts
+// that also belong to the target, and drop it only past a majority.
+const ALIAS_TEXT_OVERLAP = 0.5;   // >50% of a candidate's own texts are the target's
+const ALIAS_MIN_TEXTS = 4;        // below this, overlap is not evidence either way
+
+function aliasUserIds(userId, db) {
+  const own = new Set(
+    db
+      .prepare("SELECT DISTINCT text_content t FROM keystroke_texts WHERE user_id = ? AND length(text_content) > 40")
+      .all(userId)
+      .map((r) => r.t),
+  );
+  if (own.size === 0) return new Set();
+  const candidates = db
+    .prepare(
+      `SELECT DISTINCT user_id u FROM keystroke_texts
+       WHERE user_id <> ? AND is_training = 1 AND is_suspicious = 0`,
+    )
+    .all(userId)
+    .map((r) => r.u);
+  const aliases = new Set();
+  for (const u of candidates) {
+    const texts = db
+      .prepare("SELECT DISTINCT text_content t FROM keystroke_texts WHERE user_id = ? AND length(text_content) > 40")
+      .all(u)
+      .map((r) => r.t);
+    if (texts.length < ALIAS_MIN_TEXTS) continue;
+    const shared = texts.filter((t) => own.has(t)).length;
+    if (shared / texts.length > ALIAS_TEXT_OVERLAP) {
+      aliases.add(u);
+      console.log(
+        `[negatives] excluding user ${u} from user ${userId}'s negatives: ${shared}/${texts.length} texts shared — same person under another id`,
+      );
+    }
+  }
+  return aliases;
+}
+
+// Same grouping requirement as the positives (see above).
+function getNegativeWindowsGrouped(userId, db) {
+  const aliases = aliasUserIds(userId, db);
   const rows = db
     .prepare(
-      `SELECT id
+      `SELECT id, user_id
        FROM keystroke_texts
        WHERE user_id <> ?
          AND is_training = 1
@@ -349,8 +414,17 @@ function getNegativeWindows(userId, db) {
        ORDER BY submitted_at DESC
        LIMIT ?`,
     )
-    .all(userId, MAX_TRAINING_SAMPLES);
-  return rows.flatMap((row) => eventsToFeatureWindows(getSampleEvents(row.id, db)));
+    .all(userId, MAX_TRAINING_SAMPLES)
+    .filter((r) => !aliases.has(r.user_id));
+  const windows = [];
+  const groups = [];
+  for (const row of rows) {
+    for (const w of eventsToFeatureWindows(getSampleEvents(row.id, db))) {
+      windows.push(w);
+      groups.push(row.id);
+    }
+  }
+  return { windows, groups };
 }
 
 async function postModelApi(path, payload) {
@@ -410,16 +484,22 @@ async function scoreWindowsWithModel(userId, windows, modelPath) {
 
 async function trainUserTypingProfile(userId, db) {
   const sampleCount = getTrainingSampleRows(userId, db).length;
-  const positiveWindows = getTrainingWindows(userId, db);
+  const positive = getTrainingWindowsGrouped(userId, db);
+  const positiveWindows = positive.windows;
   if (sampleCount < MIN_TRAINING_SAMPLES || positiveWindows.length < MIN_POSITIVE_WINDOWS) {
     return null;
   }
 
-  const negativeWindows = getNegativeWindows(userId, db);
+  const negative = getNegativeWindowsGrouped(userId, db);
+  const negativeWindows = negative.windows;
   const result = await postModelApi("/api/user/train", {
     userId,
     positiveWindows,
     negativeWindows,
+    // one source-sample id per window, so the split keeps whole samples together
+    positiveGroups: positive.groups,
+    negativeGroups: negative.groups,
+    overlapGap: Math.ceil(WINDOW_SIZE / WINDOW_STRIDE),
     minPositiveWindows: MIN_POSITIVE_WINDOWS,
     // Model storage is OWNED by the model-api: we say what (userId + modality),
     // it decides where. No filesystem coupling between the services.

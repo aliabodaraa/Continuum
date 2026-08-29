@@ -35,8 +35,16 @@ except Exception:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(BASE_DIR, "artifacts", "ws50", "final_model"))
 SCALER_PATH = os.getenv("SCALER_PATH", os.path.join(os.path.dirname(MODEL_PATH), "scaler.json"))
+# Storage roots, declared before anything that derives a default from them.
+# DATA_DIR is set by compose (/app/data); deriving the negatives default from
+# BASE_DIR instead pointed at /app/services/model-api/data, which does not
+# exist, so get_dataset_negatives silently returned nothing and every live
+# retrain ran with app-user negatives only — far weaker than intended, and
+# occasionally none at all, which falls through to synthetic noise.
+ARTIFACTS_DIR = os.getenv("ARTIFACTS_DIR", os.path.join(BASE_DIR, "artifacts"))
+DATA_DIR = os.getenv("DATA_DIR", os.path.join(BASE_DIR, "data"))
 NEGATIVE_DATASET_PATH = os.getenv(
-    "NEGATIVE_DATASET_PATH", os.path.join(BASE_DIR, "data", "Rand_WS50.h5")
+    "NEGATIVE_DATASET_PATH", os.path.join(DATA_DIR, "Rand_WS50.h5")
 )
 HOST = os.getenv("MODEL_HOST", "0.0.0.0")
 PORT = int(os.getenv("MODEL_PORT", "5000"))
@@ -46,8 +54,6 @@ PORT = int(os.getenv("MODEL_PORT", "5000"))
 # These two roots are the only places this service reads or writes; any path a
 # caller does supply (legacy/dev tooling like the sweep scripts) is CONFINED to
 # them, so no request can make this service touch arbitrary files.
-ARTIFACTS_DIR = os.getenv("ARTIFACTS_DIR", os.path.join(BASE_DIR, "artifacts"))
-DATA_DIR = os.getenv("DATA_DIR", os.path.join(BASE_DIR, "data"))
 # Mouse-modality defaults (this service's own layout, env-overridable).
 MOUSE_BASE_MODEL_PATH = os.getenv("MOUSE_BASE_MODEL_PATH", os.path.join(ARTIFACTS_DIR, "mouse-ws50-base", "final_model"))
 MOUSE_SCALER_PATH = os.getenv("MOUSE_SCALER_PATH", os.path.join(ARTIFACTS_DIR, "mouse-ws50-base", "scaler.json"))
@@ -225,6 +231,78 @@ def make_synthetic_negatives(positive_windows):
     return negatives
 
 
+# ---- leakage-free train/validation splitting -------------------------------
+# Windows are built with a sliding stride, so consecutive windows SHARE most of
+# their rows: at window 50 / stride 10 any two windows closer than 5 apart
+# overlap. A random shuffle therefore puts near-identical copies of the same
+# keystrokes on both sides of the split, and everything measured on the
+# validation side — val_loss (which drives early stopping) and the calibrated
+# per-user threshold — is measured against data the model effectively trained
+# on. Both are then optimistic, and the threshold is calibrated too low.
+#
+# Two strategies, best first:
+#   * BY GROUP: callers send one group id per window (the source sample /
+#     session). Whole groups go to one side, so no window can have its overlapping
+#     neighbour on the other side. This is the correct fix.
+#   * CONTIGUOUS + GAP: no groups supplied — take the validation set from the END
+#     of the sequence and discard `gap` windows at the boundary, the only place
+#     where overlap can cross. Weaker than grouping (a single long session still
+#     spans both sides) but strictly better than shuffling.
+DEFAULT_OVERLAP_GAP = 5          # ceil(WINDOW_SIZE / WINDOW_STRIDE) for 50/10
+DEFAULT_VAL_FRACTION = 0.2
+MAX_VAL_SHARE = 0.5              # never let group assignment swallow the training set
+
+
+def _contiguous_split(n, val_fraction, gap):
+    """Validation from the tail, with `gap` windows dropped at the boundary."""
+    n_val = int(round(n * val_fraction))
+    if n < 2 or n_val < 1:
+        return list(range(n)), []
+    cut = n - n_val
+    train = list(range(0, max(cut - gap, 0)))
+    if not train:                                  # too few windows to afford a gap
+        train = list(range(0, cut))
+    return train, list(range(cut, n))
+
+
+def _group_split(groups, val_fraction, seed):
+    """Assign whole groups to validation. Returns None if it cannot be done."""
+    uniq = list(dict.fromkeys(groups))
+    if len(uniq) < 2:
+        return None
+    counts = {g: 0 for g in uniq}
+    for g in groups:
+        counts[g] += 1
+    order = list(uniq)
+    np.random.default_rng(seed).shuffle(order)
+    target = max(1, int(round(len(groups) * val_fraction)))
+    cap = int(len(groups) * MAX_VAL_SHARE)
+    val_groups, taken = set(), 0
+    for g in order:
+        if taken >= target:
+            break
+        if val_groups and taken + counts[g] > cap:
+            continue                               # would leave too little to train on
+        val_groups.add(g)
+        taken += counts[g]
+    train = [i for i, g in enumerate(groups) if g not in val_groups]
+    val = [i for i, g in enumerate(groups) if g in val_groups]
+    return (train, val) if train and val else None
+
+
+def split_no_overlap(n, groups=None, val_fraction=DEFAULT_VAL_FRACTION,
+                     gap=DEFAULT_OVERLAP_GAP, seed=7):
+    """Train/validation indices that never place overlapping windows on both sides.
+
+    Returns (train_idx, val_idx, strategy)."""
+    if groups is not None and len(groups) == n:
+        got = _group_split(list(groups), val_fraction, seed)
+        if got:
+            return got[0], got[1], "group"
+    train, val = _contiguous_split(n, val_fraction, gap)
+    return train, val, "contiguous+gap"
+
+
 MIN_EER_VALIDATION_WINDOWS = 3   # minimum positive windows needed for EER to be statistically meaningful
 DEFAULT_THRESHOLD = 0.65          # used when validation data is too small to compute reliable EER
 # NOTE: the live continuous-auth decision uses a FIXED 0.50 window boundary
@@ -320,24 +398,46 @@ def train_user_payload(payload):
             negatives = make_synthetic_negatives(positives)
             negative_source = "synthetic"
 
-        X = np.concatenate([positives, negatives], axis=0).astype(np.float32)
-        X = scale_windows(X, scaler_path)
-        y = np.concatenate([
-            np.ones(len(positives), dtype=np.int64),
-            np.zeros(len(negatives), dtype=np.int64),
-        ])
+        # Split BEFORE combining, and split each class on its own, so validation
+        # always contains both classes (a random split can leave it with none of
+        # one) and so each class is grouped by its own source samples.
+        gap = int(payload.get("overlapGap", DEFAULT_OVERLAP_GAP))
+        val_fraction = float(payload.get("valFraction", DEFAULT_VAL_FRACTION))
+        pos_groups = payload.get("positiveGroups")
+        neg_groups = payload.get("negativeGroups")
+        if len(negatives) and neg_groups is not None and len(neg_groups) != len(negatives):
+            # dataset/synthetic negatives were appended after the caller's own,
+            # so the supplied ids cover only the first block; pad the remainder
+            # with one distinct group each rather than dropping the grouping.
+            neg_groups = list(neg_groups) + [f"pad-{i}" for i in range(len(negatives) - len(neg_groups))]
 
-        indices = np.arange(len(X))
+        p_tr, p_va, p_how = split_no_overlap(len(positives), pos_groups, val_fraction, gap)
+        n_tr, n_va, n_how = split_no_overlap(len(negatives), neg_groups, val_fraction, gap)
+        split_strategy = f"positives={p_how}, negatives={n_how}"
+
+        pos_s = scale_windows(positives.astype(np.float32), scaler_path)
+        neg_s = (scale_windows(negatives.astype(np.float32), scaler_path)
+                 if len(negatives) else negatives.astype(np.float32))
+
+        def _stack(pi, ni):
+            xs = [pos_s[pi]] if len(pi) else []
+            ys = [np.ones(len(pi), dtype=np.int64)] if len(pi) else []
+            if len(ni):
+                xs.append(neg_s[ni])
+                ys.append(np.zeros(len(ni), dtype=np.int64))
+            if not xs:
+                return (np.empty((0, window_size, num_features), dtype=np.float32),
+                        np.empty((0,), dtype=np.int64))
+            return np.concatenate(xs, axis=0), np.concatenate(ys)
+
+        X_train, y_train = _stack(p_tr, n_tr)
+        X_val, y_val = _stack(p_va, n_va)
+
+        # Shuffling the TRAINING order is harmless (it only affects batch
+        # composition); shuffling across the split boundary is what leaked.
         rng = np.random.default_rng(7)
-        rng.shuffle(indices)
-        X = X[indices]
-        y = y[indices]
-
-        split = max(1, int(len(X) * 0.8))
-        if split >= len(X):
-            split = len(X) - 1
-        X_train, X_val = X[:split], X[split:]
-        y_train, y_val = y[:split], y[split:]
+        order = rng.permutation(len(X_train))
+        X_train, y_train = X_train[order], y_train[order]
 
         # Fine-tune the pre-trained base model (transfer learning) when its
         # input shape matches; otherwise train from scratch.
@@ -457,6 +557,9 @@ def train_user_payload(payload):
             "loss": float(eval_loss),
             "threshold": threshold,
             "thresholdSource": "eer" if balanced_accuracy is not None else "default",
+            "splitStrategy": split_strategy,
+            "validationWindowCount": int(len(X_val)),
+            "validationPositiveCount": int(np.sum(y_val == 1)) if len(y_val) else 0,
             "balancedAccuracy": balanced_accuracy,
             "epochsTrained": len(history.history.get("loss", [])),
             "previousModelPath": prev_path if previous_model_available else None,
