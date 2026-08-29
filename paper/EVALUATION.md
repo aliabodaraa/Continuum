@@ -54,8 +54,11 @@ by the base model or any per-user head.
 | TAR @ FAR = 5% | 87.8% | 82.1 – 92.9% |
 | TAR @ FAR = 10% | 96.9% | 94.4 – 99.0% |
 
-**Personalisation quantified:** generic base model 14.9% EER → this user's fine-tuned head
-**7.1%**, roughly halving the error.
+**Personalisation quantified:** see §3b — the original "14.9% → 7.1%, roughly halving" claim is
+retracted; the correct statement is chance (AUC 0.55) → AUC 0.93.
+
+> The figures in this table are the pre-audit version. §3a corrects the EER to **8.42%
+> [6.0 – 11.4%]** and §3b shows this user sits at the **19th percentile** of 99 subjects.
 
 **"What is the maximum TAR?"** — 100%, trivially, by accepting everyone. Constrained to a real
 security budget the answer is a curve, and a demanding one: holding impostors to 1% costs
@@ -74,6 +77,75 @@ FAR@0.50 4.6%, TAR@FAR=1% 82.1% — substantially better across every statistic.
 *Not domain shift:* same-app impostors score in the same range (0.004 – 0.160) as the external
 set (0.106); `ahmad` scores *higher* than the KeyRecs mean. Suggestive rather than conclusive,
 since those app users were training negatives.
+
+## 3a. Auditing the held-out set itself
+
+The numbers in §3 rest on 196 windows from user 1's held-out samples. Auditing that set rather
+than the model found three defects (`holdout_audit.py`):
+
+- **Not a temporal holdout.** Training spans 12 Jun – 4 Jul, held-out 6 – 20 Jun: the training
+  window *encloses* the held-out window, so all 78 held-out samples predate the last training
+  sample. No claim about behavioural drift can rest on this set.
+- **Prompt reuse across the split.** The five fixed enrolment prompts were typed once into each
+  side. No row is duplicated — zero exact text matches — but the model sees the same words on
+  both sides, and §6 measures key identity at ~22% of discriminative weight.
+- **Degenerate and duplicate samples.** Ids 66/67 are byte-identical (17% of all held-out
+  windows); id 73 is `x` repeated 182 times.
+
+**Effective sample size is 20, not 196.** Only 20 of 78 samples are long enough to yield one
+50-digraph window; the largest 7 supply half. A window-level bootstrap treats ~20 correlated
+clusters as 196 independent draws.
+
+| variant | samples | windows | EER | 95% CI |
+|---|---|---|---|---|
+| as published (§3) | 20 | 196 | 7.07% | 5.61 – 8.67% *(window bootstrap)* |
+| contamination removed | 14 | 118 | 8.42% | 6.59 – 10.05% *(window bootstrap)* |
+| **+ sample-level bootstrap** | **14** | **118** | **8.42%** | **6.03 – 11.37%** |
+
+Contamination inflated the headline by 1.35 points; the wrong bootstrap unit made the interval
+1.5× too narrow. The intervals overlap, so the point shift is suggestive rather than decisive —
+but the contamination is real and the unit was wrong, so the honest figure is the wider one
+either way. **Corrected single-user headline: EER 8.42%, CI 6.0 – 11.4%.**
+
+---
+
+## 3b. Does it work for anyone else? — 99 subjects
+
+§3 is one user. `population_sweep.py` re-runs the whole enrol-and-verify pipeline for each of
+the 99 KeyRecs participants: positives split temporally 70/30 with a **5-window overlap gap**,
+training negatives from a 40-participant pool, impostors from a **disjoint** 40-participant
+pool, target excluded from both, recipe copied from `api.py`.
+
+| statistic | value |
+|---|---|
+| EER median | **14.53%** |
+| EER IQR | 9.33 – 18.27% |
+| EER p10 / p90 | 6.12% / 25.90% |
+| users above 10% / 20% EER | **68 / 99**  ·  **21 / 99** |
+| FAR @ 0.50 median | 11.13% (p90 22.73%) |
+| TAR @ 0.50 median | 84.42% (p10 58.21%) |
+| **TAR @ FAR = 1% median** | **12.4%** (p10 0.6%) |
+
+**User 1's corrected 8.42% is the 19th percentile.** Four users in five do worse; the median
+deployment user faces 14.53%. Enrolment volume does not explain the spread (**r = +0.04**), so
+more data is not the remedy — the difficulty is intrinsic, the same conclusion the mouse channel
+reached independently.
+
+### Retraction: "personalisation halves the error"
+
+§3 claimed 14.9% (base) → 7.1% (per-user), roughly halving. Those figures are not commensurable:
+14.9% is a Buffalo overlap-aware number and not a per-user verification result at all. Tested
+directly — the **generic base** scoring 20 KeyRecs targets against unseen impostors:
+
+| model | AUC verifying a *specific* unseen user |
+|---|---|
+| generic base | **0.552** mean / 0.627 median — chance, per-target range 0.05 – 0.97 |
+| per-user heads (n = 99) | **0.930** median (p10 0.817, p90 0.986) |
+
+The base has no notion of *which* person it is looking at. Personalisation does not halve an
+error — it takes verification **from chance to AUC 0.93**. That is a stronger argument for the
+per-user architecture, and it simultaneously shows the final quality (median EER 14.5%) is worse
+than the single-user headline implied.
 
 ## 4. How a verdict is actually reached — the packet vote
 
@@ -206,12 +278,20 @@ against the dataset's own identity `DD + dwell2 == DU.key1.key2` (19,995 rows, z
 
 1. **Keystroke base is level 2, not level 3.** Cannot be fixed from data on disk: `Rand_WS50.h5`
    has no subject labels. Fixing it requires the raw Buffalo release.
-2. **n = 1 target user** for the subject-disjoint result. It is a case study with confidence
-   intervals, not a population estimate.
+2. ~~n = 1 target user~~ — **resolved (§3b)**: 99 subject-disjoint targets. The remaining limit
+   is that only *one* of them is a real Continuum user; the other 98 are KeyRecs transcription
+   sessions, so the population estimate and the in-app estimate are not the same measurement.
 3. **Impostor-set size matters**: 34 participants gave EER 4.1%, all 99 gave 7.1%. Larger
    and more diverse impostor pools would likely raise it further.
 4. **KeyRecs is transcription**, matching copy-typing enrollment rather than free composition.
-   Continuum's own measurements show these differ materially for the same person.
+   Continuum's own measurements show these differ materially for the same person. This cuts both
+   ways in §3b: KeyRecs targets have *different* text in train and test (187 distinct opening
+   sequences across 198 participant-sessions), so unlike user 1 they gain nothing from shared
+   content — making the population figure the more conservative one.
+7. **The held-out set is not a temporal holdout** (§3a), so nothing here speaks to behavioural
+   drift over weeks or months — the question a deployment cares most about.
+8. **At a 1% FAR budget the median user is accepted 12.4% of the time** (§3b). As a step-up
+   trigger backed by a passkey this is defensible; as a standalone authenticator it is not.
 5. **`key1`/`key2` are `event.key` names** mapped to keyCodes — exact for letters and digits,
    approximate for a few punctuation keys.
 6. **App users cannot be impostors**: every per-user profile records
