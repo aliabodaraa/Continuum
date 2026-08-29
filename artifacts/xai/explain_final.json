@@ -1,0 +1,54 @@
+{
+  "userId": 1,
+  "baselineAuc": 0.9805102040816327,
+  "nGenuine": 196,
+  "nImpostor": 600,
+  "method": "permutation importance (shuffle across windows), cross-checked with mean-occlusion",
+  "features": [
+    {
+      "feature": "id1",
+      "permutationDrop": 0.01998582766439912,
+      "permutationStd": 0.0026218652325253784,
+      "occlusionDrop": 0.013078231292517062,
+      "kind": "identity"
+    },
+    {
+      "feature": "id2",
+      "permutationDrop": 0.012277494331065767,
+      "permutationStd": 0.0012860596119091887,
+      "occlusionDrop": 0.004413265306122516,
+      "kind": "identity"
+    },
+    {
+      "feature": "dwell1",
+      "permutationDrop": 0.05813775510204089,
+      "permutationStd": 0.002023321174335329,
+      "occlusionDrop": 0.07511904761904764,
+      "kind": "timing"
+    },
+    {
+      "feature": "dwell2",
+      "permutationDrop": 0.03096938775510209,
+      "permutationStd": 0.00414661517982068,
+      "occlusionDrop": 0.02249149659863947,
+      "kind": "timing"
+    },
+    {
+      "feature": "dd",
+      "permutationDrop": 0.017358276643990995,
+      "permutationStd": 0.0014848130848895925,
+      "occlusionDrop": 0.012125850340136135,
+      "kind": "timing"
+    },
+    {
+      "feature": "ud",
+      "permutationDrop": 0.005399659863945601,
+      "permutationStd": 0.0005922646008569501,
+      "occlusionDrop": 0.004319727891156533,
+      "kind": "timing"
+    }
+  ],
+  "timingShare": 0.7761487556171767,
+  "identityShare": 0.2238512443828234,
+  "interpretation": "timing-driven \u2014 behaves as a behavioural biometric"
+}

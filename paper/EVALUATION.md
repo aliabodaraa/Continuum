@@ -41,30 +41,39 @@ At the overlap-aware split: **EER 14.93%** (threshold 0.62), **AUC 0.921**, and 
 ## 3. Keystroke — per-user model, subject-disjoint *(new)*
 
 Protocol: **level 3.** Genuine = 196 windows from user 1's `is_training=0` samples, never used
-to fit the head. Impostors = 4,000 windows from **34 KeyRecs participants** never seen by the
-base model or any per-user head.
+to fit the head. Impostors = 4,000 windows sampled from **99 KeyRecs participants** never seen
+by the base model or any per-user head.
 
 | metric | value | 95% CI (bootstrap) |
 |---|---|---|
-| AUC | **0.992** | 0.989 – 0.995 |
-| EER | **4.1%** | 3.1 – 5.6% |
+| AUC | **0.979** | 0.974 – 0.984 |
+| EER | **7.1%** | 5.6 – 8.8% |
 | TAR @ threshold 0.50 | 96.9% | — |
-| FAR @ threshold 0.50 | 4.6% | — |
-| TAR @ FAR = 1% | 82.1% | 75.5 – 88.3% |
-| TAR @ FAR = 5% | 96.9% | 94.4 – 99.0% |
-| TAR @ FAR = 10% | 99.0% | 97.4 – 100% |
+| FAR @ threshold 0.50 | 9.7% | — |
+| TAR @ FAR = 1% | 55.6% | 49.0 – 65.8% |
+| TAR @ FAR = 5% | 87.8% | 82.1 – 92.9% |
+| TAR @ FAR = 10% | 96.9% | 94.4 – 99.0% |
 
-**This quantifies personalisation for the first time:** the generic base model sits at 14.9%
-EER, this user's fine-tuned head at **4.1%**.
+**Personalisation quantified:** generic base model 14.9% EER → this user's fine-tuned head
+**7.1%**, roughly halving the error.
 
-**"What is the maximum TAR?"** — 100%, trivially, by accepting everyone. The question is only
-meaningful against a fixed FAR, and then the answer is a curve: **82% at 1% FAR, 97% at 5%**.
+**"What is the maximum TAR?"** — 100%, trivially, by accepting everyone. Constrained to a real
+security budget the answer is a curve, and a demanding one: holding impostors to 1% costs
+nearly half of genuine windows (**TAR 55.6%**); at 5% FAR it is **87.8%**. This is the
+security/usability trade the single 91.1% figure concealed.
+
+### Impostor-set size changes the answer
+
+The same evaluation run against only the first 34 participants gave AUC 0.992, EER 4.1%,
+FAR@0.50 4.6%, TAR@FAR=1% 82.1% — substantially better across every statistic.
+
+> **A small impostor set overestimates security.** Diversity of impostors, not their count
+> alone, sets the difficulty. Any FAR quoted without stating how many distinct people it was
+> measured against should be treated as provisional.
 
 *Not domain shift:* same-app impostors score in the same range (0.004 – 0.160) as the external
-set (0.059); `ahmad` scores *higher* than KeyRecs. Suggestive rather than conclusive, since
-those app users were training negatives.
-
----
+set (0.106); `ahmad` scores *higher* than the KeyRecs mean. Suggestive rather than conclusive,
+since those app users were training negatives.
 
 ## 4. How a verdict is actually reached — the packet vote
 
@@ -72,15 +81,19 @@ Model outputs are **per window**; the decision is **≥3 of the last 6 windows l
 majority rule it *suppresses* error rates below 50% and amplifies above — the crossover at 50%
 is the whole design.
 
-| per-window rate | → per-decision |
-|---|---|
-| 3.1% (user 1 FRR) | **0.056%** — 1 false lock in ~1,800 decisions |
-| 10% | 1.59% |
-| 20.1% (dataset FAR) | 9.89% |
-| 79.9% (impostor low-rate) | **98.3% caught** |
+`packet_rate` takes **P(window is low)**, so genuine and impostor rows must both be expressed
+that way — a FAR is an *accept* rate and has to be converted (P(low) = 1 − FAR) before it can
+be fed in.
 
-So the deployed system's per-window FAR of 20.1% becomes an impostor-accept of **1.7%** per
-decision. **The vote is what turns a mediocre per-window model into a usable system.**
+| whose windows | P(window low) | → P(packet fires) | meaning |
+|---|---|---|---|
+| user 1, genuine | 3.1% (= FRR) | **0.056%** | 1 false lock per ~1,800 decisions |
+| user 1, impostor | 90.3% (= 1 − 9.7% FAR) | **99.9%** | impostor accepted only **0.1%** of the time |
+| base model, impostor | 79.9% (= 1 − 20.1% FAR) | 98.3% | impostor accepted 1.7% of the time |
+
+**The vote is what turns a mediocre per-window model into a usable system**: a per-window FAR
+of ~10% becomes a per-decision impostor-accept of ~0.1%, while the genuine user's 3.1%
+per-window rejection almost never becomes an actual lock.
 
 ---
 
@@ -103,19 +116,19 @@ sessions, with **20 users held out** entirely.
 
 ## 6. Explainable AI — what drives the verdict
 
-Permutation importance (Breiman 2001) on user 1's model, baseline AUC 0.9931, cross-checked
-with mean-occlusion; both perturbations agree on the ranking.
+Permutation importance (Breiman 2001) on user 1's model against all 99 impostor participants,
+baseline AUC 0.9805, cross-checked with mean-occlusion; both perturbations agree on the ranking.
 
 | feature | ΔAUC when destroyed | kind |
 |---|---|---|
-| **dwell1** | **+0.0745** | timing |
-| dwell2 | +0.0320 | timing |
-| id1 | +0.0153 | identity |
-| dd | +0.0120 | timing |
-| id2 | +0.0118 | identity |
-| ud | +0.0007 | timing (redundant) |
+| **dwell1** | **+0.0581** | timing |
+| dwell2 | +0.0310 | timing |
+| id1 | +0.0200 | identity |
+| dd | +0.0174 | timing |
+| id2 | +0.0123 | identity |
+| ud | +0.0054 | timing (redundant) |
 
-**Timing 81% / key identity 19%** → it behaves as a *behavioural* biometric, recognising **how**
+**Timing 78% / key identity 22%** → it behaves as a *behavioural* biometric, recognising **how**
 keys are held rather than **which** were pressed. Hold time is the personal signature.
 
 `ud`'s near-zero score is algebra, not noise:
@@ -127,7 +140,26 @@ UD = press₂ − release₁ ,  DD = press₂ − press₁ ,  dwell1 = release�
 
 The published 6-feature set therefore carries only **5 independent** features.
 
----
+## 6b. How hard is a mimicry attack?
+
+Real impostors shifted a fraction α toward user 1's timing distribution (first two moments);
+key codes untouched; `ud` recomputed from the identity so every window stays physically
+realisable. **α = 0 is measured reality; α > 0 is synthetic** and bounds FAR from below.
+
+| α | attacker | FAR @ 0.50 | gets past the packet vote |
+|---|---|---|---|
+| 0.00 | real unseen person | 10.0% | 0.1% |
+| 0.50 | half-matched timing | 37.5% | ~10% |
+| 0.75 | well-matched | 59.2% | ~38% |
+| **1.00** | **timing fully matched** | **82.1%** | **~70%** |
+
+Two things follow. The defence degrades **gradually**, not catastrophically — there is no
+cliff at which it suddenly fails. And matching the target's timing *statistics* perfectly still
+does not reach 100%: **AUC remains 0.595 at α = 1**, so the model retains discriminative power
+from the temporal *sequence* that first- and second-moment mimicry cannot reproduce. That is a
+direct empirical argument for the recurrent architecture over summary-statistic features.
+
+Precedent for synthetic forgery evaluation: Sun & Upadhyaya, IJCB 2018 (ref [29]).
 
 ## 7. Datasets
 
@@ -135,7 +167,7 @@ The published 6-feature set therefore carries only **5 independent** features.
 |---|---|---|---|---|
 | Buffalo [9] | 148 | 42,579 × 50×6 | overlap-aware (no subject labels) | request from curator |
 | SapiMouse [2] | 120 | 230,564 × 50×7 | subject-disjoint, 20 held out | public |
-| KeyRecs | 99 (**34 used**) | 17,336 × 50×6 | impostors, subject-disjoint | CC-BY 4.0 |
+| KeyRecs | 99 | 52,234 × 50×6 | impostors, subject-disjoint | CC-BY 4.0 |
 
 - **[9]** Sun, Çeker & Upadhyaya, *Shared keystroke dataset for continuous authentication*, WIFS 2016.
 - **[2]** Antal, Fejér & Buza, *SapiMouse*, SACI 2021.
@@ -156,7 +188,8 @@ against the dataset's own identity `DD + dwell2 == DU.key1.key2` (19,995 rows, z
    has no subject labels. Fixing it requires the raw Buffalo release.
 2. **n = 1 target user** for the subject-disjoint result. It is a case study with confidence
    intervals, not a population estimate.
-3. **34 of 99 KeyRecs participants** — the host truncated the transfer at ~8 MB repeatedly.
+3. **Impostor-set size matters**: 34 participants gave EER 4.1%, all 99 gave 7.1%. Larger
+   and more diverse impostor pools would likely raise it further.
 4. **KeyRecs is transcription**, matching copy-typing enrollment rather than free composition.
    Continuum's own measurements show these differ materially for the same person.
 5. **`key1`/`key2` are `event.key` names** mapped to keyCodes — exact for letters and digits,
