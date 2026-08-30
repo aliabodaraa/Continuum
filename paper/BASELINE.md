@@ -59,7 +59,7 @@ if any of it must change, #6 is re-run from scratch rather than compared across 
 | users above 10% / 20% EER | 68 / 99 · 21 / 99 |
 | TAR @ FAR=1%, median | **12.4%** (p10 0.6%) |
 | personalised AUC, median | **0.930** (generic base: 0.552 — chance) |
-| user 1, clean held-out EER | **8.42%** CI 6.03 – 11.37 (19th percentile) |
+| user 1, clean held-out EER | **10.17%** CI 8.41 – 13.87 *(59 unseen impostors; see note)* |
 | decision false-lock, user 1 | 4.04% all held-out · 7.84% decontaminated |
 | impostor caught per decision | 95.8% CI 91.1 – 99.2 |
 
@@ -78,6 +78,21 @@ docker exec -w /app/services/model-api continuum-model-api-1 python validate_spl
 docker exec continuum-ca-service-1 node /app/validate_pipeline.js
 docker exec -w /app/services/model-api continuum-model-api-1 python validate_endtoend.py
 ```
+
+## Post-freeze amendment (2026-08-30)
+
+Forty KeyRecs participants (**p001–p040**, the frozen *negative* pool) were seeded as demo
+accounts. Because app users become training negatives, those participants are no longer unseen
+by any Continuum account, so `holdout_audit.py` and `packet_eval.py` now sample impostors from
+**participants ≥ 40 only** (59 people still unseen).
+
+Under that restriction user 1's clean held-out EER reads **10.17% CI [8.41, 13.87]**, against
+8.42% [6.03, 11.37] measured earlier on the full 99-participant pool. The model is unchanged —
+this is an impostor-composition effect, the same phenomenon already documented in
+`EVALUATION.md` §3 (34 participants gave 4.1%, 99 gave 7.1%). Quote the 10.17% figure.
+
+The evaluation impostor pool `[40:80]` and reserve `[80:99]` were deliberately left unseeded, so
+**the population results (median EER 14.53%) and experiment #6 are unaffected**.
 
 ## Known limits carried into #6
 

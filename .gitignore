@@ -79,3 +79,11 @@ continuum-data-*.tgz
 _backups/
 *.pptx
 ~$*
+
+# seeding artefacts written into bind-mounted service dirs at runtime
+services/ca-service/idmap.json
+services/ca-service/gwmap.json
+services/ca-service/keyrecs_accounts.json
+apps/demo/idmap.json
+apps/demo/keyrecs_accounts.json
+services/gateway/gwmap.json

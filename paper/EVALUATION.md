@@ -224,8 +224,10 @@ baseline AUC 0.9805, cross-checked with mean-occlusion; both perturbations agree
 | id2 | +0.0123 | identity |
 | ud | +0.0054 | timing (redundant) |
 
-**Timing 78% / key identity 22%** → it behaves as a *behavioural* biometric, recognising **how**
-keys are held rather than **which** were pressed. Hold time is the personal signature.
+**Timing 78% / key identity 22%** of *attributed* AUC drop. This is a statement about marginal
+contribution inside a model trained on everything — **it is not** a statement that key identity
+carries 22% of the usable signal. §6c tests that directly by retraining, and does not support
+the second reading.
 
 `ud`'s near-zero score is algebra, not noise:
 
@@ -256,6 +258,73 @@ from the temporal *sequence* that first- and second-moment mimicry cannot reprod
 direct empirical argument for the recurrent architecture over summary-statistic features.
 
 Precedent for synthetic forgery evaluation: Sun & Upadhyaya, IJCB 2018 (ref [29]).
+
+## 6c. Ablation — is timing *sufficient*, and is identity *necessary*?
+
+Attribution ranks features inside one trained model. It cannot say whether a representation
+supports the task at all. So the whole pipeline was retrained under three input representations
+across all **99 subject-disjoint users**, changing nothing but which columns carry information
+(`ablation_sweep.py`). Ablated columns are filled with a corpus constant, which keeps tensor
+shape, base model, frozen weights and training procedure byte-identical — slicing columns out
+would have forced a different architecture and confounded representation with model.
+
+| Metric | Full | Timing-only | Identity-only |
+|---|---:|---:|---:|
+| EER median | 13.89% | **12.88%** | 41.71% |
+| EER IQR | 9.23 – 19.81% | 8.50 – 16.86% | 36.46 – 47.56% |
+| EER mean | 14.99% | 14.04% | 41.44% |
+| EER min / max | 3.73 / 40.49% | 1.97 / 37.20% | 17.15 / 64.55% |
+| AUC median | 0.922 | **0.938** | 0.609 |
+| TAR @ FAR = 1%, median | 12.21% | **16.55%** | 1.20% |
+
+Paired per-user differences, bootstrapped over users (the independent unit):
+
+| Comparison | Median Δ EER | 95% CI | Worse for |
+|---|---:|---|---|
+| timing-only − full | **−0.57 pp** | [−1.34, −0.10] | 35 / 99 |
+| identity-only − full | **+25.92 pp** | [+23.72, +28.02] | 99 / 99 |
+| identity-only − timing-only | +27.34 pp | [+24.52, +30.16] | 98 / 99 |
+
+**Removing key identity does not cost accuracy — it slightly improves it**, and the interval
+excludes zero. Timing-only was better for **63 of 99** users. **Removing timing collapses
+verification toward chance**: 76/99 users above 35% EER, 67/99 below AUC 0.65, and median
+TAR@FAR=1% falls from 12.21% to 1.20%.
+
+### Disagreement with §6, reported rather than reconciled
+
+The 78/22 split and this ablation answer different questions, and the ablation does not support
+the reading the 78/22 phrasing invited. Identity's 22% share of attributed AUC drop coexists
+with identity *alone* performing near chance, and with identity being mildly **harmful** when
+present. The defensible claim is now:
+
+> Timing is nearly **sufficient** for verification and key identity is nearly **unnecessary**.
+> Removing key identity leaves median EER unchanged to slightly better (13.89% → 12.88%, paired
+> −0.57 pp, 95% CI [−1.34, −0.10]); removing timing collapses verification toward chance
+> (41.71% EER, AUC 0.609). Key identity alone does not support verification.
+
+### Leakage control
+
+Ablated columns have **exactly one distinct value** (the correct criterion — `var()` returns
+~1e-15 for a constant float32 column of this size, so a `var()==0` assertion fails on a rounding
+artefact). Every index — enrol/validation/held-out positions, sampled negatives, sampled
+impostors, training shuffle — is drawn **once per target and reused by all three conditions**, so
+identical populations and identical data volume are guaranteed by construction, not by matching
+seeds; both are asserted per target at runtime. Windows are fixed at 50 steps, so no length or
+padding signal exists. Condition A reproduces the frozen baseline (paired median −0.10 pp,
+r = 0.913 across users).
+
+### This is not a privacy result
+
+Two claims must be kept apart:
+
+- **No direct key-identity input** — proven; the columns are constant.
+- **No possible information about typed content** — **false.**
+
+Probed on the same corpus (`ablation_privacy.py`): word boundaries are recoverable from timing
+alone at **AUC 0.681** (spaces are 16.6% of digraphs), and per-key one-vs-rest averages **AUC
+0.603**. Recovering spaces yields word lengths, which is most of the way to fingerprinting a
+phrase. MI(id1; timing) is 1.65% of H(id1) — small, not zero. Within-window ordering added
+nothing beyond the multiset (ordered 0.427 vs shuffled 0.435).
 
 ## 7. Datasets
 

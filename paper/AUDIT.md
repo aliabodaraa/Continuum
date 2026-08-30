@@ -406,6 +406,38 @@ Permutation importance + occlusion agree: timing **78%**, key identity **22%**.
 
 ---
 
+## 8b. ✅ Ablation — what the attribution could not establish
+
+§8 ranked features inside one trained model. That cannot say whether a representation supports
+the task at all, so the pipeline was retrained under three input representations across all
+**99 subject-disjoint users**, changing only which columns carry information.
+
+| | Full | Timing-only | Identity-only |
+|---|---:|---:|---:|
+| EER median | 13.89% | **12.88%** | 41.71% |
+| AUC median | 0.922 | **0.938** | 0.609 |
+| TAR@FAR=1% median | 12.21% | **16.55%** | 1.20% |
+
+| Paired comparison | Median Δ EER | 95% CI | Worse for |
+|---|---:|---|---|
+| timing-only − full | **−0.57 pp** | [−1.34, −0.10] | 35/99 |
+| identity-only − full | **+25.92 pp** | [+23.72, +28.02] | 99/99 |
+
+Removing key identity does not cost accuracy; it slightly improves it, and the interval excludes
+zero. Removing timing collapses verification toward chance (76/99 above 35% EER).
+
+**The 78/22 claim is retracted in its usual reading.** Permutation importance measures marginal
+contribution *inside a model trained with everything*; ablation asks whether a representation
+supports the task. Identity's 22% attributed share coexists with identity alone at chance and
+with identity being mildly harmful when present. Both measurements are correct about different
+questions — the disagreement is reported, not reconciled.
+
+**Not a privacy result.** "No direct key-identity input" is proven. "No information about typed
+content" is false: word boundaries are recoverable from timing alone at **AUC 0.681**, per-key
+one-vs-rest averages 0.603.
+
+---
+
 ## 9. Reproducibility
 
 | item | state |
@@ -499,7 +531,7 @@ Permutation importance + occlusion agree: timing **78%**, key identity **22%**.
 | 3 | ~~n = 1~~ | ✅ | headline was the 19th percentile; median user EER **14.53%** | **done** — `population_sweep.py`, §6 | — |
 | 4 | ~~window-level bootstrap~~ | ✅ | CIs 1.5× too narrow | **done** — cluster bootstrap, §6b | — |
 | 5 | held-out set contaminated | ✅→🔴 | **verified and it failed**: prompt reuse + duplicate + not temporal; EER 7.07% → **8.42%** | **measured** — `holdout_audit.py`, §6b | — |
-| 6 | no trained ablations | 🟡 | attribution alone is weaker | timing-only / id-only models | 3 h |
+| 6 | ~~no trained ablations~~ | ✅ | timing nearly **sufficient**, identity nearly **unnecessary**; 78/22 reading retracted | **done** — `ablation_sweep.py`, §8b | — |
 
 ---
 
@@ -548,5 +580,7 @@ negative pool (§1b), and dataset negatives never loading (§1c). The last two w
 fixing the first — the honest split turned a silent contradiction into a visible training
 collapse, which is the argument for clean protocols in miniature.
 
-**Remaining work:** #6 (timing-only vs identity-only retrains, 3 h), which upgrades the
-attribution from correlational to causal. Nothing else is outstanding.
+**Remaining work:** none of the six audit items. All are measured and closed (§1, §1b, §1c,
+§1d, §2, §6, §6b, §8b). What remains is not audit debt but the standing limits in the paragraph
+above: no temporal holdout, 98 of 99 population subjects are transcription typing, and the
+median user is accepted 12.4% of the time at a 1% FAR budget.
