@@ -147,6 +147,10 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--max-impostor", type=int, default=1500)
+    ap.add_argument("--resume", action="store_true",
+                    help="skip targets already present in --out and append to them. Each "
+                         "target is independent and seeded by its own id, so a resumed run "
+                         "produces the same numbers as an uninterrupted one.")
     args = ap.parse_args()
     if h5py is None:
         raise SystemExit("h5py is required")
@@ -168,6 +172,16 @@ def main():
     print(f"  {'':>6}  " + "  ".join(f"{'EER    AUC   T@1%':>22}" for _ in CONDITIONS))
 
     rows, t0 = [], time.time()
+    if args.resume and args.out:
+        try:
+            with open(args.out) as f:
+                rows = json.load(f).get("perUser", [])
+            done = {r["participant"] for r in rows}
+            targets = [t for t in targets if int(t) not in done]
+            print(f"resuming: {len(rows)} targets already done, "
+                  f"{len(targets)} remaining")
+        except (OSError, ValueError):
+            pass
     for n, tid in enumerate(targets, 1):
         idx = draw_indices(tid, W, P, neg_pool, imp_pool,
                            np.random.default_rng(1000 + int(tid)), args.max_impostor)

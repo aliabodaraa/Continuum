@@ -72,14 +72,16 @@ def genuine_sessions(user_id, training_flag=0, exclude=()):
     return out
 
 
-def impostor_sessions(path, max_subjects=40, rng=None):
+def impostor_sessions(path, max_subjects=40, rng=None, min_participant=40):
     """Consecutive windows grouped per participant. The converter emits them in order, so a
     participant's block is a usable sequence."""
     rng = rng or np.random.default_rng(13)
     with h5py.File(path, "r") as f:
         X = np.asarray(f["windows"])
         pid = np.asarray(f["participant"])
+    # participants 0-39 were seeded as demo accounts, so they are training negatives now
     subs = np.unique(pid)
+    subs = subs[subs >= min_participant]
     if len(subs) > max_subjects:
         subs = rng.choice(subs, max_subjects, replace=False)
     return [X[pid == s] for s in subs if (pid == s).sum() >= RECENT]

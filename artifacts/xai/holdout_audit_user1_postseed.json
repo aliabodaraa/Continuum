@@ -1,0 +1,61 @@
+{
+  "userId": 1,
+  "nImpostorWindows": 4000,
+  "removedSamples": [
+    56,
+    57,
+    58,
+    59,
+    60,
+    67
+  ],
+  "reasons": {
+    "promptReuse": [
+      56,
+      57,
+      58,
+      59,
+      60
+    ],
+    "byteIdenticalDuplicate": [
+      67
+    ],
+    "repeatedCharacter": [
+      73
+    ]
+  },
+  "variants": [
+    {
+      "name": "as published (all held-out samples)",
+      "nSamples": 20,
+      "nWindows": 196,
+      "eer": 0.09291836734693878,
+      "auc": 0.966295918367347,
+      "tarAt050": 0.9591836734693877,
+      "ciWindowBootstrap": [
+        0.08169132653061224,
+        0.10925057397959181
+      ],
+      "ciSampleBootstrap": [
+        0.07669260664779383,
+        0.11645305526088322
+      ]
+    },
+    {
+      "name": "contamination removed",
+      "nSamples": 14,
+      "nWindows": 118,
+      "eer": 0.10172245762711865,
+      "auc": 0.9558930084745763,
+      "tarAt050": 0.940677966101695,
+      "ciWindowBootstrap": [
+        0.08512288135593221,
+        0.1271843220338983
+      ],
+      "ciSampleBootstrap": [
+        0.08409182641806723,
+        0.13872049448587748
+      ]
+    }
+  ]
+}

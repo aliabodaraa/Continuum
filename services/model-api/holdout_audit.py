@@ -134,6 +134,9 @@ def main():
     ap.add_argument("--impostors", default="/app/data/keyrecs_impostors.h5")
     ap.add_argument("--out", default=None)
     ap.add_argument("--n-impostor", type=int, default=4000)
+    ap.add_argument("--min-participant", type=int, default=40,
+                    help="exclude participants below this id: 0-39 were seeded as demo "
+                         "accounts, so they are training negatives and no longer unseen")
     args = ap.parse_args()
     if h5py is None:
         raise SystemExit("h5py is required")
@@ -142,6 +145,13 @@ def main():
     groups_raw = held_out_by_sample(args.user_id)
     with h5py.File(args.impostors, "r") as f:
         imp_w = np.asarray(f["windows"], dtype=np.float32)
+        imp_pid = np.asarray(f["participant"])
+    if args.min_participant:
+        keep = imp_pid >= args.min_participant
+        print(f"impostors restricted to participants >= {args.min_participant}: "
+              f"{keep.sum()} of {len(imp_w)} windows "
+              f"({len(np.unique(imp_pid[keep]))} people still unseen by any account)")
+        imp_w = imp_w[keep]
     rng = np.random.default_rng(11)
     if len(imp_w) > args.n_impostor:
         imp_w = imp_w[rng.choice(len(imp_w), args.n_impostor, replace=False)]
