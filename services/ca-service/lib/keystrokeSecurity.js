@@ -371,7 +371,9 @@ const ALIAS_MIN_TEXTS = 4;        // below this, overlap is not evidence either 
 function aliasUserIds(userId, db) {
   const own = new Set(
     db
-      .prepare("SELECT DISTINCT text_content t FROM keystroke_texts WHERE user_id = ? AND length(text_content) > 40")
+      .prepare(
+        "SELECT DISTINCT text_hash t FROM keystroke_texts WHERE user_id = ? AND text_hash IS NOT NULL AND COALESCE(char_count, length(text_content)) > 40",
+      )
       .all(userId)
       .map((r) => r.t),
   );
@@ -386,7 +388,9 @@ function aliasUserIds(userId, db) {
   const aliases = new Set();
   for (const u of candidates) {
     const texts = db
-      .prepare("SELECT DISTINCT text_content t FROM keystroke_texts WHERE user_id = ? AND length(text_content) > 40")
+      .prepare(
+        "SELECT DISTINCT text_hash t FROM keystroke_texts WHERE user_id = ? AND text_hash IS NOT NULL AND COALESCE(char_count, length(text_content)) > 40",
+      )
       .all(u)
       .map((r) => r.t);
     if (texts.length < ALIAS_MIN_TEXTS) continue;
@@ -408,7 +412,7 @@ function negativeSampleRows(userId, db) {
   const aliases = aliasUserIds(userId, db);
   return db
     .prepare(
-      `SELECT id, user_id, text_content
+      `SELECT id, user_id, text_hash
        FROM keystroke_texts
        WHERE user_id <> ?
          AND is_training = 1

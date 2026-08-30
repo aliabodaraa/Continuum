@@ -97,16 +97,25 @@ function maybeRetrainAdaptively(userId) {
   });
 }
 
+// Salted so the hashes are not a rainbow-table of common phrases. The salt is per
+// deployment and stable, which is all equality comparison needs.
+const TEXT_HASH_SALT = process.env.TEXT_HASH_SALT || "continuum-text-hash-salt";
+function textHash(t) {
+  return require("crypto").createHmac("sha256", TEXT_HASH_SALT).update(String(t || "")).digest("hex");
+}
+
 function storeTextSample({ userId, textContent, keystrokeEvents, metrics, evaluation, samplePurpose, sourcePath, isTraining }) {
   const result = db
     .prepare(
       `INSERT INTO keystroke_texts
-        (user_id, text_content, keystroke_timings, model_confidence, is_suspicious, sample_purpose, source_path, is_training)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        (user_id, text_content, text_hash, char_count, keystroke_timings, model_confidence, is_suspicious, sample_purpose, source_path, is_training)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       userId,
       textContent,
+      textHash(textContent),
+      String(textContent || "").length,
       JSON.stringify(metrics || {}),
       evaluation ? evaluation.modelConfidence : null,
       evaluation && evaluation.isSuspicious ? 1 : 0,
@@ -428,7 +437,7 @@ app.get("/v1/keystroke/stats/:userId", (req, res) => {
     `SELECT COUNT(*) as total_submissions,
             COUNT(CASE WHEN is_suspicious = 1 THEN 1 END) as suspicious_count,
             AVG(model_confidence) as avg_confidence,
-            SUM(LENGTH(text_content)) as total_chars
+            SUM(COALESCE(char_count, LENGTH(text_content))) as total_chars
      FROM keystroke_texts WHERE user_id = ?`,
   ).get(uid(req));
   res.json({ ...stats, typingStatus: ks.getUserTypingStatus(uid(req), db) });

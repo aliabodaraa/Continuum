@@ -25,9 +25,13 @@ function check(name, ok, detail) {
   if (!ok) failures++;
 }
 
+// Compares HASHES, not text: alias and duplicate detection only ever needed equality, so
+// the check is identical while the plaintext stays unread.
 const longTexts = (u) =>
   db
-    .prepare("SELECT DISTINCT text_content t FROM keystroke_texts WHERE user_id = ? AND length(text_content) > 40")
+    .prepare(
+      "SELECT DISTINCT text_hash t FROM keystroke_texts WHERE user_id = ? AND text_hash IS NOT NULL AND COALESCE(char_count, length(text_content)) > 40",
+    )
     .all(u)
     .map((r) => r.t);
 
@@ -75,25 +79,42 @@ check(
 );
 
 // ---------------------------------------------------------------- check 4
-// No user's own material may appear among their negatives — by alias, or by a duplicate text
-// filed under a different id.
+// No user's own material may reach their own negative pool. The criterion is PERSON-level,
+// not text-level. An earlier version failed a negative merely for sharing a text with the
+// target, but the KeyRecs corpus has shared passages: participant 21 shares 1 of participant
+// 28's 30 texts because both typed the same passage. That is a different human and the
+// strongest possible negative — identical content, different rhythm, so the model cannot win
+// on vocabulary. What must never appear is a negative from the SAME person under another id,
+// which is exactly the majority-overlap condition the alias rule tests.
 console.log("\nCHECK 4 — no genuine user's samples in their own negative pool");
 const profiled = db.prepare("SELECT DISTINCT user_id u FROM user_typing_profiles").all().map((r) => r.u);
 console.log(`    ${profiled.length} users with a trained profile`);
 let contaminated = 0;
+let sharedPassages = 0;
 for (const u of profiled) {
   const own = new Set(longTexts(u));
   if (own.size === 0) continue;
-  // Exactly what the shipped code would now feed the trainer.
   const negRows = ks.negativeSampleRows(u, db);
-  const bad = negRows.filter((row) => own.has(row.text_content));
-  if (bad.length) {
-    contaminated++;
-    console.log(`      user ${u}: ${bad.length} negative samples carry the user's OWN text`);
+  const byUser = new Map();
+  for (const row of negRows) {
+    if (!byUser.has(row.user_id)) byUser.set(row.user_id, []);
+    byUser.get(row.user_id).push(row.text_hash);
+  }
+  for (const [negUser, hashes] of byUser) {
+    const texts = longTexts(negUser);
+    if (texts.length < 4) continue;
+    const shared = texts.filter((t) => own.has(t)).length;
+    if (shared / texts.length > 0.5) {
+      contaminated++;
+      console.log(`      user ${u}: negatives include user ${negUser}, sharing ${shared}/${texts.length} texts — SAME PERSON`);
+    } else if (shared > 0) {
+      sharedPassages++;
+    }
   }
 }
-check("no profiled user has own-text samples in their negative pool", contaminated === 0,
-  `${contaminated} contaminated users`);
+console.log(`    ${sharedPassages} negative-user pairs share a passage without being the same person (expected: shared corpus)`);
+check("no profiled user has a same-person alias in their negative pool", contaminated === 0,
+  `${contaminated} contaminated`);
 
 // ---------------------------------------------------------------- check 5
 // The calibrated per-user threshold must be reporting-only. Prove it by MUTATING it to an

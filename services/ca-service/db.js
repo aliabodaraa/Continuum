@@ -13,11 +13,24 @@ fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new Database(dbPath);
 
+// Additive migration for databases created before text_hash/char_count existed.
+function addColumnIfMissing(table, column, decl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (cols.length && !cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS keystroke_texts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     text_content TEXT NOT NULL,
+    -- Derived from the text at write time so nothing downstream needs to read the text
+    -- itself. Every stored-text consumer compares samples for EQUALITY (alias detection,
+    -- duplicate detection, prompt-reuse detection) or wants a LENGTH (paste coverage,
+    -- character totals); none needs the words. Keeping these two lets the plaintext be
+    -- dropped without losing any capability.
+    text_hash TEXT,
+    char_count INTEGER,
     keystroke_timings TEXT,
     model_confidence REAL,
     is_suspicious INTEGER DEFAULT 0,
@@ -88,5 +101,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_ad_user ON auth_decisions(user_id);
   CREATE INDEX IF NOT EXISTS idx_mouse_samples_user ON mouse_samples(user_id);
 `);
+
+// Run after the CREATE TABLEs so both fresh and existing databases end up with the columns.
+addColumnIfMissing("keystroke_texts", "text_hash", "TEXT");
+addColumnIfMissing("keystroke_texts", "char_count", "INTEGER");
 
 module.exports = db;
