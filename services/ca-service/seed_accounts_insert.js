@@ -24,7 +24,9 @@ const [mode, accountsPath, idMapPath] = process.argv.slice(2);
 const data = JSON.parse(fs.readFileSync(accountsPath, "utf8"));
 
 const PROVENANCE = data.source;
-const DEMO_PASSWORD = "123"; // demo-only credential, per request; not for any deployed instance
+const DEMO_PASSWORD = "123";
+const TEXT_HASH_SALT = process.env.TEXT_HASH_SALT || "continuum-text-hash-salt";
+const textHash = (t) => require("crypto").createHmac("sha256", TEXT_HASH_SALT).update(String(t || "")).digest("hex"); // demo-only credential, per request; not for any deployed instance
 
 if (mode === "users") {
   const db = new Database("/app/db/continuum.db");
@@ -61,8 +63,8 @@ if (mode === "users") {
   const db = new Database("/app/ca.db");
   const map = JSON.parse(fs.readFileSync(idMapPath, "utf8"));
   const insText = db.prepare(
-    `INSERT INTO keystroke_texts (user_id, text_content, is_training, sample_purpose, submitted_at)
-     VALUES (?, ?, ?, ?, datetime('now'))`,
+    `INSERT INTO keystroke_texts (user_id, text_hash, char_count, is_training, sample_purpose, submitted_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now'))`,
   );
   const insEvent = db.prepare(
     `INSERT INTO keystroke_events (keystroke_text_id, key_code, event_type, timestamp_relative, field_name)
@@ -77,7 +79,7 @@ if (mode === "users") {
     let events = 0;
     for (const [flag, list] of [[1, account.training], [0, account.heldOut]]) {
       for (const s of list) {
-        const r = insText.run(userId, s.text, flag, "keyrecs-seed");
+        const r = insText.run(userId, textHash(s.text), String(s.text || "").length, flag, "keyrecs-seed");
         for (const e of s.events) {
           insEvent.run(r.lastInsertRowid, e.keyCode, e.eventType, e.timestampRelative, "demo");
           events++;

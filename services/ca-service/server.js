@@ -108,12 +108,11 @@ function storeTextSample({ userId, textContent, keystrokeEvents, metrics, evalua
   const result = db
     .prepare(
       `INSERT INTO keystroke_texts
-        (user_id, text_content, text_hash, char_count, keystroke_timings, model_confidence, is_suspicious, sample_purpose, source_path, is_training)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (user_id, text_hash, char_count, keystroke_timings, model_confidence, is_suspicious, sample_purpose, source_path, is_training)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       userId,
-      textContent,
       textHash(textContent),
       String(textContent || "").length,
       JSON.stringify(metrics || {}),
@@ -427,7 +426,7 @@ app.post("/v1/keystroke/maybe-retrain-impostors", (req, res) => {
 // ---- read models for the demo/dashboard (username joins happen in the demo) ----
 app.get("/v1/keystroke/history/:userId", (req, res) => {
   const texts = db.prepare(
-    "SELECT id, text_content, model_confidence, is_suspicious, sample_purpose, is_training, submitted_at FROM keystroke_texts WHERE user_id = ? ORDER BY submitted_at DESC",
+    "SELECT id, char_count, model_confidence, is_suspicious, sample_purpose, is_training, submitted_at FROM keystroke_texts WHERE user_id = ? ORDER BY submitted_at DESC",
   ).all(uid(req));
   res.json({ texts });
 });
@@ -437,7 +436,7 @@ app.get("/v1/keystroke/stats/:userId", (req, res) => {
     `SELECT COUNT(*) as total_submissions,
             COUNT(CASE WHEN is_suspicious = 1 THEN 1 END) as suspicious_count,
             AVG(model_confidence) as avg_confidence,
-            SUM(COALESCE(char_count, LENGTH(text_content))) as total_chars
+            SUM(char_count) as total_chars
      FROM keystroke_texts WHERE user_id = ?`,
   ).get(uid(req));
   res.json({ ...stats, typingStatus: ks.getUserTypingStatus(uid(req), db) });

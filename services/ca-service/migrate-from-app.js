@@ -14,7 +14,7 @@ const src = new Database(srcPath, { readonly: true });
 // (table, columns) — copied verbatim, preserving primary keys so foreign links
 // (keystroke_events.keystroke_text_id) stay valid.
 const TABLES = {
-  keystroke_texts: ["id", "user_id", "text_content", "keystroke_timings", "model_confidence", "is_suspicious", "sample_purpose", "source_path", "is_training", "submitted_at"],
+  keystroke_texts: ["id", "user_id", "keystroke_timings", "model_confidence", "is_suspicious", "sample_purpose", "source_path", "is_training", "submitted_at"],
   keystroke_events: ["id", "keystroke_text_id", "key_code", "event_type", "timestamp_relative", "field_name", "field_type"],
   user_typing_profiles: ["user_id", "model_json", "sample_count", "trained_at"],
   auth_decisions: ["id", "user_id", "checked_at", "source", "window_count", "mean_score", "threshold", "verdict", "passkey_triggered", "passkey_outcome", "per_window_scores"],

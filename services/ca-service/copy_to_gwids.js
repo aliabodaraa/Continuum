@@ -10,13 +10,13 @@ const db = new Database("/app/ca.db");
 const map = JSON.parse(fs.readFileSync("/app/gwmap.json", "utf8"));
 
 const texts = db.prepare(
-  "SELECT id, text_content, is_training, sample_purpose FROM keystroke_texts WHERE user_id = ? AND sample_purpose = 'keyrecs-seed' ORDER BY id",
+  "SELECT id, text_hash, char_count, is_training, sample_purpose FROM keystroke_texts WHERE user_id = ? AND sample_purpose = 'keyrecs-seed' ORDER BY id",
 );
 const events = db.prepare(
   "SELECT key_code, event_type, timestamp_relative, field_name FROM keystroke_events WHERE keystroke_text_id = ? ORDER BY id",
 );
 const insText = db.prepare(
-  "INSERT INTO keystroke_texts (user_id, text_content, is_training, sample_purpose, submitted_at) VALUES (?, ?, ?, ?, datetime('now'))",
+  "INSERT INTO keystroke_texts (user_id, text_hash, char_count, is_training, sample_purpose, submitted_at) VALUES (?, ?, ?, ?, ?, datetime('now'))",
 );
 const insEvent = db.prepare(
   "INSERT INTO keystroke_events (keystroke_text_id, key_code, event_type, timestamp_relative, field_name) VALUES (?, ?, ?, ?, ?)",
@@ -29,7 +29,7 @@ let copied = 0, skipped = 0, evTotal = 0;
 const tx = db.transaction((demoId, gwId) => {
   let ev = 0;
   for (const t of texts.all(demoId)) {
-    const r = insText.run(gwId, t.text_content, t.is_training, t.sample_purpose);
+    const r = insText.run(gwId, t.text_hash, t.char_count, t.is_training, t.sample_purpose);
     for (const e of events.all(t.id)) {
       insEvent.run(r.lastInsertRowid, e.key_code, e.event_type, e.timestamp_relative, e.field_name);
       ev++;

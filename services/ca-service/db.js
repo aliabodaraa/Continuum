@@ -23,8 +23,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS keystroke_texts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
-    text_content TEXT NOT NULL,
-    -- Derived from the text at write time so nothing downstream needs to read the text
+    -- text_content was removed: the plaintext a user typed is no longer stored anywhere.
+    -- Derived from the text in memory at write time so nothing downstream needs the text
     -- itself. Every stored-text consumer compares samples for EQUALITY (alias detection,
     -- duplicate detection, prompt-reuse detection) or wants a LENGTH (paste coverage,
     -- character totals); none needs the words. Keeping these two lets the plaintext be

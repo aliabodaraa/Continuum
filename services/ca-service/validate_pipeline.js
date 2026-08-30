@@ -30,7 +30,7 @@ function check(name, ok, detail) {
 const longTexts = (u) =>
   db
     .prepare(
-      "SELECT DISTINCT text_hash t FROM keystroke_texts WHERE user_id = ? AND text_hash IS NOT NULL AND COALESCE(char_count, length(text_content)) > 40",
+      "SELECT DISTINCT text_hash t FROM keystroke_texts WHERE user_id = ? AND text_hash IS NOT NULL AND char_count > 40",
     )
     .all(u)
     .map((r) => r.t);

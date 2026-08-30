@@ -372,7 +372,7 @@ function aliasUserIds(userId, db) {
   const own = new Set(
     db
       .prepare(
-        "SELECT DISTINCT text_hash t FROM keystroke_texts WHERE user_id = ? AND text_hash IS NOT NULL AND COALESCE(char_count, length(text_content)) > 40",
+        "SELECT DISTINCT text_hash t FROM keystroke_texts WHERE user_id = ? AND text_hash IS NOT NULL AND char_count > 40",
       )
       .all(userId)
       .map((r) => r.t),
@@ -389,7 +389,7 @@ function aliasUserIds(userId, db) {
   for (const u of candidates) {
     const texts = db
       .prepare(
-        "SELECT DISTINCT text_hash t FROM keystroke_texts WHERE user_id = ? AND text_hash IS NOT NULL AND COALESCE(char_count, length(text_content)) > 40",
+        "SELECT DISTINCT text_hash t FROM keystroke_texts WHERE user_id = ? AND text_hash IS NOT NULL AND char_count > 40",
       )
       .all(u)
       .map((r) => r.t);
