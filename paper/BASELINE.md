@@ -77,6 +77,9 @@ Easy / median / hard reference users (KeyRecs 78 / 41 / 76):
 docker exec -w /app/services/model-api continuum-model-api-1 python validate_split.py
 docker exec continuum-ca-service-1 node /app/validate_pipeline.js
 docker exec -w /app/services/model-api continuum-model-api-1 python validate_endtoend.py
+
+# the baseline must stay raw-id scoped — this must RAISE, not return
+docker exec -w /app/services/model-api continuum-model-api-1 python -c   "from identity_scope import ResearchScope; ResearchScope('baseline-keystroke-v1').resolve_principal(1)"
 ```
 
 ## Post-freeze amendment (2026-08-30)
@@ -93,6 +96,37 @@ this is an impostor-composition effect, the same phenomenon already documented i
 
 The evaluation impostor pool `[40:80]` and reserve `[80:99]` were deliberately left unseeded, so
 **the population results (median EER 14.53%) and experiment #6 are unaffected**.
+
+## Identity protection (added 2026-09-01)
+
+A canonical identity registry now exists in `ca.db` — 45 principals, 90 aliases, 5 retired
+identities, one tenant (`pk_demo`). It records that `ali` is one human holding two historical
+ids (`1` and `739935229538144`), which production reads may unify.
+
+**This baseline must never see that unification.** `user_id = 1` is 121 samples; the principal
+that owns it also owns 739935229538144, which would make it 243 — a different experiment
+reported under the same name. `services/model-api/identity_scope.py` enforces the separation:
+
+| Scope | Addresses | Used by |
+|---|---|---|
+| `ResearchScope` | raw historical `user_id` | this baseline, permanently |
+| `CanonicalScope` | `tenant_id` + `principal_id` | production only |
+
+`holdout_audit.py`, `packet_eval.py`, `population_sweep.py` and `ablation_sweep.py` each declare
+`ResearchScope("baseline-keystroke-v1")` on import. Any attempt at alias resolution from those
+scripts raises `IdentityScopeError` rather than silently widening the population.
+
+> **Canonical identity is for production continuity; raw historical identity is for frozen
+> scientific reproducibility.** No historical row was moved or merged to create the registry.
+
+## Production identity (does not affect this baseline)
+
+`ca-service` now takes identity only from a gateway-signed RS256 assertion; no caller can choose
+an internal user id. The demo therefore reads and writes under the canonical principal
+(`739935229538144` for `ali`), while this baseline continues to address raw `user_id = 1`.
+
+**Both histories are intact and unmerged** — 121 raw samples, 122 principal samples. The
+separation is enforced by `identity_scope.py`, not by convention.
 
 ## Known limits carried into #6
 

@@ -37,10 +37,22 @@ const AUTHENTICATOR_ATTACHMENT = process.env.AUTHENTICATOR_ATTACHMENT || "";
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
+// This service is published to the host because the extension's step-up pages are
+// browser-facing, so the key gate has to distinguish two kinds of endpoint.
+//
+// OPEN, and safe to be open: the WebAuthn ceremony (/v1/register/*, /v1/auth/*). The
+//   /ext/* pages are HTML served to a browser, and their own scripts call these paths —
+//   a browser cannot hold a server API key. They are not unprotected: WebAuthn binds every
+//   ceremony to a server-issued challenge and to the caller's origin, and completion needs
+//   a signature from the real authenticator. An attacker gains nothing from a challenge.
+//
+// PROTECTED: the management endpoints (/v1/users/*). These are NOT part of the ceremony,
+//   are never called by a browser, and are genuinely dangerous when open —
+//   GET /v1/users/:id/passkeys leaks whether a user has a passkey, and
+//   POST /v1/users/:id/reset DELETES it, removing the step-up factor entirely.
+const OPEN_PREFIXES = ["/health", "/ext/", "/v1/register/", "/v1/auth/"];
 app.use((req, res, next) => {
-  // /ext/* are the browser-facing pages for the extension's fixed-RP step-up — they can't
-  // carry a server API key. Their API calls are still origin+challenge bound by WebAuthn.
-  if (req.path === "/health" || req.path.startsWith("/ext/")) return next();
+  if (OPEN_PREFIXES.some((p) => req.path === p || req.path.startsWith(p))) return next();
   if (API_KEY && req.get("X-Api-Key") !== API_KEY) {
     return res.status(401).json({ error: "Invalid or missing API key" });
   }

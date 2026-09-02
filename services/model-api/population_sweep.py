@@ -64,6 +64,14 @@ except Exception:                                    # pragma: no cover
 from keystroke_user_sweep import LIVE_THRESHOLD, auc_of, eer_of, tar_at_far
 
 # Windows overlap 80% (stride 10 of a 50-step window), so two windows share rows whenever
+
+# ---- identity scope -------------------------------------------------------
+# This experiment is part of the FROZEN baseline. It addresses raw historical user_ids and
+# must never resolve principal aliases: user_id=1 is 121 held-out samples, whereas the
+# principal that owns it also owns 739935229538144, which would make it 243. The guard below
+# raises if anything reaches for canonical resolution.
+from identity_scope import ResearchScope, assert_research_scope
+SCOPE = assert_research_scope(ResearchScope("baseline-keystroke-v1"), "baseline-keystroke-v1")
 # their indices differ by less than 5. Every train/eval boundary discards this many.
 OVERLAP_GAP = 5
 

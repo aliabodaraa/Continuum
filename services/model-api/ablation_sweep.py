@@ -54,6 +54,14 @@ from keystroke_user_sweep import LIVE_THRESHOLD, auc_of, eer_of, tar_at_far
 from population_sweep import (ENROL_FRAC, IMP_POOL_SIZE, NEG_POOL_SIZE, VAL_FRAC,
                               build_model, get_scaler, scale, split_with_gap)
 
+# ---- identity scope -------------------------------------------------------
+# This experiment is part of the FROZEN baseline. It addresses raw historical user_ids and
+# must never resolve principal aliases: user_id=1 is 121 held-out samples, whereas the
+# principal that owns it also owns 739935229538144, which would make it 243. The guard below
+# raises if anything reaches for canonical resolution.
+from identity_scope import ResearchScope, assert_research_scope
+SCOPE = assert_research_scope(ResearchScope("baseline-keystroke-v1"), "baseline-keystroke-v1")
+
 
 def draw_indices(tid, windows, pid, neg_pool, imp_pool, rng, max_imp):
     """Every random choice for this target, made ONCE and shared by all three conditions."""

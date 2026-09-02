@@ -163,6 +163,46 @@ removes 41 of 797 positive windows.
 
 ---
 
+## 1e. ✅ Identity: no caller may choose the internal user id
+
+Found while auditing the gateway bypass. `ca-service` obtained identity as
+`Number(req.body.userId || req.params.userId)` on **19 of its 23 endpoints**, so any caller
+reaching it could read or write any user's biometric data in any tenant by changing a number.
+The shared API key does not help — it answers *"is this a Continuum service?"*, never *"is this
+service allowed to act for this person?"*
+
+A second, quieter consequence: the gateway namespaces identities per tenant precisely so two
+customers' "user 42" cannot collide, but the first-party app bypassed that and wrote raw
+sequential ids (`1`–`58`), re-introducing the collision the namespacing existed to prevent. Two
+endpoints — `decisions-all` and `metrics` — returned every tenant's data unconditionally.
+
+**Fix — signed internal identity assertions.** The gateway, as sole identity authority, issues a
+short-lived RS256 assertion naming `(tenant_id, principal_id)`; `ca-service` takes identity from
+that and nothing else. Asymmetric on purpose: with a shared HMAC key `ca-service` could mint its
+own authority, which is the thing the assertion withholds from it. The assertion is
+**backend-only** — never returned to a browser, and `ca-service` is not host-reachable.
+
+The demo needed **no new credential**: it is already the `pk_demo` tenant with a secret, so it
+authenticates exactly as a third party does. First-party and third-party are now the same code
+path, which removes the asymmetry that created two identity schemes.
+
+| Check | Result |
+|---|---|
+| no assertion | **401** `missing identity assertion` |
+| malformed | **401** `unparseable assertion` |
+| forged HS256 against an RS256 verifier | **401** `unexpected alg: HS256` |
+| wrong tenant secret | **401** `invalid_identity_token` |
+| unknown tenant | **401** `invalid_site_key` |
+| valid path, demo → gateway → ca-service | **200**, principal resolved |
+| `decisions-all` / `metrics` | tenant-scoped via `principal_aliases` |
+
+**Behavioural change worth knowing:** the demo now reads and writes under the canonical
+principal. For `ali` that is `739935229538144` (122 samples), not raw `user_id = 1` (121). The
+two are *not* merged — `identity_scope.py` keeps the frozen baseline on raw ids, and both
+histories remain intact.
+
+---
+
 ## 2. 🔴 CRITICAL — the packet-vote calculation assumed independence, and windows are correlated
 
 The binomial transform `P(≥3 of 6 low)` assumes windows are independent draws. They are not:

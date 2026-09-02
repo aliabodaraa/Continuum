@@ -15,8 +15,14 @@ services:
       # (userId, modality); this service derives + confines every path.
       ARTIFACTS_DIR: /app/artifacts
       DATA_DIR: /app/data
-    ports:
-      - "5000:5000"
+    # NOT published to the host. Only ca-service calls this service, over the
+    # internal Docker network. When it was published on :5000 an unauthenticated
+    # host client could score arbitrary windows against any user's model — a
+    # biometric oracle usable for hill-climbing an accepted forgery — and could
+    # reach /api/user/train and /api/user/rollback. `expose` keeps it reachable
+    # service-to-service without a host binding.
+    expose:
+      - "5000"
     volumes:
       - .:/app
     command: python services/model-api/api.py
@@ -29,6 +35,11 @@ services:
       PORT: 4000
       RP_ID: localhost
       ORIGIN: http://localhost:3000
+      # Guards the MANAGEMENT endpoints (/v1/users/*) only. The WebAuthn ceremony
+      # (/v1/register/*, /v1/auth/*) stays open because the browser-served /ext/*
+      # pages call it and cannot hold a server key; WebAuthn binds those to a
+      # server-issued challenge and the caller's origin instead.
+      PASSKEY_API_KEY: ${PASSKEY_API_KEY:-dev-passkey-service-key}
     ports:
       - "4000:4000"   # browser-facing: the extension's fixed-RP step-up pages (/ext/*)
     volumes:
@@ -47,6 +58,9 @@ services:
     environment:
       PORT: 4100
       MODEL_API_URL: http://model-api:5000
+      # Shared secret for service-to-service calls. Unset, the check in server.js is a
+      # no-op and any process on the Docker network can read or write biometric data.
+      CA_API_KEY: ${CA_API_KEY:-dev-ca-service-key}
       # Field types the SDK must NOT monitor (comma-sep). Password is monitored
       # by default (value masked); add it here to exclude. Hidden is always sensible.
       MONITOR_EXCLUDE_TYPES: ${MONITOR_EXCLUDE_TYPES:-hidden}
@@ -74,12 +88,25 @@ services:
         condition: service_started
     environment:
       PORT: 8080
+      # IDENTITY ANCHOR — pinned deliberately to the value that was already effective
+      # (previously an implicit fallback in server.js). Pinning changes no id: it turns an
+      # undocumented default into an explicit, reviewable input.
+      #
+      # Rotating this is an IDENTITY MIGRATION EVENT, not a config change — it alters
+      # HMAC(secret, siteKey|externalId) and would re-map every user. That was survivable
+      # only until the principals registry existed; from now on identity is READ FROM THE
+      # TABLE, so rotation is safe for anyone already seeded there. Seed first, rotate after.
+      GATEWAY_SESSION_SECRET: ${GATEWAY_SESSION_SECRET:-dev-gateway-session-secret}
       CA_API_URL: http://ca-service:4100
       PASSKEY_API_URL: http://passkey-service:4000
       # Onboarding strategy handed to gateway-mode SDKs at session bootstrap.
       ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
       # CAEP: push signed risk-change events to the demo tenant's receiver.
       DEMO_WEBHOOK_URL: http://web:3000/continuum/events
+      # The gateway relays to both downstream services, so it must present both keys —
+      # otherwise activating them 401s every SDK call it forwards.
+      CA_API_KEY: ${CA_API_KEY:-dev-ca-service-key}
+      PASSKEY_API_KEY: ${PASSKEY_API_KEY:-dev-passkey-service-key}
     ports:
       - "8080:8080"
     volumes:
@@ -117,6 +144,9 @@ services:
       CONTINUUM_JWKS_URI: http://gateway:8080/.well-known/jwks.json
       # Resolve the unified Continuum id for the app's own CA calls (identity unification).
       GATEWAY_URL: http://gateway:8080
+      # caClient.js / passkeyClient.js already send these as X-Api-Key when set.
+      CA_API_KEY: ${CA_API_KEY:-dev-ca-service-key}
+      PASSKEY_API_KEY: ${PASSKEY_API_KEY:-dev-passkey-service-key}
     ports:
       - "3000:3000"
     volumes:

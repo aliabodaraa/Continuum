@@ -86,12 +86,30 @@ function verifyIdentity(secret, token) {
 // `sub` from the consumer) ALWAYS resolves to the SAME Continuum userId — hence
 // the SAME keystroke/mouse models — with no lookup table that could be lost. The
 // consumer stores nothing about Continuum; it just re-sends its own user id.
-let store = loadJson(IDENTITY_FILE, { users: {} }); // bookkeeping only (listing / GDPR delete)
+// THE IDENTITY REGISTRY. Read-before-compute: a stored allocation always wins.
+//
+// This used to write the store and then return the freshly COMPUTED hash, never reading
+// back — which made the file decorative and the identity ephemeral. Two consequences were
+// observed in this deployment:
+//   * ids 900001..900010, allocated by an earlier counter-based scheme, became unreachable:
+//     userFor() returned a hash instead of the recorded value, stranding their data.
+//   * rotating GATEWAY_SESSION_SECRET would silently re-map every user, orphaning every
+//     biometric profile, because identity was recomputed on every call.
+//
+// Now the HMAC is used ONLY to allocate an id the first time a (tenant, externalId) pair is
+// seen. After that the allocation is a stored fact. Rotating the secret therefore affects
+// nobody already registered — it only changes the seed for principals not yet allocated.
+let store = loadJson(IDENTITY_FILE, { users: {} });
 function userFor(siteKey, externalId) {
-  const h = crypto.createHmac("sha256", SESSION_SECRET).update(siteKey + "|" + externalId).digest("hex");
-  const userId = parseInt(h.slice(0, 13), 16); // stable id within JS safe-integer range
   const key = siteKey + "|" + externalId;
-  if (!store.users[key]) { store.users[key] = { userId, externalId, createdAt: new Date().toISOString() }; saveJson(IDENTITY_FILE, store); }
+  const known = store.users[key];
+  if (known) return { userId: known.userId, username: (siteKey + "-" + externalId).slice(0, 48) };
+
+  // first sighting — allocate deterministically, then persist so it never moves again
+  const h = crypto.createHmac("sha256", SESSION_SECRET).update(key).digest("hex");
+  const userId = parseInt(h.slice(0, 13), 16); // stable id within JS safe-integer range
+  store.users[key] = { userId, externalId, createdAt: new Date().toISOString() };
+  saveJson(IDENTITY_FILE, store);
   return { userId, username: (siteKey + "-" + externalId).slice(0, 48) };
 }
 
@@ -142,6 +160,52 @@ let rsaPrivateKey, verdictJwk, verdictKid;
   verdictKid = crypto.createHash("sha256").update(pub.n).digest("hex").slice(0, 16);
   verdictJwk = { ...pub, kid: verdictKid, use: "sig", alg: "RS256" };
 })();
+// ---- INTERNAL IDENTITY ASSERTIONS -----------------------------------------
+// The gateway is the only identity authority. Downstream services must never take a user id
+// from a request body — a caller that can name its own principal can name anyone's. Instead
+// the gateway signs a short-lived assertion of WHO the request acts for, and ca-service
+// trusts only that.
+//
+// Signed RS256 with a keypair SEPARATE from verdict signing, so the two rotate independently.
+// Asymmetric rather than a shared secret on purpose: with an HMAC key, ca-service would hold
+// the power to mint its own authority — the very thing the assertion exists to constrain.
+// Here the gateway holds the private key; ca-service verifies with the public one and can
+// forge nothing.
+//
+// This assertion is BACKEND-ONLY. It is never returned to a browser, never set as a cookie,
+// and ca-service is not reachable from the host, so a client cannot present one directly.
+let identityPrivateKey, identityJwk, identityKid;
+(function loadIdentityKeys() {
+  const keyFile = path.join(DATA_DIR, "gateway-identity-key.pem");
+  let pem;
+  try { pem = fs.readFileSync(keyFile, "utf8"); }
+  catch (e) {
+    const kp = crypto.generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
+    pem = kp.privateKey;
+    try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(keyFile, pem); } catch (_) {}
+  }
+  identityPrivateKey = crypto.createPrivateKey(pem);
+  const pub = crypto.createPublicKey(identityPrivateKey).export({ format: "jwk" });
+  identityKid = "id-" + crypto.createHash("sha256").update(pub.n).digest("hex").slice(0, 16);
+  identityJwk = { ...pub, kid: identityKid, use: "sig", alg: "RS256" };
+})();
+
+const ASSERTION_TTL = Number(process.env.IDENTITY_ASSERTION_TTL || 300); // seconds
+
+function mintAssertion(tenantId, principalId, audience) {
+  const now = Math.floor(Date.now() / 1000);
+  const h = b64(JSON.stringify({ alg: "RS256", typ: "JWT", kid: identityKid }));
+  // `aud` matters: the gateway relays to ca-service AND passkey-service, and an assertion
+  // minted for one must not be replayable at the other.
+  const p = b64(JSON.stringify({
+    iss: "gateway", aud: audience, sub: String(principalId),
+    tenant_id: tenantId, iat: now, exp: now + ASSERTION_TTL,
+  }));
+  const data = h + "." + p;
+  const sig = crypto.createSign("RSA-SHA256").update(data).sign(identityPrivateKey, "base64url");
+  return data + "." + sig;
+}
+
 function signRiskRS256(userId, risk, modality) {
   const now = Math.floor(Date.now() / 1000);
   const header = b64(JSON.stringify({ alg: "RS256", typ: "JWT", kid: verdictKid }));
@@ -197,7 +261,7 @@ app.use(express.static(SDK_PUBLIC));
 app.get("/health", (req, res) => res.json({ ok: true, service: "gateway", tenants: Object.keys(tenants.tenants).length }));
 
 // ---- discovery + public keys (so ANY framework verifies verdicts with config, not code) ----
-app.get("/.well-known/jwks.json", (req, res) => res.json({ keys: [verdictJwk] }));
+app.get("/.well-known/jwks.json", (req, res) => res.json({ keys: [verdictJwk, identityJwk] }));
 app.get("/.well-known/continuum-configuration", (req, res) => res.json({
   issuer: ISSUER,
   jwks_uri: ISSUER + "/.well-known/jwks.json",
@@ -233,11 +297,25 @@ app.get("/.well-known/continuum-configuration", (req, res) => res.json({
 }));
 
 // ---- helpers ----
-async function fwd(url, method, body) {
-  const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+// Service-to-service shared secrets. ca-service and passkey-service each activate their
+// key check only when their own key is set, so these stay optional in dev — but if a key
+// is configured downstream and NOT sent here, every relayed SDK call fails with 401.
+const CA_API_KEY = process.env.CA_API_KEY || "";
+const PASSKEY_API_KEY = process.env.PASSKEY_API_KEY || "";
+
+async function fwd(url, method, body, assertion) {
+  const headers = { "Content-Type": "application/json" };
+  // WHO the call acts for. ca-service takes identity from this header alone.
+  if (assertion) headers["X-Continuum-Identity"] = assertion;
+  // Pick the key by destination: fwd() is called with both CA_URL and PASSKEY_URL targets.
+  if (url.startsWith(CA_URL) && CA_API_KEY) headers["X-Api-Key"] = CA_API_KEY;
+  else if (url.startsWith(PASSKEY_URL) && PASSKEY_API_KEY) headers["X-Api-Key"] = PASSKEY_API_KEY;
+  const r = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const text = await r.text();
   return { status: r.status, ct: r.headers.get("content-type") || "application/json", text };
 }
+// The gateway already authenticated the session; assert that identity downstream.
+const caAssert = (req) => (req && req.uid != null && req.tenantKey ? mintAssertion(req.tenantKey, req.uid, "ca-service") : undefined);
 const relay = (res, r) => { res.status(r.status); res.set("Content-Type", r.ct); res.send(r.text); };
 const rpFromOrigin = (req) => { try { return new URL(req.get("Origin")).hostname; } catch (e) { return "localhost"; } };
 const originOf = (req) => req.get("Origin") || undefined;
@@ -309,6 +387,30 @@ app.post("/v1/sdk/session", async (req, res) => {
 // Server-to-server: the consumer's backend resolves the Continuum userId for one
 // of its users (given a signed identity token), so it can STORE the link in its
 // own database if it wishes. Deterministic — same input, same id, forever.
+// Backend-to-backend ONLY. A tenant's own server proves who it is by signing an identity
+// token with its tenant secret, names ONE OF ITS OWN users, and receives a signed assertion
+// naming the canonical principal. The caller never chooses the principal — it names an
+// external user id and the gateway resolves it through the registry.
+//
+// Cross-tenant is cryptographically impossible: the siteKey selects which secret verifies the
+// token, so presenting another tenant's siteKey fails the signature check.
+app.post("/v1/assert", (req, res) => {
+  const siteKey = String(req.body.siteKey || "");
+  const tenant = resolveTenant(siteKey);
+  if (!tenant) return res.status(401).json({ error: "invalid_site_key" });
+  if (tenant.status && tenant.status !== "active") return res.status(403).json({ error: "tenant_revoked" });
+  const id = verifyIdentity(tenant.secret, req.body.identityToken);
+  if (!id) return res.status(401).json({ error: "invalid_identity_token" });
+  const u = userFor(siteKey, "id:" + String(id.sub));
+  const audience = String(req.body.audience || "ca-service");
+  res.json({
+    assertion: mintAssertion(siteKey, u.userId, audience),
+    expiresIn: ASSERTION_TTL,
+    tenantId: siteKey,
+    principalId: u.userId,   // returned for logging/debug; ca-service ignores anything but the assertion
+  });
+});
+
 app.post("/v1/resolve", (req, res) => {
   const siteKey = String(req.body.siteKey || "");
   const tenant = resolveTenant(siteKey);
@@ -327,20 +429,20 @@ function auth(req, res, next) {
   const tenant = resolveTenant(pl.sk);
   if (!tenant) return res.status(401).json({ error: "tenant_revoked" });
   if (!originAllowed(tenant, req)) return res.status(403).json({ error: "origin_not_allowed" });
-  req.uid = pl.sub; req.uname = pl.uname; req.tenant = tenant; req.esub = extSubject(pl.ext); next();
+  req.uid = pl.sub; req.uname = pl.uname; req.tenant = tenant; req.tenantKey = pl.sk; req.esub = extSubject(pl.ext); next();
 }
 
 app.get("/v1/sdk/onboarding", auth, async (req, res) => res.json(await onboardingFor(req.uid)));
 
 // keystroke
-app.get("/v1/sdk/keystroke/config", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/config`, "GET")));
-app.get("/v1/sdk/keystroke/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/status/${req.uid}`, "GET")));
-app.post("/v1/sdk/keystroke/enroll", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/enroll`, "POST", { ...req.body, userId: req.uid })));
+app.get("/v1/sdk/keystroke/config", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/config`, "GET", undefined, caAssert(req))));
+app.get("/v1/sdk/keystroke/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/status/${req.uid}`, "GET", undefined, caAssert(req))));
+app.post("/v1/sdk/keystroke/enroll", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/enroll`, "POST", { ...req.body, userId: req.uid }, caAssert(req))));
 // Adaptive learning: contribute a clean, high-confidence sample to the user's
 // training set (the CA retrains every N samples, validation-gated).
-app.post("/v1/sdk/keystroke/contribute", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/contribute`, "POST", { ...req.body, userId: req.uid })));
+app.post("/v1/sdk/keystroke/contribute", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/contribute`, "POST", { ...req.body, userId: req.uid }, caAssert(req))));
 app.post("/v1/sdk/keystroke/check", auth, async (req, res) => {
-  const r = await fwd(`${CA_URL}/v1/keystroke/check`, "POST", { ...req.body, userId: req.uid, hasPasskey: await hasPasskey(req.uid) });
+  const r = await fwd(`${CA_URL}/v1/keystroke/check`, "POST", { ...req.body, userId: req.uid, hasPasskey: await hasPasskey(req.uid) }, caAssert(req));
   let d; try { d = JSON.parse(r.text); } catch (e) { return relay(res, r); }
   if (d && d.checked) {
     const rk = riskLevel(d.warmup, d.isSuspicious);
@@ -351,11 +453,11 @@ app.post("/v1/sdk/keystroke/check", auth, async (req, res) => {
 });
 
 // mouse
-app.post("/v1/sdk/mouse/enroll", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/mouse/enroll`, "POST", { ...req.body, userId: req.uid })));
+app.post("/v1/sdk/mouse/enroll", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/mouse/enroll`, "POST", { ...req.body, userId: req.uid }, caAssert(req))));
 const MOUSE_STRIKES_TO_LOCK = 3;
 const mouseStreak = new Map();
 app.post("/v1/sdk/mouse/check", auth, async (req, res) => {
-  const r = await fwd(`${CA_URL}/v1/mouse/check`, "POST", { ...req.body, userId: req.uid });
+  const r = await fwd(`${CA_URL}/v1/mouse/check`, "POST", { ...req.body, userId: req.uid }, caAssert(req));
   let d; try { d = JSON.parse(r.text); } catch (e) { return relay(res, r); }
   if (!d || !d.checked) return res.status(r.status).json(d);
   if (d.isSuspicious) mouseStreak.set(req.uid, (mouseStreak.get(req.uid) || 0) + 1);
@@ -364,14 +466,14 @@ app.post("/v1/sdk/mouse/check", auth, async (req, res) => {
   const passkeyTriggered = streak >= MOUSE_STRIKES_TO_LOCK && (await hasPasskey(req.uid));
   if (passkeyTriggered) {
     mouseStreak.set(req.uid, 0);
-    await fwd(`${CA_URL}/v1/lock/set`, "POST", { userId: req.uid }).catch(() => {});
+    await fwd(`${CA_URL}/v1/lock/set`, "POST", { userId: req.uid }).catch(() => {}, caAssert(req));
   }
   const mrk = riskLevel(d.warmup, d.isSuspicious);
   d.riskToken = signRiskRS256(req.uid, mrk, "mouse");
   maybeFireRiskEvent(req.tenant, req.uid, req.esub || req.uid, mrk, "mouse"); // push on transition
   res.status(r.status).json({ ...d, ok: !passkeyTriggered, suspiciousStreak: streak, strikesToLock: MOUSE_STRIKES_TO_LOCK, requiresPasskeyChallenge: passkeyTriggered });
 });
-app.get("/v1/sdk/mouse/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/mouse/status/${req.uid}`, "GET")));
+app.get("/v1/sdk/mouse/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/mouse/status/${req.uid}`, "GET", undefined, caAssert(req))));
 
 // passkey (origin/rpId bind to the HOST app's origin)
 app.post("/v1/sdk/passkey/register/options", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/register/options`, "POST", { userId: req.uid, username: req.uname, rpId: rpFromOrigin(req), origin: originOf(req) })));
@@ -379,13 +481,13 @@ app.post("/v1/sdk/passkey/register/complete", auth, async (req, res) => { const 
 app.post("/v1/sdk/passkey/auth/options", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/auth/options`, "POST", { userId: req.uid, rpId: rpFromOrigin(req) })));
 app.post("/v1/sdk/passkey/auth/complete", auth, async (req, res) => {
   const r = await fwd(`${PASSKEY_URL}/v1/auth/complete`, "POST", { userId: req.uid, challengeId: req.body.challengeId, assertion: req.body.assertion, rpId: rpFromOrigin(req), origin: originOf(req) });
-  if (r.status === 200) await fwd(`${CA_URL}/v1/lock/clear`, "POST", { userId: req.uid }).catch(() => {});
+  if (r.status === 200) await fwd(`${CA_URL}/v1/lock/clear`, "POST", { userId: req.uid }).catch(() => {}, caAssert(req));
   relay(res, r);
 });
 
 // Shared step-up lock (see ca-service/lib/lock.js) — lets the SDK log out on
 // page load for ANY app, not just apps/demo's own session-based gate.
-app.get("/v1/sdk/lock/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/lock/status/${req.uid}`, "GET")));
+app.get("/v1/sdk/lock/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/lock/status/${req.uid}`, "GET", undefined, caAssert(req))));
 app.get("/v1/sdk/passkey/status", auth, async (req, res) => res.json({ hasPasskey: await hasPasskey(req.uid) }));
 
 app.listen(PORT, () => console.log(`Continuum gateway on :${PORT} (tenants=${Object.keys(tenants.tenants).length})`));

@@ -139,7 +139,7 @@ router.get("/decisions/export", requireAuth, async (req, res, next) => {
     const all = req.query.all === "1";
     let rows;
     if (all) {
-      const { data } = await ca.keystrokeDecisionsAll();
+      const { data } = await ca.keystrokeDecisionsAll(req.session.userId);
       const names = {};
       for (const u of db.prepare("SELECT id, username FROM users").all()) names[u.id] = u.username;
       rows = (data.rows || []).map((r) => ({ ...r, username: names[r.user_id] || `user-${r.user_id}` }));
@@ -166,7 +166,7 @@ router.get("/decisions/export", requireAuth, async (req, res, next) => {
 // username mapping + summary are assembled here.
 router.get("/metrics", requireAuth, async (req, res, next) => {
   try {
-    const { data } = await ca.keystrokeMetrics();
+    const { data } = await ca.keystrokeMetrics(req.session.userId);
     const names = {};
     for (const u of db.prepare("SELECT id, username FROM users").all()) names[u.id] = u.username;
     const profileMap = data.profileMap || {};

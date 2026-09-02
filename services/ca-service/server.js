@@ -152,7 +152,25 @@ app.use((req, res, next) => {
   next();
 });
 
-const uid = (req) => Number(req.body.userId || req.params.userId);
+// IDENTITY COMES ONLY FROM THE VERIFIED GATEWAY ASSERTION.
+//
+// This used to be `Number(req.body.userId || req.params.userId)` — the caller named whoever
+// it liked, across any tenant, on 19 of 23 endpoints. It also let the first-party app write
+// raw sequential ids, defeating the per-tenant namespacing that stops two customers' "user
+// 42" colliding.
+//
+// requireIdentity() verifies an RS256 assertion signed by the gateway (the only identity
+// authority) and sets req.identity. uid() reads THAT and nothing else; a request without a
+// valid assertion never reaches a handler.
+const { requireIdentity } = require("./lib/identityAssertion");
+const uid = (req) => {
+  if (!req.identity) throw new Error("uid() called without a verified identity assertion");
+  return Number(req.identity.principalId);
+};
+const tenantOf = (req) => {
+  if (!req.identity) throw new Error("tenantOf() called without a verified identity assertion");
+  return req.identity.tenantId;
+};
 
 app.get("/health", (req, res) => res.json({ ok: true, service: "ca" }));
 
@@ -180,19 +198,19 @@ app.get("/v1/keystroke/config", (req, res) => {
   });
 });
 
-app.get("/v1/keystroke/status/:userId", (req, res) => {
+app.get("/v1/keystroke/status/:userId", requireIdentity, (req, res) => {
   const status = ks.getUserTypingStatus(uid(req), db);
   const adaptiveSamplesSinceRetrain = status.trainedAt ? countTrainingSamplesSince(uid(req), status.trainedAt) : 0;
   res.json({ ...status, adaptiveSamplesSinceRetrain, adaptiveRetrainEvery: ADAPTIVE_RETRAIN_EVERY });
 });
 
-app.get("/v1/users/:userId/onboarding", (req, res) => {
+app.get("/v1/users/:userId/onboarding", requireIdentity, (req, res) => {
   const status = ks.getUserTypingStatus(uid(req), db);
   res.json({ trained: !!status.trained, mouseEnrolled: mouse.mouseEnrolled(uid(req)) });
 });
 
 // ---- keystroke: enroll / check / submit / contribute / reset / retrain ----
-app.post("/v1/keystroke/enroll", async (req, res) => {
+app.post("/v1/keystroke/enroll", requireIdentity, async (req, res) => {
   try {
     const userId = uid(req);
     const { textContent, keystrokeTimings, keystrokeEvents, sourcePath } = req.body;
@@ -227,7 +245,7 @@ app.post("/v1/keystroke/enroll", async (req, res) => {
   } catch (err) { console.error("enroll:", err); res.status(500).json({ error: err.message }); }
 });
 
-app.post("/v1/keystroke/check", async (req, res) => {
+app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
   try {
     const userId = uid(req);
     const { textContent, keystrokeTimings, keystrokeEvents, hasPasskey } = req.body;
@@ -306,7 +324,7 @@ app.post("/v1/keystroke/check", async (req, res) => {
   } catch (err) { console.error("check:", err); res.status(500).json({ error: err.message }); }
 });
 
-app.post("/v1/keystroke/submit", async (req, res) => {
+app.post("/v1/keystroke/submit", requireIdentity, async (req, res) => {
   try {
     const userId = uid(req);
     const { textContent, keystrokeTimings, keystrokeEvents, passkeyVerified, hasPasskey } = req.body;
@@ -359,7 +377,7 @@ app.post("/v1/keystroke/submit", async (req, res) => {
   } catch (err) { console.error("submit:", err); res.status(500).json({ error: err.message }); }
 });
 
-app.post("/v1/keystroke/contribute", async (req, res) => {
+app.post("/v1/keystroke/contribute", requireIdentity, async (req, res) => {
   try {
     const userId = uid(req);
     const { textContent, keystrokeEvents } = req.body;
@@ -395,14 +413,14 @@ app.post("/v1/keystroke/contribute", async (req, res) => {
   } catch (err) { console.error("contribute:", err); res.status(500).json({ ok: false, error: err.message }); }
 });
 
-app.post("/v1/keystroke/reset", (req, res) => {
+app.post("/v1/keystroke/reset", requireIdentity, (req, res) => {
   const userId = uid(req);
   ks.resetUserTypingProfile(userId, db);
   db.prepare("UPDATE keystroke_texts SET is_training = 0 WHERE user_id = ?").run(userId);
   res.json({ ok: true, message: "Typing rhythm enrollment was reset", typingStatus: ks.getUserTypingStatus(userId, db) });
 });
 
-app.post("/v1/keystroke/retrain", async (req, res) => {
+app.post("/v1/keystroke/retrain", requireIdentity, async (req, res) => {
   try {
     const userId = uid(req);
     const profile = await ks.trainUserTypingProfile(userId, db);
@@ -418,20 +436,20 @@ app.post("/v1/keystroke/retrain", async (req, res) => {
 });
 
 // ---- login-triggered background retrain when new impostors appeared ----
-app.post("/v1/keystroke/maybe-retrain-impostors", (req, res) => {
+app.post("/v1/keystroke/maybe-retrain-impostors", requireIdentity, (req, res) => {
   ks.maybeRetrainForNewImpostors(uid(req), db);
   res.json({ ok: true });
 });
 
 // ---- read models for the demo/dashboard (username joins happen in the demo) ----
-app.get("/v1/keystroke/history/:userId", (req, res) => {
+app.get("/v1/keystroke/history/:userId", requireIdentity, (req, res) => {
   const texts = db.prepare(
     "SELECT id, char_count, model_confidence, is_suspicious, sample_purpose, is_training, submitted_at FROM keystroke_texts WHERE user_id = ? ORDER BY submitted_at DESC",
   ).all(uid(req));
   res.json({ texts });
 });
 
-app.get("/v1/keystroke/stats/:userId", (req, res) => {
+app.get("/v1/keystroke/stats/:userId", requireIdentity, (req, res) => {
   const stats = db.prepare(
     `SELECT COUNT(*) as total_submissions,
             COUNT(CASE WHEN is_suspicious = 1 THEN 1 END) as suspicious_count,
@@ -442,7 +460,7 @@ app.get("/v1/keystroke/stats/:userId", (req, res) => {
   res.json({ ...stats, typingStatus: ks.getUserTypingStatus(uid(req), db) });
 });
 
-app.get("/v1/keystroke/decisions/:userId", (req, res) => {
+app.get("/v1/keystroke/decisions/:userId", requireIdentity, (req, res) => {
   const decisions = db.prepare(
     `SELECT id, checked_at, source, window_count, mean_score, threshold, verdict, passkey_triggered, passkey_outcome, per_window_scores
      FROM auth_decisions WHERE user_id = ? ORDER BY checked_at DESC LIMIT 500`,
@@ -451,15 +469,21 @@ app.get("/v1/keystroke/decisions/:userId", (req, res) => {
 });
 
 // Raw decisions for CSV export + research metrics (per user_id; the demo maps usernames).
-app.get("/v1/keystroke/decisions-all", (req, res) => {
+// TENANT-SCOPED. This returned every tenant's decisions unconditionally. There is still no
+// tenant_id column on auth_decisions, so the scope is enforced by joining the identity
+// registry: only ids belonging to the caller's tenant are visible. Retired and unregistered
+// ids belong to no tenant and are therefore excluded, which is the correct outcome.
+app.get("/v1/keystroke/decisions-all", requireIdentity, (req, res) => {
   const rows = db.prepare(
     `SELECT id, user_id, checked_at, source, window_count, mean_score, threshold, verdict, passkey_triggered, passkey_outcome, per_window_scores
-     FROM auth_decisions ORDER BY checked_at DESC`,
-  ).all();
+     FROM auth_decisions
+     WHERE user_id IN (SELECT legacy_user_id FROM principal_aliases WHERE tenant_id = ?)
+     ORDER BY checked_at DESC`,
+  ).all(tenantOf(req));
   res.json({ rows });
 });
 
-app.get("/v1/keystroke/metrics", (req, res) => {
+app.get("/v1/keystroke/metrics", requireIdentity, (req, res) => {
   const rows = db.prepare(
     `SELECT user_id,
             COUNT(*) as total,
@@ -468,20 +492,23 @@ app.get("/v1/keystroke/metrics", (req, res) => {
             AVG(CASE WHEN mean_score IS NOT NULL THEN mean_score END) as avg_score,
             AVG(threshold) as avg_threshold,
             MIN(checked_at) as first_check, MAX(checked_at) as last_check
-     FROM auth_decisions WHERE verdict IN ('genuine','suspicious','paste') GROUP BY user_id`,
-  ).all();
-  const profiles = db.prepare("SELECT user_id, model_json FROM user_typing_profiles").all();
+     FROM auth_decisions
+     WHERE verdict IN ('genuine','suspicious','paste')
+       AND user_id IN (SELECT legacy_user_id FROM principal_aliases WHERE tenant_id = ?)
+     GROUP BY user_id`,
+  ).all(tenantOf(req));
+  const profiles = db.prepare("SELECT user_id, model_json FROM user_typing_profiles WHERE user_id IN (SELECT legacy_user_id FROM principal_aliases WHERE tenant_id = ?)").all(tenantOf(req));
   const profileMap = {};
   for (const p of profiles) { try { profileMap[p.user_id] = JSON.parse(p.model_json); } catch {} }
   res.json({ rows, profileMap });
 });
 
 // ---- mouse ----
-app.post("/v1/mouse/enroll", async (req, res) => {
+app.post("/v1/mouse/enroll", requireIdentity, async (req, res) => {
   try { const r = await mouse.enrollMouse(uid(req), req.body.windows); res.status(r.status).json(r.body); }
   catch (err) { console.error("mouse enroll:", err); res.status(500).json({ ok: false, error: err.message }); }
 });
-app.post("/v1/mouse/check", async (req, res) => {
+app.post("/v1/mouse/check", requireIdentity, async (req, res) => {
   try {
     const r = await mouse.checkMouse(uid(req), req.body.windows);
     if (r.body && r.body.checked) {
@@ -490,11 +517,11 @@ app.post("/v1/mouse/check", async (req, res) => {
     res.status(r.status).json(r.body);
   } catch (err) { console.error("mouse check:", err); res.status(500).json({ ok: false, error: err.message }); }
 });
-app.get("/v1/mouse/status/:userId", (req, res) => res.json(mouse.mouseStatus(uid(req))));
+app.get("/v1/mouse/status/:userId", requireIdentity, (req, res) => res.json(mouse.mouseStatus(uid(req))));
 // Destructive: drops the trained mouse profile and every stored session. The CALLER is
 // responsible for having verified a passkey first — this service is stateless about auth and
 // trusts its caller (same contract as /v1/keystroke/reset).
-app.post("/v1/mouse/reset", (req, res) => {
+app.post("/v1/mouse/reset", requireIdentity, (req, res) => {
   try {
     const userId = uid(req);
     const r = mouse.resetMouseProfile(userId);
@@ -506,8 +533,8 @@ app.post("/v1/mouse/reset", (req, res) => {
 // gateway) each run their own consecutive-strike debounce, so they set/clear
 // this explicitly; keystroke sets it directly above since ca-service already
 // decides passkeyTriggered for it.
-app.post("/v1/lock/set", (req, res) => { lock.setLocked(uid(req)); res.json({ ok: true }); });
-app.post("/v1/lock/clear", (req, res) => { lock.clearLocked(uid(req)); res.json({ ok: true }); });
-app.get("/v1/lock/status/:userId", (req, res) => res.json({ locked: lock.isLocked(uid(req)) }));
+app.post("/v1/lock/set", requireIdentity, (req, res) => { lock.setLocked(uid(req)); res.json({ ok: true }); });
+app.post("/v1/lock/clear", requireIdentity, (req, res) => { lock.clearLocked(uid(req)); res.json({ ok: true }); });
+app.get("/v1/lock/status/:userId", requireIdentity, (req, res) => res.json({ locked: lock.isLocked(uid(req)) }));
 
 app.listen(PORT, () => console.log(`CA service on http://localhost:${PORT}`));

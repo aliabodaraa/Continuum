@@ -69,6 +69,7 @@ tools/*.exe
 # Never commit — a leaked RS256 key lets anyone forge verdicts; tenant secrets
 # allow impersonation. Dev regenerates them locally on first start.
 services/gateway/gateway-verdict-key.pem
+services/gateway/gateway-identity-key.pem
 services/gateway/tenants.json
 services/gateway/identity.json
 
@@ -87,3 +88,9 @@ services/ca-service/keyrecs_accounts.json
 apps/demo/idmap.json
 apps/demo/keyrecs_accounts.json
 services/gateway/gwmap.json
+# one-off identity-migration dumps (derived from the live ca.db / identity.json;
+# regenerate with seed_principals.js + backfill_gw.js, never a source of truth)
+services/ca-service/identity_snapshot.json
+services/ca-service/idmap_snapshot.json
+services/ca-service/reconstructed.json
+services/gateway/principals_seed.json
