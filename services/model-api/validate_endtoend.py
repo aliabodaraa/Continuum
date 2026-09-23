@@ -7,8 +7,9 @@ corrected path: dedupe, group-aware temporal split with an overlap gap, disjoint
 impostor pools, transfer fit. Each is then reported at BOTH levels:
 
   * per window — what the model outputs (EER, AUC)
-  * per decision — the live 3-of-6 packet vote slid over consecutive windows, which is what a
-    person actually experiences
+  * per decision — the packet vote slid over consecutive windows, which is what a person
+    actually experiences. Reported for the original 3-of-6 rule (the columns and JSON keys of
+    the first run) and for the live 10-of-20 rule adopted in Phase 0 of the recovery plan.
 
 Window level alone would hide the amplification: the packet vote turns a mediocre per-window
 rate into a much worse false-lock rate for a difficult user.
@@ -28,7 +29,7 @@ except Exception:                                    # pragma: no cover
 
 from api import dedupe_windows
 from keystroke_user_sweep import LIVE_THRESHOLD
-from packet_eval import packet_fires
+from packet_eval import LIVE_RECENT, LIVE_VOTE_LOW, packet_fires
 from population_sweep import (IMP_POOL_SIZE, NEG_POOL_SIZE, get_scaler, run_target)
 
 
@@ -60,7 +61,7 @@ def main():
     labels = args.labels.split(",")
     rows = []
     print(f"\n  {'user':8} {'EER':>7} {'AUC':>7} {'TAR@.5':>8} {'FAR@.5':>8} "
-          f"{'false-lock':>11} {'imp caught':>11}")
+          f"{'false-lock':>11} {'imp caught':>11} {'FL 10/20':>9} {'caught 10/20':>13}")
     for label, tid in zip(labels, targets):
         r = run_target(tid, W, P, neg_pool, imp_pool, scaler,
                        np.random.default_rng(1000 + tid), 30, 1500)
@@ -73,11 +74,19 @@ def main():
         fl = packet_fires(g)
         false_lock = float(np.mean(fl)) if fl else float("nan")
         caught = float(np.mean(packet_fires(i))) if len(i) > 6 else float("nan")
+        fl20 = packet_fires(g, LIVE_RECENT, LIVE_VOTE_LOW)
+        false_lock20 = float(np.mean(fl20)) if fl20 else float("nan")
+        caught20 = (float(np.mean(packet_fires(i, LIVE_RECENT, LIVE_VOTE_LOW)))
+                    if len(i) >= LIVE_RECENT else float("nan"))
         r.update({"label": label, "falseLockPerDecision": false_lock,
-                  "impostorCaughtPerDecision": caught, "nGenuinePackets": len(fl)})
+                  "impostorCaughtPerDecision": caught, "nGenuinePackets": len(fl),
+                  "live10of20": {"falseLockPerDecision": false_lock20,
+                                 "impostorCaughtPerDecision": caught20,
+                                 "nGenuinePackets": len(fl20)}})
         rows.append(r)
         print(f"  {label:8} {r['eer']:>6.2%} {r['auc']:>7.3f} {r['tarAt050']:>7.1%} "
-              f"{r['farAt050']:>7.1%} {false_lock:>10.1%} {caught:>10.1%}")
+              f"{r['farAt050']:>7.1%} {false_lock:>10.1%} {caught:>10.1%} "
+              f"{false_lock20:>8.1%} {caught20:>12.1%}")
 
     if rows:
         print("\n  Reading: the packet vote amplifies whatever the window level gives it.")

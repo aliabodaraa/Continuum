@@ -5,7 +5,7 @@
 var ContinuumScoring = (function () {
   var WINDOW_THRESHOLD = 0.5;      // a window is "low" if genuine prob < 0.5 (Lu et al. boundary)
   var PACKET_VOTE_FRACTION = 0.5;  // suspicious when >= this fraction of the packet is low
-  var RECENT_WINDOW_COUNT = 6;     // packet size
+  var RECENT_WINDOW_COUNT = 20;    // packet size (ca-service RECENT_WINDOW_COUNT; 10 of 20 since 2026-09-23)
   var model = null, kind = null;   // kind: "graph" (bundled asset) | "hybrid" (trained on-device)
   var extractor = null, head = null;  // hybrid pieces: graph feature-extractor + trained dense head
   var scaler = null;               // {mean:[6], std:[6]} — the models were trained on

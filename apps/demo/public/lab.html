@@ -839,7 +839,7 @@
           </div>
         </div>
 
-        <!-- Packet history: each card = one decision packet (6 windows),
+        <!-- Packet history: each card = one decision packet (20 windows),
              scrolls horizontally with the newest on the right. -->
         <div class="window-grid-wrap">
           <div class="window-grid-label">
@@ -1011,6 +1011,7 @@
           // Fixed Lu et al. window boundary (0.50) — the live decision threshold.
           if (cfg.decisionThreshold != null) _userThreshold = cfg.decisionThreshold;
           if (cfg.rollingWindowCount) _rollingWindowCount = cfg.rollingWindowCount;
+          if (cfg.recentWindowCount) _recentWindowCount = cfg.recentWindowCount;
           const hint = document.getElementById("keystrokeHint");
           if (hint)
             hint.textContent = `0 / ${WINDOW_SIZE} keystrokes — evaluates after first window`;
@@ -1087,13 +1088,15 @@
       // Fixed Lu et al. window boundary (overwritten by /config decisionThreshold).
       let _userThreshold = 0.5;
       let _rollingWindowCount = 18;
+      let _recentWindowCount = 20; // packet size (overwritten by /config)
       // Each /check only sends the most recent events the decision uses. The
-      // verdict needs the last 18 windows (~220 keystrokes ≈ 440 events); we send
-      // a ~700-event (~350-keystroke) tail for safe buffer after dropped digraphs.
+      // verdict needs more than 20 windows (the packet; warmup lasts while
+      // windowCount <= 20), which took ~400 keydowns (~800 events) on stored real
+      // sessions; we send a 1400-event (~700-keystroke) tail, as /contribute does.
       // Resending the whole history every check bloated the payload and slowed
       // each check; capping it keeps the payload constant no matter how long the
       // session runs.
-      const CHECK_SEND_EVENTS = 700;
+      const CHECK_SEND_EVENTS = 1400;
       let _windowHistory = [];
       let _packetSize = 0;
       let _packetVerdict = null;
@@ -1317,11 +1320,11 @@
             _userThreshold,
           );
 
-        // Snapshot this packet (one per check result with a full 6-window packet).
-        // Early checks may produce only 4-5 windows; snapshotting them creates
+        // Snapshot this packet (one per check result with a full packet).
+        // Early checks may produce fewer windows; snapshotting them creates
         // artificial "4 new windows" overlap with the next packet because the
         // first snapshot spans fewer windows than RECENT_WINDOW_COUNT.
-        if (verdict && scores.length >= 6) {
+        if (verdict && scores.length >= _recentWindowCount) {
           // Snapshot the EXACT scores the server voted on (not _windowHistory's
           // tail, which can drift) so the packet tiles always match the verdict.
           const wins = scores.map((s) => ({

@@ -52,8 +52,10 @@ from keystroke_user_sweep import (CA_DB, LIVE_THRESHOLD, build_steps, model_path
 from identity_scope import ResearchScope, assert_research_scope
 SCOPE = assert_research_scope(ResearchScope("baseline-keystroke-v1"), "baseline-keystroke-v1")
 
-RECENT = 6        # packet length, mirrors ca-service RECENT_WINDOW_COUNT
+RECENT = 6        # packet length of the frozen baseline (ca-service RECENT_WINDOW_COUNT until Phase 0)
 VOTE_LOW = 3      # >= this many low windows fires the step-up (PACKET_VOTE_FRACTION 0.5)
+LIVE_RECENT = 20  # ca-service RECENT_WINDOW_COUNT since Phase 0 (recovery plan)
+LIVE_VOTE_LOW = 10
 
 
 def genuine_sessions(user_id, training_flag=0, exclude=()):
@@ -95,10 +97,13 @@ def impostor_sessions(path, max_subjects=40, rng=None, min_participant=40):
     return [X[pid == s] for s in subs if (pid == s).sum() >= RECENT]
 
 
-def packet_fires(scores):
-    """Slide the live rule; return one boolean per packet position."""
+def packet_fires(scores, recent=RECENT, vote_low=VOTE_LOW):
+    """Slide an m-of-k packet rule; return one boolean per packet position.
+
+    Defaults are the frozen 3-of-6 rule this experiment was run with. The live rule since
+    the Phase 0 change is 10-of-20 (LIVE_RECENT / LIVE_VOTE_LOW)."""
     low = (np.asarray(scores) < LIVE_THRESHOLD).astype(int)
-    return [low[i:i + RECENT].sum() >= VOTE_LOW for i in range(len(low) - RECENT + 1)]
+    return [low[i:i + recent].sum() >= vote_low for i in range(len(low) - recent + 1)]
 
 
 def rate_with_cluster_ci(per_session_flags, n_boot=2000, seed=17):

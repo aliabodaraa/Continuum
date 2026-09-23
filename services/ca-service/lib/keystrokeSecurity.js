@@ -20,15 +20,31 @@ const PROFILE_VERSION = 3;
 // Continuous-auth decision is made on the most recent windows only
 // (Lu et al. packet structure): averaging over the whole session lets a
 // takeover hide behind earlier genuine typing.
-const RECENT_WINDOW_COUNT = 6;
+// 20 windows (was 6). The 99-user paired sweep (artifacts/xai/decision_sweep.json,
+// decision_paired.json) measured vote 10-of-20 against 3-of-6 on identical scores:
+// false lock -8.84 pts [-10.57, -6.41], impostor capture +0.40 pts [+0.11, +0.74].
+// The sweep scores full packets only; server.js keeps the same rule by treating
+// windowCount <= RECENT_WINDOW_COUNT as warmup (the paste / un-verifiable /
+// overwhelming-impostor fast paths still fire early). Cost: the first packet
+// verdict needs 21 windows (>= 250 digraph steps) instead of 7 (>= 110); on
+// stored real sessions 20 windows took about 400 keydowns.
+const RECENT_WINDOW_COUNT = 20;
 // Wider recent span used for the adaptive "contribute" rolling mean. Requires
-// sustained clean typing (≈3 packets) rather than a single lucky packet, and
-// rolls forward so an earlier rough patch ages out instead of permanently
-// blocking eligibility.
+// sustained clean typing (≈3 of the former 6-window packets) rather than a single
+// lucky stretch, and rolls forward so an earlier rough patch ages out instead of
+// permanently blocking eligibility.
 const ROLLING_WINDOW_COUNT = 18;
+// Adaptive contribution is judged on the former 6-window packet: /contribute needs
+// at least this many scored windows, every one of the last this-many above the
+// window floor, and the SDK's cooldown between offers is this many strides. Kept
+// separate from RECENT_WINDOW_COUNT so the packet change leaves adaptive learning
+// exactly as it was.
+const CONTRIBUTE_WINDOW_COUNT = 6;
+// Windows scored per check: enough for both the packet and the rolling mean.
+const SCORED_WINDOW_COUNT = Math.max(RECENT_WINDOW_COUNT, ROLLING_WINDOW_COUNT);
 // Fraction of recent windows scoring below the user threshold that flags the
 // session. Lu et al. (2020): flag when ≥ p of packet windows score < 50%.
-// At 6 windows: 3/6 = 0.50 ≥ 0.50 → SUSPICIOUS; 2/6 → tolerated.
+// At 20 windows: 10/20 = 0.50 ≥ 0.50 → SUSPICIOUS; 9/20 → tolerated.
 // Raised from 1/3 to 0.50 to reduce false rejections for genuine users
 // who momentarily type differently, while still catching impostors.
 const PACKET_VOTE_FRACTION = 0.50;
@@ -762,11 +778,11 @@ async function evaluateKeystrokes({ events, timings, userId, db }) {
     ...(timings || {}),
   };
   const allWindows = eventsToFeatureWindows(normalized);
-  // We score the last ROLLING_WINDOW_COUNT windows in one prediction: the last
+  // We score the last SCORED_WINDOW_COUNT windows in one prediction: the last
   // RECENT_WINDOW_COUNT of them (the packet) drive the live Lu vote, while the
-  // mean over the wider set is the "rolling mean" used to decide when a stretch
-  // of typing is clean enough to offer as an adaptive-learning sample.
-  const windows = allWindows.slice(-ROLLING_WINDOW_COUNT);
+  // mean over the last ROLLING_WINDOW_COUNT is the "rolling mean" used to decide
+  // when a stretch of typing is clean enough to offer as an adaptive-learning sample.
+  const windows = allWindows.slice(-SCORED_WINDOW_COUNT);
   const profile = getUserTypingProfile(userId, db);
 
   if (
@@ -826,13 +842,14 @@ async function evaluateKeystrokes({ events, timings, userId, db }) {
     const LU_WINDOW_THRESHOLD = WINDOW_DECISION_THRESHOLD;
     const mean = (arr) =>
       arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-    // Scores for all sent windows (up to ROLLING_WINDOW_COUNT).
-    const rollingScores = Array.isArray(result.prediction)
+    // Scores for all sent windows (up to SCORED_WINDOW_COUNT).
+    const scoredScores = Array.isArray(result.prediction)
       ? result.prediction.map((p) => Number(p[1]))
       : [];
+    const rollingScores = scoredScores.slice(-ROLLING_WINDOW_COUNT);
     // The packet = the most recent RECENT_WINDOW_COUNT windows; the live vote
     // and the on-screen tiles use only these.
-    const perWindowScores = rollingScores.slice(-RECENT_WINDOW_COUNT);
+    const perWindowScores = scoredScores.slice(-RECENT_WINDOW_COUNT);
     const lowWindows = perWindowScores.filter((s) => s < LU_WINDOW_THRESHOLD).length;
     const voteFraction = perWindowScores.length > 0 ? lowWindows / perWindowScores.length : 0;
     // Live verdict = pure Lu et al. (2020) packet vote at the fixed 0.50 boundary.
@@ -846,9 +863,9 @@ async function evaluateKeystrokes({ events, timings, userId, db }) {
     // out-of-distribution feature ARTIFACT apart from a real rhythm change.
     try {
       let lo = 0;
-      for (let i = 1; i < rollingScores.length; i += 1)
-        if (rollingScores[i] < rollingScores[lo]) lo = i;
-      if (rollingScores.length && rollingScores[lo] < 0.25) {
+      for (let i = 1; i < scoredScores.length; i += 1)
+        if (scoredScores[i] < scoredScores[lo]) lo = i;
+      if (scoredScores.length && scoredScores[lo] < 0.25) {
         const w = windows[lo] || [];
         const lbl = ["id1", "id2", "dw1", "dw2", "dd", "ud"];
         const stats = lbl.map((l, f) => {
@@ -856,7 +873,7 @@ async function evaluateKeystrokes({ events, timings, userId, db }) {
           for (const r of w) { if (r[f] < mn) mn = r[f]; if (r[f] > mx) mx = r[f]; sum += r[f]; }
           return `${l}:${mn.toFixed(2)}/${(sum / (w.length || 1)).toFixed(2)}/${mx.toFixed(2)}`;
         });
-        console.log(`[DIAG] user=${userId} keys=${metrics.keyCount} loScore=${rollingScores[lo].toFixed(4)} winLen=${w.length} (min/avg/max) ${stats.join(" ")}`);
+        console.log(`[DIAG] user=${userId} keys=${metrics.keyCount} loScore=${scoredScores[lo].toFixed(4)} winLen=${w.length} (min/avg/max) ${stats.join(" ")}`);
         console.log(`[DIAG] lastRows=${JSON.stringify(w.slice(-3).map((r) => r.map((x) => +x.toFixed(2))))}`);
       }
     } catch (_) {}
@@ -978,6 +995,7 @@ module.exports = {
   WINDOW_STRIDE,
   RECENT_WINDOW_COUNT,
   ROLLING_WINDOW_COUNT,
+  CONTRIBUTE_WINDOW_COUNT,
   PACKET_VOTE_FRACTION,
   WINDOW_DECISION_THRESHOLD,
   CHECK_MIN_TEXT_CHARS,

@@ -256,6 +256,7 @@ app.get("/v1/keystroke/config", (req, res) => {
     windowStride: ks.WINDOW_STRIDE,
     recentWindowCount: ks.RECENT_WINDOW_COUNT,
     rollingWindowCount: ks.ROLLING_WINDOW_COUNT,
+    contributeWindowCount: ks.CONTRIBUTE_WINDOW_COUNT,
     packetVoteFraction: ks.PACKET_VOTE_FRACTION,
     decisionThreshold: ks.WINDOW_DECISION_THRESHOLD,
     checkMinTextChars: ks.CHECK_MIN_TEXT_CHARS,
@@ -472,7 +473,7 @@ app.post("/v1/keystroke/contribute", requireIdentity, async (req, res) => {
     const evaluation = await ks.evaluateKeystrokes({ events: keystrokeEvents, timings: null, userId, db });
     const rolling = Number(evaluation.rollingMean != null ? evaluation.rollingMean : evaluation.modelConfidence);
     const windowsSeen = evaluation.rollingWindowCount || 0;
-    const minContributeWindows = ks.RECENT_WINDOW_COUNT;
+    const minContributeWindows = ks.CONTRIBUTE_WINDOW_COUNT;
     if (!evaluation.modelAvailable || rolling < ADAPTIVE_CONFIDENCE_MIN || windowsSeen < minContributeWindows) {
       return res.status(422).json({
         ok: false,
@@ -484,7 +485,8 @@ app.post("/v1/keystroke/contribute", requireIdentity, async (req, res) => {
     }
     // A high MEAN can hide one weak window inside an otherwise-clean packet — require
     // every recent window to clear the floor too.
-    const recentScores = Array.isArray(evaluation.recentWindowScores) ? evaluation.recentWindowScores : [];
+    const recentScores = Array.isArray(evaluation.recentWindowScores)
+      ? evaluation.recentWindowScores.slice(-ks.CONTRIBUTE_WINDOW_COUNT) : [];
     const worstWindow = recentScores.length ? Math.min(...recentScores) : rolling;
     if (worstWindow < ADAPTIVE_WINDOW_FLOOR) {
       return res.status(422).json({

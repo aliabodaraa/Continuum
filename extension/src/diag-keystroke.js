@@ -195,7 +195,7 @@ q("run").addEventListener("click", async function () {
       cls = "v-bad";
       v = "❌ Genuine-in-use failure: impostors are rejected (" + impS.acceptedPct.toFixed(0) + "% accepted) but only "
         + freeS.acceptedPct.toFixed(0) + "% of YOUR free-typing windows are accepted (mean " + freeS.mean.toFixed(2)
-        + "). At that rate the 3-of-6 packet vote false-locks you often while you simply write. Not a task mismatch "
+        + "). At that rate the 10-of-20 packet vote false-locks you often while you simply write. Not a task mismatch "
         + "(copy-typing scores similarly) — the personal head needs more enrolment data.";
     } else {
       cls = "v-ok";

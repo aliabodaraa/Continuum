@@ -46,7 +46,7 @@
   var LS_COLLAPSE = "continuumGuardCollapsed";
 
   // window math (overwritten from config)
-  var WINDOW_SIZE = 50, WINDOW_STRIDE = 10, RECENT_WINDOW_COUNT = 6, KS_MIN_CHARS = 80;
+  var WINDOW_SIZE = 50, WINDOW_STRIDE = 10, RECENT_WINDOW_COUNT = 20, CONTRIBUTE_WINDOW_COUNT = 6, KS_MIN_CHARS = 80;
   // MOUSE_MIN_WINDOWS = the number of windows the server's vote decides on (ca-service
   // lib/mouse.js VOTE_N, 60 = ~17 s of movement). Sending fewer leaves every check in warm-up, so
   // the value is taken from the server's own replies (bufferMax) whenever it reports one.
@@ -727,7 +727,7 @@
     checkInFlight = true; ksMissedWindow = false; pulse(); setKb("mut", withLast("checking…", lastKsPct));
     try {
       var timings = window.continuumKeystrokes.analyze(events);
-      var r = await reqJson(EP.ksCheck, "POST", { textContent: text, keystrokeEvents: events.slice(-700), keystrokeTimings: timings, sourcePath: location.pathname });
+      var r = await reqJson(EP.ksCheck, "POST", { textContent: text, keystrokeEvents: events.slice(-1400), keystrokeTimings: timings, sourcePath: location.pathname });
       var d = r.d; if (d && d.riskToken) latestRiskToken = d.riskToken;
       lastCheckedWindowCount = ksWindowCount(ksKeyCount(events));
       var ev = d.typingEvaluation || {};
@@ -754,7 +754,7 @@
   // the prompt floats directly above the field the user is typing in.
   function evalAdaptive() {
     if (!ksOn || locked || contributing) { hideLearn(); return; }
-    var cooldownOk = currentKeys() - lastContributeKeys >= RECENT_WINDOW_COUNT * WINDOW_STRIDE;
+    var cooldownOk = currentKeys() - lastContributeKeys >= CONTRIBUTE_WINDOW_COUNT * WINDOW_STRIDE;
     if (cleanRun >= ADAPT_CLEAN_RUN && cooldownOk && activeField && currentTypedText().length >= KS_MIN_CHARS) showLearn();
     else hideLearn();
   }
@@ -889,7 +889,7 @@
   async function loadConfig() {
     try { var r = await reqJson(EP.config); if (!r.ok) return; var c = r.d;
       if (c.windowSize) WINDOW_SIZE = c.windowSize; if (c.windowStride) WINDOW_STRIDE = c.windowStride;
-      if (c.recentWindowCount) RECENT_WINDOW_COUNT = c.recentWindowCount; if (c.checkMinTextChars) KS_MIN_CHARS = c.checkMinTextChars;
+      if (c.recentWindowCount) RECENT_WINDOW_COUNT = c.recentWindowCount; if (c.contributeWindowCount) CONTRIBUTE_WINDOW_COUNT = c.contributeWindowCount; if (c.checkMinTextChars) KS_MIN_CHARS = c.checkMinTextChars;
       if (c.adaptiveConfidenceMin != null) ADAPT_CONFIDENCE_MIN = c.adaptiveConfidenceMin;
       if (c.adaptiveRetrainEvery != null) ADAPT_RETRAIN_EVERY = c.adaptiveRetrainEvery;
       if (!cfg.onboarding && c.onboardingMode) ONBOARD_MODE = c.onboardingMode; // docker-level strategy

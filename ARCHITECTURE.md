@@ -144,10 +144,14 @@ option — a rise in these is either an outage or someone arranging one.
 - **Model:** 1D-CNN + 2×GRU base (`artifacts/ws50-gru`), **fine-tuned per user**
   (transfer learning) with the user's enrollment typing as positives and impostor
   windows (other users + dataset negatives) as negatives.
-- **Live decision (Lu et al. packet vote):** score the most recent
-  `RECENT_WINDOW_COUNT=6` windows; a window is "low" if its genuine probability
-  < `0.50`; the packet is **suspicious** when the low fraction ≥ `PACKET_VOTE_FRACTION=0.50`.
-  A wider `ROLLING_WINDOW_COUNT=18` mean drives adaptive-learning eligibility only.
+- **Live decision (Lu et al. packet vote, lengthened):** score the most recent
+  `RECENT_WINDOW_COUNT=20` windows (Lu et al. use 6; 20 was adopted on 2026-09-23 on the
+  99-user paired sweep: false lock −8.84 pts, capture +0.40 pts); a window is "low" if its
+  genuine probability < `0.50`; the packet is **suspicious** when the low fraction ≥
+  `PACKET_VOTE_FRACTION=0.50`, i.e. 10 of 20. Only a full packet gives a verdict (warm-up while
+  `windowCount <= 20`), apart from the paste, un-verifiable and overwhelming-impostor fast paths.
+  A wider `ROLLING_WINDOW_COUNT=18` mean drives adaptive-learning eligibility only, and adaptive
+  contributions are still judged on the last `CONTRIBUTE_WINDOW_COUNT=6` windows.
 - **Digraph hygiene:** drop event-batching artifacts (`dd < 15 ms` or `dwell < 10 ms`)
   and composition pauses (`dd > 1 s`) — timing noise, not rhythm.
 - **Leak-free evaluation:** the public HDF windows overlap in shuffled order; a naive

@@ -4,10 +4,13 @@
 // popup; it loads only the PURE decision logic from scoring.js (no tf) to apply the
 // Lu et al. packet vote. Windows arrive from every tab; the typed text never leaves the page.
 var api = globalThis.browser || globalThis.chrome;
-var RECENT = 6;                                        // keystroke packet size (mirrors ca-service)
+var RECENT = 20;                                       // keystroke packet size (mirrors ca-service RECENT_WINDOW_COUNT)
+// Short recent group the mouse diagnostic status reports (the popup's "analyzing n/need" and the
+// recent-window mean). Display only: mouse enforcement is the sustained vote below.
+var MOUSE_DIAG_RECENT = 6;
 var WINDOW_THRESHOLD = 0.5, PACKET_VOTE_FRACTION = 0.5;
 
-// Mouse enforcement uses a SUSTAINED vote, not the 3-of-6 keystroke packet: mouse windows
+// Mouse enforcement uses a SUSTAINED vote, not the keystroke packet: mouse windows
 // arrive every ~0.3 s of movement, so a short packet re-evaluated that often turns rare genuine
 // low windows into a steady trickle of false locks. A window is "low" when its score falls below
 // the user's OWN threshold (a percentile of their enrolment scores, stored with the model), and
@@ -452,7 +455,8 @@ async function onWindow(win) {
       if (scores.length > RECENT) scores.shift();
       var v = decide(scores);
       dlog("[continuum-guard/diag] window score=" + s.toFixed(3) + " packet=" + JSON.stringify(scores.map(function (x) { return Number(x.toFixed(3)); })) + " mean=" + v.mean.toFixed(3));
-      // Verdict only on a FULL packet (6 windows ≈ 100 keystrokes) — early provisional
+      // Verdict only on a FULL packet (20 windows: >= 240 digraph steps, ~400 keys of real
+      // typing), as on the server (10 of 20 at 0.50 since 2026-09-23) — early provisional
       // verdicts were tried and reverted: they surface "!" on thin evidence without
       // making the decision meaningfully faster.
       state.verdict = {
@@ -492,7 +496,7 @@ async function onMouseWindow(win) {
       if (!state.mousePctUserSet && rule === "vote") state.mouseSustainPct = Math.round((100 * state.mouseVoteK) / N);
       mouseScores.push(s);
       while (mouseScores.length > N) mouseScores.shift();
-      var recent = mouseScores.slice(-RECENT);
+      var recent = mouseScores.slice(-MOUSE_DIAG_RECENT);
       var recentLow = 0, recentSum = 0;
       for (var ri = 0; ri < recent.length; ri++) { if (recent[ri] < thr) recentLow += 1; recentSum += recent[ri]; }
       var low = 0, bufSum = 0;
@@ -517,14 +521,14 @@ async function onMouseWindow(win) {
       for (var gi = mouseScores.length - groupN; gi < mouseScores.length; gi++) groupSum += mouseScores[gi];
       var groupMean = groupN ? groupSum / groupN : 0;
       state.mouseVerdict = {
-        status: recent.length < RECENT ? "analyzing" : (recentLow / recent.length >= PACKET_VOTE_FRACTION ? "suspicious" : "genuine"),
+        status: recent.length < MOUSE_DIAG_RECENT ? "analyzing" : (recentLow / recent.length >= PACKET_VOTE_FRACTION ? "suspicious" : "genuine"),
         low: low, buffer: mouseScores.length, bufferMax: N,
         lockAt: rule === "vote" ? lockAt : null, riskPct: Math.round((100 * low) / N), rule: rule,
         bufferMean: Math.round(bufMean * 100), threshold: Math.round(thr * 100),
         groupN: groupN, groupMean: Math.round(groupMean * 100),
         mean: Math.round((recent.length ? recentSum / recent.length : 0) * 100),
         packet: recent.length,
-        need: RECENT,
+        need: MOUSE_DIAG_RECENT,
       };
       // ENFORCE on sustained suspicion over a full buffer: its mean below the user's threshold
       // ("mean" rule), or at least lockAt low windows ("vote" rule).
