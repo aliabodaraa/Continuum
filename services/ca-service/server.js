@@ -702,6 +702,13 @@ app.get("/v1/lock/status/:userId", requireIdentity, (req, res) => res.json({ loc
 // implementation. That keeps the durability machinery independent of the model code and
 // lets a test drive the worker with a fake handler.
 trainingQueue.registerHandler("keystroke", (userId) => ks.trainUserTypingProfile(userId, db));
+// Mouse enrolment trains nine models (lib/mouse.js), so it runs here instead of in the request.
+// 409 = nothing left to train (samples reset or below the minimum): done, not a failure to retry.
+trainingQueue.registerHandler("mouse", async (userId) => {
+  const r = await mouse.retrainMouse(userId);
+  if (r.status !== 200 && r.status !== 409) throw new Error(r.body.error || `mouse retrain returned ${r.status}`);
+  return r.body;
+});
 
 app.listen(PORT, () => {
   console.log(`CA service on http://localhost:${PORT}`);

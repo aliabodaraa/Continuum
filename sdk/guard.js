@@ -51,10 +51,14 @@
   // lib/mouse.js VOTE_N, 60 = ~17 s of movement). Sending fewer leaves every check in warm-up, so
   // the value is taken from the server's own replies (bufferMax) whenever it reports one.
   var MOUSE_CHECK_MS = 1600, MOUSE_MIN_WINDOWS = 60;
-  // Enrolment for the adopted pipeline (continuum/artifacts/repr_arch_study), in SAMPLES: one
+  // Enrolment for the adopted pipeline (continuum/artifacts/repr_arch_study, S1), in SAMPLES: one
   // sample = MOUSE_SAMPLE_WINDOWS windows (~16 s of movement), MOUSE_SAMPLES_REQUIRED of them
-  // (6 x 55 = 330 windows, the measured plateau). /status reports both; these are the defaults.
-  var MOUSE_SAMPLE_WINDOWS = 55, MOUSE_SAMPLES_REQUIRED = 6;
+  // (8 x 55 = 440 windows). /status reports both; these are the defaults.
+  var MOUSE_SAMPLE_WINDOWS = 55, MOUSE_SAMPLES_REQUIRED = 8;
+  // The model is built by the server's training queue (2-3 min measured), not inside the request
+  // that saves the last sample; the wizard polls /status this often until it exists, says so when
+  // it takes unusually long, and stops waiting (the job itself carries on) after the last bound.
+  var MOUSE_TRAIN_POLL_MS = 3000, MOUSE_TRAIN_SLOW_MS = 5 * 60000, MOUSE_TRAIN_GIVE_UP_MS = 15 * 60000;
   // Targets to move between: they elicit varied distances and directions, which is what the
   // model reads. Hitting them is encouraged but not counted, and the dot never runs out.
   var MOUSE_TARGETS = Infinity;
@@ -494,29 +498,37 @@
 
   // ---- Mouse enrolment, in SAMPLES (the unit the typing channel also shows as "sample 2 / 5") ----
   // One sample = MOUSE_SAMPLE_WINDOWS windows, about 16 s of moving to the dots; a profile is built
-  // once MOUSE_SAMPLES_REQUIRED samples are on file (6 x 55 = 330 windows, the measured plateau).
+  // once MOUSE_SAMPLES_REQUIRED samples are on file (8 x 55 = 440 windows).
   // Each sample saves itself the moment it is complete, so the user only ever sees a counter.
   // The server enforces the same numbers (ca-service lib/mouse.js) and reports them in /status.
+  // It builds the model in its training queue (2-3 minutes: eight leave-one-sample-out fold
+  // models and the final one), so the sample that completes the set comes back with
+  // `training: true` and the wizard polls /status until the build is done.
   function mouseSampleFlow(opts) {
     // opts: { title, intro, stepBar, onClose, dismissLabel, allowReset, resolveOnTrained(result) }
     var st = { onFile: 0, required: MOUSE_SAMPLES_REQUIRED, perSample: MOUSE_SAMPLE_WINDOWS, enrolled: false };
-    var tracker = null, iv = null, saving = false, addedNow = 0;
+    var tracker = null, iv = null, saving = false, addedNow = 0, building = false, pollT = null, note = "";
     function pips() {
       var h = "";
       for (var i = 0; i < st.required; i++) h += '<span class="mpip' + (i < st.onFile ? " on" : "") + '"></span>';
       return h;
     }
     function headline() {
+      if (building) return st.enrolled ? "Updating your mouse model…" : "Building your mouse model…";
       if (st.onFile >= st.required) return st.enrolled ? "Mouse protection is on ✓" : "Building your mouse model…";
       return "Sample " + (st.onFile + 1) + " of " + st.required;
+    }
+    function subline() {
+      if (building) return "Training on your samples — two to three minutes. You can leave this open.";
+      if (note) return note;
+      if (st.onFile >= st.required) return st.enrolled ? "All " + st.required + " samples on file · each extra sample rebuilds your model from your latest ones" : "";
+      return (st.required - st.onFile) + " more to go · about " + (st.required - st.onFile) * 16 + " s of movement";
     }
     function render() {
       openWiz((opts.stepBar || "") + '<div class="wizload" id="mwl"><span class="wizspin"></span><span id="mwlt">Saving sample…</span></div>'
         + '<div class="t">' + opts.title + '</div><div class="d">' + opts.intro + '</div>'
         + '<div class="msamp"><div class="mhead" id="mhead">' + headline() + '</div><div class="mpips">' + pips() + '</div>'
-        + '<div class="msub" id="msub">' + (st.onFile >= st.required
-          ? (st.enrolled ? "All " + st.required + " samples on file · each extra sample retrains your model" : "")
-          : (st.required - st.onFile) + " more to go · about " + (st.required - st.onFile) * 16 + " s of movement") + '</div></div>'
+        + '<div class="msub" id="msub">' + subline() + '</div></div>'
         + '<div class="pad" id="cpad"><span class="padlabel">move to the dot</span></div><div class="bar"><i id="mbar"></i></div>'
         + '<div id="mdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">this sample: 0 s of 16 s</div>'
         + (opts.dismissLabel ? '<div style="display:flex;gap:8px"><button class="b" id="mdone" style="flex:1;background:#475569">' + opts.dismissLabel + '</button></div>' : "")
@@ -525,7 +537,7 @@
       var pad = wizEl.querySelector("#cpad"), bar = wizEl.querySelector("#mbar"), diag = wizEl.querySelector("#mdiag"),
         e = wizEl.querySelector(".e"), load = wizEl.querySelector("#mwl"), loadT = wizEl.querySelector("#mwlt");
       var doneBtn = wizEl.querySelector("#mdone");
-      if (doneBtn) doneBtn.addEventListener("click", function () { stop(); opts.onClose(); });
+      if (doneBtn) doneBtn.addEventListener("click", function () { stop(); clearTimeout(pollT); opts.onClose(); });
       if (opts.allowReset) {
         wizEl.querySelector("#mreset").addEventListener("click", function (ev) {
           ev.preventDefault();
@@ -533,7 +545,7 @@
             stop();
             try { stopMouse(); } catch (e3) {}
             mouseOn = false; updateToggle(); setMouseRow("mut", "not enrolled");
-            st.onFile = 0; st.enrolled = false; addedNow = 0; render();
+            st.onFile = 0; st.enrolled = false; addedNow = 0; building = false; note = ""; clearTimeout(pollT); render();
           });
         });
       }
@@ -565,23 +577,63 @@
           e.style.display = "block";
           return;
         }
-        addedNow += 1;
+        addedNow += 1; note = "";
         var total = Number((r.d && r.d.totalWindows) || 0);
         st.onFile = Math.min(st.required, Math.floor(total / st.perSample)) || (st.onFile + 1);
         if (r.d && r.d.trained) { if (!st.enrolled && opts.onEnrolled) opts.onEnrolled(); st.enrolled = true; }
+        if (r.d && r.d.training) { waitForModel(); return; }
         if (st.enrolled && opts.resolveOnTrained) { stop(); opts.resolveOnTrained(r.d); return; }
+        refresh();
+      }
+      function refresh() {
         wizEl.querySelector("#mhead").textContent = headline();
-        wizEl.querySelector("#msub").textContent = st.onFile >= st.required
-          ? (st.enrolled ? "Model updated with this sample. Add more if you like, or close." : "")
-          : (st.required - st.onFile) + " more to go · about " + (st.required - st.onFile) * 16 + " s of movement";
+        wizEl.querySelector("#msub").textContent = subline();
         var p = wizEl.querySelectorAll(".mpip");
         for (var i = 0; i < p.length; i++) p[i].className = "mpip" + (i < st.onFile ? " on" : "");
       }
+      // The server is building (or rebuilding) the model: stop collecting and poll /status until
+      // the job is finished, then either finish enrolment or explain what went wrong.
+      function waitForModel() {
+        building = true; stop(); clearTimeout(pollT); refresh();
+        loadT.textContent = headline(); load.classList.add("on");
+        var since = Date.now();
+        (async function poll() {
+          if (!document.body.contains(load)) return;   // wizard closed or re-rendered
+          var d = {};
+          try { var s = await reqJson(EP.mouseStatus); d = (s && s.d) || {}; } catch (e4) {}
+          var waited = Date.now() - since;
+          if (d.training && waited >= MOUSE_TRAIN_GIVE_UP_MS) {
+            // Never a spinner forever: the job stays queued on the server and finishes on its own.
+            building = false; load.classList.remove("on"); refresh();
+            e.textContent = "Your model is still being built. You can close this: nothing is lost, and mouse protection starts once it is ready.";
+            e.style.display = "block";
+            return;
+          }
+          if (d.training) {
+            if (waited >= MOUSE_TRAIN_SLOW_MS) loadT.textContent = headline() + " (taking longer than usual)";
+            pollT = setTimeout(poll, MOUSE_TRAIN_POLL_MS); return;
+          }
+          building = false; load.classList.remove("on");
+          if (d.enrolled) {
+            if (!st.enrolled && opts.onEnrolled) opts.onEnrolled();
+            st.enrolled = true;
+            if (opts.resolveOnTrained) { opts.resolveOnTrained(d); return; }
+            note = "Model rebuilt with your latest samples. Add more if you like, or close.";
+          } else {
+            e.textContent = (d.trainingError ? "Building your model failed (" + d.trainingError + ")" : "Your model could not be built")
+              + " — save one more sample to try again.";
+            e.style.display = "block";
+          }
+          refresh();
+          iv = setInterval(tick, 400);
+        })();
+      }
       stop();
-      iv = setInterval(tick, 400);
+      if (building) waitForModel(); else iv = setInterval(tick, 400);
     }
     function stop() { if (iv) clearInterval(iv); iv = null; }
-    // Start from what is already on file, so a user who saved two samples resumes at 3 of 6.
+    // Start from what is already on file, so a user who saved two samples resumes at 3 of 8, and a
+    // user who left while the model was being built rejoins the wait.
     (async function () {
       try {
         var s = await reqJson(EP.mouseStatus); var d = (s && s.d) || {};
@@ -589,8 +641,9 @@
         if (d.sampleWindows) st.perSample = d.sampleWindows;
         st.onFile = Number(d.samplesOnFile != null ? d.samplesOnFile : Math.floor((d.totalWindows || 0) / st.perSample));
         st.enrolled = !!d.enrolled;
+        building = !!d.training;
       } catch (e) {}
-      if (st.enrolled && opts.resolveOnTrained && !opts.allowReset) { opts.resolveOnTrained(null); return; }
+      if (st.enrolled && !building && opts.resolveOnTrained && !opts.allowReset) { opts.resolveOnTrained(null); return; }
       render();
     })();
   }
@@ -673,7 +726,7 @@
     if (!window.mouseFeatures) return;
     mouseSampleFlow({
       title: "Mouse samples",
-      intro: "Move to each dot at your natural speed. Each <b>sample</b> is about 16 seconds of movement and saves itself. Your mouse model is built after the last required sample; once it exists, every extra sample retrains it with more of your movement.",
+      intro: "Move to each dot at your natural speed. Each <b>sample</b> is about 16 seconds of movement and saves itself. Your mouse model is built after the last required sample; once it exists, every extra sample rebuilds it from your latest samples.",
       onClose: closeWiz,
       dismissLabel: "Done",
       allowReset: true,

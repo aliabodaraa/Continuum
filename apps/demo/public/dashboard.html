@@ -1040,6 +1040,10 @@
           if (d.enrolled) {
             st.textContent = "Enrolled";
             st.style.color = "var(--success)";
+          } else if (d.training) {
+            // The server's training queue is building the model (2-3 minutes).
+            st.textContent = "Building model…";
+            st.style.color = "var(--warning, #b45309)";
           } else {
             st.textContent = "Not enrolled";
             st.style.color = "var(--danger)";

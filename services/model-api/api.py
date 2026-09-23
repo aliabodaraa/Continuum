@@ -33,6 +33,11 @@ try:
 except Exception:
     FeatureScaler = None
 
+try:
+    import loso
+except Exception:
+    loso = None
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -922,6 +927,102 @@ def train_user_payload(payload):
         return {"error": str(exc)}, 500
 
 
+LOSO_PERCENTILES = (1, 2, 5, 10, 15, 20, 30, 40, 50)
+
+
+def train_user_loso_payload(payload):
+    """Mouse enrolment with a leave-one-sample-out threshold source (S1, AMENDMENT_J1.md §2).
+
+    positiveWindows are the user's enrolment in time order, a whole number of loso.SAMPLE-window
+    samples. Each fold model trains on the other samples and scores the one it never saw; then the
+    deployed model trains on all of them and is saved where train_user_payload always saves it.
+    Every model goes through train_user_payload with an explicit split, exactly as
+    protocol_j_p1.fit_and_score drove it for the lockbox evaluation (same negatives, seeds and
+    settings), so the only difference from that recipe is where the fold models live: a scratch
+    directory beside the user's model, removed before this returns. The folds run first, so a
+    retrain replaces the live model only at the end.
+
+    Returns the final model's training response plus the pooled out-of-sample scores
+    (losoScores) and their percentiles (losoScorePercentiles); the caller picks its threshold
+    from those.
+    """
+    import shutil
+
+    if load_model is None or build_1d_cnn_2rnn is None or np is None or loso is None:
+        return {"error": "TensorFlow training stack is not available"}, 503
+    if not payload or "userId" not in payload or "positiveWindows" not in payload:
+        return {"error": "userId and positiveWindows are required"}, 400
+    if int(payload.get("sampleWindows", loso.SAMPLE)) != loso.SAMPLE:
+        return {"error": f"sampleWindows must be {loso.SAMPLE}, the evaluated sample size"}, 400
+    try:
+        positives = to_window_array(payload["positiveWindows"])
+        modality = payload.get("modality") or "keystroke"
+        final_path = confine_path(payload.get("modelPath")) or user_model_path(payload["userId"], modality)
+    except ValueError as exc:
+        return {"error": str(exc)}, 400
+    n = len(positives)
+    samples = n // loso.SAMPLE
+    if n % loso.SAMPLE or samples < 2:
+        return {"error": f"need a whole number (>= 2) of {loso.SAMPLE}-window samples, got {n} windows"}, 400
+
+    # Settings forwarded unchanged to every model; the internal calls fix the rest.
+    common = {k: payload[k] for k in ("modality", "scalerPath", "baseModelPath", "negativeDatasetPath",
+                                      "overlapGap", "epochs", "batchSize", "trainSeed") if k in payload}
+    order = list(range(samples))
+    fold_root = final_path + "_loso"
+
+    def fit(model_path, ordered, train, val):
+        pos = {t: p for p, t in enumerate(ordered)}
+        return train_user_payload({
+            **common, "userId": payload["userId"], "modelPath": model_path,
+            "positiveWindows": positives[ordered],
+            "explicitSplit": {"train": [pos[t] for t in train], "val": [pos[t] for t in val]},
+            "minPositiveWindows": 1})
+
+    oof = np.full(n, np.nan)
+    shutil.rmtree(fold_root, ignore_errors=True)   # debris from an interrupted run
+    try:
+        for s in order:
+            ordered, train, val, held = loso.plan_folds(order, [s])
+            fold_path = os.path.join(fold_root, f"fold{s}")
+            res, code = fit(fold_path, ordered, train, val)
+            if code != 200:
+                return {"error": f"fold {s}: {res.get('error')}", "fold": s}, code
+            pred, code = predict_user_payload({
+                "userId": payload["userId"], "modality": modality, "modelPath": fold_path,
+                "windows": positives[held], **({"scalerPath": payload["scalerPath"]} if "scalerPath" in payload else {})})
+            invalidate_user_model_cache(fold_path)
+            shutil.rmtree(fold_path, ignore_errors=True)
+            if code != 200:
+                return {"error": f"fold {s} scoring: {pred.get('error')}", "fold": s}, code
+            oof[held] = [float(p[1]) for p in pred["prediction"]]
+    finally:
+        shutil.rmtree(fold_root, ignore_errors=True)
+
+    ordered, train, val, _ = loso.plan_folds(order, [])
+    res, code = fit(final_path, ordered, train, val)
+    if code != 200:
+        return res, code
+    res.update({
+        "thresholdScheme": "leave-one-sample-out",
+        "losoSamples": samples,
+        "losoSampleWindows": loso.SAMPLE,
+        "losoScores": [round(float(v), 6) for v in oof],
+        "losoScorePercentiles": {str(q): float(np.percentile(oof, q)) for q in LOSO_PERCENTILES},
+    })
+    return res, 200
+
+
+def dispatch_train(body):
+    """/api/user/train: the action-based path, the leave-one-sample-out enrolment, or the
+    original single-model path, chosen by the payload."""
+    if body and body.get("actions") is not None:
+        return train_user_actions_payload(body)
+    if body and body.get("thresholdScheme") == "leave-one-sample-out":
+        return train_user_loso_payload(body)
+    return train_user_payload(body)
+
+
 def rollback_user_payload(payload):
     """Restore the pre-retrain model snapshot (validation-gate rollback)."""
     if not payload or "userId" not in payload:
@@ -1013,15 +1114,12 @@ def create_flask_app():
 
     @app.route("/api/user/train", methods=["POST"])
     def train_user():
-        body = request.get_json()
         # An `actions` field selects the action-based mouse path; `windows`
         # keeps the original window path. Dispatching on the payload rather
         # than on a mode flag means an old client cannot accidentally land in
-        # the new pipeline or the reverse.
-        if body and body.get("actions") is not None:
-            payload, status = train_user_actions_payload(body)
-        else:
-            payload, status = train_user_payload(body)
+        # the new pipeline or the reverse. `thresholdScheme` selects the
+        # leave-one-sample-out enrolment (S1) on the window path.
+        payload, status = dispatch_train(request.get_json())
         return jsonify(payload), status
 
     @app.route("/api/user/predict", methods=["POST"])
@@ -1078,7 +1176,7 @@ class ContinuumHandler(BaseHTTPRequestHandler):
             raw_body = self.rfile.read(length).decode("utf-8")
             payload = json.loads(raw_body) if raw_body else {}
             if self.path == "/api/user/train":
-                response, status = train_user_payload(payload)
+                response, status = dispatch_train(payload)
             elif self.path == "/api/user/predict":
                 response, status = predict_user_payload(payload)
             elif self.path == "/api/user/rollback":

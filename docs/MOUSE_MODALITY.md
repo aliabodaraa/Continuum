@@ -35,8 +35,12 @@ representation, its Table I; Experiment A found no richer representation measura
   (`train_mouse_fcn.py` → `artifacts/mouse-fcn-a5`, scaler, `arch.json`).
 - Per user (server): `api.py` builds base → `embedding` → Dense(2, softmax), freezes `conv1` and
   `bn1`, fine-tunes with Adam 3e-4, 15 epochs, batch 32, early stopping 6; negatives = 2 × positives
-  from `data/mouse_only/Mouse_A5_W50_base.h5` (base users only). Returns the percentiles of the
-  user's enrolment scores.
+  from `data/mouse_only/Mouse_A5_W50_base.h5` (base users only). Enrolment (S1) is one call
+  (`train_user_loso_payload`): 8 leave-one-sample-out fold models each score the 55-window sample
+  they never saw, then the final model trains on all 8 samples with the last 11 windows of each for
+  early stopping (4 purged before each slice). Returns the percentiles of the pooled out-of-sample
+  scores and of the in-sample enrolment scores. `validate_loso.py` checks the plans against
+  `protocol_j_p1.py` and reproduces the stored P1 Method-B scores exactly.
 - Per user (extension): head only on the frozen `embedding`, trained in the page
   (`extension/src/mouse-model.js`); negatives are the same 660 base-user windows, bundled as
   precomputed embeddings (`extension/data/mouse-impostors.json`). Experiment G: no measurable
@@ -44,17 +48,25 @@ representation, its Table I; Experiment A found no richer representation measura
 
 ## Decision
 
-- Per-user threshold = q-th percentile of the user's enrolment scores; a window is low below it.
-  Each profile stores the whole table q ∈ {1, 2, 5, 10, 15, 20, 30, 40, 50}.
-- Server: q = 1, suspicious when 30 of the last 60 windows are low. Extension: q = 2, suspicious
-  when the mean of the last 60 scores is below the threshold. Both from Experiment I (operating point
-  by genuine passkey prompts per minute of movement): server 0.29 prompts/min, 86.5% of 40-s
-  impostor runs caught, median 17 s to catch; extension 0.22/min, 87.3%.
-- The pre-registered rule of Experiment I required ≥ 90% capture and would have kept Experiment F's
-  point (q = 5, 12 of 20: 2.85 prompts/min, 99.4% caught) and G's (q = 10, 14 of 20: 1.95/min,
-  100%). The deployed points are the owner's comfort-first decision, disclosed as such.
-- Experiment H: the threshold stays on enrolment scores (held-out validation windows and the first
-  55 windows of use both cut false locks but cost capture beyond the 5-point margin).
+- Server (S1, deployed 2026-09-23): per-user threshold = 20th percentile of the user's
+  leave-one-sample-out scores; a window is low below it; suspicious when 33 of the last 60 windows
+  are low. Each profile stores both tables (out-of-sample and in-sample) for q ∈ {1, 2, 5, 10, 15,
+  20, 30, 40, 50} and the rule it was trained for (`decision_version`); a profile from an earlier
+  rule is rebuilt from its stored samples, never scored against this vote. On the untouched first
+  lockbox (P6, 20 users): 95.0% of 40-s impostor runs caught (2 users below 80%) at 0.33 genuine
+  prompts per minute of movement, against 77.1% (8 users below 80%) at 0.17 for the rule it
+  replaced (q = 1 of the in-sample scores, 30 of 60, from Experiment I). The pre-registered P6 test
+  did not adopt S1 (prompt increase +0.15 [0.00, +0.31] against a +0.10 margin): S0 stands in the
+  record and S1 is deployed as the owner's disclosed deviation (RUN_LOG).
+- Extension (unchanged): q = 2 of its in-sample scores, suspicious when the mean of the last 60
+  scores is below the threshold (Experiment I: 0.22 prompts/min, 87.3% caught).
+- History of the server point: the pre-registered rule of Experiment I required ≥ 90% capture and
+  would have kept Experiment F's point (q = 5, 12 of 20: 2.85 prompts/min, 99.4% caught); the
+  owner chose the comfort-first q = 1, 30 of 60 (0.29/min, 86.5%), which S1 replaced. Experiment H
+  kept that recipe's threshold on in-sample enrolment scores (held-out validation windows and the
+  first 55 windows of use cost capture beyond the 5-point margin); protocol J's P1 then measured the
+  leave-one-sample-out source that S1 uses. The extension's point (q = 2, mean of 60) is also a
+  comfort-first owner decision (G's pre-registered point: q = 10, 14 of 20: 1.95/min, 100%).
 - 60 windows = 640 steps ≈ 17 s of movement. One suspicious decision = one passkey prompt in every
   client (gateway `MOUSE_STRIKES_TO_LOCK = 1`); the buffer restarts after a prompt.
 - Every scored check is logged in ca-service `mouse_decisions` (window count, threshold, low
@@ -62,17 +74,19 @@ representation, its Table I; Experiment A found no richer representation measura
 
 ## Enrolment
 
-- 6 samples × 55 windows = 330 (~90 s). A sample saves itself when complete; the SDK, demo and
-  extension show "Sample k of 6" (pips and time left), and samples can be spread over visits. Each
-  sample must show a step-size interquartile range ≥ 5 px. Measured plateau: AUC 0.856 at 330 vs
-  0.861 at 440 (non-inferior).
-- ca-service stores samples, trains once the total reaches 330 (and retrains on every extra
-  sample), passes the enrolment to model-api as one chronological stream (contiguous 20%
-  validation tail with gap 5, as evaluated), stores the threshold, the percentile table and the
-  feature version with the profile, and refuses clients that still send 7-column windows.
-  `/status` reports `sampleWindows`, `samplesRequired`, `samplesOnFile`, `voteN`, `voteK`.
+- Server: 8 samples × 55 windows = 440 (~2 min). A sample saves itself when complete; the SDK and
+  demo show "Sample k of 8" (pips and time left), and samples can be spread over visits. Each
+  sample must show a step-size interquartile range ≥ 5 px. (The extension keeps its own 6 × 55.)
+- ca-service stores samples; once the total reaches 440 it queues training in its durable training
+  queue (`training_jobs`, one job at a time) instead of training inside the request, and every
+  extra sample queues a rebuild. The model is always trained on the user's latest 440 windows, in
+  time order. The enrolment reply is 202 with `training: true`; clients poll `/status`, which
+  reports `training`, `trainingError`, `sampleWindows`, `samplesRequired`, `samplesOnFile`,
+  `voteN`, `voteK`, `thresholdPercentile`, `thresholdSource`. The profile stores the threshold,
+  both percentile tables, the feature version and the decision rule; 7-column clients are refused.
 - `services/ca-service/scripts/retrain_mouse_profiles.js` retrains every stored profile when the
-  recipe or the operating point changes.
+  recipe or the operating point changes; a profile it misses is rebuilt from the queue the next
+  time its status or a check is read.
 - Stored 7-column windows convert exactly to the current representation (|col| × 1920):
   `services/ca-service/scripts/migrate_mouse_a5.js` (server), `fromRetired7` (extension).
 

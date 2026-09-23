@@ -137,19 +137,22 @@ against site-key theft, not a tenancy boundary. The tenancy boundary is the secr
 
 ---
 
-## 5b. Training still blocks inference inside model-api
+## 5b. Training shares a process with inference inside model-api
 
-The queue (§0) made retraining *durable*; it did not make it *non-blocking*. model-api runs
-Flask's single-threaded server (`app.run(...)`), so a synchronous enrollment train — and a
-queued job, since the worker calls the same endpoint — occupies the one process that also
-answers `/api/user/predict`. Every concurrent keystroke check on that host waits behind it.
+The queue (§0) made retraining *durable*; it did not isolate it. model-api runs Flask's
+development server (`app.run(...)`), which is threaded by default, so a training run does not
+block `/api/user/predict` outright. Measured 2026-09-23 during an S1 mouse enrolment (nine fits,
+about 2.5 min): 60-window mouse checks took about 150 ms, against about 115 ms idle, far inside
+the 5 s inference deadline. What remains is CPU contention, which grows with concurrent training.
 
-The 5 s inference deadline now bounds the *symptom* (callers get `503 model_unavailable`
-instead of hanging), which is strictly better than before but is still a degraded
-authentication path during any training run.
+A related gap: the **first inference after a model-api restart** loads the user's model from
+disk, and one such cold load exceeded the 5 s deadline (validate_pipeline check 5,
+2026-09-23: model-api loaded the same model twice, i.e. ca-service had abandoned the first
+request). The caller then gets "model temporarily unavailable" for that one check.
 
-*Fix:* run model-api under gunicorn with more than one worker, and ideally a separate
-worker class or process for `/api/user/train` so training never occupies an inference slot.
+*Fix:* run model-api under gunicorn with more than one worker, and ideally a separate worker
+class or process for `/api/user/train` so training never competes with an inference slot; warm
+the model cache for recently active users at boot.
 
 ## 6. Future work already noted elsewhere
 
@@ -164,6 +167,13 @@ worker class or process for `/api/user/train` so training never occupies an infe
 ---
 
 ## 7. Mouse: a user's threshold can collapse, and with it their protection
+
+> **Server side addressed 2026-09-23 (recovery plan Phase 0):** S1 is deployed as the owner's
+> disclosed deviation from the P6 verdict. The line is now the 20th percentile of the user's
+> leave-one-sample-out scores (Method B, 440 windows, 33 of 60), which is item 1's candidate as
+> measured, prompt cost included; see RUN_LOG 2026-09-23. The numbers below stay as the "before"
+> (item 4). Still open: item 3 (validation on data SapiMouse cannot provide) and the browser
+> extension, which keeps its in-sample line.
 
 The per-user line is the **1st percentile of that user's 330 enrolment window scores**, so in
 practice it is set by their **three lowest enrolment windows**. A user who produced a few odd

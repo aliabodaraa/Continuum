@@ -168,16 +168,20 @@ option — a rise in these is either an outage or someone arranging one.
 - **Model:** SapiMouse's FCN (`artifacts/mouse-fcn-a5`, identification-trained on 100 users);
   per user, `api.py` freezes conv1+bn1 and fine-tunes the rest with a binary head
   (`arch.json`). Negatives: `data/mouse_only/Mouse_A5_W50_base.h5` (base users only).
-- **Decision:** per-user threshold = 1st percentile of the user's enrolment scores; suspicious
-  when 30 of the last 60 windows (~17 s of movement) are below it. Chosen by genuine passkey
-  prompts per minute of movement (Experiment I: 0.29/min, 86.5% of 40-s impostor runs caught); the
-  pre-registered rule required ≥ 90% capture and would have kept 5th percentile / 12 of 20
-  (2.85 prompts/min) — the quieter point is the owner's policy decision. Each profile stores its
-  whole enrolment-percentile table (`mouse_profiles.enrol_percentiles`), so the percentile can
-  change without retraining; every scored check is logged in `mouse_decisions`.
-- **Enrolment:** 6 samples × 55 windows = 330 (~90 s); each sample saves itself when complete and
-  the clients show "Sample k of 6"; step-size spread ≥ 5 px per sample. Training receives one
-  chronological stream, so model-api holds out its contiguous 20% tail (gap 5) as evaluated.
+- **Decision (S1, AMENDMENT_J1 §2; deployed 2026-09-23):** per-user threshold = 20th percentile
+  of the user's leave-one-sample-out scores (8 fold models, each scoring the enrolment sample it
+  never saw); suspicious when 33 of the last 60 windows (~17 s of movement) are below it. On the
+  untouched first lockbox it caught 95.0% of 40-s impostor runs (2 of 20 users below 80%) at
+  0.33 genuine prompts/min, against 77.1% (8 users) at 0.17 for the previous rule (1st percentile
+  of in-sample scores, 30 of 60). The pre-registered test did not adopt it (the prompt increase
+  missed its margin), so S0 stands in the record and S1 is the owner's disclosed deviation.
+  Each profile stores both percentile tables (`loso_percentiles`, `enrol_percentiles`) and its
+  `decision_version`; an older profile is rebuilt, never scored with this vote. Every scored
+  check is logged in `mouse_decisions`.
+- **Enrolment:** 8 samples × 55 windows = 440 (~2 min); each sample saves itself when complete and
+  the clients show "Sample k of 8"; step-size spread ≥ 5 px per sample. The model is trained on
+  the user's latest 440 windows by ca-service's durable training queue (nine fits, 2–3 min on
+  CPU); the enrolment reply is 202 `training: true` and clients poll `/status`.
   ca-service refuses retired 7-column windows.
 - Every client steps up on the **first** suspicious decision: gateway `MOUSE_STRIKES_TO_LOCK = 1`,
   demo 1, extension — the measured operating point counts one decision as one prompt.

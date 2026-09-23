@@ -186,6 +186,11 @@ addColumnIfMissing("keystroke_texts", "char_count", "INTEGER");
 addColumnIfMissing("mouse_profiles", "threshold", "REAL");
 addColumnIfMissing("mouse_profiles", "feature_version", "TEXT");
 addColumnIfMissing("mouse_profiles", "enrol_percentiles", "TEXT");
+// S1 (lib/mouse.js): the threshold comes from leave-one-sample-out scores, whose percentile table is
+// stored beside the in-sample one, and every profile records the decision rule it was trained for,
+// so a profile from an earlier rule is rebuilt rather than scored against the current vote.
+addColumnIfMissing("mouse_profiles", "loso_percentiles", "TEXT");
+addColumnIfMissing("mouse_profiles", "decision_version", "TEXT");
 // One row per scored mouse check (lib/mouse.js checkMouse): what the model saw and decided.
 db.exec(`CREATE TABLE IF NOT EXISTS mouse_decisions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
