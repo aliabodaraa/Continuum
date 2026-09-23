@@ -14,8 +14,8 @@ var ContinuumTrainer = (function () {
   var JITTER = 0.006;   // augmentation noise on continuous feature columns
 
   // Oversample + jitter the genuine windows so the two classes are balanced.
-  // jitterCols: which feature columns take noise (keystroke: timings only, ids pristine;
-  // mouse: kinematics only, the is_click flag pristine).
+  // jitterCols: which feature columns take noise (keystroke: timings only, ids pristine).
+  // The mouse model is trained by mouse-model.js, not here.
   function augment(genuine, targetCount, jitterCols) {
     var out = [];
     for (var i = 0; out.length < targetCount; i++) {
@@ -58,7 +58,7 @@ var ContinuumTrainer = (function () {
     var KS_CLIP_MIN = [0.0, 0.0, 0.0, 0.0, 0.0, -1.0];
     var KS_CLIP_MAX = [1.0, 1.0, 2.0, 2.0, 5.0, 5.0];
     function scale(w) {
-      var clip = w[0] && w[0].length === KS_CLIP_MIN.length;   // 6 dims = keystroke; mouse (7) skips clip
+      var clip = w[0] && w[0].length === KS_CLIP_MIN.length;   // 6 dims = keystroke
       return w.map(function (row) {
         return row.map(function (v, c) {
           if (clip) v = Math.max(KS_CLIP_MIN[c], Math.min(KS_CLIP_MAX[c], v));
@@ -111,6 +111,8 @@ var ContinuumTrainer = (function () {
   async function clearTrained(accountId) {
     var ok = false;
     try { await tf.io.removeModel("indexeddb://cg-personal-head-" + accountId); ok = true; } catch (e) {}
+    // The retired mouse model's head, if an old profile left one (the current mouse model is
+    // removed by ContinuumMouseModel.clearTrained).
     try { await tf.io.removeModel("indexeddb://cg-personal-mouse-head-" + accountId); ok = true; } catch (e) {}
     return ok;
   }

@@ -1,0 +1,23 @@
+{
+ "live: vote 15/20 (deployed)": {
+  "escapeRate": 0.015789473684210527,
+  "nSessions": 380,
+  "medianDetectSteps": 20.0,
+  "medianDetectSeconds": 0.34,
+  "genuineInterrupted": 0.45
+ },
+ "vote 10/20": {
+  "escapeRate": 0.005263157894736842,
+  "nSessions": 380,
+  "medianDetectSteps": 20.0,
+  "medianDetectSeconds": 0.34,
+  "genuineInterrupted": 0.8
+ },
+ "mean k=20": {
+  "escapeRate": 0.005263157894736842,
+  "nSessions": 380,
+  "medianDetectSteps": 20.0,
+  "medianDetectSeconds": 0.34,
+  "genuineInterrupted": 0.7
+ }
+}

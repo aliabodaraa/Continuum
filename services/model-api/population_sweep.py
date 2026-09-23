@@ -79,6 +79,8 @@ BASE_MODEL = os.getenv("KS_BASE_MODEL", "/app/artifacts/ws50-gru-v2/final_model"
 SCALER = os.getenv("KS_SCALER", "/app/artifacts/ws50-gru-v2/scaler.json")
 
 ENROL_FRAC = 0.70          # of the target's own windows; the rest is held out
+PACKET_RUN_LEN = 150       # contiguous impostor windows scored per participant,
+                           # for decision-level analysis (see imp_runs below)
 VAL_FRAC = 0.15            # of the enrol block, taken from its end
 NEG_POOL_SIZE = 40
 IMP_POOL_SIZE = 40
@@ -156,11 +158,35 @@ def run_target(tid, windows, pid, neg_pool, imp_pool, scaler, rng, epochs, max_i
 
     # evaluate: held-out genuine vs impostors from the disjoint pool
     imp_parts = np.array([p for p in imp_pool if p != tid])
-    imp_all = windows[np.isin(pid, imp_parts)]
-    imp = imp_all[rng.choice(len(imp_all), min(max_imp, len(imp_all)), replace=False)]
+    imp_mask = np.isin(pid, imp_parts)
+    imp_all = windows[imp_mask]
+    # NOTE: identical rng consumption to `imp_all[rng.choice(...)]` — the draw is
+    # unchanged, the selection is merely also kept so decision-level analysis can
+    # regroup the sampled windows by participant and restore temporal order.
+    # Impostor windows are sampled globally and shuffled, so a packet slid over
+    # them raw would splice together different people; packets may only ever run
+    # within one participant's own consecutive windows.
+    imp_sel = rng.choice(len(imp_all), min(max_imp, len(imp_all)), replace=False)
+    imp = imp_all[imp_sel]
+    imp_pid_all = pid[imp_mask]          # participant label per row of imp_all
+    imp_pid = imp_pid_all[imp_sel]       # ... per row of imp (and of _impostorScores)
 
     g = model.predict(scale(held_out, scaler), batch_size=256, verbose=0)[:, 1]
     i = model.predict(scale(imp, scaler), batch_size=256, verbose=0)[:, 1]
+
+    # Contiguous impostor runs, for DECISION-level (packet) analysis only.
+    # The sampled `imp` above is drawn globally and thinned ~1-in-13, so consecutive
+    # sampled windows are not temporally adjacent and carry far less autocorrelation
+    # than the real stream. Sliding a packet over them would flatter the vote. These
+    # blocks are each one participant's own consecutive windows, so the correlation
+    # the deployed system actually faces is preserved.
+    # Window-level metrics below still come from `imp`, unchanged.
+    imp_runs = {}
+    for part in imp_parts:
+        block = windows[pid == part][:PACKET_RUN_LEN]
+        if len(block) >= 8:
+            s = model.predict(scale(block, scaler), batch_size=256, verbose=0)[:, 1]
+            imp_runs[int(part)] = [round(float(v), 5) for v in s]
 
     from tensorflow.keras import backend as K
     K.clear_session()
@@ -169,6 +195,11 @@ def run_target(tid, windows, pid, neg_pool, imp_pool, scaler, rng, epochs, max_i
         # raw scores kept so callers can compute decision-level (packet) rates without
         # refitting; held_out is in temporal order, so packets may slide over it
         "_genuineScores": g.tolist(), "_impostorScores": i.tolist(),
+        # which participant each impostor score came from, and where that window sat
+        # in that participant's own sequence — both needed to rebuild honest packets
+        "_impostorRuns": imp_runs,   # {participant: contiguous score run}
+        "_impostorParticipant": imp_pid.astype(int).tolist(),
+        "_impostorOrder": imp_sel.astype(int).tolist(),
         "participant": int(tid),
         "nEnrol": int(len(pos_tr)), "nHeldOut": int(len(held_out)), "nImpostor": int(len(imp)),
         "auc": float(auc_of(g, i)), "eer": float(eer_of(g, i)[0]),
@@ -204,6 +235,11 @@ def main():
     ap.add_argument("--limit", type=int, default=0, help="run only the first N targets (pilot)")
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--max-impostor", type=int, default=1500)
+    ap.add_argument("--neg-pool-size", type=int, default=NEG_POOL_SIZE,
+                     help="training-negative pool size (default 40, the frozen baseline value). "
+                          "The evaluation impostor pool always stays ids[NEG_POOL_SIZE:NEG_POOL_SIZE+IMP_POOL_SIZE] "
+                          "regardless of this flag, so shrinking it changes ONLY the training-negative "
+                          "count, never what a run is tested against — for a negative-pool-size experiment.")
     args = ap.parse_args()
     if h5py is None:
         raise SystemExit("h5py is required")
@@ -213,7 +249,10 @@ def main():
         pid = np.asarray(f["participant"])
 
     ids = np.sort(np.unique(pid))
-    neg_pool = ids[:NEG_POOL_SIZE]
+    # neg_pool honours --neg-pool-size (a SUBSET of the first NEG_POOL_SIZE ids when smaller);
+    # imp_pool's offset is always the ORIGINAL NEG_POOL_SIZE (40), independent of the flag, so
+    # the evaluation impostor pool never changes — only the training-negative count does.
+    neg_pool = ids[:args.neg_pool_size]
     imp_pool = ids[NEG_POOL_SIZE:NEG_POOL_SIZE + IMP_POOL_SIZE]
     targets = ids if not args.limit else ids[:args.limit]
 

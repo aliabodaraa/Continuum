@@ -38,7 +38,14 @@
     <label for="rpBase">Passkey service URL</label>
     <input id="rpBase" type="text" placeholder="http://localhost:4000" />
     <button id="save">Save</button>
+    <button id="test" style="background:none;border:1.5px solid var(--field-border);color:var(--text);margin-left:8px">Test connection</button>
     <div id="saved">✓ Saved</div>
+    <div id="probe" style="display:none;font-size:13px;font-weight:600;margin-top:10px"></div>
+    <label style="margin-top:26px;display:flex;align-items:center;gap:9px;font-weight:700;font-size:13px">
+      <input id="debug" type="checkbox" style="width:auto;margin:0" /> Verbose diagnostics in the console
+    </label>
+    <p class="note" style="margin-top:6px">Off by default. When on, every scored keystroke and mouse window is logged to the service-worker console and to each page's console — useful when investigating scores, noisy otherwise.</p>
+
     <p class="note">Must be reachable from this browser and match the <code>RP_ID</code>/<code>ORIGIN</code> the passkey-service was started with. WebAuthn requires HTTPS for any real domain — <code>localhost</code> is the one exception.</p>
     <script src="options.js"></script>
   </body>

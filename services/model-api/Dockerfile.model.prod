@@ -39,9 +39,10 @@ COPY services/model-api/ ./services/model-api/
 # it's simply absent and enrollment falls back to from-scratch (handled in code).
 COPY artifacts/ ./artifacts/
 
-# Mouse enrollment's negative pool (SapiMouse). Keystroke negatives come from
-# the DB, so only this one dataset is needed at runtime.
-COPY data/mouse_only/Mouse_WS50.h5 ./data/mouse_only/Mouse_WS50.h5
+# Mouse enrollment's negative pool: the (|dx|, |dy|) windows of the 100 SapiMouse base users
+# (train_mouse_fcn.py), api.py's MOUSE_NEG_DATASET_PATH default. Keystroke negatives come from the
+# DB, so only this one dataset is needed at runtime.
+COPY data/mouse_only/Mouse_A5_W50_base.h5 ./data/mouse_only/Mouse_A5_W50_base.h5
 
 EXPOSE 5000
 

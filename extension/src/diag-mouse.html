@@ -29,17 +29,17 @@
   </head>
   <body>
     <h1>🔬 Mouse discrimination diagnostic</h1>
-    <p class="sub">Measures whether your trained mouse model actually separates YOU from an impostor — the evidence needed before the mouse channel could ever enforce (lock) instead of being info-only. Scores are the genuine-class probability [0..1]; a window is "accepted as genuine" at ≥ 0.50 (the packet-vote boundary).</p>
+    <p class="sub">Measures whether your mouse model separates you from impostors. Scores are the genuine-class probability [0..1]; a window is accepted when it is at or above your personal threshold, the boundary the live vote uses.</p>
 
     <div class="card">
       <div class="row"><span>Account / profile</span><span class="val" id="acct">…</span></div>
-      <div class="row"><span>Trained mouse head</span><span class="val" id="headState">loading…</span></div>
+      <div class="row"><span>Mouse profile</span><span class="val" id="headState">loading…</span></div>
       <div class="row"><span>Stored enrollment windows</span><span class="val" id="enrollCount">…</span></div>
-      <div class="row"><span>Bundled impostor windows</span><span class="val" id="impCount">…</span></div>
+      <div class="row"><span>Bundled impostor windows (SapiMouse base users)</span><span class="val" id="impCount">…</span></div>
     </div>
 
     <h2>Step 1 — capture your live browsing movement</h2>
-    <p class="muted">Move and drag the mouse naturally inside the box below for ~20 seconds, as if reading and navigating a page. This is the real genuine-in-use test — natural browsing the model was NOT trained on.</p>
+    <p class="muted">Move and drag the mouse naturally anywhere on this page for about 20 seconds, as if reading and navigating. This is the real test: movement the model was not trained on.</p>
     <div id="capArea">move the mouse here…</div>
     <div class="row"><span>Captured motion windows</span><span class="val" id="liveCount">0</span></div>
 
@@ -49,6 +49,7 @@
 
     <script src="../vendor/tf-lite.js"></script>
     <script src="features-mouse.js"></script>
+    <script src="mouse-model.js"></script>
     <script src="diag-mouse.js"></script>
   </body>
 </html>

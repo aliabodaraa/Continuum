@@ -1,0 +1,71 @@
+{
+ "preregistrationJSha256": "23db222bdb4916e5e316dc9c1fde9ced1701e066cfd3c6fcb4e7e976063b7f98",
+ "splitJSha256": "4df1abbeaf904e2be02623b6d04549a9c66719878b687d8f27d2f21287759192",
+ "phase": "P5",
+ "budget": 440,
+ "operatingPoint": {
+  "q": 20,
+  "rule": "vote",
+  "n": 60,
+  "k": 33,
+  "budget": 0.2,
+  "cal": {
+   "promptsPerMinMean": 0.19088431933037778,
+   "promptsPerMinMedian": 0.0,
+   "usersNeverPrompted": 0.9473684210526315,
+   "interruptionMean": 0.05263157894736842,
+   "impostorRunsCaught": 0.9263157894736842,
+   "impostorRunsNeverCaught": 0.0736842105263158,
+   "timeToCatchMedianS": 17.216
+  }
+ },
+ "thresholds": {
+  "user1": 0.2264894,
+  "user101": 0.04369160000000002,
+  "user104": 0.06910880000000001,
+  "user107": 0.31258700000000006,
+  "user108": 0.18847200000000003,
+  "user111": 0.210943,
+  "user115": 0.17722460000000007,
+  "user119": 0.23792880000000005,
+  "user16": 0.0914938,
+  "user19": 0.7636032,
+  "user29": 0.18023860000000003,
+  "user69": 0.2657742,
+  "user70": 0.1803702000000002,
+  "user8": 0.07032620000000002,
+  "user85": 0.6720526000000001,
+  "user86": 0.4303436,
+  "user89": 0.8328738,
+  "user9": 0.6476062,
+  "user91": 0.8385386
+ },
+ "runsCaught": {
+  "user1": 1.0,
+  "user101": 0.4444444444444444,
+  "user104": 1.0,
+  "user107": 1.0,
+  "user108": 1.0,
+  "user111": 0.8888888888888888,
+  "user115": 0.7777777777777778,
+  "user119": 1.0,
+  "user16": 1.0,
+  "user19": 1.0,
+  "user29": 1.0,
+  "user69": 1.0,
+  "user70": 1.0,
+  "user8": 0.5555555555555556,
+  "user85": 1.0,
+  "user86": 1.0,
+  "user89": 1.0,
+  "user9": 1.0,
+  "user91": 1.0
+ },
+ "spearman": 0.763157894736842,
+ "ci95": [
+  -0.09030701754385964,
+  0.7719298245614035
+ ],
+ "associationSupported": false,
+ "floor": null
+}

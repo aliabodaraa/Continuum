@@ -1,0 +1,60 @@
+{
+  "method": "permutation importance on the 100-way identification base",
+  "artifact": "/app/artifacts/mouse-ws50-aligned",
+  "nTestWindows": 21856,
+  "nClasses": 100,
+  "chance": 0.01,
+  "cleanTop1": 0.40140007320644217,
+  "repeats": 5,
+  "features": [
+    {
+      "feature": "log_a",
+      "description": "log(1 + |change in speed|) -- acceleration",
+      "dropMean": 0.3291544655929722,
+      "dropStd": 0.001101902871412184,
+      "relativeDropPct": 82.00159580531175
+    },
+    {
+      "feature": "log_v",
+      "description": "log(1 + speed) -- how fast the pointer is travelling",
+      "dropMean": 0.3219161786237189,
+      "dropStd": 0.001464243223936286,
+      "relativeDropPct": 80.19833580303204
+    },
+    {
+      "feature": "dt",
+      "description": "time since the previous event, clipped",
+      "dropMean": 0.32080893118594433,
+      "dropStd": 0.00039950365946089073,
+      "relativeDropPct": 79.92248945628633
+    },
+    {
+      "feature": "isClick",
+      "description": "1 while a button is Pressed/Released/Drag, else 0",
+      "dropMean": 0.1476207906295754,
+      "dropStd": 0.0011908710457538252,
+      "relativeDropPct": 36.77647327026103
+    },
+    {
+      "feature": "dtheta",
+      "description": "turning angle between consecutive steps, divided by pi",
+      "dropMean": 0.11251830161054173,
+      "dropStd": 0.001384284267741617,
+      "relativeDropPct": 28.031460161860252
+    },
+    {
+      "feature": "dx",
+      "description": "normalised horizontal displacement, clipped to [-1, 1]",
+      "dropMean": 0.11078879941434847,
+      "dropStd": 0.0017766707319929018,
+      "relativeDropPct": 27.600592727687225
+    },
+    {
+      "feature": "dy",
+      "description": "normalised vertical displacement, clipped to [-1, 1]",
+      "dropMean": 0.05875732064421668,
+      "dropStd": 0.0012383714145384336,
+      "relativeDropPct": 14.638094152513391
+    }
+  ]
+}

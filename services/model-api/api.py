@@ -17,9 +17,11 @@ except Exception:
 try:
     from tensorflow.keras.models import load_model
     from tensorflow.keras.callbacks import EarlyStopping
+    from tensorflow.keras.utils import set_random_seed
 except Exception:
     load_model = None
     EarlyStopping = None
+    set_random_seed = None
 
 try:
     from model import build_1d_cnn_2rnn
@@ -33,6 +35,46 @@ except Exception:
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ---- SERVICE AUTHENTICATION -------------------------------------------------------
+#
+# This service had no notion of a caller. Its only protection was topology: compose gives
+# it `expose:` rather than `ports:`, so it is not bound to the host. That is not an access
+# control, and compose declared no networks at all — every container on the default bridge,
+# including the demo app and the acme sample app, could reach it directly.
+#
+# What that exposed is worse than it sounds. /api/user/predict scores caller-supplied
+# windows against a NAMED user's model, so anything on that network was a biometric oracle:
+# submit candidate windows for a victim, read back the genuine probability, and hill-climb
+# a forgery the real system will accept — no login and no session required. The same reach
+# covers /api/user/train (poison a victim's model) and /api/user/rollback (revert it).
+# confine_path() below blocks filesystem escape; it does nothing here, because the path is
+# DERIVED from the caller's own userId field rather than supplied as one.
+#
+# The key answers "is this ca-service?" — a service credential, not a user identity. The
+# question "may this request act for this person?" is answered one hop earlier, by the
+# gateway's RS256 identity assertion that ca-service verifies. Only ca-service holds both a
+# verified assertion and this key, so the two checks compose: nothing reaches a model
+# without the gateway having vouched for the principal.
+#
+# Unset = disabled, matching CA_API_KEY and PASSKEY_API_KEY, so a bare `python api.py` still
+# works for local model work. Every compose file sets it.
+MODEL_API_KEY = os.getenv("MODEL_API_KEY", "")
+if not MODEL_API_KEY:
+    print(
+        "[model-api][SECURITY] MODEL_API_KEY is unset — the scoring and training endpoints "
+        "are UNAUTHENTICATED. Set it for any deployment: openssl rand -hex 32"
+    )
+
+
+def api_key_ok(supplied):
+    """Constant-time compare so a wrong key leaks nothing through timing."""
+    if not MODEL_API_KEY:
+        return True  # check inactive
+    import hmac
+    return hmac.compare_digest(str(supplied or ""), MODEL_API_KEY)
+
+
 MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(BASE_DIR, "artifacts", "ws50", "final_model"))
 SCALER_PATH = os.getenv("SCALER_PATH", os.path.join(os.path.dirname(MODEL_PATH), "scaler.json"))
 # Storage roots, declared before anything that derives a default from them.
@@ -55,9 +97,42 @@ PORT = int(os.getenv("MODEL_PORT", "5000"))
 # caller does supply (legacy/dev tooling like the sweep scripts) is CONFINED to
 # them, so no request can make this service touch arbitrary files.
 # Mouse-modality defaults (this service's own layout, env-overridable).
-MOUSE_BASE_MODEL_PATH = os.getenv("MOUSE_BASE_MODEL_PATH", os.path.join(ARTIFACTS_DIR, "mouse-ws50-base", "final_model"))
-MOUSE_SCALER_PATH = os.getenv("MOUSE_SCALER_PATH", os.path.join(ARTIFACTS_DIR, "mouse-ws50-base", "scaler.json"))
-MOUSE_NEG_DATASET_PATH = os.getenv("MOUSE_NEG_DATASET_PATH", os.path.join(DATA_DIR, "mouse_only", "Mouse_WS50.h5"))
+# These point at mouse-ws50-gru (train_mouse_base_id.py), NOT mouse-ws50-base.
+# mouse-ws50-base came from train_mouse_base.py, which splits windows at random.
+# Windows are cut size 50 / stride 10, so neighbours share 40 of their 50 motion
+# steps: measured by CONTENT, 99.99% of its test windows share raw steps with a
+# training window and 90.8% have an immediate neighbour, so its 51.1% top-1 is
+# contamination, not generalisation. mouse-ws50-gru is session-disjoint (3-min
+# session trains, 1-min session tests) with 20 users held out entirely, and
+# reports 40.3% top-1 on 100-way identification against a 1% chance level.
+# It is also the artifact every mouse evaluation and docs/MOUSE_MODALITY.md
+# describe; both scalers are 7-dimensional, so the wrong one loaded silently.
+#
+# UPDATE: now mouse-ws50-aligned, retrained after the TRAIN/SERVE SKEW was
+# fixed. The browser (sdk/js/mouse-features.js) breaks streams at 0.5 s, drops
+# zero-displacement moves and skips near-static windows; the training data was
+# built with a 2.0 s break and neither filter, so the deployed model was
+# scoring a feature distribution it had never been trained on. That gap was
+# measured in production: 52% of every live window was zero-displacement filler
+# emitted during scrolling, which pinned scores near 0.28 and caused constant
+# false locks. preprocess_mouse.py now applies the browser's rules and this
+# base was retrained under them.
+#
+# On SapiMouse the change is statistically indistinguishable — paired AUC
+# difference at 20 windows is +0.0000, 95% CI [-0.0131, +0.0167], better for
+# 7 of 20 subjects. That is expected and is NOT the justification: SapiMouse is
+# a dense clicking task with no scrolling, so the filters remove only 0.5% of
+# its windows and it cannot exercise the defect. The justification is
+# correctness — production must score what it was trained on — and the
+# measurement above establishes only that the fix costs nothing.
+# UPDATE (2026-09-13): mouse-fcn-a5, the configuration the pre-registered study selected
+# (artifacts/repr_arch_study/RUN_LOG.md): SapiMouse's FCN on (|dx|, |dy|) windows, trained by
+# train_mouse_fcn.py on the 100 base users. Its arch.json tells train_user_payload which layers
+# to freeze. Negatives now come from BASE users only: the previous file pooled all 120 users,
+# held-out ones included, which is harmless for real users but contaminates held-out evaluation.
+MOUSE_BASE_MODEL_PATH = os.getenv("MOUSE_BASE_MODEL_PATH", os.path.join(ARTIFACTS_DIR, "mouse-fcn-a5", "final_model"))
+MOUSE_SCALER_PATH = os.getenv("MOUSE_SCALER_PATH", os.path.join(ARTIFACTS_DIR, "mouse-fcn-a5", "scaler.json"))
+MOUSE_NEG_DATASET_PATH = os.getenv("MOUSE_NEG_DATASET_PATH", os.path.join(DATA_DIR, "mouse_only", "Mouse_A5_W50_base.h5"))
 
 
 def confine_path(p):
@@ -235,6 +310,148 @@ def user_model_path(user_id, modality="keystroke"):
     return os.path.join(ARTIFACTS_DIR, "users", f"user-{safe_user_id}", leaf)
 
 
+# ---- ACTION-BASED mouse path (Antal & Egyed-Zsigmond, IET Biometrics 2019) --
+# The window path above segments motion into fixed 50-step windows, a parameter
+# carried over from the KEYSTROKE method of Lu et al. that has no published
+# basis for a pointer. This path segments into mouse ACTIONS and scores each
+# with a Random Forest over the paper's 39 features, which is the field's
+# standard and what the deployed mouse channel now uses.
+#
+# The Random Forest is chosen over the CNN+GRU arm on a measured operating
+# point, not on preference: at a 1% false-accept budget it reaches TAR 35.11%
+# against the network's 7.14% on the same 20 held-out subjects, even though the
+# two have identical AUC (0.947). TAR@FAR=1% is what decides whether the channel
+# is usable as a step-up trigger.
+MOUSE_ACTION_DATASET_PATH = os.getenv(
+    "MOUSE_ACTION_DATASET_PATH", os.path.join(DATA_DIR, "mouse_only", "Mouse_Actions.h5"))
+MOUSE_ACTION_FEATURES = 39
+MOUSE_ACTION_TREES = 100        # the paper's Random Forest size
+MOUSE_ACTION_SET_SIZE = 20      # the paper: 10-20 actions are needed per decision
+_action_negatives_cache = {}
+
+
+def user_action_model_path(user_id):
+    safe = str(user_id).replace("/", "").replace("\\", "")
+    return os.path.join(ARTIFACTS_DIR, "users", f"user-{safe}", "mouse_action_model.joblib")
+
+
+def to_action_array(value):
+    arr = np.array(value, dtype=np.float64)
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    if arr.ndim != 2 or arr.shape[1] != MOUSE_ACTION_FEATURES:
+        raise ValueError(
+            f"actions must be (n, {MOUSE_ACTION_FEATURES}); got {arr.shape}")
+    arr[~np.isfinite(arr)] = 0.0
+    return arr
+
+
+def get_action_negatives(max_actions=4000, dataset_path=None):
+    """Real actions from other people, for the per-user Random Forest."""
+    path = dataset_path or MOUSE_ACTION_DATASET_PATH
+    if path not in _action_negatives_cache:
+        import h5py
+        with h5py.File(path, "r") as f:
+            X = np.array(f["X"], dtype=np.float64)
+        rng = np.random.default_rng(13)
+        if len(X) > max_actions:
+            X = X[rng.choice(len(X), size=max_actions, replace=False)]
+        X[~np.isfinite(X)] = 0.0
+        _action_negatives_cache[path] = X
+        print(f"Loaded {len(X)} impostor actions from {path}")
+    return _action_negatives_cache[path]
+
+
+def train_user_actions_payload(payload):
+    """Per-user Random Forest over 39 action features."""
+    try:
+        from joblib import dump
+        from sklearn.ensemble import RandomForestClassifier
+    except Exception as exc:
+        return {"error": f"scikit-learn/joblib unavailable: {exc}"}, 503
+    try:
+        pos = to_action_array(payload.get("actions") or [])
+    except ValueError as exc:
+        return {"error": str(exc)}, 400
+
+    min_actions = int(payload.get("minActions", 40))
+    if len(pos) < min_actions:
+        return {"error": f"not enough actions: {len(pos)} collected, {min_actions} required",
+                "actionCount": int(len(pos)),
+                "requiredActions": min_actions}, 400
+
+    raw_neg = payload.get("negativeActions")
+    if raw_neg:
+        neg = to_action_array(raw_neg)
+        neg_source = "app-users"
+    else:
+        pool = get_action_negatives()
+        rng = np.random.default_rng(21)
+        take = min(len(pos), len(pool))
+        neg = pool[rng.choice(len(pool), size=take, replace=False)]
+        neg_source = "dataset"
+
+    X = np.vstack([pos, neg])
+    y = np.concatenate([np.ones(len(pos)), np.zeros(len(neg))])
+
+    clf = RandomForestClassifier(n_estimators=MOUSE_ACTION_TREES,
+                                 random_state=13, n_jobs=-1)
+    clf.fit(X, y)
+
+    path = user_action_model_path(payload["userId"])
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    dump(clf, path)
+    _user_action_models.pop(path, None)
+
+    # Out-of-bag-style sanity: resubstitution accuracy on the genuine half only,
+    # reported so a caller can see the fit did something, never as a metric.
+    train_acc = float(clf.score(X, y))
+    return {
+        "ok": True, "userId": payload["userId"], "modelPath": path,
+        "actionCount": int(len(pos)), "negativeActionCount": int(len(neg)),
+        "negativeSource": neg_source, "trees": MOUSE_ACTION_TREES,
+        "setSize": MOUSE_ACTION_SET_SIZE, "trainAccuracy": train_acc,
+        "method": "Antal & Egyed-Zsigmond, IET Biometrics 8(5):285-294, 2019",
+    }, 200
+
+
+_user_action_models = {}
+
+
+def predict_user_actions_payload(payload):
+    """Score actions and aggregate by the paper's mean-of-k rule."""
+    try:
+        from joblib import load
+    except Exception as exc:
+        return {"error": f"joblib unavailable: {exc}"}, 503
+    try:
+        acts = to_action_array(payload.get("actions") or [])
+    except ValueError as exc:
+        return {"error": str(exc)}, 400
+
+    path = confine_path(payload.get("modelPath")) or user_action_model_path(payload["userId"])
+    if not os.path.exists(path):
+        return {"error": "no action model for this user", "modelPath": path}, 404
+    if path not in _user_action_models:
+        _user_action_models[path] = load(path)
+    clf = _user_action_models[path]
+
+    scores = clf.predict_proba(acts)[:, 1].astype(float)
+    k = int(payload.get("setSize", MOUSE_ACTION_SET_SIZE))
+    threshold = float(payload.get("threshold", 0.5))
+
+    # P(A) = (1/k) * sum(p_i) over the most recent k actions (the paper's rule).
+    warmup = len(scores) < k
+    set_score = float(np.mean(scores[-k:])) if len(scores) else 0.0
+    return {
+        "ok": True, "userId": payload["userId"],
+        "scores": scores.tolist(),
+        "setScore": set_score, "setSize": k, "threshold": threshold,
+        "warmup": warmup,
+        "isSuspicious": bool((not warmup) and set_score < threshold),
+    }, 200
+
+
 def to_window_array(value):
     if np is None:
         raise RuntimeError("NumPy is not installed")
@@ -403,6 +620,16 @@ def train_user_payload(payload):
         return {"error": "userId and positiveWindows are required"}, 400
 
     try:
+        # Weight init, dropout, and model.fit's batch shuffling were the one
+        # unseeded source of randomness left in this pipeline: negative sampling
+        # and the train/val split already use fixed np.random.default_rng seeds
+        # (see below), but retraining on IDENTICAL data still produced genuine-user
+        # confidence swinging from a mean of 0.92 down to 0.74 run to run, because
+        # nothing pinned TF/Keras's own RNG. Seeding it makes "retrain on the same
+        # data" actually reproducible; it does not by itself make any one fit better.
+        if set_random_seed is not None:
+            set_random_seed(int(payload.get("trainSeed", 7)))
+
         positives = to_window_array(payload["positiveWindows"])
 
         # Modality-aware storage, OWNED here: callers send `modality`
@@ -482,7 +709,17 @@ def train_user_payload(payload):
         if neg_groups is not None and len(neg_groups) >= len(n_keep):
             neg_groups = [neg_groups[i] for i in n_keep]
 
-        p_tr, p_va, p_how = split_no_overlap(len(positives), pos_groups, val_fraction, gap)
+        # Evaluation-only option (protocol J, PREREGISTRATION_J.md): the caller names which positive
+        # windows train and which validate, by index into positiveWindows; windows in neither list
+        # (held-out or purged at a boundary) are not used for fitting. Absent in production calls.
+        explicit = payload.get("explicitSplit")
+        if explicit is not None:
+            pos_map = {orig: new for new, orig in enumerate(p_keep)}
+            p_tr = [pos_map[i] for i in explicit.get("train", []) if i in pos_map]
+            p_va = [pos_map[i] for i in explicit.get("val", []) if i in pos_map]
+            p_how = "explicit"
+        else:
+            p_tr, p_va, p_how = split_no_overlap(len(positives), pos_groups, val_fraction, gap)
         n_tr, n_va, n_how = split_no_overlap(len(negatives), neg_groups, val_fraction, gap)
         split_strategy = f"positives={p_how}, negatives={n_how}"
 
@@ -514,7 +751,19 @@ def train_user_payload(payload):
         # input shape matches; otherwise train from scratch.
         model_instance = None
         trained_from = "scratch"
+        freeze_names = []
         rnn_type = "gru" if "gru" in base_model_path.lower() else "lstm"
+        # A base exported with an arch.json sidecar (train_mouse_fcn.py) declares its own
+        # feature layer and the layers to freeze; such bases are personalised generically
+        # below instead of being rebuilt as a CNN+GRU. Bases without it keep the original path.
+        arch_meta = {}
+        arch_json = os.path.join(os.path.dirname(os.path.normpath(base_model_path)), "arch.json")
+        if base_model_path and os.path.exists(arch_json):
+            try:
+                with open(arch_json) as fh:
+                    arch_meta = json.load(fh)
+            except Exception as exc:
+                print(f"Warning: unreadable {arch_json}: {exc}")
         model_units = int(os.getenv("MODEL_UNITS", "16"))
         if os.path.exists(base_model_path):
             try:
@@ -526,6 +775,19 @@ def train_user_payload(payload):
                         # freeze only Conv1D below.
                         model_instance = base
                         trained_from = "base-model-fine-tune"
+                    elif arch_meta:
+                        # Generic feature-extractor transfer (e.g. SapiMouse's FCN): keep every
+                        # base layer up to the declared embedding, add a fresh binary head, and
+                        # freeze the declared layers -- the same procedure the pre-registered
+                        # study evaluated (repr_arch_study.personalise).
+                        from tensorflow.keras import Model as _Model
+                        from tensorflow.keras.layers import Dense as _Dense
+                        emb = base.get_layer(arch_meta.get("embedding_layer", "embedding")).output
+                        model_instance = _Model(base.input, _Dense(2, activation="softmax", name="head")(emb))
+                        freeze_names = list(arch_meta.get("freeze", []))
+                        trained_from = "base-feature-extractor"
+                        print(f"  transfer: {arch_meta.get('arch')} base, embedding "
+                              f"{int(emb.shape[-1])}-d, freezing {freeze_names}")
                     else:
                         # FEATURE-EXTRACTOR base (e.g. the mouse USER-ID model, which
                         # has an N-user head). Copy every layer EXCEPT the head into a
@@ -566,7 +828,11 @@ def train_user_payload(payload):
         # motion/rhythm features survive small-sample fine-tuning; the GRU + new
         # Dense head adapt to the individual user. From scratch: everything trains.
         if trained_from in ("base-model-fine-tune", "base-feature-extractor"):
-            model_instance.layers[0].trainable = False
+            if freeze_names:
+                for name in freeze_names:
+                    model_instance.get_layer(name).trainable = False
+            else:
+                model_instance.layers[0].trainable = False
 
         learning_rate = 3e-4 if trained_from in ("base-model-fine-tune", "base-feature-extractor") else 1e-3
         model_instance.compile(
@@ -615,10 +881,25 @@ def train_user_payload(payload):
             calibration_predictions[:, 1],
             y_val,
         )
+        # Scores of the user's own enrolment windows under the new model, as percentiles. The
+        # mouse channel's per-user threshold is the q-th percentile of these (the operating
+        # point the pre-registered study selects), so the caller can store it with the profile.
+        enrol_scores = model_instance.predict(pos_s, batch_size=1024, verbose=0)[:, 1]
+        enrol_percentiles = {str(q): float(np.percentile(enrol_scores, q))
+                             for q in (1, 2, 5, 10, 15, 20, 30, 40, 50)}
+        # The same percentiles over the genuine windows held out from training (validation). They
+        # are out-of-sample, unlike the enrolment scores above (artifacts/repr_arch_study,
+        # PREREGISTRATION_H.md compares the two sources, and a third, for the threshold).
+        val_genuine = calibration_predictions[:, 1][y_val == 1] if len(y_val) else np.empty(0)
+        val_percentiles = ({str(q): float(np.percentile(val_genuine, q))
+                            for q in (1, 2, 5, 10, 15, 20, 30, 40, 50)} if len(val_genuine) else None)
         return {
             "ok": True,
             "userId": payload["userId"],
             "modelPath": path,
+            "enrolScorePercentiles": enrol_percentiles,
+            "validationScorePercentiles": val_percentiles,
+            "validationGenuineScores": [float(v) for v in val_genuine],
             "positiveWindowCount": int(len(positives)),
             "negativeWindowCount": int(len(negatives)),
             "negativeSource": negative_source,
@@ -713,6 +994,18 @@ def health_payload():
 def create_flask_app():
     app = Flask(__name__)
 
+    @app.before_request
+    def _require_service_key():
+        # /health stays open: it is how the orchestrator decides whether this container is
+        # ready, it reveals nothing beyond "TensorFlow loaded", and gating it would mean
+        # handing the healthcheck a credential.
+        if request.path == "/health":
+            return None
+        if not api_key_ok(request.headers.get("X-Api-Key")):
+            print(f"[model-api][SECURITY] rejected {request.method} {request.path} — bad or missing X-Api-Key")
+            return jsonify({"error": "invalid_or_missing_api_key"}), 401
+        return None
+
     @app.route("/api/predict", methods=["POST"])
     def predict():
         payload, status = predict_payload(request.get_json())
@@ -720,12 +1013,24 @@ def create_flask_app():
 
     @app.route("/api/user/train", methods=["POST"])
     def train_user():
-        payload, status = train_user_payload(request.get_json())
+        body = request.get_json()
+        # An `actions` field selects the action-based mouse path; `windows`
+        # keeps the original window path. Dispatching on the payload rather
+        # than on a mode flag means an old client cannot accidentally land in
+        # the new pipeline or the reverse.
+        if body and body.get("actions") is not None:
+            payload, status = train_user_actions_payload(body)
+        else:
+            payload, status = train_user_payload(body)
         return jsonify(payload), status
 
     @app.route("/api/user/predict", methods=["POST"])
     def predict_user():
-        payload, status = predict_user_payload(request.get_json())
+        body = request.get_json()
+        if body and body.get("actions") is not None:
+            payload, status = predict_user_actions_payload(body)
+        else:
+            payload, status = predict_user_payload(body)
         return jsonify(payload), status
 
     @app.route("/api/user/rollback", methods=["POST"])
@@ -758,6 +1063,14 @@ class ContinuumHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path not in ("/api/predict", "/api/user/train", "/api/user/predict", "/api/user/rollback"):
             self._send_json({"error": "Not found"}, 404)
+            return
+
+        # The stdlib fallback server enforces the same credential as the Flask app. Leaving
+        # it open would mean the protection quietly disappeared on any host where Flask
+        # failed to import — exactly the situation where nobody is looking.
+        if not api_key_ok(self.headers.get("X-Api-Key")):
+            print(f"[model-api][SECURITY] rejected POST {self.path} — bad or missing X-Api-Key")
+            self._send_json({"error": "invalid_or_missing_api_key"}, 401)
             return
 
         try:

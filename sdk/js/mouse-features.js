@@ -4,7 +4,11 @@
  *
  * Raw event: { t (ms, from evt.timeStamp), x, y, state }
  *   state ∈ "Move" | "Pressed" | "Released" | "Drag"
- * Feature vector F=7: [dx, dy, v, a, dtheta, dt, is_click]
+ * Feature vector F=2: [|dx|, |dy|] in PIXELS per step -- SapiMouse's best raw representation
+ * (Antal, Fejer & Buza, IEEE SACI 2021, Table I), adopted by the pre-registered study in
+ * artifacts/repr_arch_study (Experiment A). The step filter below is unchanged; window selection
+ * still uses the screen-normalised path, which depends only on |dx| and |dy|, so the windows kept
+ * are bit-identical to the ones the model was trained and evaluated on.
  */
 (function () {
   const SCREEN_SCALE = 1920.0;
@@ -14,24 +18,17 @@
   // with extension/src/features-mouse.js — the two must agree or the SDK and the extension
   // extract different features from identical motion.
   const IDLE_SPLIT_SECONDS = 0.5;
-  const DT_CLIP_SECONDS = 1.0;
   const WINDOW_SIZE = 50;
   const WINDOW_STRIDE = 10;
   // Minimum movement for a window to be worth scoring (same value as the extension).
   const MIN_WINDOW_PATH = 0.08;
 
-  const clip = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-
   function eventsToSteps(events) {
     const steps = [];
     let prev = null; // {t, x, y}
-    let prevV = 0;
-    let prevDir = null;
     for (const e of events) {
       if (prev === null) {
         prev = { t: e.t, x: e.x, y: e.y };
-        prevDir = null;
-        prevV = 0;
         continue;
       }
       const dtMs = e.t - prev.t;
@@ -42,8 +39,6 @@
       }
       if (dt > IDLE_SPLIT_SECONDS) {
         prev = { t: e.t, x: e.x, y: e.y };
-        prevDir = null;
-        prevV = 0;
         continue;
       }
       const dxPx = e.x - prev.x;
@@ -61,29 +56,10 @@
       // dx/dy/dt from the last real position and a long stationary spell still falls to the
       // IDLE_SPLIT rule above.
       if (dist === 0 && e.state !== "Pressed" && e.state !== "Released") continue;
-      const v = dist / Math.max(dtMs, 1.0);
-      const a = Math.abs(v - prevV);
-      const direction = dist > 0 ? Math.atan2(dyPx, dxPx) : (prevDir || 0);
-      let dtheta = 0;
-      if (prevDir !== null && dist > 0) {
-        const d = direction - prevDir;
-        dtheta = ((d + Math.PI) % (2 * Math.PI)) - Math.PI;
-      }
-      const isClick =
-        e.state === "Pressed" || e.state === "Released" || e.state === "Drag" ? 1 : 0;
-
-      steps.push([
-        clip(dxPx / SCREEN_SCALE, -1, 1),
-        clip(dyPx / SCREEN_SCALE, -1, 1),
-        Math.log1p(v),
-        Math.log1p(a),
-        dtheta / Math.PI,
-        Math.min(dt, DT_CLIP_SECONDS),
-        isClick,
-      ]);
+      // Pixels, unclipped: the model reads the magnitude of each step. Clicks at zero
+      // displacement stay in the stream as [0, 0], exactly as in training.
+      steps.push([Math.abs(dxPx), Math.abs(dyPx)]);
       prev = { t: e.t, x: e.x, y: e.y };
-      prevV = v;
-      if (dist > 0) prevDir = direction;
     }
     return steps;
   }
@@ -91,7 +67,11 @@
   // Total normalised distance travelled across a window — how much the pointer actually moved.
   function windowPathLength(win) {
     let s = 0;
-    for (let i = 0; i < win.length; i++) s += Math.hypot(win[i][0], win[i][1]);
+    // Same value as before the representation change: hypot(clip(dx/1920), clip(dy/1920))
+    // depends only on |dx| and |dy|.
+    for (let i = 0; i < win.length; i++) {
+      s += Math.hypot(Math.min(win[i][0] / SCREEN_SCALE, 1), Math.min(win[i][1] / SCREEN_SCALE, 1));
+    }
     return s;
   }
 
@@ -151,5 +131,7 @@
     createMouseTracker,
     WINDOW_SIZE,
     WINDOW_STRIDE,
+    FEATURES: 2,
+    FEATURE_VERSION: "a5-absdxdy-v1",
   };
 })();

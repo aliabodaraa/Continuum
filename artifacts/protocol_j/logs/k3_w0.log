@@ -1,0 +1,498 @@
+2026-09-19 13:38:36.705489: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-09-19 13:38:36.758808: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+Loaded 2000 impostor windows from /app/data/mouse_only/Mouse_A5_W50_base60.h5
+Feature scaler loaded from /app/artifacts/mouse-fcn-a5-k60/scaler.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S2F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S2F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S2B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S2B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S2B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S2B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S2B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S2B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S2B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S2B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S2B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S2B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S2B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S2B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S2B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S2B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S2B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S2B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S2B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S2B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S2B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S2B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S2B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S2B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user5/S2B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user5/S2B11
+[K3 w0] wrote /app/artifacts/repr_arch_study/parts/K3/user5.json (S2 on 660 windows)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B11
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B12
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B12
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B13
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B13
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B14
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B14
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B15
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B16
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B16
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user11/S2B17
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user11/S2B17
+[K3 w0] wrote /app/artifacts/repr_arch_study/parts/K3/user11.json (S2 on 990 windows)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S2F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S2F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S2B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S2B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S2B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S2B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S2B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S2B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S2B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S2B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S2B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S2B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S2B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S2B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S2B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S2B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S2B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S2B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S2B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S2B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S2B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S2B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S2B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S2B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user40/S2B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user40/S2B11
+[K3 w0] wrote /app/artifacts/repr_arch_study/parts/K3/user40.json (S2 on 660 windows)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2B11
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user43/S2B12
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user43/S2B12
+[K3 w0] wrote /app/artifacts/repr_arch_study/parts/K3/user43.json (S2 on 715 windows)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2B11
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user50/S2B12
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user50/S2B12
+[K3 w0] wrote /app/artifacts/repr_arch_study/parts/K3/user50.json (S2 on 715 windows)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2B11
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user56/S2B12
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user56/S2B12
+[K3 w0] wrote /app/artifacts/repr_arch_study/parts/K3/user56.json (S2 on 715 windows)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S2F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S2F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S2B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S2B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S2B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S2B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S2B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S2B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S2B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S2B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S2B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S2B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S2B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S2B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S2B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S2B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S2B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S2B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S2B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S2B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S2B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S2B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S2B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S2B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user81/S2B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user81/S2B11
+[K3 w0] wrote /app/artifacts/repr_arch_study/parts/K3/user81.json (S2 on 660 windows)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S2F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S2F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S2B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S2B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S2B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S2B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S2B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S2B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S2B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S2B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S2B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S2B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S2B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S2B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S2B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S2B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S2B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S2B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S2B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S2B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S2B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S2B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S2B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S2B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user96/S2B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user96/S2B11
+[K3 w0] wrote /app/artifacts/repr_arch_study/parts/K3/user96.json (S2 on 660 windows)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B11
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B12
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B12
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B13
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B13
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B14
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B14
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B15
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B16
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B16
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B17
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B17
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B18
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B18
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B19
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B19
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B20
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B20
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user105/S2B21
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user105/S2B21
+[K3 w0] wrote /app/artifacts/repr_arch_study/parts/K3/user105.json (S2 on 1210 windows)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B11
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B12
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B12
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K3/user112/S2B13
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K3/user112/S2B13
+[K3 w0] wrote /app/artifacts/repr_arch_study/parts/K3/user112.json (S2 on 770 windows)

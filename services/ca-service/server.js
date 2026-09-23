@@ -7,7 +7,11 @@ const crypto = require("crypto");
 const db = require("./db");
 const ks = require("./lib/keystrokeSecurity");
 const mouse = require("./lib/mouse");
+const mouseActions = require("./lib/mouseActions");
 const lock = require("./lib/lock");
+const decisionState = require("./lib/decisionState");
+const trainingQueue = require("./lib/trainingQueue");
+const { ModelUnavailableError } = require("./lib/modelClient");
 
 const PORT = Number(process.env.PORT || 4100);
 const API_KEY = process.env.CA_API_KEY || "";
@@ -37,7 +41,12 @@ function riskLevel(isWarmup, isSuspicious) {
 // ---- adaptive-learning + paste policy (ported from the old demo route) ----
 const ADAPTIVE_CONFIDENCE_MIN = 0.8;
 const ADAPTIVE_RETRAIN_EVERY = 3;
-const adaptiveRetrainsInFlight = new Set();
+// A high MEAN can hide one weak window; every window in a contributed packet must
+// clear this floor too, or a borderline moment could quietly enter the training set.
+const ADAPTIVE_WINDOW_FLOOR = 0.8;
+// At most one adaptive contribution accepted per calendar day, so the training pool
+// reflects typing across different sessions/times rather than one unusually clean sitting.
+const ADAPTIVE_MAX_PER_DAY = 1;
 const PASTE_POLICY_MAX_CHARS = 80;
 // Debounce keystroke CHALLENGES (not scoring): challenge when >= KS_SUSPICIOUS_MIN of the
 // last KS_SUSPICIOUS_WINDOW checks are suspicious (a SLIDING window, not strictly
@@ -47,7 +56,10 @@ const PASTE_POLICY_MAX_CHARS = 80;
 // overwhelming-impostor) bypass the debounce and challenge immediately.
 const KS_SUSPICIOUS_WINDOW = 3;
 const KS_SUSPICIOUS_MIN = 2;
-const suspiciousHistory = new Map(); // userId -> recent booleans (last KS_SUSPICIOUS_WINDOW)
+// The history itself is PERSISTED (lib/decisionState.js). It was a Map here, which made
+// every restart an amnesty: an impostor one suspicious check short of a step-up resumed at
+// zero after any deploy, crash or OOM kill. A debounce whose evidence cannot survive a
+// restart is a debounce with a reset button.
 const PASTE_POLICY_MIN_TYPED_COVERAGE = 0.6;
 
 function pastePolicyViolation(quality) {
@@ -80,21 +92,56 @@ function countTrainingSamplesSince(userId, trainedAt) {
     )
     .get(userId, trainedAt || "1970-01-01").count;
 }
+// A repeated phrase teaches the model nothing new and lets one piece of content
+// silently dominate the positive class. text_hash is already computed and stored on
+// every sample (storeTextSample); this just checks it before accepting a new one.
+function hasDuplicateTrainingText(userId, hash) {
+  return (
+    db
+      .prepare(
+        `SELECT 1 FROM keystroke_texts WHERE user_id = ? AND is_training = 1 AND text_hash = ? LIMIT 1`,
+      )
+      .get(userId, hash) != null
+  );
+}
+// Every already-enrolled sample's raw events, for the rhythm-consistency check — the
+// comparison needs raw digraph timing, not the derived windows or the model's opinion.
+function getTrainingEventsForUser(userId) {
+  const textIds = db
+    .prepare(`SELECT id FROM keystroke_texts WHERE user_id = ? AND is_training = 1`)
+    .all(userId)
+    .map((r) => r.id);
+  return textIds.map((id) =>
+    db
+      .prepare(
+        `SELECT key_code as keyCode, event_type as eventType, timestamp_relative as timestampRelative,
+                field_name as fieldName, field_type as fieldType
+         FROM keystroke_events WHERE keystroke_text_id = ? ORDER BY timestamp_relative ASC`,
+      )
+      .all(id),
+  );
+}
+// Caps adaptive contributions to ADAPTIVE_MAX_PER_DAY per calendar day (UTC), so the
+// training pool is built from typing spread across sessions rather than one sitting.
+function contributionsToday(userId) {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) as count FROM keystroke_texts
+       WHERE user_id = ? AND is_training = 1 AND sample_purpose = 'adaptive'
+         AND date(submitted_at) = date('now')`,
+    )
+    .get(userId);
+  return row ? row.count : 0;
+}
+// Records that a retrain is owed and returns immediately. Previously a fire-and-forget
+// `setImmediate` guarded by an in-memory Set — a restart lost the run AND the guard, and
+// nothing anywhere recorded that the work had been owed, so the user's model quietly
+// stopped keeping up with them. The queue row is that record; see lib/trainingQueue.js.
 function maybeRetrainAdaptively(userId) {
-  if (adaptiveRetrainsInFlight.has(userId)) return;
   const profile = ks.getUserTypingProfile(userId, db);
-  if (!profile || !profile.trainedAt) return;
-  if (countTrainingSamplesSince(userId, profile.trainedAt) < ADAPTIVE_RETRAIN_EVERY) return;
-  adaptiveRetrainsInFlight.add(userId);
-  setImmediate(async () => {
-    try {
-      await ks.trainUserTypingProfile(userId, db);
-    } catch (err) {
-      console.error(`[adaptive] retrain failed for ${userId}:`, err.message);
-    } finally {
-      adaptiveRetrainsInFlight.delete(userId);
-    }
-  });
+  if (!profile || !profile.trainedAt) return null;
+  if (countTrainingSamplesSince(userId, profile.trainedAt) < ADAPTIVE_RETRAIN_EVERY) return null;
+  return trainingQueue.enqueue(userId, "keystroke", "adaptive");
 }
 
 // Salted so the hashes are not a rainbow-table of common phrases. The salt is per
@@ -140,6 +187,34 @@ function storeTextSample({ userId, textContent, keystrokeEvents, metrics, evalua
     }
   }
   return result.lastInsertRowid;
+}
+
+/**
+ * One error responder for every route that touches the model.
+ *
+ * The important case is ModelUnavailableError. When the model cannot answer, a
+ * continuous-auth layer has three options and two of them are wrong:
+ *   fail-open   — call it genuine. Anyone who can stall the model gets a free pass, which
+ *                 defeats the system.
+ *   fail-closed — call it suspicious. A model outage then steps up every legitimate user at
+ *                 once: a self-inflicted denial of service.
+ *   no verdict  — refuse to answer. This is what we do.
+ *
+ * 503 issues no verdict, mints no risk token, sets no lock and records no clean run. The
+ * caller's last known state stands, so nothing is granted and nothing is revoked. The SDK
+ * already ignores non-200 responses, so this needed no client change. It is logged at
+ * SECURITY level precisely because it is the quiet option: a rise in these is either an
+ * outage or someone arranging one, and either way it must be visible.
+ */
+function sendError(res, where, err, extra = {}) {
+  if (err instanceof ModelUnavailableError) {
+    console.error(`[${where}][SECURITY] no verdict issued — ${err.message}`);
+    return res.status(503).json({ ...extra, ok: false, error: "model_unavailable", retryable: true });
+  }
+  console.error(`${where}:`, err);
+  // The message is deliberately generic. These handlers used to return raw `err.message`,
+  // which leaks SQL fragments, file paths and model internals to whoever provoked the error.
+  return res.status(500).json({ ...extra, ok: false, error: "internal_error" });
 }
 
 const app = express();
@@ -242,7 +317,7 @@ app.post("/v1/keystroke/enroll", requireIdentity, async (req, res) => {
         : typingStatus.trained ? "CNN/LSTM typing rhythm model trained" : "Enrollment sample saved",
       textId, trained: !!profile, trainingError, typingStatus, typingQuality: quality,
     });
-  } catch (err) { console.error("enroll:", err); res.status(500).json({ error: err.message }); }
+  } catch (err) { return sendError(res, "enroll", err); }
 });
 
 app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
@@ -294,13 +369,11 @@ app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
     // model scores it genuine, so it forces suspicion AND counts as a strong signal.
     const effectiveSuspicious = (!isWarmup && evaluation.isSuspicious) || degenerateInput;
     const strongSignal = overwhelmingImpostor || unverifiable || isPastePolicy || degenerateInput;
-    let hist = suspiciousHistory.get(userId) || [];
-    hist.push(effectiveSuspicious);
-    if (hist.length > KS_SUSPICIOUS_WINDOW) hist = hist.slice(-KS_SUSPICIOUS_WINDOW);
-    suspiciousHistory.set(userId, hist);
-    const recentSuspicious = hist.filter(Boolean).length;
+    // Persisted, so the evidence accumulated so far outlives a restart.
+    const { suspiciousCount: recentSuspicious } =
+      decisionState.pushKeystrokeVerdict(userId, effectiveSuspicious, KS_SUSPICIOUS_WINDOW);
     const passkeyTriggered = !!hasPasskey && effectiveSuspicious && (strongSignal || recentSuspicious >= KS_SUSPICIOUS_MIN);
-    if (passkeyTriggered) { suspiciousHistory.set(userId, []); lock.setLocked(userId); }
+    if (passkeyTriggered) { decisionState.resetKeystrokeHistory(userId); lock.setLocked(userId); }
 
     ks.logAuthDecision(userId, db, { source: "check", evaluation, passkeyTriggered });
 
@@ -321,7 +394,7 @@ app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
           : "Typing rhythm does not match. Passkey verification required.")
         : isWarmup ? "Warming up — building the first evaluation packet." : "Typing rhythm verified.",
     });
-  } catch (err) { console.error("check:", err); res.status(500).json({ error: err.message }); }
+  } catch (err) { return sendError(res, "check", err, { checked: false }); }
 });
 
 app.post("/v1/keystroke/submit", requireIdentity, async (req, res) => {
@@ -348,6 +421,14 @@ app.post("/v1/keystroke/submit", requireIdentity, async (req, res) => {
       sourcePath: req.body.sourcePath || null, isTraining: adaptiveTrainingSample,
     });
     if (adaptiveTrainingSample) maybeRetrainAdaptively(userId);
+    // Opportunistic pool-refresh check — piggybacks on regular activity rather than a
+    // scheduler (none exists in this system). Only meaningful for a user who already has a
+    // model; skip if this submission already queued an adaptive retrain (enqueue() is
+    // idempotent either way, so this is just avoiding a redundant DB scan, not a correctness
+    // requirement).
+    if (!adaptiveTrainingSample && ks.getUserTypingProfile(userId, db) && ks.needsPoolRefresh(userId, db)) {
+      trainingQueue.enqueue(userId, "keystroke", "pool-refresh");
+    }
 
     const passkeyTriggered = !passkeyVerified && evaluation.isSuspicious && !!hasPasskey;
     if (passkeyVerified) lock.clearLocked(userId);
@@ -374,7 +455,7 @@ app.post("/v1/keystroke/submit", requireIdentity, async (req, res) => {
       requiresPasskeyChallenge: passkeyTriggered,
       riskToken: signRisk(userId, riskLevel(false, evaluation.isSuspicious), "keystroke"),
     });
-  } catch (err) { console.error("submit:", err); res.status(500).json({ error: err.message }); }
+  } catch (err) { return sendError(res, "submit", err); }
 });
 
 app.post("/v1/keystroke/contribute", requireIdentity, async (req, res) => {
@@ -401,6 +482,41 @@ app.post("/v1/keystroke/contribute", requireIdentity, async (req, res) => {
         rollingMean: rolling,
       });
     }
+    // A high MEAN can hide one weak window inside an otherwise-clean packet — require
+    // every recent window to clear the floor too.
+    const recentScores = Array.isArray(evaluation.recentWindowScores) ? evaluation.recentWindowScores : [];
+    const worstWindow = recentScores.length ? Math.min(...recentScores) : rolling;
+    if (worstWindow < ADAPTIVE_WINDOW_FLOOR) {
+      return res.status(422).json({
+        ok: false,
+        error: `One window in this sample scored ${Math.round(worstWindow * 100)}%, below the ${Math.round(ADAPTIVE_WINDOW_FLOOR * 100)}% floor — a good average can hide one weak moment. Try again with a fully consistent stretch of typing.`,
+        rollingMean: rolling,
+      });
+    }
+    // Model-independent check: does this sample's own timing match this user's ALREADY
+    // enrolled history, regardless of what the (possibly still-young) model thinks of it?
+    const consistency = ks.checkRhythmConsistency(keystrokeEvents, getTrainingEventsForUser(userId));
+    if (!consistency.consistent) {
+      return res.status(422).json({
+        ok: false,
+        error: `This sample's ${consistency.worstFeature} timing is unusually different from your `
+          + `enrolled rhythm (z=${consistency.worstZ.toFixed(2)}) — try again with your normal typing pace.`,
+        rollingMean: rolling,
+      });
+    }
+    const hash = textHash(textContent);
+    if (hasDuplicateTrainingText(userId, hash)) {
+      return res.status(422).json({
+        ok: false,
+        error: "This text has already been contributed — a repeated sample teaches the model nothing new.",
+      });
+    }
+    if (contributionsToday(userId) >= ADAPTIVE_MAX_PER_DAY) {
+      return res.status(422).json({
+        ok: false,
+        error: "Already contributed today. Come back another day so your model learns from typing across different sessions, not one sitting.",
+      });
+    }
     storeTextSample({
       userId, textContent: textContent || "[adaptive-contribution]", keystrokeEvents,
       metrics: evaluation.metrics, evaluation, samplePurpose: "adaptive",
@@ -410,14 +526,26 @@ app.post("/v1/keystroke/contribute", requireIdentity, async (req, res) => {
     const profile = ks.getUserTypingProfile(userId, db);
     const done = profile ? countTrainingSamplesSince(userId, profile.trainedAt) : 0;
     res.json({ ok: true, message: "Clean sample added to your model's training set.", rollingMean: rolling, adaptiveSamplesSinceRetrain: done, adaptiveRetrainEvery: ADAPTIVE_RETRAIN_EVERY });
-  } catch (err) { console.error("contribute:", err); res.status(500).json({ ok: false, error: err.message }); }
+  } catch (err) { return sendError(res, "contribute", err); }
 });
 
 app.post("/v1/keystroke/reset", requireIdentity, (req, res) => {
   const userId = uid(req);
   ks.resetUserTypingProfile(userId, db);
   db.prepare("UPDATE keystroke_texts SET is_training = 0 WHERE user_id = ?").run(userId);
+  // The debounce history is evidence against a model that no longer exists. Carrying it
+  // into re-enrollment could step the user up on their first scored check afterwards.
+  decisionState.resetKeystrokeHistory(userId);
   res.json({ ok: true, message: "Typing rhythm enrollment was reset", typingStatus: ks.getUserTypingStatus(userId, db) });
+});
+
+// ---- training jobs (durable queue) ----
+// Retraining is owed work recorded in a table, not a detached promise. This endpoint is how
+// a dashboard or an operator sees that a retrain is pending, running, or has failed —
+// previously the entire lifecycle was invisible and a lost job was indistinguishable from
+// one that had never been scheduled.
+app.get("/v1/training/jobs", requireIdentity, (req, res) => {
+  res.json(trainingQueue.statusFor(uid(req), req.query.modality || null));
 });
 
 app.post("/v1/keystroke/retrain", requireIdentity, async (req, res) => {
@@ -432,7 +560,7 @@ app.post("/v1/keystroke/retrain", requireIdentity, async (req, res) => {
       typingStatus: ks.getUserTypingStatus(userId, db),
       profile: { threshold: profile.threshold, sampleCount: profile.sampleCount, trainedAt: profile.trainedAt, trainedFrom: profile.trainedFrom },
     });
-  } catch (err) { console.error("retrain:", err); res.status(500).json({ ok: false, error: err.message }); }
+  } catch (err) { return sendError(res, "retrain", err); }
 });
 
 // ---- login-triggered background retrain when new impostors appeared ----
@@ -504,9 +632,32 @@ app.get("/v1/keystroke/metrics", requireIdentity, (req, res) => {
 });
 
 // ---- mouse ----
+// Action-based mouse — the published path (Antal & Egyed-Zsigmond 2019).
+// The window endpoints below are retained as the comparison arm.
+app.post("/v1/mouse/actions/enroll", requireIdentity, async (req, res) => {
+  try { const r = await mouseActions.enrollMouseActions(uid(req), req.body.actions); res.status(r.status).json(r.body); }
+  catch (err) { return sendError(res, "mouse-action-enroll", err); }
+});
+app.post("/v1/mouse/actions/check", requireIdentity, async (req, res) => {
+  try {
+    const r = await mouseActions.checkMouseActions(uid(req), req.body.actions);
+    if (r.body && r.body.checked) {
+      r.body.riskToken = signRisk(uid(req), riskLevel(r.body.warmup, r.body.isSuspicious), "mouse");
+    }
+    res.status(r.status).json(r.body);
+  } catch (err) { return sendError(res, "mouse-action-check", err, { checked: false }); }
+});
+app.get("/v1/mouse/actions/status", requireIdentity, (req, res) => {
+  res.json(mouseActions.mouseActionsStatus(uid(req)));
+});
+app.post("/v1/mouse/actions/reset", requireIdentity, (req, res) => {
+  const r = mouseActions.resetMouseActionProfile(uid(req));
+  res.status(r.status).json(r.body);
+});
+
 app.post("/v1/mouse/enroll", requireIdentity, async (req, res) => {
   try { const r = await mouse.enrollMouse(uid(req), req.body.windows); res.status(r.status).json(r.body); }
-  catch (err) { console.error("mouse enroll:", err); res.status(500).json({ ok: false, error: err.message }); }
+  catch (err) { return sendError(res, "mouse-enroll", err); }
 });
 app.post("/v1/mouse/check", requireIdentity, async (req, res) => {
   try {
@@ -515,7 +666,7 @@ app.post("/v1/mouse/check", requireIdentity, async (req, res) => {
       r.body.riskToken = signRisk(uid(req), riskLevel(r.body.warmup, r.body.isSuspicious), "mouse");
     }
     res.status(r.status).json(r.body);
-  } catch (err) { console.error("mouse check:", err); res.status(500).json({ ok: false, error: err.message }); }
+  } catch (err) { return sendError(res, "mouse-check", err, { checked: false }); }
 });
 app.get("/v1/mouse/status/:userId", requireIdentity, (req, res) => res.json(mouse.mouseStatus(uid(req))));
 // Destructive: drops the trained mouse profile and every stored session. The CALLER is
@@ -526,15 +677,33 @@ app.post("/v1/mouse/reset", requireIdentity, (req, res) => {
     const userId = uid(req);
     const r = mouse.resetMouseProfile(userId);
     res.json({ ok: true, message: "Mouse enrollment was reset", removedSessions: r.removedSessions, mouseStatus: mouse.mouseStatus(userId) });
-  } catch (err) { console.error("mouse reset:", err); res.status(500).json({ ok: false, error: err.message }); }
+  } catch (err) { return sendError(res, "mouse-reset", err); }
 });
 
 // Shared step-up lock (see lib/lock.js). Mouse callers (apps/demo, the
 // gateway) each run their own consecutive-strike debounce, so they set/clear
 // this explicitly; keystroke sets it directly above since ca-service already
 // decides passkeyTriggered for it.
+// Callers that own their own step-up threshold (gateway 3 strikes, demo 1) tell us when
+// they have SPENT the evidence, so the next session starts clean. The count lives here;
+// only the decision to consume it lives with them.
+app.post("/v1/mouse/streak/reset", requireIdentity, (req, res) => {
+  decisionState.resetMouseStreak(uid(req));
+  res.json({ ok: true });
+});
+
 app.post("/v1/lock/set", requireIdentity, (req, res) => { lock.setLocked(uid(req)); res.json({ ok: true }); });
 app.post("/v1/lock/clear", requireIdentity, (req, res) => { lock.clearLocked(uid(req)); res.json({ ok: true }); });
 app.get("/v1/lock/status/:userId", requireIdentity, (req, res) => res.json({ locked: lock.isLocked(uid(req)) }));
 
-app.listen(PORT, () => console.log(`CA service on http://localhost:${PORT}`));
+// The queue module knows nothing about how training is done — server.js supplies the
+// implementation. That keeps the durability machinery independent of the model code and
+// lets a test drive the worker with a fake handler.
+trainingQueue.registerHandler("keystroke", (userId) => ks.trainUserTypingProfile(userId, db));
+
+app.listen(PORT, () => {
+  console.log(`CA service on http://localhost:${PORT}`);
+  // Started after listen so a boot-time backlog cannot delay readiness — and, more to the
+  // point, so a job interrupted by the last shutdown is picked back up on this one.
+  trainingQueue.start();
+});

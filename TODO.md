@@ -7,6 +7,36 @@ Companion docs: `ARCHITECTURE.md` (system as built) · `DEPLOY.md` (ship it) · 
 
 ---
 
+## 0. Recently closed (kept for the record)
+
+Four gaps that were on this list, or should have been, are now fixed. Recorded here because
+the *reasoning* is the part worth keeping.
+
+- **model-api was unauthenticated and reachable by every container.** Compose declared no
+  networks, so the demo and acme shared a bridge with it and could score, train or roll back
+  any user's model — a biometric hill-climbing oracle. Fixed with three networks
+  (`edge` / `internal` / `model`, ca-service the only member of the last) **and**
+  `MODEL_API_KEY` on every route but `/health`. Topology alone was not enough: a future
+  misconfiguration re-attaching a container would have silently reopened it.
+- **The ca → model hop had no deadline.** A wedged TensorFlow process hung the keystroke
+  check forever — an undefined failure mode in the authentication path. Now one bounded,
+  credentialed client (`lib/modelClient.js`); a stalled model yields `503 model_unavailable`
+  (*no verdict*, neither pass nor lock), logged at `[SECURITY]`.
+- **Escalation evidence was in process memory.** The keystroke debounce and mouse strike
+  counter lived in two `Map`s and a session field, so any restart amnestied an impostor
+  mid-escalation. Now persisted in `decision_state`; callers keep their threshold, not the
+  count.
+- **Retrains were detached promises.** `setImmediate` guarded by an in-memory `Set` lost both
+  the run and the guard on restart, with nothing recording that work had been owed. Now the
+  `training_jobs` queue with boot-time recovery of interrupted runs.
+
+Two defects were found while making those changes and fixed in passing: the gateway passed
+its identity assertion to `.catch()` instead of to `fwd()` on **both** the mouse `lock/set`
+and the passkey `lock/clear` calls, so each silently 401'd — the mouse step-up lock was
+never actually set, and a verified passkey never actually cleared it.
+
+---
+
 ## 1. Tenant registration is not durable (`services/gateway/server.js`)
 
 `POST /v1/tenants` generates `siteKey` (9 random bytes) + `secret` (24 random bytes) and
@@ -29,8 +59,15 @@ truncates it; `loadJson` then falls back to `{ tenants: {} }` on the parse error
 ### 1c. Two gateway replicas would clobber each other
 `tenants` is loaded into memory once at boot and each registration rewrites the entire
 file from that in-memory copy. Two processes ⇒ last writer wins, the other's tenants are
-lost. **This is why the gateway cannot be horizontally scaled as written** — worth stating
+lost. **This is now the *only* thing keeping the gateway single-process** — worth stating
 explicitly rather than discovering it in production.
+
+> Update: this used to be one of two blockers. The other — per-user decision counters held
+> in gateway memory, which two replicas would each hold half of — is closed: the counters
+> moved into `decision_state` in ca-service. The gateway's remaining in-memory maps are
+> `pkCache` (a 60 s cache; a miss is a re-fetch, not a wrong answer) and `lastRisk` (CAEP
+> transition dedupe; after a restart the first *suspicious* still fires an event, which is
+> the safe direction — the failure mode is a redundant event, never a missed escalation).
 
 *Fix (real one):* move the tenant registry to SQLite, like `ca.db` / `passkey.db`. The
 JSON file is fine for a single-process demo and wrong for anything else.
@@ -100,6 +137,20 @@ against site-key theft, not a tenancy boundary. The tenancy boundary is the secr
 
 ---
 
+## 5b. Training still blocks inference inside model-api
+
+The queue (§0) made retraining *durable*; it did not make it *non-blocking*. model-api runs
+Flask's single-threaded server (`app.run(...)`), so a synchronous enrollment train — and a
+queued job, since the worker calls the same endpoint — occupies the one process that also
+answers `/api/user/predict`. Every concurrent keystroke check on that host waits behind it.
+
+The 5 s inference deadline now bounds the *symptom* (callers get `503 model_unavailable`
+instead of hanging), which is strictly better than before but is still a degraded
+authentication path during any training run.
+
+*Fix:* run model-api under gunicorn with more than one worker, and ideally a separate
+worker class or process for `/api/user/train` so training never occupies an inference slot.
+
 ## 6. Future work already noted elsewhere
 
 - **Mouse FAR ceiling (~24%)** — a model/biometric limit (bimodal per-user EER), confirmed by
@@ -109,3 +160,45 @@ against site-key theft, not a tenancy boundary. The tenancy boundary is the secr
   Idea worth developing: a **surface-portability conformance kit** — fixed event traces plus
   expected verdicts that any new capture surface must reproduce before it counts as a valid
   client, so a new shim can't silently skip the warmup-cap / paste / probation invariants.
+
+---
+
+## 7. Mouse: a user's threshold can collapse, and with it their protection
+
+The per-user line is the **1st percentile of that user's 330 enrolment window scores**, so in
+practice it is set by their **three lowest enrolment windows**. A user who produced a few odd
+windows while enrolling gets a line near zero — after which almost nothing ever falls below it
+and an impostor is never flagged.
+
+Measured on the first untouched group of twenty (P6, `analysis_J_P6.json`), deployed rule:
+
+| user | impostor runs caught | per-window AUC | their line |
+|---|---|---|---|
+| user92 | 5% | 0.723 | 0.009 |
+| user103 | 16% | 0.616 | 0.029 |
+| user60 | 21% | 0.723 | 0.013 |
+| user61 | 26% | 0.859 | 0.054 |
+| other 16 | 63–100% | | |
+
+Those four carry the whole gap between the two untouched groups: 77.1% (group 1, 20 users) vs
+91.8% (group 2, 20 users); group 1 without those four averages 92%. Two causes stack — the user
+is genuinely less distinctive (low AUC), *and* their line collapsed. Over all 40 untouched users
+the deployed rule catches **84.4%** of impostor runs.
+
+*Fix — none of it may be selected on the untouched groups, which are spent:*
+
+1. **Pre-register the new threshold rule before running anything.** Candidate: score each
+   enrolment sample with a model that did not train on it (Method B). Already measured on both
+   untouched groups — it works (AUC +0.018 to +0.025, better for 18 of 20 users, capture +17.9
+   points on group 1) but roughly doubles genuine prompts, so the pre-registered margin rejected
+   it. What is needed is a variant that keeps the capture gain without the prompt cost.
+2. **A floor under the personal line.** Tested as a candidate in P5 and never adopted; re-open
+   only with a stated justification, since a floor trades one user's comfort for another's safety.
+3. **Validate on data SapiMouse cannot provide.** All 120 of its users are spent (60 base, 20
+   development, 20 + 20 untouched), so any new rule must be proven on a second public dataset or
+   on the user study — not on SapiMouse again.
+4. **Keep 77.1 / 91.8 / 84.4 in the record as the "before" numbers**, whichever way the fix goes.
+
+*Why it is not simply "raise the percentile":* the percentile and the vote were chosen together
+against a measured interruption budget (Experiment I). Moving either one alone re-opens that
+trade-off, which is why this needs a pre-registered experiment rather than a tuning pass.

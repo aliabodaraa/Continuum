@@ -1,0 +1,17 @@
+{
+  "model": "mouse 1D CNN + 2GRU (identification base, binary-head export)",
+  "dataset": "SapiMouse (Antal et al., 2021)",
+  "task": "100-way user identification; 20 held-out users for enrollment experiments",
+  "window_size": 50,
+  "num_features": 7,
+  "split": "train/val = 3-min session (temporal 80/20, no cross-boundary windows); test = 1-min session",
+  "test_top1_accuracy": 0.39449121522694,
+  "test_top5_accuracy": 0.6872254758418741,
+  "chance_level": 0.01,
+  "training_epochs": 40,
+  "train_size": 54920,
+  "val_size": 13494,
+  "test_size": 21856,
+  "export_note": "best_model.h5/final_model carry Conv1D+GRU features with a fresh Dense(2) head; the head is trained during per-user fine-tuning (api.py freezes only Conv1D).",
+  "previous_pooled_binary_attempt": "unlearnable by construction (same windows labeled 1 and 0); test acc was ~0.47 = chance"
+}

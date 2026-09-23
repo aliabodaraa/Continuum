@@ -1,0 +1,65 @@
+2026-09-15 07:38:04.850806: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-09-15 07:38:04.928847: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[P0] 19 targets, 20 impostor sources | base /app/artifacts/mouse-fcn-a5-j80/final_model
+Loaded 2000 impostor windows from /app/data/mouse_only/Mouse_A5_W50_base80.h5
+Feature scaler loaded from /app/artifacts/mouse-fcn-a5-j80/scaler.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user1/mouse_model
+     user1  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user8/mouse_model
+     user8  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user9/mouse_model
+     user9  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user16/mouse_model
+    user16  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user19/mouse_model
+    user19  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user29/mouse_model
+    user29  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user69/mouse_model
+    user69  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user70/mouse_model
+    user70  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user85/mouse_model
+    user85  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user86/mouse_model
+    user86  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user89/mouse_model
+    user89  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user91/mouse_model
+    user91  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user101/mouse_model
+   user101  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user104/mouse_model
+   user104  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user107/mouse_model
+   user107  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user108/mouse_model
+   user108  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user111/mouse_model
+   user111  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user115/mouse_model
+   user115  from=base-feature-extractor neg=660 (dataset)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/P0/user119/mouse_model
+   user119  from=base-feature-extractor neg=660 (dataset)
+wrote /app/artifacts/repr_arch_study/parts/J_P0_S0.json
+exit 0

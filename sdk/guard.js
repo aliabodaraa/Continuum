@@ -47,14 +47,17 @@
 
   // window math (overwritten from config)
   var WINDOW_SIZE = 50, WINDOW_STRIDE = 10, RECENT_WINDOW_COUNT = 6, KS_MIN_CHARS = 80;
-  // MOUSE_MIN_WINDOWS must equal the server's MOUSE_SUSTAIN_WINDOW (ca-service/lib/mouse.js)
-  // and the extension's MOUSE_SUSTAIN_WINDOW. It was 6, sized for the old 6-window packet
-  // vote; with the sustained rule the server stays in warmup until it has 20, so a lower
-  // value here just makes the panel claim it is ready while the server disagrees.
-  var MOUSE_CHECK_MS = 1600, MOUSE_MIN_WINDOWS = 20, MOUSE_ENROLL_TARGET = 160;
-  // The mouse feature vector includes is_click, so enrollment needs real clicks —
-  // not just movement — or the model never learns the user's click dynamics.
-  var MOUSE_ENROLL_CLICKS = 10;
+  // MOUSE_MIN_WINDOWS = the number of windows the server's vote decides on (ca-service
+  // lib/mouse.js VOTE_N, 60 = ~17 s of movement). Sending fewer leaves every check in warm-up, so
+  // the value is taken from the server's own replies (bufferMax) whenever it reports one.
+  var MOUSE_CHECK_MS = 1600, MOUSE_MIN_WINDOWS = 60;
+  // Enrolment for the adopted pipeline (continuum/artifacts/repr_arch_study), in SAMPLES: one
+  // sample = MOUSE_SAMPLE_WINDOWS windows (~16 s of movement), MOUSE_SAMPLES_REQUIRED of them
+  // (6 x 55 = 330 windows, the measured plateau). /status reports both; these are the defaults.
+  var MOUSE_SAMPLE_WINDOWS = 55, MOUSE_SAMPLES_REQUIRED = 6;
+  // Targets to move between: they elicit varied distances and directions, which is what the
+  // model reads. Hitting them is encouraged but not counted, and the dot never runs out.
+  var MOUSE_TARGETS = Infinity;
   // Adaptive learning: after this many consecutive clean (genuine, high-confidence)
   // checks — the SDK analogue of the demo's "3 clean packets" — offer to add the run
   // to the user's training set. The CA retrains every N contributions (val-gated).
@@ -136,6 +139,9 @@
       ".wizload{position:absolute;inset:0;border-radius:16px;background:rgba(255,255,255,.82);display:none;align-items:center;justify-content:center;gap:10px;font-weight:800;color:#4f46e5;z-index:2}.wizload.on{display:flex}" +
       ".wizspin{width:20px;height:20px;border:3px solid #c7d2fe;border-top-color:#4f46e5;border-radius:50%;animation:cspin .7s linear infinite}@keyframes cspin{to{transform:rotate(360deg)}}" +
       ".samplecount{font-size:12px;font-weight:700;color:#475569;margin-bottom:8px}.samplecount b{color:#4f46e5}" +
+      ".msamp{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 10px}.msamp .mhead{font-size:15px;font-weight:800;color:#1e1b4b}" +
+      ".msamp .mpips{display:flex;gap:5px}.msamp .mpip{width:14px;height:14px;border-radius:50%;border:2px solid #4f46e5;background:transparent}.msamp .mpip.on{background:#4f46e5}" +
+      ".msamp .msub{font-size:12px;color:#64748b}" +
       ".brand{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;color:#4f46e5;letter-spacing:.4px;margin-bottom:12px}" +
       ".brand .b2{width:16px;height:16px;border-radius:5px;background:linear-gradient(135deg,#6366f1,#22d3ee)}" +
       ".t{font-size:19px;font-weight:800;color:#0f172a;margin-bottom:6px}.d{font-size:13.5px;color:#475569;line-height:1.6;margin-bottom:16px}" +
@@ -486,51 +492,121 @@
     });
   }
 
-  // Step 3 — mouse enrollment (one session of ~160 windows)
+  // ---- Mouse enrolment, in SAMPLES (the unit the typing channel also shows as "sample 2 / 5") ----
+  // One sample = MOUSE_SAMPLE_WINDOWS windows, about 16 s of moving to the dots; a profile is built
+  // once MOUSE_SAMPLES_REQUIRED samples are on file (6 x 55 = 330 windows, the measured plateau).
+  // Each sample saves itself the moment it is complete, so the user only ever sees a counter.
+  // The server enforces the same numbers (ca-service lib/mouse.js) and reports them in /status.
+  function mouseSampleFlow(opts) {
+    // opts: { title, intro, stepBar, onClose, dismissLabel, allowReset, resolveOnTrained(result) }
+    var st = { onFile: 0, required: MOUSE_SAMPLES_REQUIRED, perSample: MOUSE_SAMPLE_WINDOWS, enrolled: false };
+    var tracker = null, iv = null, saving = false, addedNow = 0;
+    function pips() {
+      var h = "";
+      for (var i = 0; i < st.required; i++) h += '<span class="mpip' + (i < st.onFile ? " on" : "") + '"></span>';
+      return h;
+    }
+    function headline() {
+      if (st.onFile >= st.required) return st.enrolled ? "Mouse protection is on ✓" : "Building your mouse model…";
+      return "Sample " + (st.onFile + 1) + " of " + st.required;
+    }
+    function render() {
+      openWiz((opts.stepBar || "") + '<div class="wizload" id="mwl"><span class="wizspin"></span><span id="mwlt">Saving sample…</span></div>'
+        + '<div class="t">' + opts.title + '</div><div class="d">' + opts.intro + '</div>'
+        + '<div class="msamp"><div class="mhead" id="mhead">' + headline() + '</div><div class="mpips">' + pips() + '</div>'
+        + '<div class="msub" id="msub">' + (st.onFile >= st.required
+          ? (st.enrolled ? "All " + st.required + " samples on file · each extra sample retrains your model" : "")
+          : (st.required - st.onFile) + " more to go · about " + (st.required - st.onFile) * 16 + " s of movement") + '</div></div>'
+        + '<div class="pad" id="cpad"><span class="padlabel">move to the dot</span></div><div class="bar"><i id="mbar"></i></div>'
+        + '<div id="mdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">this sample: 0 s of 16 s</div>'
+        + (opts.dismissLabel ? '<div style="display:flex;gap:8px"><button class="b" id="mdone" style="flex:1;background:#475569">' + opts.dismissLabel + '</button></div>' : "")
+        + (opts.allowReset ? '<div style="text-align:center;margin-top:10px"><a href="#" id="mreset" style="color:#dc2626;font-size:12px;font-weight:700;text-decoration:none">🗑️ Reset my mouse profile</a></div>' : "")
+        + '<div class="e"></div>', opts.onClose, "wide");
+      var pad = wizEl.querySelector("#cpad"), bar = wizEl.querySelector("#mbar"), diag = wizEl.querySelector("#mdiag"),
+        e = wizEl.querySelector(".e"), load = wizEl.querySelector("#mwl"), loadT = wizEl.querySelector("#mwlt");
+      var doneBtn = wizEl.querySelector("#mdone");
+      if (doneBtn) doneBtn.addEventListener("click", function () { stop(); opts.onClose(); });
+      if (opts.allowReset) {
+        wizEl.querySelector("#mreset").addEventListener("click", function (ev) {
+          ev.preventDefault();
+          resetProfile("mouse", e, function () {
+            stop();
+            try { stopMouse(); } catch (e3) {}
+            mouseOn = false; updateToggle(); setMouseRow("mut", "not enrolled");
+            st.onFile = 0; st.enrolled = false; addedNow = 0; render();
+          });
+        });
+      }
+      // Track on documentElement, NOT the pad: the live guard scores motion across the whole page,
+      // so the sample must be the same kind of movement. The pad is only a visual target.
+      tracker = window.mouseFeatures.createMouseTracker(document.documentElement);
+      spawnClickTarget(pad, MOUSE_TARGETS, function () {});
+      function tick() {
+        if (saving) return;
+        var w = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(tracker.getEvents()));
+        var n = w ? w.length : 0;
+        var secs = Math.min(16, Math.floor((n * 16) / st.perSample));
+        bar.style.width = Math.min(100, Math.round((n / st.perSample) * 100)) + "%";
+        diag.textContent = "this sample: " + secs + " s of 16 s (" + Math.min(n, st.perSample) + " / " + st.perSample + " windows)";
+        if (n >= st.perSample) save(w.slice(0, st.perSample));
+      }
+      async function save(windows) {
+        saving = true; e.style.display = "none";
+        var last = st.onFile + 1 >= st.required;
+        loadT.textContent = last && !st.enrolled ? "Saving sample " + (st.onFile + 1) + " and building your model…" : "Saving sample " + (st.onFile + 1) + "…";
+        load.classList.add("on");
+        var r = await reqJson(EP.mouseEnroll, "POST", { windows: windows });
+        load.classList.remove("on");
+        tracker.reset();
+        saving = false;
+        if (!r.ok) {
+          // e.g. the step-size gate: a mechanical or jittering movement is not stored. Redo it.
+          e.textContent = ((r.d && r.d.error) || "This sample was not accepted") + " — this sample starts again.";
+          e.style.display = "block";
+          return;
+        }
+        addedNow += 1;
+        var total = Number((r.d && r.d.totalWindows) || 0);
+        st.onFile = Math.min(st.required, Math.floor(total / st.perSample)) || (st.onFile + 1);
+        if (r.d && r.d.trained) { if (!st.enrolled && opts.onEnrolled) opts.onEnrolled(); st.enrolled = true; }
+        if (st.enrolled && opts.resolveOnTrained) { stop(); opts.resolveOnTrained(r.d); return; }
+        wizEl.querySelector("#mhead").textContent = headline();
+        wizEl.querySelector("#msub").textContent = st.onFile >= st.required
+          ? (st.enrolled ? "Model updated with this sample. Add more if you like, or close." : "")
+          : (st.required - st.onFile) + " more to go · about " + (st.required - st.onFile) * 16 + " s of movement";
+        var p = wizEl.querySelectorAll(".mpip");
+        for (var i = 0; i < p.length; i++) p[i].className = "mpip" + (i < st.onFile ? " on" : "");
+      }
+      stop();
+      iv = setInterval(tick, 400);
+    }
+    function stop() { if (iv) clearInterval(iv); iv = null; }
+    // Start from what is already on file, so a user who saved two samples resumes at 3 of 6.
+    (async function () {
+      try {
+        var s = await reqJson(EP.mouseStatus); var d = (s && s.d) || {};
+        if (d.samplesRequired) st.required = d.samplesRequired;
+        if (d.sampleWindows) st.perSample = d.sampleWindows;
+        st.onFile = Number(d.samplesOnFile != null ? d.samplesOnFile : Math.floor((d.totalWindows || 0) / st.perSample));
+        st.enrolled = !!d.enrolled;
+      } catch (e) {}
+      if (st.enrolled && opts.resolveOnTrained && !opts.allowReset) { opts.resolveOnTrained(null); return; }
+      render();
+    })();
+  }
+
+  // Step 3 — mouse enrollment: samples until the profile is built.
   // `optional`: lazy-mode standalone use — dismissable × (no logout), no step bar.
   function wizMouse(optional) {
     return new Promise(function (resolve) {
-      openWiz((optional ? "" : wizStepBar(2, 3, 2)) + '<div class="t">Teach your mouse motion</div><div class="d">Move naturally AND click the target as it appears — clicks are part of your mouse signature.</div><div class="pad" id="cpad"><span class="padlabel">move & click the dot</span></div><div class="bar"><i id="mbar"></i></div><div id="mdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">movement 0% · clicks 0/' + MOUSE_ENROLL_CLICKS + '</div><button class="b" id="ms" disabled>Finish enrollment</button><div class="e"></div>', optional ? function () { closeWiz(); resolve(false); } : null, "wide");
-      // Show what is already on file. The reinforcement popup always did; onboarding did not,
-      // so a user re-running it could not tell whether they were starting from nothing or
-      // adding to an existing profile.
-      (function () {
-        var d0 = wizEl.querySelector(".d");
-        if (!d0) return;
-        var sc = document.createElement("div");
-        sc.className = "samplecount";
-        sc.innerHTML = 'Mouse sessions on file: <b id="mtot">…</b>';
-        d0.parentNode.insertBefore(sc, d0.nextSibling);
-        reqJson(EP.mouseStatus).then(function (st) {
-          var t = wizEl.querySelector("#mtot");
-          if (t) t.textContent = String((st && st.d && st.d.sessions) || 0);
-        }).catch(function () { var t = wizEl.querySelector("#mtot"); if (t) t.textContent = "?"; });
-      })();
-      var pad = wizEl.querySelector("#cpad"), label = pad.querySelector(".padlabel"), bar = wizEl.querySelector("#mbar"), btn = wizEl.querySelector("#ms"), e = wizEl.querySelector(".e"), diag = wizEl.querySelector("#mdiag");
-      // Track on documentElement, NOT the pad — the live guard does exactly that (see the
-      // guard loop's createMouseTracker call), and enrolling inside a small box teaches the
-      // model a cramped, low-amplitude distribution it will never see again once monitoring
-      // starts on the real page. The pad stays as the visual target to move around and click.
-      var tracker = window.mouseFeatures.createMouseTracker(document.documentElement);
-      var clicks = 0; spawnClickTarget(pad, MOUSE_ENROLL_CLICKS, function (n) { clicks = n; });
-      var iv = null;
-      function tick() {
-        var w = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(tracker.getEvents()));
-        var n = w ? w.length : 0, pct = Math.min(100, Math.round((n / MOUSE_ENROLL_TARGET) * 100));
-        var enoughMove = n >= MOUSE_ENROLL_TARGET, enoughClicks = clicks >= MOUSE_ENROLL_CLICKS;
-        bar.style.width = pct + "%";
-        label.textContent = !enoughMove ? "keep moving…" : !enoughClicks ? "now hit the dot a few more times" : "ready ✓";
-        diag.textContent = "movement " + pct + "% · clicks " + Math.min(clicks, MOUSE_ENROLL_CLICKS) + "/" + MOUSE_ENROLL_CLICKS;
-        btn.disabled = !(enoughMove && enoughClicks);
-      }
-      iv = setInterval(tick, 400);
-      btn.addEventListener("click", async function () {
-        e.style.display = "none"; btn.disabled = true; btn.textContent = "Saving…"; clearInterval(iv);
-        var w = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(tracker.getEvents()));
-        var r = await reqJson(EP.mouseEnroll, "POST", { windows: w });
-        console.debug("[continuum] mouse enroll", r.status, r.d);
-        if (!r.ok) { e.textContent = "(" + r.status + ") " + ((r.d && r.d.error) || "need more movement"); e.style.display = "block"; btn.textContent = "Finish enrollment"; iv = setInterval(tick, 400); return; }
-        resolve();
+      mouseSampleFlow({
+        title: "Teach your mouse motion",
+        intro: "Move to each dot at your natural speed, as you would when using the site. Each <b>sample</b> is about 16 seconds of movement and saves itself; your mouse model is built after the last one. Until then the mouse channel does not judge you.",
+        stepBar: optional ? "" : wizStepBar(2, 3, 2),
+        onClose: optional ? function () { closeWiz(); resolve(false); } : doLogout,
+        dismissLabel: optional ? "Continue later" : null,
+        allowReset: false,
+        resolveOnTrained: function () { resolve(); },
       });
     });
   }
@@ -595,43 +671,16 @@
   }
   function reinforceMouse() {
     if (!window.mouseFeatures) return;
-    var added = 0, total = null;
-    function render() {
-      openWiz('<div class="wizload" id="mwl"><span class="wizspin"></span>Saving session…</div><div class="t">Strengthen your mouse motion</div><div class="d">Move naturally AND click the target as it appears — clicks are part of your signature.</div><div class="samplecount">Sessions on file: <b>' + (total == null ? "…" : total) + '</b> · added now: <b>' + added + '</b></div><div class="pad" id="cpad"><span class="padlabel">move & click the dot</span></div><div class="bar"><i id="mbar"></i></div><div id="mdiag2" style="font-size:11px;color:#64748b;margin:6px 0 8px">movement 0% · clicks 0/' + MOUSE_ENROLL_CLICKS + '</div><div style="display:flex;gap:8px"><button class="b" id="ms" disabled style="flex:1">Save session</button><button class="b" id="mdone" style="flex:0 0 96px;background:#475569">Done</button></div><div style="text-align:center;margin-top:10px"><a href="#" id="mreset" style="color:#dc2626;font-size:12px;font-weight:700;text-decoration:none">🗑️ Reset my mouse profile</a></div><div class="e"></div>', closeWiz, "wide");
-      var pad = wizEl.querySelector("#cpad"), label = pad.querySelector(".padlabel"), bar = wizEl.querySelector("#mbar"), btn = wizEl.querySelector("#ms"), done = wizEl.querySelector("#mdone"), e = wizEl.querySelector(".e"), load = wizEl.querySelector("#mwl"), diag = wizEl.querySelector("#mdiag2");
-      // documentElement, matching the live guard and wizMouse — see the note there.
-      var tracker = window.mouseFeatures.createMouseTracker(document.documentElement), iv = null;
-      var clicks = 0; spawnClickTarget(pad, MOUSE_ENROLL_CLICKS, function (n) { clicks = n; });
-      function tick() {
-        var w = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(tracker.getEvents())); var n = w ? w.length : 0;
-        var pct = Math.min(100, Math.round((n / MOUSE_ENROLL_TARGET) * 100)), enoughMove = n >= MOUSE_ENROLL_TARGET, enoughClicks = clicks >= MOUSE_ENROLL_CLICKS;
-        bar.style.width = pct + "%";
-        label.textContent = !enoughMove ? "keep moving…" : !enoughClicks ? "now hit the dot a few more times" : "ready ✓";
-        diag.textContent = "movement " + pct + "% · clicks " + Math.min(clicks, MOUSE_ENROLL_CLICKS) + "/" + MOUSE_ENROLL_CLICKS;
-        btn.disabled = !(enoughMove && enoughClicks);
-      }
-      iv = setInterval(tick, 400);
-      done.addEventListener("click", function () { clearInterval(iv); closeWiz(); });
-      wizEl.querySelector("#mreset").addEventListener("click", function (ev2) {
-        ev2.preventDefault();
-        resetProfile("mouse", e, function () {
-          clearInterval(iv);
-          // Stop the live guard: the model it was scoring against no longer exists.
-          try { stopMouse(); } catch (e3) {}
-          mouseOn = false; updateToggle(); setMouseRow("mut", "not enrolled");
-          total = 0; added = 0; render();
-        });
-      });
-      btn.addEventListener("click", async function () {
-        e.style.display = "none"; clearInterval(iv); load.classList.add("on");
-        var w = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(tracker.getEvents()));
-        var r = await reqJson(EP.mouseEnroll, "POST", { windows: w });
-        load.classList.remove("on");
-        if (!r.ok) { e.textContent = "(" + r.status + ") " + ((r.d && r.d.error) || "need more movement"); e.style.display = "block"; iv = setInterval(tick, 400); return; }
-        added += 1; if (total != null) total += 1; render();
-      });
-    }
-    (async function () { try { var st = await reqJson(EP.mouseStatus); total = Number((st.d && st.d.sessions) || 0); } catch (e) { total = 0; } render(); })();
+    mouseSampleFlow({
+      title: "Mouse samples",
+      intro: "Move to each dot at your natural speed. Each <b>sample</b> is about 16 seconds of movement and saves itself. Your mouse model is built after the last required sample; once it exists, every extra sample retrains it with more of your movement.",
+      onClose: closeWiz,
+      dismissLabel: "Done",
+      allowReset: true,
+      // First model just built from these samples: start protecting the session straight away.
+      onEnrolled: function () { if (obState) obState.mouse = true; if (!mouseOn) setMouse(true); },
+      resolveOnTrained: null,
+    });
   }
 
   // ================= GUARD LOOPS =================
@@ -817,12 +866,13 @@
       // — mouse would silently never challenge.
       var r = await reqJson(EP.mouseCheck, "POST", { windows: windows.slice(-MOUSE_MIN_WINDOWS) });
       var d = r.d; if (d && d.riskToken) latestRiskToken = d.riskToken;
+      if (d && d.bufferMax) MOUSE_MIN_WINDOWS = d.bufferMax;   // the server's vote length is authoritative
       if (d && d.enrolled === false) { setMouseRow("mut", "not enrolled"); stopMouse(); mouseOn = false; updateToggle(); return; }
       if (maybeChallenge(d, "mouse", onProbation)) { setMouseRow("bad", "<b>mouse mismatch</b>"); return; }
       if (d.checked === false) { setMouseRow("mut", withLast("move to check", lastMousePct)); return; }
       var pct = d.meanScore != null ? Math.round(d.meanScore * 100) : null;
       if (pct != null) lastMousePct = pct;   // shown during transient states, same as keystroke
-      if (d.isSuspicious) setMouseRow("warn", "suspicious " + (d.suspiciousStreak || 1) + "/" + (d.strikesToLock || 3));
+      if (d.isSuspicious) setMouseRow("warn", "suspicious " + (d.suspiciousStreak || 1) + "/" + (d.strikesToLock || 1));
       else if (d.warmup) { setMouseRow("mut", withLast("warming " + (d.windowCount || 0) + "/" + (d.bufferMax || MOUSE_MIN_WINDOWS), lastMousePct)); }
       else {
         onProbation = false;

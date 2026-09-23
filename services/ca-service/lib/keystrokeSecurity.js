@@ -45,7 +45,7 @@ const WINDOW_DECISION_THRESHOLD = 0.50;
 // evaluation by never leaving "warmup". Past this bound we stop treating a
 // window-less session as warmup and flag it so the passkey challenge can fire.
 const UNVERIFIABLE_KEY_COUNT = 120;
-const MODEL_API_URL = process.env.MODEL_API_URL || "http://localhost:5000";
+// MODEL_API_URL now lives in lib/modelClient.js — the single, authenticated, bounded hop.
 
 function normalizeEvents(events) {
   if (!Array.isArray(events)) return [];
@@ -271,6 +271,80 @@ function eventsToFeatureWindows(events) {
   return windows;
 }
 
+// Rhythm-consistency check for adaptive contributions. Every other adaptive-learning
+// gate (confidence floor, dedup, per-day cap) judges a candidate sample through the
+// CURRENT model's own opinion — circular for a still-young model that hasn't reliably
+// learned this person's rhythm yet. This check is model-independent: it compares the
+// candidate's own timing statistics directly against this same user's already-enrolled
+// history, so it can catch an inconsistent sample even before the model is any good.
+//
+// Indexes into an eventSteps() row [id1,id2,dwell1,dwell2,dd,ud]: only the three
+// INDEPENDENT timing features are checked (dwell1, dwell2, dd) — id1/id2 are which-key
+// identity, not rhythm, and ud is algebraically redundant (ud = dd - dwell1 exactly).
+const RHYTHM_FEATURE_INDEXES = [2, 3, 4];
+const RHYTHM_FEATURE_LABELS = ["dwell1", "dwell2", "dd"];
+// A conservative starting bound, not a data-derived optimum — see the "quality-filtered
+// enrolment volume" experiment on the roadmap, which would calibrate this from evidence
+// rather than a heuristic guess.
+const RHYTHM_Z_SCORE_LIMIT = 3.0;
+// Below this many historical digraphs, per-feature std is too noisy to judge against —
+// fail OPEN (treat as consistent) rather than block early contributions a fresh
+// enrolment needs.
+const RHYTHM_MIN_HISTORY_DIGRAPHS = 100;
+
+function digraphFeatureMeans(events) {
+  const steps = eventSteps(events);
+  if (!steps.length) return null;
+  const sums = RHYTHM_FEATURE_INDEXES.map(() => 0);
+  for (const row of steps) {
+    RHYTHM_FEATURE_INDEXES.forEach((idx, i) => { sums[i] += row[idx]; });
+  }
+  return { means: sums.map((s) => s / steps.length), count: steps.length };
+}
+
+// Pooled mean/std per feature across every historical DIGRAPH (not a mean-of-per-sample
+// means) — pooling at the digraph level is what makes the std reflect this user's true
+// spread rather than being understated by averaging away sample-to-sample variation.
+function digraphFeatureStats(eventsList) {
+  const sums = RHYTHM_FEATURE_INDEXES.map(() => 0);
+  const sqSums = RHYTHM_FEATURE_INDEXES.map(() => 0);
+  let n = 0;
+  for (const events of eventsList) {
+    const steps = eventSteps(events);
+    for (const row of steps) {
+      RHYTHM_FEATURE_INDEXES.forEach((idx, i) => {
+        sums[i] += row[idx];
+        sqSums[i] += row[idx] * row[idx];
+      });
+      n += 1;
+    }
+  }
+  if (n < RHYTHM_MIN_HISTORY_DIGRAPHS) return null;
+  const means = sums.map((s) => s / n);
+  const stds = sqSums.map((sq, i) => Math.sqrt(Math.max(sq / n - means[i] * means[i], 1e-8)));
+  return { means, stds, n };
+}
+
+// historicalEventsList = one raw keystrokeEvents array per already-enrolled sample for
+// this user (fetch via each sample's stored events, NOT the derived windows — the
+// comparison is on raw digraph timing, before scaling/model scoring).
+function checkRhythmConsistency(candidateEvents, historicalEventsList) {
+  const history = digraphFeatureStats(historicalEventsList || []);
+  if (!history) return { consistent: true, reason: "not enough enrolled history to judge yet" };
+  const candidate = digraphFeatureMeans(candidateEvents);
+  if (!candidate) return { consistent: true, reason: "no scorable digraphs in candidate" };
+  const zScores = candidate.means.map((m, i) => (m - history.means[i]) / (history.stds[i] || 1e-8));
+  let worstIdx = 0;
+  zScores.forEach((z, i) => { if (Math.abs(z) > Math.abs(zScores[worstIdx])) worstIdx = i; });
+  return {
+    consistent: Math.abs(zScores[worstIdx]) <= RHYTHM_Z_SCORE_LIMIT,
+    worstFeature: RHYTHM_FEATURE_LABELS[worstIdx],
+    worstZ: zScores[worstIdx],
+    zScores,
+    historyDigraphCount: history.n,
+  };
+}
+
 function typingQuality(textContent, events) {
   const normalized = normalizeEvents(events);
   const textLength = String(textContent || "").trim().length;
@@ -438,18 +512,42 @@ function getNegativeWindowsGrouped(userId, db) {
   return { windows, groups };
 }
 
-async function postModelApi(path, payload) {
-  const response = await fetch(`${MODEL_API_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || `Model API ${path} failed`);
-  }
-  return data;
+// Distinct count of other users' training-eligible samples — the actual size of the pool a
+// retrain could draw from. Unlike negativeSampleRows(), not capped by MAX_TRAINING_SAMPLES:
+// this counts how many PEOPLE are available, not how many SAMPLES get pulled from them.
+function countNegativePoolUsers(userId, db) {
+  const aliases = aliasUserIds(userId, db);
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT user_id as u FROM keystroke_texts
+       WHERE user_id <> ? AND is_training = 1 AND is_suspicious = 0`,
+    )
+    .all(userId);
+  return rows.filter((r) => !aliases.has(r.u)).length;
 }
+
+// Has the negative pool grown enough since this user's last training to be worth a refresh?
+// Measured directly (2026-09-07, population_sweep.py --neg-pool-size): shrinking the training
+// pool from 40 to 10 participants cost a paired +3.97pp EER (95% CI [+1.19,+7.14]) and -0.041
+// AUC (95% CI [-0.067,-0.015]) on the same 20 users — a real, tested effect, unlike positive/
+// enrolment volume (r=+0.04, null). So a user enrolled early, on a small pool, and never
+// retrained since is sitting on a demonstrably weaker model with no way to catch up.
+// Doubled-or-+20 is a conservative STARTING threshold, not a value tuned from data — the
+// experiment above tested one pool-size ratio (4x), not a curve, so no "optimal" threshold
+// is known yet.
+const POOL_REFRESH_GROWTH_RATIO = 2.0;
+const POOL_REFRESH_GROWTH_FLOOR = 20;
+function needsPoolRefresh(userId, db) {
+  const profile = getUserTypingProfile(userId, db);
+  if (!profile || profile.negativePoolUserCount == null) return false;
+  const before = profile.negativePoolUserCount;
+  const now = countNegativePoolUsers(userId, db);
+  return now >= before * POOL_REFRESH_GROWTH_RATIO || now - before >= POOL_REFRESH_GROWTH_FLOOR;
+}
+
+// Authenticated + deadline-bounded. See lib/modelClient.js for why the local copy of this
+// function (a bare, credential-less, unbounded fetch) had to go.
+const { postModelApi } = require("./modelClient");
 
 function saveProfile(userId, db, profile) {
   db.prepare(
@@ -586,6 +684,9 @@ async function trainUserTypingProfile(userId, db) {
     trainingAccuracy: result.accuracy,
     balancedAccuracy: result.balancedAccuracy,
     trainedAt: new Date().toISOString(),
+    // How many distinct other users this training's negative pool could draw from — the
+    // baseline needsPoolRefresh() compares future pool growth against. See its own comment.
+    negativePoolUserCount: countNegativePoolUsers(userId, db),
   };
 
   saveProfile(userId, db, profile);
@@ -828,8 +929,11 @@ function logAuthDecision(userId, db, { source, evaluation, passkeyTriggered = fa
   }
 }
 
-// Track in-flight login-triggered retrains so we don't stack duplicates.
-const loginRetrainsInFlight = new Set();
+// Duplicate suppression used to be an in-memory Set here. It is now a property of the
+// durable queue: enqueue() is a no-op when a job for this (user, modality) is already
+// queued or running, and unlike the Set that fact survives a restart — so an interrupted
+// retrain is resumed rather than silently forgotten.
+const trainingQueue = require("./trainingQueue");
 
 function hasNewImpostorsSince(userId, db, since) {
   // Only count users who are fully enrolled (MIN_TRAINING_SAMPLES samples)
@@ -852,27 +956,19 @@ function hasNewImpostorsSince(userId, db, since) {
   return row.count > 0;
 }
 
-// Called after login: if any other user has enrolled since this user's model
-// was last trained, retrain silently in the background so the model benefits
-// from the new impostor data without delaying the login response.
-async function maybeRetrainForNewImpostors(userId, db) {
-  if (loginRetrainsInFlight.has(userId)) return;
+// Called after login: if any other user has enrolled since this user's model was last
+// trained, retrain in the background so the model benefits from the new impostor data
+// without delaying the login response.
+//
+// This used to fire-and-forget a `setImmediate`. Both halves of that were lost on restart —
+// the run itself, and the guard that stopped it being started twice — and nothing recorded
+// that the work had been owed. Now it records a row and returns; the worker in
+// lib/trainingQueue.js does the work and re-queues it if the service dies mid-run.
+function maybeRetrainForNewImpostors(userId, db) {
   const profile = getUserTypingProfile(userId, db);
-  if (!profile || !profile.trainedAt) return;
-  if (!hasNewImpostorsSince(userId, db, profile.trainedAt)) return;
-
-  loginRetrainsInFlight.add(userId);
-  setImmediate(async () => {
-    try {
-      console.log(`[login-retrain] New impostors detected — retraining model for user ${userId}`);
-      await trainUserTypingProfile(userId, db);
-      console.log(`[login-retrain] User ${userId} model updated with new impostor data`);
-    } catch (err) {
-      console.error(`[login-retrain] Retraining failed for user ${userId}:`, err.message);
-    } finally {
-      loginRetrainsInFlight.delete(userId);
-    }
-  });
+  if (!profile || !profile.trainedAt) return null;
+  if (!hasNewImpostorsSince(userId, db, profile.trainedAt)) return null;
+  return trainingQueue.enqueue(userId, "keystroke", "new-impostors");
 }
 
 module.exports = {
@@ -886,9 +982,12 @@ module.exports = {
   WINDOW_DECISION_THRESHOLD,
   CHECK_MIN_TEXT_CHARS,
   analyzeKeystrokeTiming,
+  checkRhythmConsistency,
+  countNegativePoolUsers,
   evaluateKeystrokes,
   eventsToFeatureWindows,
   logAuthDecision,
+  needsPoolRefresh,
   typingQuality,
   getUserTypingBaseline,
   getUserTypingProfile,

@@ -1,0 +1,69 @@
+2026-09-19 13:33:45.346415: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-09-19 13:33:45.500933: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+base users 60 | train (30600, 50, 2) val (7495, 50, 2) test (12062, 50, 2)
+Epoch 1/40
+240/240 - 10s - loss: 3.0920 - accuracy: 0.2114 - val_loss: 10.5787 - val_accuracy: 0.0402 - lr: 0.0010 - 10s/epoch - 42ms/step
+Epoch 2/40
+240/240 - 9s - loss: 2.3702 - accuracy: 0.3722 - val_loss: 3.8217 - val_accuracy: 0.1402 - lr: 0.0010 - 9s/epoch - 36ms/step
+Epoch 3/40
+240/240 - 9s - loss: 2.0368 - accuracy: 0.4499 - val_loss: 2.4426 - val_accuracy: 0.3264 - lr: 0.0010 - 9s/epoch - 36ms/step
+Epoch 4/40
+240/240 - 9s - loss: 1.8141 - accuracy: 0.5015 - val_loss: 2.5540 - val_accuracy: 0.3026 - lr: 0.0010 - 9s/epoch - 36ms/step
+Epoch 5/40
+240/240 - 9s - loss: 1.6457 - accuracy: 0.5403 - val_loss: 2.3992 - val_accuracy: 0.3508 - lr: 0.0010 - 9s/epoch - 37ms/step
+Epoch 6/40
+240/240 - 9s - loss: 1.4810 - accuracy: 0.5858 - val_loss: 2.6119 - val_accuracy: 0.3147 - lr: 0.0010 - 9s/epoch - 35ms/step
+Epoch 7/40
+240/240 - 9s - loss: 1.3559 - accuracy: 0.6202 - val_loss: 2.7526 - val_accuracy: 0.3078 - lr: 0.0010 - 9s/epoch - 36ms/step
+Epoch 8/40
+240/240 - 9s - loss: 1.2342 - accuracy: 0.6564 - val_loss: 2.1589 - val_accuracy: 0.4252 - lr: 0.0010 - 9s/epoch - 36ms/step
+Epoch 9/40
+240/240 - 9s - loss: 1.1150 - accuracy: 0.6888 - val_loss: 2.4889 - val_accuracy: 0.3493 - lr: 0.0010 - 9s/epoch - 36ms/step
+Epoch 10/40
+240/240 - 9s - loss: 1.0001 - accuracy: 0.7257 - val_loss: 2.1173 - val_accuracy: 0.4299 - lr: 0.0010 - 9s/epoch - 36ms/step
+Epoch 11/40
+240/240 - 9s - loss: 0.8917 - accuracy: 0.7560 - val_loss: 2.1121 - val_accuracy: 0.4268 - lr: 0.0010 - 9s/epoch - 39ms/step
+Epoch 12/40
+240/240 - 9s - loss: 0.8305 - accuracy: 0.7735 - val_loss: 2.3519 - val_accuracy: 0.4239 - lr: 0.0010 - 9s/epoch - 38ms/step
+Epoch 13/40
+240/240 - 9s - loss: 0.7389 - accuracy: 0.8009 - val_loss: 2.2747 - val_accuracy: 0.4383 - lr: 0.0010 - 9s/epoch - 36ms/step
+Epoch 14/40
+240/240 - 9s - loss: 0.6604 - accuracy: 0.8250 - val_loss: 2.1894 - val_accuracy: 0.4452 - lr: 0.0010 - 9s/epoch - 36ms/step
+Epoch 15/40
+240/240 - 9s - loss: 0.5969 - accuracy: 0.8424 - val_loss: 2.6032 - val_accuracy: 0.3888 - lr: 0.0010 - 9s/epoch - 36ms/step
+Epoch 16/40
+240/240 - 9s - loss: 0.5514 - accuracy: 0.8546 - val_loss: 2.6455 - val_accuracy: 0.3820 - lr: 0.0010 - 9s/epoch - 36ms/step
+Epoch 17/40
+240/240 - 9s - loss: 0.4419 - accuracy: 0.8925 - val_loss: 2.1196 - val_accuracy: 0.4611 - lr: 5.0000e-04 - 9s/epoch - 36ms/step
+Epoch 18/40
+240/240 - 9s - loss: 0.3647 - accuracy: 0.9175 - val_loss: 1.9955 - val_accuracy: 0.4973 - lr: 5.0000e-04 - 9s/epoch - 36ms/step
+Epoch 19/40
+240/240 - 9s - loss: 0.3309 - accuracy: 0.9292 - val_loss: 2.1808 - val_accuracy: 0.4711 - lr: 5.0000e-04 - 9s/epoch - 37ms/step
+Epoch 20/40
+240/240 - 9s - loss: 0.3213 - accuracy: 0.9303 - val_loss: 2.1306 - val_accuracy: 0.4833 - lr: 5.0000e-04 - 9s/epoch - 36ms/step
+Epoch 21/40
+240/240 - 9s - loss: 0.3020 - accuracy: 0.9354 - val_loss: 2.5042 - val_accuracy: 0.4400 - lr: 5.0000e-04 - 9s/epoch - 36ms/step
+Epoch 22/40
+240/240 - 9s - loss: 0.2989 - accuracy: 0.9350 - val_loss: 2.1455 - val_accuracy: 0.4827 - lr: 5.0000e-04 - 9s/epoch - 36ms/step
+Epoch 23/40
+240/240 - 9s - loss: 0.2714 - accuracy: 0.9431 - val_loss: 2.0656 - val_accuracy: 0.4977 - lr: 5.0000e-04 - 9s/epoch - 36ms/step
+Epoch 24/40
+240/240 - 9s - loss: 0.2012 - accuracy: 0.9636 - val_loss: 2.1814 - val_accuracy: 0.4882 - lr: 2.5000e-04 - 9s/epoch - 36ms/step
+Epoch 25/40
+240/240 - 9s - loss: 0.1958 - accuracy: 0.9669 - val_loss: 2.0549 - val_accuracy: 0.5010 - lr: 2.5000e-04 - 9s/epoch - 36ms/step
+Epoch 26/40
+240/240 - 9s - loss: 0.1930 - accuracy: 0.9635 - val_loss: 2.0434 - val_accuracy: 0.5101 - lr: 2.5000e-04 - 9s/epoch - 37ms/step
+Epoch 27/40
+240/240 - 9s - loss: 0.1839 - accuracy: 0.9680 - val_loss: 2.5242 - val_accuracy: 0.4239 - lr: 2.5000e-04 - 9s/epoch - 36ms/step
+Epoch 28/40
+240/240 - 9s - loss: 0.2018 - accuracy: 0.9628 - val_loss: 2.1178 - val_accuracy: 0.5033 - lr: 2.5000e-04 - 9s/epoch - 36ms/step
+Epoch 29/40
+240/240 - 9s - loss: 0.1591 - accuracy: 0.9749 - val_loss: 2.1162 - val_accuracy: 0.5002 - lr: 1.2500e-04 - 9s/epoch - 37ms/step
+Epoch 30/40
+240/240 - 9s - loss: 0.1486 - accuracy: 0.9774 - val_loss: 2.0816 - val_accuracy: 0.5047 - lr: 1.2500e-04 - 9s/epoch - 36ms/step
+/usr/local/lib/python3.11/site-packages/keras/src/engine/training.py:3103: UserWarning: You are saving your model as an HDF5 file via `model.save()`. This file format is considered legacy. We recommend using instead the native Keras format, e.g. `model.save('my_model.keras')`.
+  saving_api.save_model(
+trained 30 epochs in 4.4 min | identification top-1 on the base users' separate 1-min session 0.4357 (chance 0.0167)
+negatives: (38353, 50, 2) raw windows from 60 base users -> /app/data/mouse_only/Mouse_A5_W50_base60.h5
+wrote /app/artifacts/mouse-fcn-a5-k60

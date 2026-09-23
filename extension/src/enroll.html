@@ -49,6 +49,12 @@
       .mousetext { font-size: 14px; line-height: 1.9; color: var(--text); max-width: 620px; }
       .mlink { color: var(--link); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font-weight: 600; }
       .mlink.done { color: var(--faint); text-decoration: none; cursor: default; }
+      .msamp { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+      .msamp .mhead { font-size: 17px; font-weight: 800; color: var(--text); }
+      .mpips { display: flex; gap: 6px; }
+      .mpip { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--accent); background: transparent; }
+      .mpip.on { background: var(--accent); }
+      .msub { font-size: 13px; font-weight: 600; color: var(--muted); }
       .nudge { background: var(--nudge-bg); border: 1px solid var(--nudge-border); border-radius: 10px; padding: 10px 14px; color: var(--nudge-text); font-size: 13.5px; margin-bottom: 14px; }
       /* Click targets placed anywhere on screen (fixed, outside the centered column) so the
          hand makes moves of varied length — the amplitude range the guard sees in real use. */
@@ -59,6 +65,14 @@
         display: flex; align-items: center; justify-content: center; color: #fff; font-size: 15px;
         transition: transform .1s; }
       .ftarget:hover { transform: scale(1.12); }
+      /* Drag targets. SapiMouse -- the corpus the base model learned movement from -- is 32%
+         drag-and-drop; clicking links produces none, so every third target is a drag. */
+      .ftarget.drag { background: radial-gradient(circle at 35% 30%, #f0a030, #d2691e); cursor: grab; }
+      .ftarget.drag:active { cursor: grabbing; }
+      .fdrop { position: fixed; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%;
+        border: 3px dashed var(--accent); opacity: .75; pointer-events: none; z-index: 4;
+        display: flex; align-items: center; justify-content: center; color: var(--accent);
+        font-size: 13px; }
     </style>
   </head>
   <body>
@@ -89,13 +103,13 @@
     </div>
 
     <div id="mouseStage" style="display:none">
-      <p class="sub">Click the highlighted <b>links</b> in the snippet <i>and</i> the <b>dots</b> that appear anywhere on the screen, at your normal pace. The dots deliberately vary in distance — some close, some far — so Continuum sees the full range of how your hand moves. Positions and timing only, never what you click.</p>
+      <p class="sub">Move to the highlighted <b>links</b> in the snippet and to the <b>dots</b> that appear anywhere on the screen, at your normal pace; drag the orange ones onto their ring. The dots vary in distance, some close and some far, so Continuum sees the full range of how your hand moves. Your profile needs <b>6 samples</b> of about <b>16 seconds</b> each (about 90 seconds of movement). Each sample saves itself when it is complete, so you can stop after any sample and continue later. Only the size of each pointer step is kept, never where you click or what is on the page.</p>
       <div id="playArea" class="playarea">
         <div id="mouseText" class="mousetext"></div>
       </div>
       <div class="bar"><i id="mprog"></i></div>
-      <div class="status" id="mstatus">0 / 20 mouse windows captured</div>
-      <button id="msave" disabled>Save my mouse profile &amp; train</button>
+      <div class="status" id="mstatus">Sample 1 of 6</div>
+      <button id="mrebuild" style="display:none">Rebuild my profile from saved movement</button>
       <div class="status" id="mtrainStatus" style="display:none">training…</div>
     </div>
     <!-- screen-wide click targets live here, outside the centered column -->
@@ -111,6 +125,7 @@
     <script src="../vendor/tf-lite.js"></script>
     <script src="features.js"></script>
     <script src="features-mouse.js"></script>
+    <script src="mouse-model.js"></script>
     <script src="trainer.js"></script>
     <script src="enroll.js"></script>
   </body>

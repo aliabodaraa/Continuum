@@ -139,21 +139,27 @@ Nothing else. One comparison per window.
 
 ## 7. Packet Decision (Session-Level)
 
+> **`PACKET_VOTE_FRACTION` is `0.50`, not `0.34`** below — this section pre-dates that
+> change (see the constant's own comment in `keystrokeSecurity.js`; this is unrelated to
+> the 2026-09 packet-size experiment, which was tried and reverted). The mechanism
+> (fraction of low windows in a packet) is accurate; only the fraction number is stale.
+> Kept for the worked "fewer windows available" example, which is still illustrative.
+
 **Packet = last 6 windows** (or fewer if not enough data yet).
 
 ```javascript
 RECENT_WINDOW_COUNT  = 6
-PACKET_VOTE_FRACTION = 0.34
+PACKET_VOTE_FRACTION = 0.50
 ```
 
 ### Rule
 ```
 fraction = bad_windows / total_windows_in_packet
-if fraction >= 0.34  →  Suspicious
+if fraction >= 0.50  →  Suspicious
 else                 →  Genuine
 ```
 
-### With different packet sizes
+### With different packet sizes (numbers below use the doc's original 0.34 for illustration)
 | Windows available | Bad needed to flag | Fraction |
 |---|---|---|
 | 4 | 2 | 2/4 = 0.50 >= 0.34 ✓ |
@@ -165,10 +171,12 @@ else                 →  Genuine
 
 Early checks (4–5 windows) are stricter by design: less data, less tolerance.
 
-### Why 0.34?
-Adapted from Lu et al. (2020). Their system used stride=1, so adjacent windows are
-nearly identical and a single attack spans many windows. Our stride=10 means 2 out
-of 6 windows ≈ 33% is the minimum meaningful signal. 0.34 sits just above that.
+### Why 0.50?
+Raised from an earlier ~1/3 fraction to reduce false rejections for genuine users who
+momentarily type differently, while still catching impostors — see the fraction's own
+history in `keystrokeSecurity.js`. (A 2026-09 experiment also swept the packet size
+itself to 20; it was measured to help and then reverted — see `paper/AUDIT.md` §4-9b —
+so the packet size in production is 6, as above.)
 
 ---
 
@@ -196,7 +204,7 @@ their typing variance and the impostors in training.
 the validation split, EER is not computed and 0.65 default is used instead.
 
 ### PACKET_VOTE_FRACTION never changes
-0.34 is hardcoded. Only the EER threshold changes on retrain.
+0.50 is hardcoded (see the note at the top of §7 on the 0.34→0.50 history). Only the EER threshold changes on retrain.
 
 ---
 
@@ -209,7 +217,7 @@ What changes:
 - EER threshold (recomputed with new genuine/impostor data)
 
 What does NOT change:
-- PACKET_VOTE_FRACTION (0.34) — always fixed
+- PACKET_VOTE_FRACTION (0.50) — always fixed
 - RECENT_WINDOW_COUNT (6) — always fixed
 - WINDOW_SIZE (50) — always fixed
 - WINDOW_STRIDE (10) — always fixed

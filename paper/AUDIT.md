@@ -339,6 +339,14 @@ no clean "goats" subpopulation, just a long tail of progressively harder users.
 **19th percentile** of this distribution (7.07% would be the 15th). Four users in five do worse.
 The median deployment user faces **14.53%**, not 8%.
 
+> **Amendment (2026-08-30, see `BASELINE.md` "Post-freeze amendment"):** seeding participants
+> p001–p040 as demo accounts removed them from the unseen impostor pool `holdout_audit.py` draws
+> from. User 1's figure under the restricted pool is **10.17% CI [8.41, 13.87]** — the **33rd
+> percentile**, two users in three do worse. The 8.42% above is not wrong; it is the correct
+> figure *for the pool composition at the time this section was written*. **Quote 10.17% and the
+> 33rd percentile going forward.** The population figures in this section (median 14.53%, r =
+> +0.04, etc.) are unaffected — they use the disjoint evaluation pool `[40:80]`, never seeded.
+
 **2. More enrolment data is not the fix.** Correlation between enrolment size and EER across the
 99 users is **r = +0.04** — indistinguishable from zero. The spread is intrinsic per-user
 difficulty, not a data-volume problem, which is the same conclusion the mouse channel reached.
@@ -601,6 +609,19 @@ the decision-level false-lock rate (0.07% → **4.04%/7.84%**), the confidence i
 14.53%** across 99 subjects). A fourth, "personalisation halves the error", was retracted and
 replaced by a stronger and better-supported statement: personalisation moves verification from
 chance to median AUC 0.93.
+
+**Post-freeze note (2026-08-30, unrelated to anything above):** seeding demo accounts narrowed
+the unseen-impostor pool `holdout_audit.py` draws from — see `BASELINE.md` "Post-freeze
+amendment". **User 1's held-out EER is now 10.17% CI [8.41, 13.87], the 33rd percentile — quote
+this, not 8.42%/19th.** This changes only the *EER*, not the false-lock rate above.
+
+**Later population-scale note (2026-09-03, a separate later investigation, not part of this
+audit):** the 7.84% false-lock figure above is a single-user case study — its own §6 says so,
+CI [0, 19.4%] on 51 packets. Measured at full population scale (n = 99, the same deployed rule)
+the median false-lock rate is **16.03%**, and the packet vote itself turned out to be far from
+optimal — a longer, still-majority vote cuts it toward zero with no loss of capture. Full
+writeup: the *Continuum Improvement Investigation* artifact, Part 05. 7.84% is not wrong for the
+one user it describes; it is not the number to generalise from.
 
 **Why category 2 rather than 3.** The defects were in the *reporting*, not the science. Every
 corrected number was obtained under a clean protocol — subject-disjoint, temporally split with

@@ -1,0 +1,10 @@
+{
+ "engine": "node v20.20.2 (V8), tfjs 4.22.0 backend cpu",
+ "cpu": "Intel(R) Core(TM) i9-14900HX",
+ "scoreOneWindowMs": 96.26,
+ "embed330Seconds": 31.633,
+ "headTrain25EpochsSeconds": 1.802,
+ "fullFineTuneEpoch99Seconds": 91.846,
+ "fullFineTunePerWindowEpochSeconds": 0.9277373737373737,
+ "fullFineTuneServerRecipeHoursEstimate": 3.0615333333333337
+}

@@ -13,6 +13,12 @@
   window.__cgGuardActive = true;
   var api = globalThis.browser || globalThis.chrome;
   var enabled = true, excluded = false, mouseTracking = true;   // mouseTracking = user toggle (popup)
+  // Per-window/per-keystroke diagnostics used to print unconditionally on EVERY page, which
+  // buried real page errors under a wall of [continuum-guard] output in every site's DevTools.
+  // They are now opt-in (options page -> "Verbose diagnostics"), delivered with the handshake
+  // and every cg:config broadcast. Genuine warnings and errors are never gated.
+  var debug = false;
+  function dlog() { if (!debug) return; try { console.log.apply(console, arguments); } catch (e) {} }
   var origin = location.origin;
   // The fixed relying-party origin that hosts the passkey step-up pages. The lock overlay
   // must NEVER cover this origin (nor, transitively, a sign-in page the ceremony redirects
@@ -23,7 +29,7 @@
   var lastWindowCount = 0;
   var t0 = performance.now();
   var dead = false;
-  var handlers = [];
+  var handlers = [], winHandlers = [];   // document-level and window-level listeners
 
   // The extension context is invalid after a reload/update — accessing chrome.runtime.id
   // then throws. Check it before every chrome call so we never raise an uncaught error.
@@ -37,6 +43,10 @@
       try { document.removeEventListener(handlers[i][0], handlers[i][1], true); } catch (e) {}
     }
     handlers = [];
+    for (var w = 0; w < winHandlers.length; w++) {
+      try { window.removeEventListener(winHandlers[w][0], winHandlers[w][1], true); } catch (e) {}
+    }
+    winHandlers = [];
     try { api.runtime.onMessage.removeListener(onMsg); } catch (e) {}
     // Don't leave a stuck lock overlay behind (e.g. after an extension reload invalidates
     // this script), and clear the injection guard so a fresh content script can take over.
@@ -56,15 +66,19 @@
   // ---- enforcement overlay: shown when the worker declares the session suspicious ----
   var lockEl = null;
   function blockWhileLocked(e) { if (lockEl) { e.stopImmediatePropagation(); e.preventDefault(); } }
-  window.addEventListener("keydown", blockWhileLocked, true);
-  window.addEventListener("keyup", blockWhileLocked, true);
-  window.addEventListener("beforeinput", blockWhileLocked, true);
+  // Registered on WINDOW, so teardown() — which only walks the document-level handlers — has
+  // to unbind them separately. Left attached, an orphaned content script from a previous
+  // extension version keeps input interceptors on the page for as long as the tab lives.
+  function onWin(type, fn) { window.addEventListener(type, fn, true); winHandlers.push([type, fn]); }
+  onWin("keydown", blockWhileLocked);
+  onWin("keyup", blockWhileLocked);
+  onWin("beforeinput", blockWhileLocked);
   function showLock(hasPasskey) {
     if (lockEl || dead) return;
     if ((rpOrigin && origin === rpOrigin) || isAuthOrigin(origin)) {
       // never lock the step-up ceremony's own pages, nor a sign-in page it hands off to —
       // otherwise a locked session can't run the ceremony that clears the lock.
-      try { console.log("[continuum-guard] lock suppressed on step-up/sign-in origin: " + origin); } catch (e) {}
+      dlog("[continuum-guard] lock suppressed on step-up/sign-in origin: " + origin);
       return;
     }
     lockEl = document.createElement("div");
@@ -78,12 +92,30 @@
       '<div style="font-weight:800;font-size:18px;margin-bottom:8px">Continuum Guard locked this page</div>' +
       '<div style="color:#94a3b8;margin-bottom:18px">The recent typing rhythm does not match the enrolled profile. Verify it&#39;s you to continue.</div>' +
       '<button id="__cgVerifyBtn" style="background:#4f46e5;color:#fff;border:0;border-radius:10px;padding:12px 22px;font:700 15px system-ui;cursor:pointer">' +
-      (hasPasskey ? "Verify with passkey" : "Set up your passkey") + "</button>";
+      (hasPasskey ? "Verify with passkey" : "Set up your passkey") + "</button>" +
+      '<div id="__cgErr" style="display:none;margin-top:16px;padding:12px 14px;border-radius:10px;background:#3f1d1d;border:1px solid #7f1d1d;color:#fecaca;font-size:13px;text-align:left"></div>';
     lockEl.appendChild(box);
     (document.body || document.documentElement).appendChild(lockEl);
     box.querySelector("#__cgVerifyBtn").addEventListener("click", function () {
+      var err = lockEl && lockEl.querySelector("#__cgErr");
+      if (err) { err.style.display = "none"; }
+      this.textContent = "Opening…";
+      var btn = this;
+      setTimeout(function () { try { btn.textContent = hasPasskey ? "Verify with passkey" : "Set up your passkey"; } catch (e) {} }, 3000);
       safeSend({ type: hasPasskey ? "cg:open-verify" : "cg:open-register" });
     });
+  }
+
+  // The worker could not reach the passkey service, so no ceremony window was opened. Say so
+  // inside the overlay: without this the click appeared to do nothing at all (or flashed a
+  // "site can't be reached" tab), which is indistinguishable from the extension being broken.
+  function showRpError(rpBase, reason) {
+    if (!lockEl) return;
+    var err = lockEl.querySelector("#__cgErr");
+    if (!err) return;
+    err.textContent = "Can't reach the verification service at " + rpBase + " (" + reason + "). "
+      + "Start the passkey service, or set the correct address in the extension's Options, then press the button again.";
+    err.style.display = "block";
   }
   function hideLock() { if (lockEl) { try { lockEl.remove(); } catch (e) {} lockEl = null; } }
 
@@ -120,9 +152,10 @@
 
   function onMsg(msg) {
     if (dead) return;
-    if (msg && msg.type === "cg:config") { enabled = msg.enabled !== false; excluded = (msg.exclusions || []).indexOf(origin) >= 0; if (typeof msg.mouseTracking !== "undefined") mouseTracking = msg.mouseTracking !== false; if (msg.rpOrigin) rpOrigin = msg.rpOrigin; }
+    if (msg && msg.type === "cg:config") { enabled = msg.enabled !== false; excluded = (msg.exclusions || []).indexOf(origin) >= 0; if (typeof msg.mouseTracking !== "undefined") mouseTracking = msg.mouseTracking !== false; if (msg.rpOrigin) rpOrigin = msg.rpOrigin; if (typeof msg.debug !== "undefined") debug = !!msg.debug; }
     if (msg && msg.type === "cg:lock") showLock(!!msg.hasPasskey);
     if (msg && msg.type === "cg:unlock") hideLock();
+    if (msg && msg.type === "cg:rp-unreachable") showRpError(msg.rpBase || "the configured address", msg.reason || "unreachable");
     if (msg && msg.type === "cg:reset") {
       // Fresh packet after a verified step-up: drop buffered timings so counting
       // restarts from zero instead of replaying pre-lock windows.
@@ -139,11 +172,12 @@
       enabled = res.enabled !== false;
       excluded = !!res.excluded;
       if (typeof res.mouseTracking !== "undefined") mouseTracking = res.mouseTracking !== false;
+      debug = !!res.debug;
       if (res.rpOrigin) rpOrigin = res.rpOrigin;    // set before showLock so the RP guard applies
       if (res.locked) showLock(!!res.hasPasskey);   // navigated / reopened while locked
       // The ACTIVE log below prints before this reply lands, so it can only show the
       // optimistic defaults. This is the authoritative line: if capture is off, it says why.
-      try {
+      if (debug) try {
         console.log("[continuum-guard] handshake: capture=" + (enabled && !excluded ? "ON" : "OFF")
           + " (enabled=" + enabled + ", excluded=" + excluded + ", mouseTracking=" + mouseTracking + ")"
           + (enabled ? "" : " — no modality trained for this account, or account not resolved yet"));
@@ -159,7 +193,7 @@
   function isHidden(t) { return t && t.tagName === "INPUT" && t.type === "hidden"; }
 
   function rec(type, e) {
-    if (!rec.fired) { rec.fired = true; try { console.log("[continuum-guard] FIRST key event (" + type + ") — listener works; field=" + (e.target && (e.target.name || e.target.id || e.target.tagName))); } catch (x) {} }
+    if (!rec.fired) { rec.fired = true; dlog("[continuum-guard] FIRST key event (" + type + ") — listener works; field=" + (e.target && (e.target.name || e.target.id || e.target.tagName))); }
     if (dead) return;
     if (!alive()) { teardown(); return; }
     if (!enabled || excluded) return;
@@ -188,7 +222,7 @@
     // Progress toward the NEXT window only cares about the CURRENT run — a pause starts
     // a fresh one, so the counter resets after a real pause instead of counting through it.
     var curSteps = segments.length ? segments[segments.length - 1].length : 0;
-    if (events.length % 20 === 0) { try { console.log("[continuum-guard] keys=" + events.length + " steps=" + curSteps + "/" + F.WINDOW_SIZE + " windows=" + windows.length); } catch (e) {} }
+    if (debug && events.length % 20 === 0) dlog("[continuum-guard] keys=" + events.length + " steps=" + curSteps + "/" + F.WINDOW_SIZE + " windows=" + windows.length);
     // Live progress so the popup shows capture is working before a full window forms.
     safeSend({ type: "cg:activity", steps: curSteps, need: F.WINDOW_SIZE });
     if (windows.length > lastWindowCount) {
@@ -198,7 +232,7 @@
       // directly against the enrollment wizard's logged stats (same format, this page's
       // own DevTools console, F12) to spot any real discrepancy between enrolled data and
       // what's actually being scored.
-      try {
+      if (debug) try {
         var mn = [Infinity, Infinity, Infinity, Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity], sm = [0, 0, 0, 0, 0, 0];
         latest.forEach(function (row) { for (var c = 0; c < 6; c++) { if (row[c] < mn[c]) mn[c] = row[c]; if (row[c] > mx[c]) mx[c] = row[c]; sm[c] += row[c]; } });
         console.log("[continuum-guard/diag] live-window min:", mn.map(function (v) { return Number(v.toFixed(3)); }), "mean:", sm.map(function (v) { return Number((v / latest.length).toFixed(3)); }), "max:", mx.map(function (v) { return Number(v.toFixed(3)); }));
@@ -234,11 +268,11 @@
     if (!M || !alive()) return;
     var steps = M.eventsToSteps(mouseEvents);
     var windows = M.stepsToWindows(steps);
-    if (mouseEvents.length % 40 === 0) { try { console.log("[continuum-guard] mouse events=" + mouseEvents.length + " steps=" + steps.length + " windows=" + windows.length + " (needs " + M.WINDOW_SIZE + " steps + path>=0.08 to qualify a window)"); } catch (e) {} }
+    if (debug && mouseEvents.length % 40 === 0) dlog("[continuum-guard] mouse events=" + mouseEvents.length + " steps=" + steps.length + " windows=" + windows.length + " (needs " + M.WINDOW_SIZE + " steps + path>=0.08 to qualify a window)");
     if (windows.length > lastMouseWindows) {
       lastMouseWindows = windows.length;
       var latest = windows[windows.length - 1];
-      try {
+      if (debug) try {
         var path = 0; for (var i = 0; i < latest.length; i++) path += Math.hypot(latest[i][0], latest[i][1]);
         console.log("[continuum-guard/diag] new mouse window #" + windows.length + " path=" + path.toFixed(3) + " (min 0.08 to qualify — this one did)");
       } catch (e) {}
@@ -249,5 +283,5 @@
   onM("mousemove", function (e) { recMouse(e.clientX, e.clientY, mouseDown ? "Drag" : "Move"); });
   onM("mousedown", function (e) { mouseDown = true; recMouse(e.clientX, e.clientY, "Pressed"); });
   onM("mouseup", function (e) { mouseDown = false; recMouse(e.clientX, e.clientY, "Released"); });
-  try { console.log("[continuum-guard] content script ACTIVE on " + origin + " — features.js: " + (globalThis.ContinuumFeatures ? "loaded" : "MISSING") + ", enabled=" + enabled + ", excluded=" + excluded); } catch (e) {}
+  dlog("[continuum-guard] content script ACTIVE on " + origin + " — features.js: " + (globalThis.ContinuumFeatures ? "loaded" : "MISSING") + ", enabled=" + enabled + ", excluded=" + excluded);
 })();

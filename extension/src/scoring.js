@@ -71,33 +71,18 @@ var ContinuumScoring = (function () {
   // account switch — the caller (offscreen.js) always reloads right after calling this.
   function unload() {
     model = null; kind = null; extractor = null; head = null;
-    mouseExtractor = null; mouseHead = null; mouseScaler = null;
+    if (typeof ContinuumMouseModel !== "undefined") ContinuumMouseModel.unload();
   }
 
-  // ---- mouse modality (only meaningful once a personal head is trained: the mouse
-  // base is a 120-user ID net, so there is no generic genuine/impostor fallback) ----
-  var mouseExtractor = null, mouseHead = null, mouseScaler = null;
-  async function loadMouseTrained(extractorUrl, scalerUrl, accountId) {
-    if (typeof tf === "undefined") throw new Error("tf runtime not loaded");
-    try { await tf.setBackend("cpu"); } catch (e) {}
-    await tf.ready();
-    mouseHead = await tf.loadLayersModel("indexeddb://cg-personal-mouse-head-" + accountId);  // throws if never trained
-    mouseScaler = await (await fetch(scalerUrl)).json();
-    mouseExtractor = await tf.loadGraphModel(extractorUrl);
-    return true;
+  // ---- mouse modality: delegated to mouse-model.js (loaded before this file), which the
+  // enrolment page trains with, so scoring can never drift from training. Only meaningful once
+  // this account has a personal model: there is no generic genuine/impostor mouse model. ----
+  async function loadMouseTrained(scalerUrl, accountId) {
+    return ContinuumMouseModel.load(accountId, scalerUrl);   // throws if never trained or stale
   }
-  function isMouseReady() { return !!(mouseExtractor && mouseHead); }
-  async function scoreMouseWindow(win) {
-    var scaled = win.map(function (row) {
-      return row.map(function (v, c) { return (v - mouseScaler.mean[c]) / (mouseScaler.std[c] || 1); });
-    });
-    var x = tf.tensor3d([scaled]);               // [1, 50, 7]
-    var f = await mouseExtractor.executeAsync(x);
-    var y = mouseHead.predict(f);
-    var out = y.dataSync();
-    x.dispose(); f.dispose(); y.dispose();
-    return out[1];                               // class 1 = genuine
-  }
+  function isMouseReady() { return ContinuumMouseModel.isReady(); }
+  function mouseMeta() { return ContinuumMouseModel.meta(); }
+  function scoreMouseWindow(win) { return ContinuumMouseModel.scoreWindow(win); }   // genuine probability
 
   // win = 50 x 6 array → genuine-class probability (softmax[1]).
   // Graph models run via executeAsync() (the GRU compiles to a dynamic while-loop op;
@@ -137,7 +122,7 @@ var ContinuumScoring = (function () {
     };
   }
 
-  return { load: load, loadTrained: loadTrained, loadScaler: loadScaler, scaleWindow: scaleWindow, isReady: isReady, unload: unload, scoreWindow: scoreWindow, loadMouseTrained: loadMouseTrained, isMouseReady: isMouseReady, scoreMouseWindow: scoreMouseWindow, verdict: verdict, decide: decide, RECENT_WINDOW_COUNT: RECENT_WINDOW_COUNT };
+  return { load: load, loadTrained: loadTrained, loadScaler: loadScaler, scaleWindow: scaleWindow, isReady: isReady, unload: unload, scoreWindow: scoreWindow, loadMouseTrained: loadMouseTrained, isMouseReady: isMouseReady, mouseMeta: mouseMeta, scoreMouseWindow: scoreMouseWindow, verdict: verdict, decide: decide, RECENT_WINDOW_COUNT: RECENT_WINDOW_COUNT };
 })();
 
 // Allow importing the pure decision logic under Node for tests.

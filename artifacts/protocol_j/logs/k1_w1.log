@@ -1,0 +1,68 @@
+2026-09-19 08:10:35.864647: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-09-19 08:10:35.968040: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+Loaded 2000 impostor windows from /app/data/mouse_only/Mouse_A5_W50_base80.h5
+Feature scaler loaded from /app/artifacts/mouse-fcn-a5-j80/scaler.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user8/KEEP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user8/KEEP
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user8/DROP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user8/DROP
+[K1 w1] wrote /app/artifacts/repr_arch_study/parts/K1/user8.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user16/KEEP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user16/KEEP
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user16/DROP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user16/DROP
+[K1 w1] wrote /app/artifacts/repr_arch_study/parts/K1/user16.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user29/KEEP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user29/KEEP
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user29/DROP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user29/DROP
+[K1 w1] wrote /app/artifacts/repr_arch_study/parts/K1/user29.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user70/KEEP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user70/KEEP
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user70/DROP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user70/DROP
+[K1 w1] wrote /app/artifacts/repr_arch_study/parts/K1/user70.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user86/KEEP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user86/KEEP
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user86/DROP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user86/DROP
+[K1 w1] wrote /app/artifacts/repr_arch_study/parts/K1/user86.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user91/KEEP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user91/KEEP
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user91/DROP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user91/DROP
+[K1 w1] wrote /app/artifacts/repr_arch_study/parts/K1/user91.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user104/KEEP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user104/KEEP
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user104/DROP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user104/DROP
+[K1 w1] wrote /app/artifacts/repr_arch_study/parts/K1/user104.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user108/KEEP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user108/KEEP
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user108/DROP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user108/DROP
+[K1 w1] wrote /app/artifacts/repr_arch_study/parts/K1/user108.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user115/KEEP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user115/KEEP
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K1/user115/DROP
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K1/user115/DROP
+[K1 w1] wrote /app/artifacts/repr_arch_study/parts/K1/user115.json

@@ -17,9 +17,19 @@ var MAX_STORED_KEY_WINDOWS = 60;  // cap on accumulated keystroke windows across
 // also the storage cap — there is no reason to aim lower.
 var RECOMMENDED_KEY_WINDOWS = MAX_STORED_KEY_WINDOWS;
 var profileTotal = 0;             // accumulated windows already stored for this account
-// Raised from 80: sessions can now contribute more than MOUSE_TARGET windows, and the
-// profile needs room to span short/medium/long movement rather than one amplitude.
-var MAX_STORED_MOUSE_WINDOWS = 200;
+// Mouse enrolment (see startMouseStage) is counted in SAMPLES: one sample = MOUSE_SAMPLE_WINDOWS
+// windows (~16 s of movement), and the profile is built from MOUSE_SAMPLES_REQUIRED of them
+// (6 x 55 = 330 windows, ~90 s: the plateau of the enrolment curve). A sample saves itself the
+// moment it is complete, so the count on screen is always what is on file. The same numbers gate
+// enrolment on the server (ca-service lib/mouse.js) and in the SDK. Storage keeps the most recent
+// MAX_STORED_MOUSE_WINDOWS: past the plateau more windows buy nothing measurable (440 windows AUC
+// 0.861 vs 0.856 at 330), and each one costs ~0.1 s of on-device training.
+var MOUSE_SAMPLE_WINDOWS = 55;             // one sample: ~16 s of movement
+var MOUSE_SAMPLES_REQUIRED = 6;
+var MOUSE_ENROLL_TOTAL = MOUSE_SAMPLE_WINDOWS * MOUSE_SAMPLES_REQUIRED;   // 330
+var MOUSE_SAMPLE_SECONDS = 16;
+var MIN_STEP_IQR_PX = 5;                   // step-size spread gate, as on the server
+var MAX_STORED_MOUSE_WINDOWS = 500;
 var events = [], t0 = performance.now();
 
 // DIAGNOSTIC: dump per-feature stats [id1,id2,dwell1,dwell2,dd,ud] for a set of windows,
@@ -152,6 +162,8 @@ resetLink.addEventListener("click", function (e) {
   getProfileId(function (id) {
     api.storage.local.remove(["cg_enroll_" + id, "cg_enroll_mouse_" + id, "cg_enrolled_at_" + id, "cg_enroll_sessions_" + id, "cg_enroll_mouse_sessions_" + id], function () {
       ContinuumTrainer.clearTrained(id).then(function () {
+        return ContinuumMouseModel.clearTrained(id);
+      }).then(function () {
         try { api.runtime.sendMessage({ type: "cg:profile-reset" }); } catch (e2) {}
         location.reload();
       });
@@ -190,7 +202,7 @@ function finishStage(kind) {
   document.getElementById("doneMsg").textContent = kind === "mouse"
     ? "Your mouse model is trained and active."
     : "Your typing model is trained and active. The guard now knows your rhythm.";
-  showSessionNudge(kind);
+  if (kind !== "mouse") showSessionNudge(kind);   // the mouse stage counts its own visits
   var cta = document.getElementById("crossTrainCta");
   var otherMode = kind === "mouse" ? "keystroke" : "mouse";
   var otherLabel = kind === "mouse" ? "⌨️ Also train your typing" : "🖱️ Also train your mouse movement";
@@ -265,53 +277,47 @@ saveBtn.addEventListener("click", function () {
   });
 });
 
-// ---- Step 2: mouse enrollment (read & click links) ----
-// REDESIGNED from "chase-the-dot" (a small fixed box, one recurring target, frequent
-// clicks) to a read-and-click task over a full article-width passage with several links
-// scattered at realistic, varied positions — much closer to how someone actually moves a
-// mouse across a real page (reading, moving to a distant link, clicking, moving again)
-// than repeatedly re-centering on one recurring dot in a tiny box. The capture/feature/
-// training code is UNCHANGED; only the interaction that generates the movement changed.
-// 20 windows (validated sweep: held-out genuine windows win 95%, impostors stay low 85%
-// — 12 was too few, the head memorized). ~1 minute of natural reading + clicking.
-var MOUSE_TARGET = 20;
+// ---- Step 2: mouse enrollment ----
+// What the profile needs, from the pre-registered study (artifacts/repr_arch_study):
+//   * 330 windows in total -- about 90 s of movement -- is where the enrolment curve reaches its
+//     plateau for this model (AUC 0.856 at 330 vs 0.861 at 440, non-inferior); below that the
+//     profile is measurably weaker (0.790 at 110 windows).
+//   * They are collected as 6 samples of 55 windows (~16 s each), in one visit or several; a
+//     sample is saved only once complete, so a short accidental capture never enters the profile.
+//   * The model reads only step sizes (|dx|, |dy|), so clicks are not a feature any more. The
+//     targets are there to make the hand travel short, medium and long distances, the range of
+//     step sizes the guard will see in use.
+// The same numbers gate enrolment on the server (ca-service lib/mouse.js).
 var MOUSE_LINKS_PER_ROUND = 6;
 function startMouseStage() {
   var stage = document.getElementById("mouseStage");
-  var area = document.getElementById("playArea");
   var textEl = document.getElementById("mouseText");
   var mprog = document.getElementById("mprog");
   var mstatus = document.getElementById("mstatus");
   var mts = document.getElementById("mtrainStatus");
-  var msaveBtn = document.getElementById("msave");
+  var rebuildBtn = document.getElementById("mrebuild");
   stage.style.display = "block";
   stage.scrollIntoView({ behavior: "smooth" });
 
   var M = globalThis.ContinuumMouseFeatures;
-  var mEvents = [], down = false, doneTraining = false;
+  var mEvents = [], down = false, busy = false, saving = false, visitCounted = false, stored = [];
 
-  function push(x, y, st) { if (!doneTraining) { mEvents.push({ t: performance.now(), x: x, y: y, state: st }); if (mEvents.length % 10 === 0) update(); } }
-  // Capture on DOCUMENT, not the play area. content.js scores motion across the whole
-  // viewport, so recording only inside a 620x420 box enrols a distribution the guard never
-  // sees — measured live, browsing windows scored ~0.29 against 0.61 for the movement this
-  // page used to capture.
+  function push(x, y, st) { if (!busy) { mEvents.push({ t: performance.now(), x: x, y: y, state: st }); if (mEvents.length % 10 === 0) update(); } }
+  // Capture on DOCUMENT, not the play area: content.js scores motion across the whole viewport,
+  // so recording only inside a box would enrol a distribution the guard never sees.
   document.addEventListener("mousemove", function (e) { push(e.clientX, e.clientY, down ? "Drag" : "Move"); });
   document.addEventListener("mousedown", function (e) { down = true; push(e.clientX, e.clientY, "Pressed"); });
   document.addEventListener("mouseup", function (e) { down = false; push(e.clientX, e.clientY, "Released"); });
 
-  // Targets placed anywhere on screen, at DELIBERATELY VARIED distances from the previous
-  // one — roughly a third short (~120px), a third medium, a third long (cross-screen).
-  // Amplitude is the property that separates real browsing (short, precise corrections)
-  // from a directed task (long sweeps), and a profile enrolled on only one of them fails on
-  // the other. Alternating distances makes the profile span the range the guard will see.
+  // Targets anywhere on screen at DELIBERATELY VARIED distances from the previous one, weighted
+  // toward short hops (2 of every 4) because that is most of real browsing, with medium and long
+  // hops keeping the ballistic end of the range represented. Fractions are of the screen diagonal.
   var lastTX = window.innerWidth / 2, lastTY = window.innerHeight / 2, hop = 0;
+  var floatLayer = document.getElementById("floatLayer");
   function spawnTarget() {
-    if (doneTraining) return;
+    if (busy) return;
     var el = document.createElement("div");
     el.className = "ftarget";
-    // Weighted toward SHORT hops (2 of every 4), because that is what real browsing is
-    // mostly made of — small precise corrections — while the medium and long hops keep the
-    // ballistic end of the range represented. Fractions are of the screen diagonal.
     var tier = hop % 4;
     var minD = [0.02, 0.03, 0.15, 0.50][tier], maxD = [0.09, 0.12, 0.40, 0.90][tier];
     hop += 1;
@@ -328,30 +334,68 @@ function startMouseStage() {
     y = Math.max(40, Math.min(window.innerHeight - 40, y));
     lastTX = x; lastTY = y;
     el.style.left = x + "px"; el.style.top = y + "px";
-    el.textContent = "●";
-    el.addEventListener("click", function (e) {
-      e.preventDefault(); e.stopPropagation();
-      if (el.parentNode) el.parentNode.removeChild(el);
-      spawnTarget();
-    });
+
+    // Every third target is a drag. SapiMouse -- the corpus the base model learned movement
+    // from -- is 32% drag-and-drop (8,517 of 26,497 actions); a click-only task never produces
+    // movement with the button held, so one in three here keeps that kind of movement in the
+    // profile.
+    if (hop % 3 === 2) {
+      el.className = "ftarget drag";
+      el.textContent = "✥";
+      var dx2, dy2, dtries = 0;
+      do {
+        var dang = Math.random() * Math.PI * 2;
+        var ddist = diag * (0.12 + Math.random() * 0.28);
+        dx2 = x + Math.cos(dang) * ddist;
+        dy2 = y + Math.sin(dang) * ddist;
+        dtries += 1;
+      } while ((dx2 < 50 || dy2 < 50 || dx2 > window.innerWidth - 50 || dy2 > window.innerHeight - 50) && dtries < 30);
+      dx2 = Math.max(50, Math.min(window.innerWidth - 50, dx2));
+      dy2 = Math.max(50, Math.min(window.innerHeight - 50, dy2));
+      var drop = document.createElement("div");
+      drop.className = "fdrop";
+      drop.style.left = dx2 + "px"; drop.style.top = dy2 + "px";
+      drop.textContent = "⬚";
+      floatLayer.appendChild(drop);
+      var dragging = false;
+      el.addEventListener("mousedown", function (e) { e.preventDefault(); e.stopPropagation(); dragging = true; });
+      var onMove = function (e) { if (dragging) { el.style.left = e.clientX + "px"; el.style.top = e.clientY + "px"; } };
+      var onUp = function (e) {
+        if (!dragging) return;
+        dragging = false;
+        if (Math.hypot(e.clientX - dx2, e.clientY - dy2) <= 46) {
+          document.removeEventListener("mousemove", onMove, true);
+          document.removeEventListener("mouseup", onUp, true);
+          if (el.parentNode) el.parentNode.removeChild(el);
+          if (drop.parentNode) drop.parentNode.removeChild(drop);
+          lastTX = dx2; lastTY = dy2;      // next hop starts where the hand ended
+          spawnTarget();
+        } else {
+          el.style.left = x + "px"; el.style.top = y + "px";   // missed: snap back, stays reachable
+        }
+      };
+      document.addEventListener("mousemove", onMove, true);
+      document.addEventListener("mouseup", onUp, true);
+    } else {
+      el.textContent = "●";
+      el.addEventListener("click", function (e) {
+        e.preventDefault(); e.stopPropagation();
+        if (el.parentNode) el.parentNode.removeChild(el);
+        spawnTarget();
+      });
+    }
     floatLayer.appendChild(el);
   }
-  var floatLayer = document.getElementById("floatLayer");
   function clearTargets() { if (floatLayer) floatLayer.innerHTML = ""; }
-  spawnTarget();
 
-  // Render a passage with MOUSE_LINKS_PER_ROUND random words turned into clickable
-  // "links" (real hyperlink styling) scattered through the natural flow of the text —
-  // clicking each requires moving to a different, unpredictable position, like following
-  // links on a real page. When every link in a round is clicked, load a fresh passage.
+  // A passage with a few words turned into links scattered through the text: following them
+  // means moving to unpredictable positions, as on a real page. A fresh passage once all are done.
   var remaining = 0;
   function loadRound() {
-    if (doneTraining) return;
-    var text = nextPassage();
-    var words = text.split(/\s+/);
+    if (busy) return;
+    var words = nextPassage().split(/\s+/);
     var candidates = [];
     for (var i = 0; i < words.length; i++) { if (words[i].replace(/[^a-zA-Z]/g, "").length >= 4) candidates.push(i); }
-    // Spread picks across the whole passage rather than clustering near the start.
     var picks = [];
     var bucket = Math.max(1, Math.floor(candidates.length / MOUSE_LINKS_PER_ROUND));
     for (var b = 0; b < MOUSE_LINKS_PER_ROUND && b * bucket < candidates.length; b++) {
@@ -361,70 +405,177 @@ function startMouseStage() {
     remaining = picks.length;
     var pickSet = {};
     picks.forEach(function (idx) { pickSet[idx] = true; });
-    textEl.innerHTML = words.map(function (w, i) {
-      return pickSet[i] ? '<a href="#" class="mlink">' + w + "</a>" : w;
-    }).join(" ");
+    textEl.innerHTML = words.map(function (w, i) { return pickSet[i] ? '<a href="#" class="mlink">' + w + "</a>" : w; }).join(" ");
     Array.prototype.forEach.call(textEl.querySelectorAll(".mlink"), function (a) {
       a.addEventListener("click", function (e) {
         e.preventDefault();
-        if (a.classList.contains("done")) return;   // theme-aware styling lives in enroll.html's .mlink/.mlink.done
+        if (a.classList.contains("done")) return;
         a.classList.add("done");
         remaining -= 1;
-        if (remaining <= 0 && !doneTraining) loadRound();   // fresh passage + links, same task
+        if (remaining <= 0 && !busy) loadRound();
       });
     });
   }
-  loadRound();
 
-  function windows() { return M ? M.stepsToWindows(M.eventsToSteps(mEvents)) : []; }
+  function sessionWindows() { return M ? M.stepsToWindows(M.eventsToSteps(mEvents)) : []; }
+  function samplesOnFile() { return Math.floor(stored.length / MOUSE_SAMPLE_WINDOWS); }
+
+  // "Sample k of 6", one pip per sample on file, and the progress of the sample being recorded.
+  // The bar tracks the current sample; the pips track the profile.
   function update() {
-    var w = windows();
-    mprog.style.width = Math.min(100, Math.round((w.length / MOUSE_TARGET) * 100)) + "%";
-    // MOUSE_TARGET is a MINIMUM, not a cap. The old flow trained automatically the instant it
-    // was reached and then kept only the first MOUSE_TARGET windows, so a session could never
-    // contribute more than 20 however long the user kept going — and with targets now cycling
-    // through short/medium/long hops, 20 windows barely covers the amplitude range the profile
-    // is supposed to span. Keystroke already worked this way (minimum, then a save button);
-    // mouse now matches.
-    mstatus.textContent = doneTraining ? mstatus.textContent
-      : w.length < MOUSE_TARGET
-        ? w.length + " / " + MOUSE_TARGET + " mouse windows captured"
-        : w.length + " windows captured ✓ — keep going for a stronger profile, or save now";
-    msaveBtn.disabled = doneTraining || w.length < MOUSE_TARGET;
+    if (busy) return;
+    var w = sessionWindows(), n = Math.min(w.length, MOUSE_SAMPLE_WINDOWS);
+    var have = samplesOnFile(), left = Math.max(0, MOUSE_SAMPLES_REQUIRED - have);
+    var pips = "";
+    for (var i = 0; i < MOUSE_SAMPLES_REQUIRED; i++) pips += '<span class="mpip' + (i < have ? " on" : "") + '"></span>';
+    mstatus.innerHTML = '<div class="msamp"><span class="mhead">'
+      + (left ? "Sample " + (have + 1) + " of " + MOUSE_SAMPLES_REQUIRED : "Extra sample")
+      + '</span><span class="mpips">' + pips + '</span><span class="msub">'
+      + (left ? left + " to go · about " + left * MOUSE_SAMPLE_SECONDS + " s of movement"
+              : "your profile has " + have + " samples; this one retrains it")
+      + '</span></div><div class="msub">this sample: '
+      + Math.round((n * MOUSE_SAMPLE_SECONDS) / MOUSE_SAMPLE_WINDOWS) + " s of about " + MOUSE_SAMPLE_SECONDS + " s ("
+      + n + " / " + MOUSE_SAMPLE_WINDOWS + " windows) · it saves itself when complete</div>";
+    mprog.style.width = Math.round((n / MOUSE_SAMPLE_WINDOWS) * 100) + "%";
+    if (w.length >= MOUSE_SAMPLE_WINDOWS && !saving) saveSample(w.slice(0, MOUSE_SAMPLE_WINDOWS));
   }
 
-  msaveBtn.addEventListener("click", function () {
-    var w = windows();
-    if (doneTraining || w.length < MOUSE_TARGET) return;
-    doneTraining = true;
-    msaveBtn.disabled = true;
+  // Build the model from everything on file, entirely in this page (mouse-model.js).
+  function build(id, windows) {
+    busy = true;
+    rebuildBtn.style.display = "none";
     clearTargets();
     mts.style.display = "block";
-    mts.textContent = "capturing complete — training your mouse model on-device…";
+    mts.textContent = "building your mouse profile on this device…";
+    return ContinuumMouseModel.train(windows, {
+      baseUrl: api.runtime.getURL("model/mouse-fcn/model.json"),
+      scalerUrl: api.runtime.getURL("model/mouse-scaler.json"),
+      impostorsUrl: api.runtime.getURL("data/mouse-impostors.json"),
+      accountId: id,
+      onProgress: function (p) {
+        mts.textContent = p.phase === "embed"
+          ? "reading your movement… " + p.done + " / " + p.total + " windows (keep this tab open)"
+          : "training your profile… step " + p.done + " / " + p.total;
+      },
+    }).then(function (r) {
+      // The retired model's head is useless now; drop it so nothing can mistake it for a profile.
+      try { tf.io.removeModel("indexeddb://cg-personal-mouse-head-" + id).catch(function () {}); } catch (e) {}
+      mts.style.display = "none";
+      console.log("[continuum-guard] mouse profile built:", r);
+      finishStage("mouse");
+      mouseSessionNudge(id);
+    }).catch(function (e) {
+      busy = false;
+      mts.textContent = "building failed: " + ((e && e.message) || e) + " — your movement is saved; press the button to try again.";
+      rebuildBtn.style.display = stored.length >= MOUSE_ENROLL_TOTAL ? "inline-block" : "none";
+      update();
+    });
+  }
+
+  function saveSample(sample) {
+    if (busy || saving) return;
+    mEvents = [];                                       // the next sample starts from zero
+    // Same gate as the server: genuine pointing varies a lot in step size; a mechanical sweep or
+    // a jittering cursor does not, and would teach the model nothing about the user.
+    var spread = stepSpreadPx(sample);
+    if (spread < MIN_STEP_IQR_PX) {
+      mts.style.display = "block";
+      mts.textContent = "That sample was too uniform to learn from (step-size spread " + spread.toFixed(1)
+        + " px, needs " + MIN_STEP_IQR_PX + ") and was not saved. Move to the dots at your natural speed, near and far.";
+      update();
+      return;
+    }
+    saving = true;
     getProfileId(function (id) {
       var key = "cg_enroll_mouse_" + id;
-      api.storage.local.get([key], function (d) {
-        var prior = (d && d[key]) || [];
-        var merged = prior.concat(w);   // keep EVERY window captured this session
-          if (merged.length > MAX_STORED_MOUSE_WINDOWS) merged = merged.slice(-MAX_STORED_MOUSE_WINDOWS);
-          var rec = {}; rec[key] = merged;
-          api.storage.local.set(rec, function () {
-            ContinuumTrainer.train(merged, {
-              impostorsUrl: api.runtime.getURL("data/mouse-impostors.json"),
-              extractorUrl: api.runtime.getURL("model/mouse-extractor/model.json"),
-              scalerUrl: api.runtime.getURL("model/mouse-scaler.json"),
-              saveTo: "indexeddb://cg-personal-mouse-head-" + id,
-              jitterCols: [2, 3, 4, 5],   // never jitter the is_click flag
-              onProgress: function (p) { mts.textContent = "training mouse… epoch " + p.epoch + "/" + p.epochs + " — accuracy " + Math.round(p.acc * 100) + "% (" + merged.length + " windows total)"; },
-            }).then(function () {
-              mts.style.display = "none";
-              finishStage("mouse");
-            }).catch(function (e) {
-              mts.textContent = "mouse training failed: " + ((e && e.message) || e) + " — your samples were saved; reload this page to try again.";
-            });
-        });
+      var merged = stored.concat(sample);
+      if (merged.length > MAX_STORED_MOUSE_WINDOWS) merged = merged.slice(-MAX_STORED_MOUSE_WINDOWS);
+      var rec = {}; rec[key] = merged;
+      api.storage.local.set(rec, function () {
+        saving = false;
+        stored = merged;
+        profileTotal = merged.length;
+        if (!visitCounted) { visitCounted = true; bumpMouseSessions(id); }   // one per visit, not per sample
+        if (merged.length >= MOUSE_ENROLL_TOTAL) { build(id, merged); return; }
+        var have = samplesOnFile();
+        mts.style.display = "block";
+        mts.textContent = "✓ Sample " + have + " of " + MOUSE_SAMPLES_REQUIRED + " saved. Keep going now, or close this page and continue from sample "
+          + (have + 1) + " later.";
+        update();
       });
     });
+  }
+
+  rebuildBtn.addEventListener("click", function () {
+    if (busy) return;
+    getProfileId(function (id) { build(id, stored); });
+  });
+
+  // Load what is on file. Windows saved by the retired 7-feature model are converted exactly
+  // (|col| x 1920) and written back, so nobody has to enrol again; if there are enough of them
+  // but no current model, offer to rebuild from them.
+  getProfileId(function (id) {
+    var key = "cg_enroll_mouse_" + id;
+    api.storage.local.get([key], function (d) {
+      var raw = (d && d[key]) || [];
+      stored = M.fromRetired7(raw);
+      if (stored !== raw) { var rec = {}; rec[key] = stored; api.storage.local.set(rec); }
+      profileTotal = stored.length;
+      tf.io.listModels().then(async function (models) {
+        var current = !!models["indexeddb://cg-personal-mouse-fcn-" + id];
+        // A profile built for an earlier operating point without its percentile table cannot be
+        // re-derived; load() says so, and a rebuild from the saved windows fixes it.
+        if (current) {
+          try { await ContinuumMouseModel.load(id, api.runtime.getURL("model/mouse-scaler.json")); ContinuumMouseModel.unload(); }
+          catch (eL) { current = false; }
+        }
+        if (!current && stored.length >= MOUSE_ENROLL_TOTAL) {
+          rebuildBtn.style.display = "inline-block";
+          mts.style.display = "block";
+          mts.textContent = "The mouse model was updated. Your saved movement (" + samplesOnFile()
+            + " samples) is enough to rebuild your profile now, without recording again.";
+        }
+      }).catch(function () {});
+      update();
+    });
+  });
+
+  spawnTarget();
+  loadRound();
+}
+
+// Same statistic as ca-service lib/mouse.js stepSpreadPx: rebuild the visit's step stream from
+// its overlapping windows (the first in full, then each later window's new tail) and take the
+// interquartile range of the step lengths.
+function stepSpreadPx(windows) {
+  if (!windows.length) return 0;
+  var steps = windows[0].slice();
+  for (var i = 1; i < windows.length; i++) steps = steps.concat(windows[i].slice(-10));
+  var mags = steps.map(function (r) { return Math.hypot(r[0], r[1]); }).sort(function (a, b) { return a - b; });
+  function q(p) { return mags[Math.min(mags.length - 1, Math.floor(p * (mags.length - 1)))]; }
+  return q(0.75) - q(0.25);
+}
+
+// Mouse visits (page openings that saved at least one sample) are counted, and the nudge is
+// shown when the profile is built.
+function bumpMouseSessions(id) {
+  var key = "cg_enroll_mouse_sessions_" + id;
+  api.storage.local.get([key], function (d) {
+    var rec = {}; rec[key] = ((d && d[key]) || 0) + 1;
+    api.storage.local.set(rec);
+  });
+}
+function mouseSessionNudge(id) {
+  var key = "cg_enroll_mouse_sessions_" + id;
+  api.storage.local.get([key], function (d) {
+    var n = (d && d[key]) || 1;
+    var box = document.getElementById("sessionNudge");
+    if (n < 2) {
+      box.style.display = "block";
+      box.textContent = "📈 Built from one visit. Movement varies from day to day; adding a visit on another day lets your profile cover that (open this page again and it adds to what is saved).";
+    } else {
+      box.style.display = "none";
+    }
   });
 }
 

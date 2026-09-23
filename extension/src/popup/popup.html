@@ -252,7 +252,7 @@
             <div class="sect-pad">
               <div class="row" id="rowMouse"><span>Verdict</span><span class="val" id="mouse">…</span></div>
               <div class="row" id="rowMouseTrack" style="display:none"><span>Mouse tracking</span><label class="switch"><input type="checkbox" id="mouseTrackToggle" /><span class="slider"></span></label></div>
-              <div class="row" id="rowMouseSens" style="display:none"><span>Lock threshold</span><span class="ctrl"><input type="range" id="mouseSensRange" min="30" max="100" step="5" title="Percent of recent mouse windows that must look suspicious before the page locks. Lower = locks more easily; higher = stricter." style="width:104px" /><span class="val" id="mouseSensVal" style="min-width:32px">75%</span></span></div>
+              <div class="row" id="rowMouseSens" style="display:none"><span>Lock threshold</span><span class="ctrl"><input type="range" id="mouseSensRange" min="30" max="100" step="5" title="For a k-of-n vote profile: percent of recent mouse windows that must fall below your personal threshold before the page locks. Lower = locks more easily; higher = stricter. Hidden for the current average-of-60 rule." style="width:104px" /><span class="val" id="mouseSensVal" style="min-width:32px">50%</span></span></div>
               <div class="hint" id="mouseSensHint" style="display:none">…</div>
               <div class="row" id="rowMouseSamples" style="display:none"><span>Trained on</span><span class="val" id="mouseSamples">…</span></div>
               <button id="enrollMouse" class="btn-mouse">🖱️ Train mouse</button>

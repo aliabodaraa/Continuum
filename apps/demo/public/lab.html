@@ -1795,9 +1795,15 @@
               data.typingEvaluation &&
               data.typingEvaluation.recentWindowScores
             )
+              // The challenge can fire from accumulated suspicion across recent
+              // checks (or a degenerate-input override), not only from THIS
+              // packet's own vote — data.isSuspicious is what this specific
+              // packet's Lu vote actually decided, so the trace must follow
+              // that, not the (possibly debounce-driven) challenge decision,
+              // or the numbers shown can contradict the label next to them.
               setWindowScores(
                 data.typingEvaluation.recentWindowScores,
-                "suspicious",
+                data.isSuspicious ? "suspicious" : "genuine",
                 data.typingEvaluation.windowCount,
                 Number(data.modelConfidence),
               );

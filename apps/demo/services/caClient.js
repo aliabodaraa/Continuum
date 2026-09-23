@@ -114,6 +114,8 @@ module.exports = {
   mouseStatus: (userId) => call("GET", `/v1/mouse/status/${Number(userId)}`, userId),
   // Destructive — the route that calls this must verify a passkey first.
   mouseReset: (userId) => call("POST", "/v1/mouse/reset", userId, {}),
+  // The suspicious-packet count is persisted by ca-service; this says "we acted on it".
+  mouseStreakReset: (userId) => call("POST", "/v1/mouse/streak/reset", userId, {}),
 
   // Shared step-up lock (see ca-service/lib/lock.js) — set from here when the
   // mouse strike debounce fires (keystroke sets it directly inside ca-service),

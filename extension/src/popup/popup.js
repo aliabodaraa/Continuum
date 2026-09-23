@@ -94,10 +94,18 @@ function refresh() {
     show("rowMouseTrack", mouseOn);   // user on/off toggle, only once a mouse model exists
     if (mouseOn) q("mouseTrackToggle").checked = s.mouseTracking !== false;
     // Lock-sensitivity slider — only meaningful while the mouse channel is on.
-    show("rowMouseSens", mouseOn && s.mouseTracking !== false);
+    // The slider sets how many of the last n windows must be low; it applies to a "vote" rule only.
+    show("rowMouseSens", mouseOn && s.mouseTracking !== false && (s.mouseRule || "vote") === "vote");
     show("mouseSensHint", mouseOn && s.mouseTracking !== false);
+    if (mouseOn && (s.mouseRule || "vote") === "mean") {
+      q("mouseSensHint").textContent = "Asks for your passkey when the average score of your last "
+        + (s.mouseVoteN || 60) + " mouse windows (about 17 s of movement) falls below your personal threshold.";
+    }
+    mouseBuffer = s.mouseVoteN || 60;
+    mouseRule = s.mouseRule || "vote";
+    mouseDefaultPct = Math.round((100 * (s.mouseVoteK || 30)) / mouseBuffer);
     if (mouseOn && document.activeElement !== q("mouseSensRange")) {   // don't fight a live drag
-      var pct = s.mouseSustainPct || 75;
+      var pct = s.mouseSustainPct || mouseDefaultPct;
       q("mouseSensRange").value = pct;
       q("mouseSensVal").textContent = pct + "%";
       setMouseHint(pct);
@@ -126,6 +134,7 @@ function refresh() {
       q("mouse").textContent = s.mouseTracking === false ? "off"
         : !mv ? "watching…"
         : mv.low == null ? (mv.status === "suspicious" ? "⚠ " + mv.mean + "%" : "✓ " + mv.mean + "%")
+        : mv.rule === "mean" ? "avg " + mv.bufferMean + "% · locks below " + mv.threshold + "% (" + mv.buffer + "/" + mv.bufferMax + ")"
         : mv.low + " / " + mv.bufferMax + " low (" + mv.riskPct + "%)";
     }
 
@@ -137,12 +146,17 @@ function refresh() {
       : kvs.status === "suspicious" ? "⚠ " + kvs.mean + "%"
       : "✓ " + kvs.mean + "%";
     var mvs = s.mouseVerdict;
-    q("sumMouse").textContent = !mouseOn ? "not trained"
+    // A profile trained for the retired mouse model: the saved movement is kept and converted,
+    // but the model has to be rebuilt once before the mouse channel works again.
+    q("enrollMouse").textContent = s.mouseStale && !mouseOn ? "🖱️ Rebuild mouse profile" : "🖱️ Train mouse";
+    q("sumMouse").textContent = s.mouseStale && !mouseOn ? "model updated — rebuild"
+      : !mouseOn ? "not trained"
       : s.mouseTracking === false ? "off"
       : !mvs ? "idle"
       : mvs.low == null ? (mvs.status === "suspicious" ? "⚠ " + mvs.mean + "%" : "✓ " + mvs.mean + "%")
-      : (mvs.riskPct >= (s.mouseSustainPct || 75) - 15 ? "⚠ " : "") + mvs.riskPct + "% of "
-        + (s.mouseSustainPct || 75) + "%";
+      : mvs.rule === "mean" ? (mvs.bufferMean < mvs.threshold + 5 ? "⚠ " : "") + "avg " + mvs.bufferMean + "% / " + mvs.threshold + "%"
+      : (mvs.riskPct >= (s.mouseSustainPct || mouseDefaultPct) - 15 ? "⚠ " : "") + mvs.riskPct + "% of "
+        + (s.mouseSustainPct || mouseDefaultPct) + "%";
 
     q("profile").textContent = active
       ? [ksOn ? "typing ✓" : null, mouseOn ? "mouse ✓" : null].filter(Boolean).join(" · ")
@@ -165,6 +179,13 @@ function refresh() {
     }
     else if (!active) { txt = "⚙️ Set up your profile below to start monitoring"; }
     else if (!s.modelReady) { txt = s.modelError ? ("⚠ model error: " + s.modelError) : "⏳ loading model…"; }
+    // A failed step-up outranks every other message: while the verifier is unreachable the
+    // lock cannot be cleared at all, and saying "passkey required" without saying the passkey
+    // service is down is what makes this look like the extension itself is broken.
+    else if (s.rpError) {
+      txt = "⚠ Passkey service unreachable at " + (s.rpBase || "the configured address")
+        + " (" + s.rpError + ") — start it, or fix the address in Options"; cls = "v-warn";
+    }
     else if (s.locked) {
       var by = s.lockReason === "mouse" ? "mouse movement" : "keystroke rhythm";
       txt = "🔒 Locked — passkey required (" + by + " didn't match)"; cls = "v-warn";
@@ -215,11 +236,13 @@ q("mouseTrackToggle").addEventListener("change", function () {
 
 // Mouse lock-sensitivity slider: live label on drag, persist on release. The hint spells the
 // percentage out in windows — the number that actually decides when the passkey is demanded.
-var MOUSE_BUFFER = 20;   // MOUSE_SUSTAIN_WINDOW in background.js
+// The vote length and the measured default (k of n) come from the trained model via status.
+var mouseBuffer = 60, mouseDefaultPct = 50, mouseRule = "vote";
 function setMouseHint(pct) {
-  var n = Math.max(1, Math.round((pct / 100) * MOUSE_BUFFER));
+  var n = Math.max(1, Math.round((pct / 100) * mouseBuffer));
   q("mouseSensHint").textContent = "Asks for your passkey after " + n + " of the last "
-    + MOUSE_BUFFER + " mouse windows look wrong.";
+    + mouseBuffer + " mouse windows fall below your personal threshold"
+    + (pct === mouseDefaultPct ? " (the measured default)." : ".");
 }
 q("mouseSensRange").addEventListener("input", function () {
   q("mouseSensVal").textContent = this.value + "%";

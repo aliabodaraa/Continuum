@@ -130,10 +130,10 @@ pool, target excluded from both, recipe copied from `api.py`.
 | TAR @ 0.50 median | 84.42% (p10 58.21%) |
 | **TAR @ FAR = 1% median** | **12.4%** (p10 0.6%) |
 
-**User 1's corrected 8.42% is the 19th percentile.** Four users in five do worse; the median
-deployment user faces 14.53%. Enrolment volume does not explain the spread (**r = +0.04**), so
-more data is not the remedy — the difficulty is intrinsic, the same conclusion the mouse channel
-reached independently.
+**User 1's frozen-baseline figure, 10.17%, is the 33rd percentile.** Two users in three do worse;
+the median deployment user faces 14.53%. Enrolment volume does not explain the spread
+(**r = +0.04**), so more data is not the remedy — the difficulty is intrinsic, the same conclusion
+the mouse channel reached independently.
 
 ### Retraction: "personalisation halves the error"
 

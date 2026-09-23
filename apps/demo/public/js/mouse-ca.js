@@ -21,8 +21,11 @@
   window.__mouseCaLoaded = true;
 
   const CHECK_MS = 1600; // one decision every ~1.6s of activity
-  const SEND_WINDOWS = 18; // rolling tail sent to the server
-  const MIN_WINDOWS = 6; // one packet — below this is warm-up
+  // The server decides on its last VOTE_N windows (60 = ~17 s of movement; /api/mouse/status
+  // reports it) and reports warm-up until it has them, so sending fewer would leave every check in
+  // warm-up for good. Both are replaced by the server's value at init.
+  let SEND_WINDOWS = 60; // rolling tail sent to the server
+  let MIN_WINDOWS = 60; // below this is warm-up
   const LS_KEY = "mouseGuardEnabled";
 
   const MF = window.mouseFeatures;
@@ -194,7 +197,7 @@
       } else if (d && d.isSuspicious) {
         // Suspicious but below the strike threshold — building suspicion, no
         // lock yet. Surface it so the toggle shows momentum without a popup.
-        lastStatus = "warn:" + (d.suspiciousStreak || 1) + "/" + (d.strikesToLock || 3);
+        lastStatus = "warn:" + (d.suspiciousStreak || 1) + "/" + (d.strikesToLock || 1);
       } else if (d && d.checked) {
         // A clean verdict means the session is no longer locked (server-side),
         // so drop any stale lock and resume normal monitoring.
@@ -247,7 +250,7 @@
     let tail = "";
     if (on) {
       if (lastStatus.startsWith("warming:")) {
-        tail = ' · <span style="opacity:.85">warming ' + lastStatus.split(":")[1] + "/6</span>";
+        tail = ' · <span style="opacity:.85">warming ' + lastStatus.split(":")[1] + "/" + MIN_WINDOWS + "</span>";
       } else if (lastStatus.startsWith("ok:")) {
         tail = ' · <span style="opacity:.9">👁 ' + lastStatus.split(":")[1] + "%</span>";
       } else if (lastStatus.startsWith("warn:")) {
@@ -294,6 +297,7 @@
       .then((r) => (r.ok ? r.json() : { enrolled: false }))
       .then((d) => {
         enrolled = !!d.enrolled;
+        if (d.voteN) { SEND_WINDOWS = d.voteN; MIN_WINDOWS = d.voteN; }
         updateToggle();
         if (enabled && enrolled) start();
         else if (enabled && !enrolled) setEnabled(false);

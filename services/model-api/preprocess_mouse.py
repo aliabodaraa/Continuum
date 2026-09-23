@@ -61,7 +61,22 @@ MOUSE_FEATURE_NAMES = MOUSE_FEATURE_NAMES_V2 if MOUSE_FEATURE_SET == 11 else MOU
 # collected at 1920x1080; we scale by a common diagonal-ish constant so dx/dy
 # are device-comparable (per-user fine-tuning absorbs residual DPI differences).
 SCREEN_SCALE = 1920.0
-IDLE_SPLIT_SECONDS = 2.0   # gap above this splits the motion stream
+# TRAIN/SERVE ALIGNMENT.
+# These three rules must match sdk/js/mouse-features.js and
+# extension/src/features-mouse-actions.js exactly. They did not, and the
+# mismatch was a live defect: the browser broke streams at 0.5 s, dropped
+# zero-displacement moves and skipped near-static windows, while the training
+# data was built with a 2.0 s break and neither filter. The deployed model was
+# therefore scoring a feature distribution it had never been trained on.
+#
+# The browser's rules are the correct ones and are kept as the reference: they
+# were added to fix a measured production problem, where browsers emit floods of
+# zero-displacement mousemove events during scrolling — 52% of every live window
+# — which pinned scores near 0.28 and caused constant false locks. The fix
+# belongs on both sides of the pipeline, not just at inference.
+IDLE_SPLIT_SECONDS = 0.5   # sdk/js/mouse-features.js IDLE_SPLIT_SECONDS
+MIN_WINDOW_PATH = 0.08     # sdk/js/mouse-features.js MIN_WINDOW_PATH
+DROP_ZERO_DISPLACEMENT = True   # browser skips non-click moves that did not move
 DT_CLIP_SECONDS = 1.0      # per-point time gap is clipped to this
 # Clip scales for the enriched turn features so a single tiny-dt / tiny-dist sample
 # can't produce an outlier that dominates the z-score scaler. Both map to +/-1.
@@ -112,6 +127,17 @@ def events_to_steps(events):
         dx_px = x - prev[1]
         dy_px = y - prev[2]
         dist = float(np.hypot(dx_px, dy_px))
+
+        # A move that did not move the pointer carries no motion. The browser
+        # skips these (sdk/js/mouse-features.js), because during scrolling it
+        # emits them in bulk with the cursor stationary and each becomes an
+        # all-zero row [0,0,0,0,0,dt,0]. Clicks are kept even at zero
+        # displacement — their timing is real. `prev` is deliberately NOT
+        # advanced, so the next genuine movement is measured from the last real
+        # position, exactly as the browser does it.
+        if DROP_ZERO_DISPLACEMENT and dist == 0.0 and state not in ("Pressed", "Released"):
+            continue
+
         v = dist / max(dt_ms, 1.0)                 # px per ms
         a = abs(v - prev_v)                        # tangential accel magnitude
         jerk = abs(a - prev_a)                     # rate of accel change (smoothness)
@@ -156,13 +182,26 @@ def events_to_steps(events):
     return steps
 
 
-def steps_to_windows(steps, window_size, stride):
+def window_path_length(win):
+    """Total normalised distance travelled across a window — how much the
+    pointer actually moved. Mirrors windowPathLength in sdk/js/mouse-features.js."""
+    return float(np.sum(np.hypot(win[:, 0], win[:, 1])))
+
+
+def steps_to_windows(steps, window_size, stride, min_path=MIN_WINDOW_PATH):
     if len(steps) < window_size:
         return []
     arr = np.asarray(steps, dtype=np.float32)
     windows = []
     for start in range(0, len(arr) - window_size + 1, stride):
-        windows.append(arr[start:start + window_size])
+        win = arr[start:start + window_size]
+        # Skip near-static windows, as the browser does. A window in which the
+        # pointer barely moved carries no identity — everyone's "almost still"
+        # looks alike — so training on them teaches the model to score noise.
+        # The browser has filtered these since the mouse channel began
+        # enforcing; the training data never did, which is half of the skew.
+        if min_path is None or window_path_length(win) >= min_path:
+            windows.append(win)
     return windows
 
 

@@ -1,0 +1,78 @@
+{
+ "seg": "W",
+ "verifier": "BIN",
+ "users": [
+  "user1",
+  "user101",
+  "user104",
+  "user107",
+  "user108",
+  "user111",
+  "user115",
+  "user119",
+  "user16",
+  "user19",
+  "user29",
+  "user69",
+  "user70",
+  "user8",
+  "user85",
+  "user86",
+  "user89",
+  "user9",
+  "user91"
+ ],
+ "byBudget": {
+  "55": {
+   "meanAUC": 0.7237274187318831,
+   "diffVsMax": -0.13747604692035,
+   "ci95": [
+    -0.17356033165696116,
+    -0.10204484566373241
+   ],
+   "nonInferior": false,
+   "secondsOfSession": 15.9
+  },
+  "110": {
+   "meanAUC": 0.7897706038936959,
+   "diffVsMax": -0.07143286175853725,
+   "ci95": [
+    -0.10091185584391345,
+    -0.044951268969978156
+   ],
+   "nonInferior": false,
+   "secondsOfSession": 30.7
+  },
+  "220": {
+   "meanAUC": 0.8377118727610376,
+   "diffVsMax": -0.023491592891195495,
+   "ci95": [
+    -0.03152882642666038,
+    -0.015494634366159091
+   ],
+   "nonInferior": false,
+   "secondsOfSession": 60.3
+  },
+  "330": {
+   "meanAUC": 0.8558430841895754,
+   "diffVsMax": -0.005360381462657604,
+   "ci95": [
+    -0.01036363677021335,
+    -8.243040419261464e-05
+   ],
+   "nonInferior": true,
+   "secondsOfSession": 89.8
+  },
+  "440": {
+   "meanAUC": 0.861203465652233,
+   "diffVsMax": 0.0,
+   "ci95": [
+    0.0,
+    0.0
+   ],
+   "nonInferior": true,
+   "secondsOfSession": 119.4
+  }
+ },
+ "bmin": 330
+}

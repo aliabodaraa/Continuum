@@ -1,0 +1,18 @@
+{
+ "operatingPoint": {
+  "q": 5,
+  "n": 20,
+  "k": 12
+ },
+ "users": 19,
+ "thresholdMin": 0.07965879403054714,
+ "thresholdMax": 0.7841368049383164,
+ "thresholdMedian": 0.3353512793779373,
+ "genuineBelowThresholdMedian": 0.32209737827715357,
+ "genuineBelowThresholdMax": 1.0,
+ "usersWithMostGenuineBelow": 5,
+ "measuredCaptureMedian": 0.9558948261238337,
+ "measuredCaptureMean": 0.8986652381590108,
+ "independencePredictedMedian": 0.9865032391105889,
+ "independencePredictedMean": 0.9242478929555648
+}

@@ -454,19 +454,30 @@ app.post("/v1/sdk/keystroke/check", auth, async (req, res) => {
 
 // mouse
 app.post("/v1/sdk/mouse/enroll", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/mouse/enroll`, "POST", { ...req.body, userId: req.uid }, caAssert(req))));
-const MOUSE_STRIKES_TO_LOCK = 3;
-const mouseStreak = new Map();
+// THRESHOLD, not state. The count is persisted by ca-service (lib/decisionState.js) and
+// comes back as `suspiciousStreak`. It used to be a `Map` here, with two consequences: a
+// gateway restart amnestied an impostor mid-escalation, and a second gateway replica was
+// impossible because two processes would each hold half the evidence.
+// 1 = no extra debounce, the same as the demo (apps/demo/routes/auth/mouse.js). ca-service's
+// sustained vote (12 of the last 20 windows below the user's own threshold) already is the
+// debounce, and it is the rule whose false-lock and capture rates were measured
+// (artifacts/repr_arch_study, Experiment F). This was 3, which stacked three full buffers on
+// top of that rule and moved the SDK away from the measured operating point.
+const MOUSE_STRIKES_TO_LOCK = 1;
 app.post("/v1/sdk/mouse/check", auth, async (req, res) => {
   const r = await fwd(`${CA_URL}/v1/mouse/check`, "POST", { ...req.body, userId: req.uid }, caAssert(req));
   let d; try { d = JSON.parse(r.text); } catch (e) { return relay(res, r); }
   if (!d || !d.checked) return res.status(r.status).json(d);
-  if (d.isSuspicious) mouseStreak.set(req.uid, (mouseStreak.get(req.uid) || 0) + 1);
-  else if (!d.warmup) mouseStreak.set(req.uid, 0);
-  const streak = mouseStreak.get(req.uid) || 0;
+  const streak = Number(d.suspiciousStreak || 0);
   const passkeyTriggered = streak >= MOUSE_STRIKES_TO_LOCK && (await hasPasskey(req.uid));
   if (passkeyTriggered) {
-    mouseStreak.set(req.uid, 0);
-    await fwd(`${CA_URL}/v1/lock/set`, "POST", { userId: req.uid }).catch(() => {}, caAssert(req));
+    // The assertion was being passed as a second argument to `.catch()` instead of to
+    // `fwd()`, so this call reached ca-service with no X-Continuum-Identity header, was
+    // rejected 401 by requireIdentity, and the rejection was swallowed by the empty catch.
+    // The mouse step-up lock was therefore never actually set on the gateway path — the
+    // SDK challenged, but a reload found no lock and resumed the session.
+    await fwd(`${CA_URL}/v1/lock/set`, "POST", { userId: req.uid }, caAssert(req)).catch(() => {});
+    await fwd(`${CA_URL}/v1/mouse/streak/reset`, "POST", { userId: req.uid }, caAssert(req)).catch(() => {});
   }
   const mrk = riskLevel(d.warmup, d.isSuspicious);
   d.riskToken = signRiskRS256(req.uid, mrk, "mouse");
@@ -481,7 +492,10 @@ app.post("/v1/sdk/passkey/register/complete", auth, async (req, res) => { const 
 app.post("/v1/sdk/passkey/auth/options", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/auth/options`, "POST", { userId: req.uid, rpId: rpFromOrigin(req) })));
 app.post("/v1/sdk/passkey/auth/complete", auth, async (req, res) => {
   const r = await fwd(`${PASSKEY_URL}/v1/auth/complete`, "POST", { userId: req.uid, challengeId: req.body.challengeId, assertion: req.body.assertion, rpId: rpFromOrigin(req), origin: originOf(req) });
-  if (r.status === 200) await fwd(`${CA_URL}/v1/lock/clear`, "POST", { userId: req.uid }).catch(() => {}, caAssert(req));
+  // Same misplaced-argument bug as the lock/set call above: the assertion went to `.catch`
+  // rather than to `fwd`, so a verified passkey never cleared the persisted lock and the
+  // user stayed locked out on their next page load.
+  if (r.status === 200) await fwd(`${CA_URL}/v1/lock/clear`, "POST", { userId: req.uid }, caAssert(req)).catch(() => {});
   relay(res, r);
 });
 

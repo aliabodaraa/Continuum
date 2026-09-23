@@ -1,0 +1,266 @@
+{
+ "note": "one production check = 20 windows; TF single-threaded; untrained weights",
+ "A": {
+  "A1": {
+   "desc": "dx/1920, dy/1920, log(1+v), log(1+|dv|), turn/pi, dt, click-or-drag",
+   "nFeatures": 7,
+   "params": 16290,
+   "weightBytes": 89912,
+   "msPerCheckGraph": 3.832480499909252,
+   "msPerCheckPredict": 49.194151500046246
+  },
+  "A2": {
+   "desc": "dx, dy, vx, vy",
+   "nFeatures": 4,
+   "params": 16098,
+   "weightBytes": 88632,
+   "msPerCheckGraph": 3.681939499983855,
+   "msPerCheckPredict": 50.10792450002555
+  },
+  "A3": {
+   "desc": "dx/dt, dy/dt",
+   "nFeatures": 2,
+   "params": 15970,
+   "weightBytes": 88632,
+   "msPerCheckGraph": 3.8770075000229554,
+   "msPerCheckPredict": 49.78633749999517
+  },
+  "A4": {
+   "desc": "dx, dy",
+   "nFeatures": 2,
+   "params": 15970,
+   "weightBytes": 88632,
+   "msPerCheckGraph": 3.830070500043803,
+   "msPerCheckPredict": 50.583833000018785
+  },
+  "A5": {
+   "desc": "|dx|, |dy|",
+   "nFeatures": 2,
+   "params": 15970,
+   "weightBytes": 88632,
+   "msPerCheckGraph": 3.832237499977964,
+   "msPerCheckPredict": 48.93704150003941
+  },
+  "A6": {
+   "desc": "x/s, y/s (absolute position)",
+   "nFeatures": 2,
+   "params": 15970,
+   "weightBytes": 88632,
+   "msPerCheckGraph": 3.852830500022719,
+   "msPerCheckPredict": 50.051131000032
+  },
+  "A7": {
+   "desc": "(dx/s)/dt, (dy/s)/dt",
+   "nFeatures": 2,
+   "params": 15970,
+   "weightBytes": 88632,
+   "msPerCheckGraph": 3.879910000023301,
+   "msPerCheckPredict": 50.79926249993605
+  },
+  "A8": {
+   "desc": "dx/s, dy/s",
+   "nFeatures": 2,
+   "params": 15970,
+   "weightBytes": 88632,
+   "msPerCheckGraph": 3.8629924999895593,
+   "msPerCheckPredict": 49.15961800008972
+  }
+ },
+ "B": {
+  "2": {
+   "B1": {
+    "desc": "Conv1D(32,k2) + GRU32 + GRU32",
+    "params": 15970,
+    "weightBytes": 88632,
+    "msPerCheckGraph": 3.8741390000041065,
+    "msPerCheckPredict": 50.227645500058316
+   },
+   "B2": {
+    "desc": "Conv1D(32,k2) + LSTM32 + LSTM32",
+    "params": 19938,
+    "weightBytes": 104248,
+    "msPerCheckGraph": 3.3859195000331965,
+    "msPerCheckPredict": 49.533388499867215
+   },
+   "B3": {
+    "desc": "GRU32 + GRU32 (no CNN)",
+    "params": 12994,
+    "weightBytes": 73840,
+    "msPerCheckGraph": 3.9877450000176395,
+    "msPerCheckPredict": 49.722665499871255
+   },
+   "B4": {
+    "desc": "2 x LSTM10, dropout 0.3",
+    "params": 1382,
+    "weightBytes": 25200,
+    "msPerCheckGraph": 2.6950804999614775,
+    "msPerCheckPredict": 49.990364999985104
+   },
+   "B5": {
+    "desc": "3 x Conv1D (32k8, 48k6, 64k4) + 2 x BiLSTM32 + sum",
+    "params": 71954,
+    "weightBytes": 324464,
+    "msPerCheckGraph": 5.478433499888524,
+    "msPerCheckPredict": 52.532954000071186
+   },
+   "B6": {
+    "desc": "FCN 128/256/128 + GAP",
+    "params": 267010,
+    "weightBytes": 1101400,
+    "msPerCheckGraph": 6.824662500093837,
+    "msPerCheckPredict": 53.05689599993002
+   },
+   "B7": {
+    "desc": "two-tower CNN (MCDCNN)",
+    "params": 20382,
+    "weightBytes": 110600,
+    "msPerCheckGraph": 0.6890255000371326,
+    "msPerCheckPredict": 47.711327499996514
+   },
+   "B8": {
+    "desc": "1D-CNN: 2 first convs + shared conv + GMP, ELU",
+    "params": 13342,
+    "weightBytes": 76368,
+    "msPerCheckGraph": 0.7208744999616101,
+    "msPerCheckPredict": 46.475671499933924
+   },
+   "B9": {
+    "desc": "CNN-LSTM v1: 2 convs + shared 3 x LSTM60",
+    "params": 78802,
+    "weightBytes": 345528,
+    "msPerCheckGraph": 4.081802499854348,
+    "msPerCheckPredict": 51.67852199997469
+   }
+  },
+  "4": {
+   "B1": {
+    "desc": "Conv1D(32,k2) + GRU32 + GRU32",
+    "params": 16098,
+    "weightBytes": 88632,
+    "msPerCheckGraph": 3.9753334999659273,
+    "msPerCheckPredict": 49.32564649993765
+   },
+   "B2": {
+    "desc": "Conv1D(32,k2) + LSTM32 + LSTM32",
+    "params": 20066,
+    "weightBytes": 104760,
+    "msPerCheckGraph": 3.406128999813518,
+    "msPerCheckPredict": 51.88655150004706
+   },
+   "B3": {
+    "desc": "GRU32 + GRU32 (no CNN)",
+    "params": 13186,
+    "weightBytes": 75328,
+    "msPerCheckGraph": 3.8939829998980713,
+    "msPerCheckPredict": 51.56280100004551
+   },
+   "B4": {
+    "desc": "2 x LSTM10, dropout 0.3",
+    "params": 1462,
+    "weightBytes": 27320,
+    "msPerCheckGraph": 2.7185469998585177,
+    "msPerCheckPredict": 48.817994500041095
+   },
+   "B5": {
+    "desc": "3 x Conv1D (32k8, 48k6, 64k4) + 2 x BiLSTM32 + sum",
+    "params": 72466,
+    "weightBytes": 326512,
+    "msPerCheckGraph": 5.319733000078486,
+    "msPerCheckPredict": 53.897468999821285
+   },
+   "B6": {
+    "desc": "FCN 128/256/128 + GAP",
+    "params": 269058,
+    "weightBytes": 1109592,
+    "msPerCheckGraph": 6.818506499939758,
+    "msPerCheckPredict": 54.99603250018481
+   },
+   "B7": {
+    "desc": "two-tower CNN (MCDCNN)",
+    "params": 21182,
+    "weightBytes": 112904,
+    "msPerCheckGraph": 0.9098979999180301,
+    "msPerCheckPredict": 46.65218550007921
+   },
+   "B8": {
+    "desc": "1D-CNN: 2 first convs + shared conv + GMP, ELU",
+    "params": 14342,
+    "weightBytes": 79920,
+    "msPerCheckGraph": 0.7798599999659928,
+    "msPerCheckPredict": 46.074352000232466
+   },
+   "B9": {
+    "desc": "CNN-LSTM v1: 2 convs + shared 3 x LSTM60",
+    "params": 79802,
+    "weightBytes": 349080,
+    "msPerCheckGraph": 4.21530099993106,
+    "msPerCheckPredict": 53.14371350004876
+   }
+  },
+  "7": {
+   "B1": {
+    "desc": "Conv1D(32,k2) + GRU32 + GRU32",
+    "params": 16290,
+    "weightBytes": 89912,
+    "msPerCheckGraph": 3.950600999814924,
+    "msPerCheckPredict": 50.77147150018391
+   },
+   "B2": {
+    "desc": "Conv1D(32,k2) + LSTM32 + LSTM32",
+    "params": 20258,
+    "weightBytes": 106296,
+    "msPerCheckGraph": 3.4067550000145275,
+    "msPerCheckPredict": 53.17289899994648
+   },
+   "B3": {
+    "desc": "GRU32 + GRU32 (no CNN)",
+    "params": 13474,
+    "weightBytes": 75784,
+    "msPerCheckGraph": 3.9762359999713226,
+    "msPerCheckPredict": 52.33102950001012
+   },
+   "B4": {
+    "desc": "2 x LSTM10, dropout 0.3",
+    "params": 1582,
+    "weightBytes": 27320,
+    "msPerCheckGraph": 2.7838829998927395,
+    "msPerCheckPredict": 49.07153849990209
+   },
+   "B5": {
+    "desc": "3 x Conv1D (32k8, 48k6, 64k4) + 2 x BiLSTM32 + sum",
+    "params": 73234,
+    "weightBytes": 329584,
+    "msPerCheckGraph": 5.463243499889359,
+    "msPerCheckPredict": 51.60069800012934
+   },
+   "B6": {
+    "desc": "FCN 128/256/128 + GAP",
+    "params": 272130,
+    "weightBytes": 1121880,
+    "msPerCheckGraph": 6.95646349981871,
+    "msPerCheckPredict": 54.59010799995667
+   },
+   "B7": {
+    "desc": "two-tower CNN (MCDCNN)",
+    "params": 22382,
+    "weightBytes": 117704,
+    "msPerCheckGraph": 0.9264544999041391,
+    "msPerCheckPredict": 47.27681250005844
+   },
+   "B8": {
+    "desc": "1D-CNN: 2 first convs + shared conv + GMP, ELU",
+    "params": 15842,
+    "weightBytes": 85920,
+    "msPerCheckGraph": 0.7777585001349507,
+    "msPerCheckPredict": 45.55806599978496
+   },
+   "B9": {
+    "desc": "CNN-LSTM v1: 2 convs + shared 3 x LSTM60",
+    "params": 81302,
+    "weightBytes": 355080,
+    "msPerCheckGraph": 4.045421499995427,
+    "msPerCheckPredict": 51.8502059999264
+   }
+  }
+ }
+}

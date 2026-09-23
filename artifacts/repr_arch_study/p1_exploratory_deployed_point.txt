@@ -1,0 +1,10 @@
+EXPLORATORY: current deployed point (A, 1st pct, 30 of 60) across the 10 orders
+    user91 threshold 0.042 .. 0.874  low-window range 28.5 pts  prompts/min range 0.00
+   user107 threshold 0.046 .. 0.644  low-window range  8.0 pts  prompts/min range 0.00
+    user89 threshold 0.236 .. 0.699  low-window range  9.3 pts  prompts/min range 0.00
+    user85 threshold 0.070 .. 0.513  low-window range 29.5 pts  prompts/min range 0.00
+    user70 threshold 0.008 .. 0.306  low-window range 34.0 pts  prompts/min range 2.10
+   user111 threshold 0.029 .. 0.326  low-window range 23.1 pts  prompts/min range 0.00
+     user9 threshold 0.007 .. 0.299  low-window range  1.7 pts  prompts/min range 0.00
+    user19 threshold 0.062 .. 0.353  low-window range 17.2 pts  prompts/min range 0.00
+  users where order matters by the frozen criterion: 19/19; median threshold range 0.252

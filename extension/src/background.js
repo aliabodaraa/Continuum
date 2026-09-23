@@ -7,19 +7,45 @@ var api = globalThis.browser || globalThis.chrome;
 var RECENT = 6;                                        // keystroke packet size (mirrors ca-service)
 var WINDOW_THRESHOLD = 0.5, PACKET_VOTE_FRACTION = 0.5;
 
-// Mouse enforcement uses a SUSTAINED vote, not the 3-of-6 keystroke packet. Rationale
-// (measured via the in-browser discrimination diagnostic): the mouse head separates genuine
-// from impostor well per-window (genuine ≈0.70, impostor ≈0.32; per-window FAR ≈10%, FRR
-// ≈5%), but mouse windows are produced far more frequently than keystroke windows, so a
-// 3-of-6 rule re-evaluated that often would accumulate rare genuine false-locks into a
-// steady trickle. Requiring 15 of the last 20 windows low (75%) makes a genuine false-lock
-// practically impossible (P(≥15/20 low | 5% per-window) ≈ 0) while an impostor (≈90% low)
-// still trips it within ~20 windows — a few seconds of movement. This is what lets the
-// mouse channel ENFORCE rather than stay info-only, at a controlled false-positive cost.
-var MOUSE_SUSTAIN_WINDOW = 20;   // length of the mouse enforcement buffer
-var MOUSE_SUSTAIN_LOW = 15;      // DEFAULT low windows required to lock (75% of 20); now
-                                // user-tunable via the popup slider -> state.mouseSustainPct
+// Mouse enforcement uses a SUSTAINED vote, not the 3-of-6 keystroke packet: mouse windows
+// arrive every ~0.3 s of movement, so a short packet re-evaluated that often turns rare genuine
+// low windows into a steady trickle of false locks. A window is "low" when its score falls below
+// the user's OWN threshold (a percentile of their enrolment scores, stored with the model), and
+// the page locks when the MEAN of the last n window scores falls below that threshold (rule
+// "mean"; a k-of-n "vote" rule is also supported). The rule, n and the percentile were chosen by
+// replaying the live loop on held-out users (Experiment I, artifacts/repr_arch_study: 0.22 false
+// prompts per minute of movement, 87.3% of impostor runs caught) and travel in the model's
+// metadata; the values below are only defaults for before the first score.
+// ---- action-based mouse (Antal & Egyed-Zsigmond, IET Biometrics 2019) ----
+// The published method scores mouse ACTIONS, not fixed windows, and decides on
+// the MEAN probability over a set of k actions. The paper finds 10-20 actions
+// are needed; 20 is its reporting point and the size at which we measured
+// median EER 11.48% / AUC 0.947 over 20 held-out SapiMouse subjects.
+// These must match services/ca-service/lib/mouseActions.js or the extension and
+// the SDK reach different verdicts from identical motion.
+var MOUSE_ACTION_SET_SIZE = 20;
+var MOUSE_ACTION_THRESHOLD = 0.5;
+var mouseActionScores = [];      // rolling per-action probabilities
+
+// Mean of the last k action scores — the paper's P(A) = (1/k) * sum(p_i).
+function mouseActionVerdict(scores) {
+  if (scores.length < MOUSE_ACTION_SET_SIZE) {
+    return { warmup: true, suspicious: false, setScore: null };
+  }
+  var recent = scores.slice(-MOUSE_ACTION_SET_SIZE);
+  var sum = 0;
+  for (var i = 0; i < recent.length; i++) sum += recent[i];
+  var setScore = sum / recent.length;
+  return { warmup: false, suspicious: setScore < MOUSE_ACTION_THRESHOLD, setScore: setScore };
+}
+
+var MOUSE_SUSTAIN_WINDOW = 60;   // n: length of the mouse enforcement buffer (model metadata wins)
+var MOUSE_SUSTAIN_LOW = 30;      // k: for a "vote" rule only (model metadata wins); the popup
+                                // slider can move it -> state.mouseSustainPct
 var MOUSE_SUSTAIN_PCT_DEFAULT = Math.round((MOUSE_SUSTAIN_LOW / MOUSE_SUSTAIN_WINDOW) * 100);
+// The slider's stored value. A new key: values saved under the old one were set against the
+// retired 7-feature model and its fixed 0.5 boundary, and mean something else now.
+var MOUSE_PCT_KEY = "cg_mouse_vote_pct";
 
 // Pure Lu et al. packet vote, INLINED — the service worker needs no importScripts (MV3 SW
 // importScripts of a packaged file was failing and cascading into "No SW"). The offscreen
@@ -40,11 +66,18 @@ var RP_BASE = RP_BASE_DEFAULT;
 function rpOriginOf() { try { return new URL(RP_BASE).origin; } catch (e) { return ""; } }
 
 var config = { exclusions: [] };
+// Verbose per-window diagnostics. These printed unconditionally — one line per scored
+// keystroke window and one per MOUSE window, and mouse windows arrive several times a
+// second while the pointer moves — which flooded the worker console and every page console
+// so heavily that real errors were unfindable. Opt-in via the options page; warnings and
+// errors are never gated.
+var debugLog = false;
+function dlog() { if (!debugLog) return; try { console.log.apply(console, arguments); } catch (e) {} }
 // accountId starts undefined (distinct from the resolved "signed out" value, null) so the
 // FIRST resolution always differs and fires onAccountChanged exactly once, even if it
 // resolves to signed-out. Falsy either way, so every gate below defaults safely to
 // "inactive" until a real resolution comes back.
-var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, lockReason: null, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0, mouseTracking: true, mouseSustainPct: 75, accountId: undefined, accountEmail: null, accountChecked: false, keySamples: 0, mouseSamples: 0 };
+var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, lockReason: null, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0, mouseTracking: true, mouseSustainPct: MOUSE_SUSTAIN_PCT_DEFAULT, mouseThreshold: null, mouseVoteN: MOUSE_SUSTAIN_WINDOW, mouseVoteK: MOUSE_SUSTAIN_LOW, mouseRule: "mean", mouseStale: false, mouseProfile: null, mousePctUserSet: false, accountId: undefined, accountEmail: null, accountChecked: false, keySamples: 0, mouseSamples: 0, rpError: null };
 var scores = [];       // rolling last N keystroke window scores
 var mouseScores = [];  // rolling mouse window scores (up to MOUSE_SUSTAIN_WINDOW)
 
@@ -239,15 +272,17 @@ function finishAccountSwitch(cb) {
   if (cb) cb();
 }
 
-api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress", "cg_mouse_tracking", "cg_mouse_sustain_pct"], function (d) {
+api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress", "cg_mouse_tracking", MOUSE_PCT_KEY, "cg_debug"], function (d) {
   d = d || {};
   config.exclusions = d.cg_exclusions || [];
+  debugLog = d.cg_debug === true;
   RP_BASE = (d.cg_rp_base || RP_BASE_DEFAULT).replace(/\/+$/, "");
   // User toggle for the mouse channel (default ON). Persisted so a SW restart keeps it.
   state.mouseTracking = d.cg_mouse_tracking !== false;
-  // User-tuned mouse lock sensitivity (percent of the 20-window buffer that must be low).
-  var pct = parseInt(d.cg_mouse_sustain_pct, 10);
-  state.mouseSustainPct = (pct >= 30 && pct <= 100) ? pct : MOUSE_SUSTAIN_PCT_DEFAULT;
+  // User-tuned mouse lock sensitivity (percent of the vote buffer that must be low).
+  var pct = parseInt(d[MOUSE_PCT_KEY], 10);
+  state.mousePctUserSet = pct >= 30 && pct <= 100;
+  state.mouseSustainPct = state.mousePctUserSet ? pct : MOUSE_SUSTAIN_PCT_DEFAULT;
   // Restore the LIVE session progress too — the rolling packet, step counter, verdict and
   // lock state — so a service-worker restart (e.g. opening/closing the popup, or an idle
   // gap while typing) doesn't wipe the in-progress packet and reset the counter to 0.
@@ -280,7 +315,7 @@ function injectAll() {
     (tabs || []).forEach(function (t) {
       try {
         api.scripting.executeScript(
-          { target: { tabId: t.id }, files: ["src/features.js", "src/features-mouse.js", "src/content.js"] },
+          { target: { tabId: t.id }, files: ["src/features.js", "src/features-mouse.js", "src/features-mouse-actions.js", "src/content.js"] },
           function () { void api.runtime.lastError; }   // chrome:// & store tabs refuse — fine
         );
       } catch (e) {}
@@ -295,6 +330,10 @@ if (api.storage.onChanged) {
   api.storage.onChanged.addListener(function (changes, area) {
     if (area === "local" && changes.cg_rp_base) {
       RP_BASE = (changes.cg_rp_base.newValue || RP_BASE_DEFAULT).replace(/\/+$/, "");
+    }
+    if (area === "local" && changes.cg_debug) {
+      debugLog = changes.cg_debug.newValue === true;
+      broadcastConfig();   // content scripts follow the same flag
     }
   });
 }
@@ -334,6 +373,40 @@ function scoreViaOffscreen(win, msgType) {
   });
 }
 
+// Mouse variant of scoreViaOffscreen: resolves the whole reply ({score, threshold, voteN, voteK}),
+// because a mouse score is only meaningful against the threshold of the model that produced it.
+function scoreMouseViaOffscreen(win) {
+  return new Promise(function (resolve) {
+    var done = false;
+    function finish(v) { if (!done) { done = true; resolve(v); } }
+    var timer = setTimeout(function () { finish(null); }, 3000);
+    try {
+      api.runtime.sendMessage({ target: "offscreen", type: "cg:score-mouse", win: win }, function (res) {
+        clearTimeout(timer);
+        if (api.runtime.lastError || !res || res.error != null || !(res.threshold > 0)) finish(null);
+        else finish(res);
+      });
+    } catch (e) { clearTimeout(timer); finish(null); }
+  });
+}
+
+// The loaded mouse model's metadata (threshold, vote, profile size) and whether an old-model
+// profile is waiting to be rebuilt. mouseStale is a positive finding (the retired model's head is
+// on disk and the current model is not), so unlike a failed load it is safe to persist.
+function applyMouseMeta(meta, stale) {
+  if (meta && meta.threshold > 0) {
+    state.mouseThreshold = meta.threshold;
+    state.mouseVoteN = meta.voteN || MOUSE_SUSTAIN_WINDOW;
+    state.mouseVoteK = meta.voteK || MOUSE_SUSTAIN_LOW;
+    state.mouseRule = meta.voteRule || "vote";
+    // Until the user moves the slider, the lock rule is the model's own measured k of n.
+    if (!state.mousePctUserSet) state.mouseSustainPct = Math.round((100 * state.mouseVoteK) / state.mouseVoteN);
+    state.mouseProfile = { windows: meta.windows || 0, thresholdQ: meta.thresholdQ, trainedAt: meta.trainedAt };
+  }
+  state.mouseStale = !!stale;
+  if (stale) setMouseReady(false, true);
+}
+
 function statusObj() {
   return {
     enabled: monitoringEnabled(), totalWindows: state.totalWindows, lastWindowAt: state.lastWindowAt,
@@ -341,8 +414,11 @@ function statusObj() {
     steps: state.steps, needSteps: state.needSteps, enrolled: state.enrolled, modelPersonal: state.modelPersonal,
     locked: state.locked, hasPasskey: state.hasPasskey,
     mouseReady: state.mouseReady, mouseVerdict: state.mouseVerdict, totalMouseWindows: state.totalMouseWindows, mouseTracking: state.mouseTracking, mouseSustainPct: state.mouseSustainPct,
+    mouseVoteN: state.mouseVoteN, mouseVoteK: state.mouseVoteK, mouseRule: state.mouseRule, mouseThreshold: state.mouseThreshold,
+    mouseStale: state.mouseStale, mouseProfile: state.mouseProfile,
     accountId: state.accountId || null, accountEmail: state.accountEmail || null, accountChecked: state.accountChecked,
     keySamples: state.keySamples, mouseSamples: state.mouseSamples, lockReason: state.lockReason,
+    rpError: state.rpError || null, rpBase: RP_BASE,
   };
 }
 
@@ -375,7 +451,7 @@ async function onWindow(win) {
       scores.push(s);
       if (scores.length > RECENT) scores.shift();
       var v = decide(scores);
-      console.log("[continuum-guard/diag] window score=" + s.toFixed(3) + " packet=" + JSON.stringify(scores.map(function (x) { return Number(x.toFixed(3)); })) + " mean=" + v.mean.toFixed(3));
+      dlog("[continuum-guard/diag] window score=" + s.toFixed(3) + " packet=" + JSON.stringify(scores.map(function (x) { return Number(x.toFixed(3)); })) + " mean=" + v.mean.toFixed(3));
       // Verdict only on a FULL packet (6 windows ≈ 100 keystrokes) — early provisional
       // verdicts were tried and reverted: they surface "!" on thin evidence without
       // making the decision meaningfully faster.
@@ -393,10 +469,9 @@ async function onWindow(win) {
   finally { scoringBusy = false; }
 }
 
-// Mouse windows: separate stream, gated on its own readiness. Display verdict uses the same
-// 6-window packet as keystroke (for a comparable %); ENFORCEMENT uses the stricter sustained
-// vote (MOUSE_SUSTAIN_LOW of MOUSE_SUSTAIN_WINDOW), which is what makes a genuine false-lock
-// practically impossible despite the high mouse-window rate (see the constants above).
+// Mouse windows: separate stream, gated on its own readiness. A window is low when its score is
+// below the user's own threshold; ENFORCEMENT is the sustained k-of-n vote over the last n
+// windows (see the constants above). The display verdict uses the same per-user threshold.
 var mouseBusy = false, pendingMouseWin = null;
 async function onMouseWindow(win) {
   if (!state.mouseReady || !state.mouseTracking) return;   // user can disable the mouse channel
@@ -407,57 +482,56 @@ async function onMouseWindow(win) {
   try {
     while (pendingMouseWin) {
       var w = pendingMouseWin; pendingMouseWin = null;
-      var s = await scoreViaOffscreen(w, "cg:score-mouse");
-      if (s == null) { ensureOffscreen(); continue; }   // recreate a torn-down offscreen doc
+      var r = await scoreMouseViaOffscreen(w);
+      if (r == null) { ensureOffscreen(); continue; }   // recreate a torn-down offscreen doc
+      var s = r.score, thr = r.threshold;
+      var N = r.voteN || MOUSE_SUSTAIN_WINDOW;
+      state.mouseThreshold = thr;
+      var rule = r.rule || "vote";
+      state.mouseVoteN = N; state.mouseVoteK = r.voteK || MOUSE_SUSTAIN_LOW; state.mouseRule = rule;
+      if (!state.mousePctUserSet && rule === "vote") state.mouseSustainPct = Math.round((100 * state.mouseVoteK) / N);
       mouseScores.push(s);
-      if (mouseScores.length > MOUSE_SUSTAIN_WINDOW) mouseScores.shift();
-      // Display verdict over the most recent 6 (parity with the keystroke packet %).
+      while (mouseScores.length > N) mouseScores.shift();
       var recent = mouseScores.slice(-RECENT);
-      var v = decide(recent);
-      // Sustained enforcement count over the whole buffer.
-      var low = 0; for (var i = 0; i < mouseScores.length; i++) if (mouseScores[i] < WINDOW_THRESHOLD) low += 1;
-      // Lock threshold is user-tunable via the popup slider (percent of the buffer that must
-      // be low). Default 75% == the original 15/20; clamped to >=1 so it's never zero.
-      var lockAt = Math.max(1, Math.round((state.mouseSustainPct / 100) * MOUSE_SUSTAIN_WINDOW));
-      // Describe the WINDOW as well as its score. When live scores sit far below what the
-      // diagnostic measured on the same model, the difference has to be in the input, and
-      // these are the two properties that separate browsing from deliberate movement:
-      // path = total normalised distance travelled (amplitude), spd = mean log1p(px/ms).
-      var wPath = 0, wSpd = 0;
-      for (var wi = 0; wi < w.length; wi++) { wPath += Math.hypot(w[wi][0], w[wi][1]); wSpd += w[wi][2]; }
-      console.log("[continuum-guard/diag] mouse score=" + s.toFixed(3)
-        + " path=" + wPath.toFixed(3) + " spd=" + (wSpd / w.length).toFixed(3)
-        + " recentMean=" + v.mean.toFixed(3) + " sustainedLow=" + low + "/" + mouseScores.length
-        + " (lock at " + lockAt + "/" + MOUSE_SUSTAIN_WINDOW + " = " + state.mouseSustainPct + "%)");
-      // Report the SUSTAINED buffer, not just the 6-window mean. The mean moves on every
-      // mouse window and says nothing about how close the channel is to demanding a passkey;
-      // what decides that is the fraction of the buffer sitting low, against the user's
-      // configured threshold. Surfacing low/buffer/lockAt lets the panel show the number that
-      // actually drives the decision rather than a per-movement score.
-      // Averaged over the GROUP that the user's threshold actually decides on — lockAt
-      // windows, not a fixed 6. The toolbar badge shows this, so at a 50% threshold it is the
-      // mean of the last 10 windows and at 70% the last 14. Averaging over the decision group
-      // both matches what triggers the passkey and stops the badge flickering with every
-      // single mouse movement, which a 6-window mean recomputed per window did.
+      var recentLow = 0, recentSum = 0;
+      for (var ri = 0; ri < recent.length; ri++) { if (recent[ri] < thr) recentLow += 1; recentSum += recent[ri]; }
+      var low = 0, bufSum = 0;
+      for (var i = 0; i < mouseScores.length; i++) { if (mouseScores[i] < thr) low += 1; bufSum += mouseScores[i]; }
+      var bufMean = mouseScores.length ? bufSum / mouseScores.length : 1;
+      // The popup slider sets the share of the buffer that must be low; its default is the
+      // model's own k of n. Clamped to >= 1 so it can never be zero.
+      var lockAt = Math.max(1, Math.round((state.mouseSustainPct / 100) * N));
+      // Describe the window as well as its score: path = distance covered (screen widths) and the
+      // mean step in pixels, the two properties that separate browsing from directed movement.
+      var wPath = 0, wStep = 0;
+      for (var wi = 0; wi < w.length; wi++) { var st = Math.hypot(w[wi][0], w[wi][1]); wStep += st; wPath += st / 1920; }
+      dlog("[continuum-guard/diag] mouse score=" + s.toFixed(3) + " (threshold " + thr.toFixed(3) + ")"
+        + " path=" + wPath.toFixed(3) + " step=" + (wStep / w.length).toFixed(1) + "px"
+        + " recentLow=" + recentLow + "/" + recent.length + " sustainedLow=" + low + "/" + mouseScores.length
+        + " bufferMean=" + bufMean.toFixed(3)
+        + (rule === "mean" ? " (locks when the mean of " + N + " < threshold)" : " (lock at " + lockAt + "/" + N + " = " + state.mouseSustainPct + "%)"));
+      // Report the SUSTAINED buffer, which is what decides a passkey request, and the mean score
+      // over the group the decision is made on (lockAt windows) for the badge.
       var groupN = Math.min(lockAt, mouseScores.length);
       var groupSum = 0;
       for (var gi = mouseScores.length - groupN; gi < mouseScores.length; gi++) groupSum += mouseScores[gi];
       var groupMean = groupN ? groupSum / groupN : 0;
       state.mouseVerdict = {
-        status: recent.length < RECENT ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
-        low: low, buffer: mouseScores.length, bufferMax: MOUSE_SUSTAIN_WINDOW,
-        lockAt: lockAt, riskPct: Math.round((100 * low) / MOUSE_SUSTAIN_WINDOW),
+        status: recent.length < RECENT ? "analyzing" : (recentLow / recent.length >= PACKET_VOTE_FRACTION ? "suspicious" : "genuine"),
+        low: low, buffer: mouseScores.length, bufferMax: N,
+        lockAt: rule === "vote" ? lockAt : null, riskPct: Math.round((100 * low) / N), rule: rule,
+        bufferMean: Math.round(bufMean * 100), threshold: Math.round(thr * 100),
         groupN: groupN, groupMean: Math.round(groupMean * 100),
-        mean: Math.round(v.mean * 100),
+        mean: Math.round((recent.length ? recentSum / recent.length : 0) * 100),
         packet: recent.length,
         need: RECENT,
       };
-      // ENFORCE on sustained suspicion: a full buffer with >= the configured fraction of low
-      // windows. The genuine user practically never reaches the default (per-window FRR low);
-      // an impostor (per-window ~90% low) reaches it within ~20 windows. Keystroke still
-      // enforces independently.
-      if (!state.locked && mouseScores.length >= MOUSE_SUSTAIN_WINDOW && low >= lockAt) {
-        console.log("[continuum-guard] mouse sustained-suspicion lock (" + low + "/" + mouseScores.length + " low)");
+      // ENFORCE on sustained suspicion over a full buffer: its mean below the user's threshold
+      // ("mean" rule), or at least lockAt low windows ("vote" rule).
+      var fire = mouseScores.length >= N && (rule === "mean" ? bufMean < thr : low >= lockAt);
+      if (!state.locked && fire) {
+        dlog("[continuum-guard] mouse sustained-suspicion lock (" + (rule === "mean" ? "mean " + bufMean.toFixed(3) + " < " + thr.toFixed(3) : low + "/" + mouseScores.length + " low") + ")");
+        mouseScores = [];   // the next decision needs a fresh buffer, as in the evaluation's replay
         engageLock("mouse");
       }
       updateBadge();
@@ -579,6 +653,7 @@ function engageLock(reason) {
 }
 function releaseLock() {
   state.locked = false;
+  state.rpError = null;
   state.lockReason = null;
   scores = [];              // fresh packets after a verified step-up (probation-style reset)
   mouseScores = [];
@@ -612,13 +687,44 @@ function closeRpTab(sender) {
   } catch (e) {}
 }
 
+// Is the passkey RP actually up? /health is deliberately un-keyed on the service, so this
+// needs no credentials. Always settles: a hung connect resolves false on the timer.
+function rpReachable(cb) {
+  var done = false;
+  function finish(ok, why) { if (!done) { done = true; cb(ok, why); } }
+  var t = setTimeout(function () { finish(false, "timed out"); }, 2500);
+  try {
+    fetch(RP_BASE + "/health", { method: "GET", cache: "no-store" })
+      .then(function (r) { clearTimeout(t); finish(!!r.ok, r.ok ? "" : "HTTP " + r.status); })
+      .catch(function (e) { clearTimeout(t); finish(false, (e && e.message) || "connection refused"); });
+  } catch (e) { clearTimeout(t); finish(false, "connection refused"); }
+}
+
 // Open the RP ceremony as a small dialog-style popup window (falls back to a tab).
+//
+// The RP is PROBED first. When the passkey service is not running — or RP_BASE points at
+// the wrong host — the old behaviour opened a window that simply failed to connect: the
+// user got Chrome's "site can't be reached", closed it, and stayed locked on every page
+// with keyboard input blocked, no explanation, and no way forward. The lock then cleared
+// only by accident, when the persisted progress snapshot aged past 10 minutes and a worker
+// restart dropped it. Now the overlay is told, so the failure is legible and retryable
+// instead of looking like the extension itself had broken.
 function openRpPage(path) {
   var url = RP_BASE + path + "#uid=" + state.profileNum;
-  if (api.windows && api.windows.create) {
-    try { api.windows.create({ url: url, type: "popup", width: 480, height: 620 }); return; } catch (e) {}
-  }
-  api.tabs.create({ url: url });
+  rpReachable(function (ok, why) {
+    if (!ok) {
+      state.rpError = why || "unreachable";
+      broadcastAll({ type: "cg:rp-unreachable", rpBase: RP_BASE, reason: state.rpError });
+      refreshAllBadges();
+      console.warn("[continuum-guard] passkey service unreachable at " + RP_BASE + " (" + state.rpError + ") — step-up cannot run");
+      return;
+    }
+    state.rpError = null;
+    if (api.windows && api.windows.create) {
+      try { api.windows.create({ url: url, type: "popup", width: 480, height: 620 }); return; } catch (e) {}
+    }
+    api.tabs.create({ url: url });
+  });
 }
 
 function broadcastConfig() {
@@ -630,7 +736,7 @@ function broadcastConfig() {
       try {
         // enabled = anyTrained(): content scripts capture (keys AND mouse) whenever at least
         // one modality is trained; the worker then routes each window to the right channel.
-        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: anyTrained(), mouseTracking: state.mouseTracking, exclusions: config.exclusions, rpOrigin: rpOriginOf() }, function () { void api.runtime.lastError; });
+        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: anyTrained(), mouseTracking: state.mouseTracking, exclusions: config.exclusions, rpOrigin: rpOriginOf(), debug: debugLog }, function () { void api.runtime.lastError; });
       } catch (e) {}
     });
   });
@@ -727,6 +833,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       state.modelReady = true; state.modelError = null;
       setModelPersonal(msg.personal, msg.personal === true);
       setMouseReady(msg.mouse, msg.mouse === true);
+      applyMouseMeta(msg.mouseMeta, msg.mouseStale);
       return;
     case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":
@@ -734,7 +841,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       // content script, and capture must run whenever EITHER modality is trained. Using
       // monitoringEnabled() here (keystroke-only) meant a mouse-only profile captured
       // nothing on a fresh page load until some later broadcast happened to re-enable it.
-      reply({ enabled: anyTrained(), mouseTracking: state.mouseTracking, excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey, rpOrigin: rpOriginOf() });
+      reply({ enabled: anyTrained(), mouseTracking: state.mouseTracking, excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey, rpOrigin: rpOriginOf(), debug: debugLog });
       return true;
     case "cg:open-verify":
       openRpPage("/ext/verify.html");
@@ -782,6 +889,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
               state.modelReady = true; state.modelError = null;
               setModelPersonal(r.personal, r.personal === true);
               setMouseReady(r.mouse, r.mouse === true);
+              applyMouseMeta(r.mouseMeta, r.mouseStale);
             }
             else if (r && r.error) { state.modelError = r.error; }
             reply(statusObj());
@@ -824,7 +932,8 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       var pct = parseInt(msg.pct, 10);
       if (!(pct >= 30 && pct <= 100)) { reply({ mouseSustainPct: state.mouseSustainPct }); return true; }
       state.mouseSustainPct = pct;
-      api.storage.local.set({ cg_mouse_sustain_pct: pct });
+      state.mousePctUserSet = true;
+      var pr = {}; pr[MOUSE_PCT_KEY] = pct; api.storage.local.set(pr);
       reply({ mouseSustainPct: state.mouseSustainPct });
       return true;
     }

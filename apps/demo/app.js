@@ -123,7 +123,7 @@ async function passkeySetupGate(req, res, next) {
     const onboarding = process.env.ONBOARDING_MODE === "lazy"
       ? { trained: true, mouseEnrolled: true }
       : await ca
-          .onboarding(req.caUid)
+          .onboarding(req.session.userId)
           .then((r) => r.data)
           .catch(() => ({ trained: true, mouseEnrolled: true }));
 

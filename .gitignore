@@ -20,7 +20,8 @@ venv/
 # ─── Training datasets (public keystroke/SapiMouse HDF sets) ───
 # Training-only and too large for GitHub (>100 MB files). Re-download or copy
 # them onto a new machine before retraining. NOTE: building the model-api image
-# also needs data/mouse_only/Mouse_WS50.h5 present locally (it is NOT in git).
+# also needs data/mouse_only/Mouse_A5_W50_base.h5 present locally (it is NOT in git;
+# services/model-api/train_mouse_fcn.py regenerates it from SapiMouse).
 data/*.h5
 data/**/*.h5
 data/*.zip
@@ -43,7 +44,10 @@ artifacts/users/
 services/model-api/artifacts/
 
 # Dead / experimental model variants — keep only ws50-gru (keystroke base) and
-# mouse-ws50-base (mouse base); everything else is regenerable experiment output.
+# mouse-fcn-a5 (mouse base); everything else is regenerable experiment output.
+# Per-user evaluation models and exported inputs of the mouse study (regenerable with
+# final_mouse_eval.py / export_g_inputs.py / extension/scripts/eval_ondevice_g.js).
+artifacts/final_eval/
 artifacts/*-v2
 artifacts/*.BROKEN*
 artifacts/*.log
@@ -94,3 +98,24 @@ services/ca-service/identity_snapshot.json
 services/ca-service/idmap_snapshot.json
 services/ca-service/reconstructed.json
 services/gateway/principals_seed.json
+
+# ─── Mouse validity-protocol outputs (added 2026-09-23) ───
+# Per-user evaluation models of protocols J/K (hundreds of 3.4 MB SavedModels) and the
+# base networks retrained for the two untouched tests — regenerable with
+# protocol_j_p*.py / protocol_k*.py and train_mouse_fcn.py (seeded). The score JSONs in
+# artifacts/repr_arch_study/ ARE kept: they are the evidence behind every reported number.
+artifacts/protocol_j/models/
+artifacts/mouse-fcn-a5-j80/
+artifacts/mouse-fcn-a5-k60/
+
+# Third-party mouse dataset (Balabit) — not ours to vendor, same rule as KeyRecs/Aalto.
+data/balabit/
+
+# Published papers (publishers' copyright) — kept locally, never pushed.
+pdfs/
+
+# Database backups and copies (biometric - same rule as *.db above). `*.db` alone
+# misses names like ca.db.pre-a5-migration-2026-09-13.bak.
+*.db.*
+*.db-*
+*.bak

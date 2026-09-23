@@ -1,0 +1,22 @@
+{
+ "preregistrationJSha256": "23db222bdb4916e5e316dc9c1fde9ced1701e066cfd3c6fcb4e7e976063b7f98",
+ "splitJSha256": "4df1abbeaf904e2be02623b6d04549a9c66719878b687d8f27d2f21287759192",
+ "phase": "P2b",
+ "budget": 440,
+ "operatingPoint": {
+  "q": 20,
+  "rule": "vote",
+  "n": 60,
+  "k": 33,
+  "budget": 0.2,
+  "cal": {
+   "promptsPerMinMean": 0.19088431933037778,
+   "promptsPerMinMedian": 0.0,
+   "usersNeverPrompted": 0.9473684210526315,
+   "interruptionMean": 0.05263157894736842,
+   "impostorRunsCaught": 0.9263157894736842,
+   "impostorRunsNeverCaught": 0.0736842105263158,
+   "timeToCatchMedianS": 17.216
+  }
+ }
+}

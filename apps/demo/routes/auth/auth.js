@@ -93,9 +93,13 @@ router.post("/login", async (req, res) => {
     req.session.hasPasskey = hasPasskey;
     req.session.passkeySetupRequired = !hasPasskey;
 
-    // Resolve this session's Continuum id once so the CA keys on the unified id.
-    const caUid = (await resolveContinuumId(req)) || user.id;
-    ca.maybeRetrainImpostors(caUid);
+    // Warm the session's cached Continuum id for later requests (attachContinuumId
+    // reads/writes req.session.continuumUserId, but ran before session.userId existed
+    // on THIS request). caClient's own functions resolve identity internally from the
+    // RAW app user id — passing an already-resolved id back in double-resolves it into
+    // a different, empty principal, which is exactly the bug this comment used to cause.
+    await resolveContinuumId(req);
+    ca.maybeRetrainImpostors(user.id);
 
     return res.json({
       ok: true,
@@ -105,7 +109,7 @@ router.post("/login", async (req, res) => {
       userId: user.id,
       username: user.username,
       passkeySetupRequired: req.session.passkeySetupRequired,
-      typingStatus: (await ca.keystrokeStatus(caUid)).data,
+      typingStatus: (await ca.keystrokeStatus(user.id)).data,
     });
   } catch (err) {
     console.error("Login error:", err);
@@ -141,8 +145,11 @@ router.post("/login/passkey-complete", (req, res) => {
     delete req.session.passkeyVerifiedUserId;
     delete req.session.passkeySetupRequired;
 
-    // Fire-and-forget (this handler isn't async): resolve the unified id, then retrain.
-    resolveContinuumId(req).then((cid) => ca.maybeRetrainImpostors(cid || user.id)).catch(() => {});
+    // Fire-and-forget (this handler isn't async): warm the session's cached Continuum id,
+    // and separately retrain on the RAW id — caClient resolves identity internally, so an
+    // already-resolved id fed back in double-resolves into a different, empty principal.
+    resolveContinuumId(req).catch(() => {});
+    ca.maybeRetrainImpostors(user.id);
 
     return res.json({
       ok: true,
@@ -317,7 +324,7 @@ router.get("/me", async (req, res) => {
   const typingStatus = await ca
     .keystrokeStatus(req.session.userId)
     .then((r) => r.data)
-    .catch(() => ({ trained: false }));
+    .catch((e) => { console.error("[auth/me] keystrokeStatus failed for user", req.session.userId, ":", e.message); return { trained: false }; });
   res.json({
     userId: req.session.userId,
     username: req.session.username,

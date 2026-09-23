@@ -1,0 +1,667 @@
+{
+ "protocol": "J",
+ "seed": 20260915,
+ "eligibility": {
+  "enrol3minWindowsAtLeast": 440,
+  "test1minWindowsAtLeast": 150,
+  "representation": "A5, 50 steps, stride 10, deployed step filter"
+ },
+ "development": [
+  "user1",
+  "user8",
+  "user9",
+  "user16",
+  "user19",
+  "user29",
+  "user69",
+  "user70",
+  "user85",
+  "user86",
+  "user89",
+  "user91",
+  "user98",
+  "user101",
+  "user104",
+  "user107",
+  "user108",
+  "user111",
+  "user115",
+  "user119"
+ ],
+ "lockbox": [
+  "user6",
+  "user18",
+  "user24",
+  "user32",
+  "user34",
+  "user42",
+  "user45",
+  "user46",
+  "user52",
+  "user60",
+  "user61",
+  "user63",
+  "user64",
+  "user73",
+  "user78",
+  "user90",
+  "user92",
+  "user93",
+  "user95",
+  "user103"
+ ],
+ "baseTraining": [
+  "user2",
+  "user3",
+  "user4",
+  "user5",
+  "user7",
+  "user10",
+  "user11",
+  "user12",
+  "user13",
+  "user14",
+  "user15",
+  "user17",
+  "user20",
+  "user21",
+  "user22",
+  "user23",
+  "user25",
+  "user26",
+  "user27",
+  "user28",
+  "user30",
+  "user31",
+  "user33",
+  "user35",
+  "user36",
+  "user37",
+  "user38",
+  "user39",
+  "user40",
+  "user41",
+  "user43",
+  "user44",
+  "user47",
+  "user48",
+  "user49",
+  "user50",
+  "user51",
+  "user53",
+  "user54",
+  "user55",
+  "user56",
+  "user57",
+  "user58",
+  "user59",
+  "user62",
+  "user65",
+  "user66",
+  "user67",
+  "user68",
+  "user71",
+  "user72",
+  "user74",
+  "user75",
+  "user76",
+  "user77",
+  "user79",
+  "user80",
+  "user81",
+  "user82",
+  "user83",
+  "user84",
+  "user87",
+  "user88",
+  "user94",
+  "user96",
+  "user97",
+  "user99",
+  "user100",
+  "user102",
+  "user105",
+  "user106",
+  "user109",
+  "user110",
+  "user112",
+  "user113",
+  "user114",
+  "user116",
+  "user117",
+  "user118",
+  "user120"
+ ],
+ "counts": {
+  "user1": {
+   "enrol3min": 617,
+   "test1min": 198
+  },
+  "user2": {
+   "enrol3min": 461,
+   "test1min": 185
+  },
+  "user3": {
+   "enrol3min": 676,
+   "test1min": 254
+  },
+  "user4": {
+   "enrol3min": 606,
+   "test1min": 223
+  },
+  "user5": {
+   "enrol3min": 698,
+   "test1min": 232
+  },
+  "user6": {
+   "enrol3min": 655,
+   "test1min": 207
+  },
+  "user7": {
+   "enrol3min": 690,
+   "test1min": 244
+  },
+  "user8": {
+   "enrol3min": 595,
+   "test1min": 207
+  },
+  "user9": {
+   "enrol3min": 548,
+   "test1min": 237
+  },
+  "user10": {
+   "enrol3min": 653,
+   "test1min": 162
+  },
+  "user11": {
+   "enrol3min": 1001,
+   "test1min": 276
+  },
+  "user12": {
+   "enrol3min": 433,
+   "test1min": 141
+  },
+  "user13": {
+   "enrol3min": 769,
+   "test1min": 266
+  },
+  "user14": {
+   "enrol3min": 609,
+   "test1min": 217
+  },
+  "user15": {
+   "enrol3min": 771,
+   "test1min": 189
+  },
+  "user16": {
+   "enrol3min": 701,
+   "test1min": 194
+  },
+  "user17": {
+   "enrol3min": 692,
+   "test1min": 243
+  },
+  "user18": {
+   "enrol3min": 506,
+   "test1min": 175
+  },
+  "user19": {
+   "enrol3min": 1546,
+   "test1min": 533
+  },
+  "user20": {
+   "enrol3min": 598,
+   "test1min": 247
+  },
+  "user21": {
+   "enrol3min": 873,
+   "test1min": 257
+  },
+  "user22": {
+   "enrol3min": 481,
+   "test1min": 178
+  },
+  "user23": {
+   "enrol3min": 712,
+   "test1min": 203
+  },
+  "user24": {
+   "enrol3min": 734,
+   "test1min": 255
+  },
+  "user25": {
+   "enrol3min": 599,
+   "test1min": 193
+  },
+  "user26": {
+   "enrol3min": 1426,
+   "test1min": 512
+  },
+  "user27": {
+   "enrol3min": 501,
+   "test1min": 147
+  },
+  "user28": {
+   "enrol3min": 648,
+   "test1min": 142
+  },
+  "user29": {
+   "enrol3min": 713,
+   "test1min": 242
+  },
+  "user30": {
+   "enrol3min": 720,
+   "test1min": 170
+  },
+  "user31": {
+   "enrol3min": 454,
+   "test1min": 141
+  },
+  "user32": {
+   "enrol3min": 766,
+   "test1min": 219
+  },
+  "user33": {
+   "enrol3min": 586,
+   "test1min": 203
+  },
+  "user34": {
+   "enrol3min": 804,
+   "test1min": 249
+  },
+  "user35": {
+   "enrol3min": 551,
+   "test1min": 147
+  },
+  "user36": {
+   "enrol3min": 736,
+   "test1min": 174
+  },
+  "user37": {
+   "enrol3min": 644,
+   "test1min": 183
+  },
+  "user38": {
+   "enrol3min": 691,
+   "test1min": 222
+  },
+  "user39": {
+   "enrol3min": 520,
+   "test1min": 198
+  },
+  "user40": {
+   "enrol3min": 688,
+   "test1min": 209
+  },
+  "user41": {
+   "enrol3min": 784,
+   "test1min": 279
+  },
+  "user42": {
+   "enrol3min": 735,
+   "test1min": 183
+  },
+  "user43": {
+   "enrol3min": 763,
+   "test1min": 190
+  },
+  "user44": {
+   "enrol3min": 755,
+   "test1min": 263
+  },
+  "user45": {
+   "enrol3min": 624,
+   "test1min": 235
+  },
+  "user46": {
+   "enrol3min": 524,
+   "test1min": 201
+  },
+  "user47": {
+   "enrol3min": 463,
+   "test1min": 145
+  },
+  "user48": {
+   "enrol3min": 582,
+   "test1min": 126
+  },
+  "user49": {
+   "enrol3min": 472,
+   "test1min": 169
+  },
+  "user50": {
+   "enrol3min": 765,
+   "test1min": 256
+  },
+  "user51": {
+   "enrol3min": 414,
+   "test1min": 111
+  },
+  "user52": {
+   "enrol3min": 771,
+   "test1min": 269
+  },
+  "user53": {
+   "enrol3min": 493,
+   "test1min": 143
+  },
+  "user54": {
+   "enrol3min": 368,
+   "test1min": 111
+  },
+  "user55": {
+   "enrol3min": 690,
+   "test1min": 182
+  },
+  "user56": {
+   "enrol3min": 727,
+   "test1min": 230
+  },
+  "user57": {
+   "enrol3min": 738,
+   "test1min": 266
+  },
+  "user58": {
+   "enrol3min": 1480,
+   "test1min": 387
+  },
+  "user59": {
+   "enrol3min": 687,
+   "test1min": 186
+  },
+  "user60": {
+   "enrol3min": 450,
+   "test1min": 208
+  },
+  "user61": {
+   "enrol3min": 640,
+   "test1min": 225
+  },
+  "user62": {
+   "enrol3min": 666,
+   "test1min": 238
+  },
+  "user63": {
+   "enrol3min": 739,
+   "test1min": 222
+  },
+  "user64": {
+   "enrol3min": 1575,
+   "test1min": 467
+  },
+  "user65": {
+   "enrol3min": 465,
+   "test1min": 121
+  },
+  "user66": {
+   "enrol3min": 642,
+   "test1min": 216
+  },
+  "user67": {
+   "enrol3min": 638,
+   "test1min": 230
+  },
+  "user68": {
+   "enrol3min": 599,
+   "test1min": 234
+  },
+  "user69": {
+   "enrol3min": 615,
+   "test1min": 219
+  },
+  "user70": {
+   "enrol3min": 655,
+   "test1min": 212
+  },
+  "user71": {
+   "enrol3min": 642,
+   "test1min": 245
+  },
+  "user72": {
+   "enrol3min": 588,
+   "test1min": 213
+  },
+  "user73": {
+   "enrol3min": 732,
+   "test1min": 233
+  },
+  "user74": {
+   "enrol3min": 1679,
+   "test1min": 551
+  },
+  "user75": {
+   "enrol3min": 460,
+   "test1min": 149
+  },
+  "user76": {
+   "enrol3min": 654,
+   "test1min": 216
+  },
+  "user77": {
+   "enrol3min": 743,
+   "test1min": 231
+  },
+  "user78": {
+   "enrol3min": 737,
+   "test1min": 206
+  },
+  "user79": {
+   "enrol3min": 407,
+   "test1min": 150
+  },
+  "user80": {
+   "enrol3min": 498,
+   "test1min": 125
+  },
+  "user81": {
+   "enrol3min": 703,
+   "test1min": 229
+  },
+  "user82": {
+   "enrol3min": 466,
+   "test1min": 119
+  },
+  "user83": {
+   "enrol3min": 617,
+   "test1min": 195
+  },
+  "user84": {
+   "enrol3min": 1457,
+   "test1min": 531
+  },
+  "user85": {
+   "enrol3min": 569,
+   "test1min": 190
+  },
+  "user86": {
+   "enrol3min": 748,
+   "test1min": 237
+  },
+  "user87": {
+   "enrol3min": 610,
+   "test1min": 121
+  },
+  "user88": {
+   "enrol3min": 725,
+   "test1min": 230
+  },
+  "user89": {
+   "enrol3min": 655,
+   "test1min": 257
+  },
+  "user90": {
+   "enrol3min": 1218,
+   "test1min": 417
+  },
+  "user91": {
+   "enrol3min": 901,
+   "test1min": 246
+  },
+  "user92": {
+   "enrol3min": 574,
+   "test1min": 244
+  },
+  "user93": {
+   "enrol3min": 526,
+   "test1min": 214
+  },
+  "user94": {
+   "enrol3min": 334,
+   "test1min": 105
+  },
+  "user95": {
+   "enrol3min": 756,
+   "test1min": 201
+  },
+  "user96": {
+   "enrol3min": 669,
+   "test1min": 199
+  },
+  "user97": {
+   "enrol3min": 296,
+   "test1min": 79
+  },
+  "user98": {
+   "enrol3min": 324,
+   "test1min": 126
+  },
+  "user99": {
+   "enrol3min": 419,
+   "test1min": 184
+  },
+  "user100": {
+   "enrol3min": 775,
+   "test1min": 245
+  },
+  "user101": {
+   "enrol3min": 642,
+   "test1min": 153
+  },
+  "user102": {
+   "enrol3min": 681,
+   "test1min": 216
+  },
+  "user103": {
+   "enrol3min": 710,
+   "test1min": 210
+  },
+  "user104": {
+   "enrol3min": 662,
+   "test1min": 246
+  },
+  "user105": {
+   "enrol3min": 1221,
+   "test1min": 423
+  },
+  "user106": {
+   "enrol3min": 587,
+   "test1min": 164
+  },
+  "user107": {
+   "enrol3min": 461,
+   "test1min": 176
+  },
+  "user108": {
+   "enrol3min": 745,
+   "test1min": 213
+  },
+  "user109": {
+   "enrol3min": 813,
+   "test1min": 283
+  },
+  "user110": {
+   "enrol3min": 815,
+   "test1min": 243
+  },
+  "user111": {
+   "enrol3min": 577,
+   "test1min": 181
+  },
+  "user112": {
+   "enrol3min": 813,
+   "test1min": 258
+  },
+  "user113": {
+   "enrol3min": 550,
+   "test1min": 183
+  },
+  "user114": {
+   "enrol3min": 420,
+   "test1min": 118
+  },
+  "user115": {
+   "enrol3min": 647,
+   "test1min": 208
+  },
+  "user116": {
+   "enrol3min": 564,
+   "test1min": 195
+  },
+  "user117": {
+   "enrol3min": 1006,
+   "test1min": 217
+  },
+  "user118": {
+   "enrol3min": 539,
+   "test1min": 204
+  },
+  "user119": {
+   "enrol3min": 768,
+   "test1min": 212
+  },
+  "user120": {
+   "enrol3min": 640,
+   "test1min": 154
+  }
+ },
+ "summary": {
+  "users": 120,
+  "development": 20,
+  "base": 100,
+  "eligibleBase": 80,
+  "lockbox": 20,
+  "baseTraining": 80,
+  "developmentEligibleFor440": [
+   "user1",
+   "user8",
+   "user9",
+   "user16",
+   "user19",
+   "user29",
+   "user69",
+   "user70",
+   "user85",
+   "user86",
+   "user89",
+   "user91",
+   "user101",
+   "user104",
+   "user107",
+   "user108",
+   "user111",
+   "user115",
+   "user119"
+  ],
+  "developmentEligibleFor330": [
+   "user1",
+   "user8",
+   "user9",
+   "user16",
+   "user19",
+   "user29",
+   "user69",
+   "user70",
+   "user85",
+   "user86",
+   "user89",
+   "user91",
+   "user101",
+   "user104",
+   "user107",
+   "user108",
+   "user111",
+   "user115",
+   "user119"
+  ]
+ }
+}

@@ -1,0 +1,47 @@
+{
+ "live: vote 3/6": {
+  "escapeRate": 0.00816326530612245,
+  "nSessions": 3920,
+  "medianDetectDigraphs": 100.0,
+  "p90DetectDigraphs": 120.0,
+  "genuineSessionsInterrupted": 0.898989898989899
+ },
+ "vote 5/10": {
+  "escapeRate": 0.01403061224489796,
+  "nSessions": 3920,
+  "medianDetectDigraphs": 140.0,
+  "p90DetectDigraphs": 160.0,
+  "genuineSessionsInterrupted": 0.7474747474747475
+ },
+ "vote 10/20": {
+  "escapeRate": 0.03086734693877551,
+  "nSessions": 3920,
+  "medianDetectDigraphs": 240.0,
+  "p90DetectDigraphs": 240.0,
+  "genuineSessionsInterrupted": 0.494949494949495
+ },
+ "mean k=20": {
+  "escapeRate": 0.02959183673469388,
+  "nSessions": 3920,
+  "medianDetectDigraphs": 240.0,
+  "p90DetectDigraphs": 240.0,
+  "genuineSessionsInterrupted": 0.5050505050505051
+ },
+ "profiles": {
+  "high security": {
+   "tau": 0.8200000000000001,
+   "far": 0.009541984732824416,
+   "tar": 0.3453237410071942
+  },
+  "balanced": {
+   "tau": 0.5900000000000001,
+   "far": 0.05128205128205132,
+   "tar": 0.9482758620689655
+  },
+  "low friction": {
+   "tau": 0.6,
+   "far": 0.05019083969465643,
+   "tar": 0.9333333333333333
+  }
+ }
+}

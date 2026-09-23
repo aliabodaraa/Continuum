@@ -1,0 +1,52 @@
+{
+  "source": "artifacts/repr_arch_study/parts/F_new.json (Experiment F, 19 held-out users)",
+  "packetWindows": 60,
+  "voteK": 30,
+  "packetStride": 1,
+  "chosenThreshold": 0.25,
+  "note": "Fixed-cutoff sweep reported for transparency; 0.25 adopted as the reporting reference. Deployed system uses each user's own 1st-percentile threshold, not a shared cutoff. EER/AUC are threshold-free and do not vary across these rows. Post hoc; not pre-registered.",
+  "sweep": [
+    {
+      "threshold": 0.5,
+      "windowFAR": 0.054158751443364246,
+      "windowFRR": 0.5214400366888329,
+      "decisionFAR": 0.006081185368112363,
+      "decisionFRR": 0.4935185185185185
+    },
+    {
+      "threshold": 0.25,
+      "windowFAR": 0.12738853503184713,
+      "windowFRR": 0.3501490483833983,
+      "decisionFAR": 0.030652878530637445,
+      "decisionFRR": 0.2808641975308642
+    },
+    {
+      "threshold": 0.2,
+      "windowFAR": 0.15457965508250457,
+      "windowFRR": 0.3091034166475579,
+      "decisionFAR": 0.04744559345578021,
+      "decisionFRR": 0.2052469135802469
+    },
+    {
+      "threshold": 0.15,
+      "windowFAR": 0.19335493723693523,
+      "windowFRR": 0.26094932354964456,
+      "decisionFAR": 0.07606112054329371,
+      "decisionFRR": 0.13796296296296295
+    },
+    {
+      "threshold": 0.12,
+      "windowFAR": 0.22471784556933735,
+      "windowFRR": 0.22884659481770236,
+      "decisionFAR": 0.11029479858002778,
+      "decisionFRR": 0.11512345679012345
+    },
+    {
+      "threshold": 0.05,
+      "windowFAR": 0.36007747606808954,
+      "windowFRR": 0.1410227012153176,
+      "decisionFAR": 0.32782836857539743,
+      "decisionFRR": 0.07993827160493827
+    }
+  ]
+}

@@ -5,6 +5,12 @@
 #
 # Config is env-driven (see .env.example). To serve on a real domain, set
 # PUBLIC_ORIGIN + RP_ID to that domain (WebAuthn passkeys are bound to it).
+#
+# NETWORK SEGMENTATION. Only the gateway is published, but publishing was the ONLY thing
+# separating the tiers — every container shared one default bridge, so any of them could
+# address model-api and score, train or roll back any user's biometric model. The `model`
+# network now contains ca-service and model-api and nothing else, so the scoring oracle is
+# reachable only from the service that holds a gateway-verified identity assertion.
 services:
   model-api:
     build:
@@ -18,8 +24,19 @@ services:
       MODEL_DEBUG: "0"
       MODEL_UNITS: ${MODEL_UNITS:-32}
       MODEL_PATH: ${MODEL_PATH:-/app/artifacts/ws50-gru/final_model}
+      # REQUIRED — see docker-compose.bundle.yml. Generate: openssl rand -hex 32
+      MODEL_API_KEY: ${MODEL_API_KEY:?Set MODEL_API_KEY in .env (openssl rand -hex 32)}
     expose:
       - "5000"
+    networks: [model]
+    healthcheck:
+      # TensorFlow needs tens of seconds to load; dependants must wait for READY, not
+      # merely for the container to exist. /health is the one unauthenticated route.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/health',timeout=3).status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
     volumes:
       # Per-user models (keystroke + mouse) are generated at enrollment time and
       # must persist across restarts/rebuilds. Base models stay baked in the image.
@@ -41,6 +58,13 @@ services:
       PASSKEY_API_KEY: ${PASSKEY_API_KEY:-}
     expose:
       - "4000"
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     volumes:
       - continuum_passkey_db:/app/data   # credentials + challenges (persistent)
 
@@ -51,10 +75,15 @@ services:
     image: ${REGISTRY:-continuum}/ca-service:${TAG:-latest}
     restart: unless-stopped
     depends_on:
-      - model-api
+      model-api:
+        condition: service_healthy
     environment:
       PORT: 4100
       MODEL_API_URL: http://model-api:5000
+      # Must equal model-api's MODEL_API_KEY — the credential for that hop.
+      MODEL_API_KEY: ${MODEL_API_KEY:?Set MODEL_API_KEY in .env (openssl rand -hex 32)}
+      MODEL_INFER_TIMEOUT_MS: ${MODEL_INFER_TIMEOUT_MS:-5000}
+      MODEL_TRAIN_TIMEOUT_MS: ${MODEL_TRAIN_TIMEOUT_MS:-600000}
       DB_PATH: /app/data/ca.db
       CA_API_KEY: ${CA_API_KEY:-}
       # Signs behavioral risk verdicts; the app's CONTINUUM_SECRET must match.
@@ -62,6 +91,14 @@ services:
       CA_SIGNING_SECRET: ${CA_SIGNING_SECRET:?Set CA_SIGNING_SECRET in .env (openssl rand -hex 32)}
     expose:
       - "4100"
+    # The only service on both networks — the sole path to the model.
+    networks: [internal, model]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     volumes:
       - continuum_ca_db:/app/data   # behavioral data (persistent)
 
@@ -75,9 +112,10 @@ services:
     image: ${REGISTRY:-continuum}/web-demo:${TAG:-latest}
     restart: unless-stopped
     depends_on:
-      - model-api
-      - passkey-service
-      - ca-service
+      passkey-service:
+        condition: service_healthy
+      ca-service:
+        condition: service_healthy
     environment:
       PORT: 3000
       # Public-facing identity. Override for a real domain (must match the URL
@@ -87,7 +125,9 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-0}
       # REQUIRED — signs session cookies. Generate: openssl rand -hex 32
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env (openssl rand -hex 32)}
-      MODEL_API_URL: http://model-api:5000
+      # MODEL_API_URL removed: the demo never called the model (its only model code is the
+      # unused local TFJS adapter), so this advertised a path that should not exist — and
+      # the `model` network now makes that path unreachable regardless.
       PASSKEY_API_URL: http://passkey-service:4000
       PASSKEY_API_KEY: ${PASSKEY_API_KEY:-}
       CA_API_URL: http://ca-service:4100
@@ -98,9 +138,16 @@ services:
       DB_PATH: /app/data/continuum.db
     ports:
       - "${WEB_PORT:-3000}:3000"
+    # `edge` for the browser, `internal` for its CA/passkey calls. Never `model`.
+    networks: [edge, internal]
     volumes:
       - continuum_db:/app/data                 # SQLite: users, mouse_samples…
       - continuum_uploads:/app/public/uploads  # profile photos
+
+networks:
+  edge:
+  internal:
+  model:
 
 volumes:
   continuum_user_models:

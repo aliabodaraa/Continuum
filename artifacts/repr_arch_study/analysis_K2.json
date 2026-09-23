@@ -1,0 +1,989 @@
+{
+ "preregistrationJSha256": "23db222bdb4916e5e316dc9c1fde9ced1701e066cfd3c6fcb4e7e976063b7f98",
+ "splitJSha256": "4df1abbeaf904e2be02623b6d04549a9c66719878b687d8f27d2f21287759192",
+ "preregistrationKSha256": "c602b16b80c1a1b36e6f70aa3669e8556f0693f3f71fb94ad9e5a7df91fbec3e",
+ "amendmentK2Sha256": "4733421ca4365d7cc0a87d04168d9d5306dace119dc1a11356ac692e229e246e",
+ "phase": "K2",
+ "operatingPoint": {
+  "q": 20,
+  "rule": "vote",
+  "n": 60,
+  "k": 33,
+  "budget": 0.2,
+  "cal": {
+   "promptsPerMinMean": 0.19088431933037778,
+   "promptsPerMinMedian": 0.0,
+   "usersNeverPrompted": 0.9473684210526315,
+   "interruptionMean": 0.05263157894736842,
+   "impostorRunsCaught": 0.9263157894736842,
+   "impostorRunsNeverCaught": 0.0736842105263158,
+   "timeToCatchMedianS": 17.216
+  }
+ },
+ "users": [
+  "user1",
+  "user101",
+  "user104",
+  "user107",
+  "user108",
+  "user111",
+  "user115",
+  "user119",
+  "user16",
+  "user19",
+  "user29",
+  "user69",
+  "user70",
+  "user8",
+  "user85",
+  "user86",
+  "user89",
+  "user9",
+  "user91"
+ ],
+ "budgets": {
+  "330": {
+   "summary": {
+    "runsCaught": 0.9298245614035087,
+    "promptsPerMin": 0.5259858072904182,
+    "auc": 0.8616691548420361,
+    "eer": 0.20891165580818627,
+    "tar01": 0.3290023910835672,
+    "threshold": 0.25191073684210524,
+    "timeToCatch": 17.300947368421056,
+    "windows": 330.0,
+    "thresholdSDMean": null,
+    "users": 19,
+    "enrolSeconds": 89.8
+   },
+   "vsFull": {
+    "runsCaught": {
+     "meanDiff": -0.021442495126705666,
+     "ci95": [
+      -0.08576998050682265,
+      0.04678362573099415
+     ],
+     "p": 0.5082,
+     "n": 19,
+     "bBetter": 2
+    },
+    "auc": {
+     "meanDiff": -0.014758262657753601,
+     "ci95": [
+      -0.03237636828162019,
+      0.0026637099774496132
+     ],
+     "p": 0.0972,
+     "n": 19,
+     "bBetter": 6
+    },
+    "promptsPerMin": {
+     "meanDiff": -0.08946560302493926,
+     "ci95": [
+      -0.5284843526747083,
+      0.3754599184552008
+     ],
+     "p": 0.6714,
+     "n": 19,
+     "bBetter": 2
+    },
+    "meetsMargins": false
+   }
+  },
+  "440": {
+   "summary": {
+    "runsCaught": 0.925925925925926,
+    "promptsPerMin": 0.3056198754171478,
+    "auc": 0.8629777698813701,
+    "eer": 0.20378059055271905,
+    "tar01": 0.3066380085813012,
+    "threshold": 0.3403932888888889,
+    "timeToCatch": 17.216,
+    "windows": 440.0,
+    "thresholdSDMean": null,
+    "users": 18,
+    "enrolSeconds": 119.4
+   },
+   "vsFull": {
+    "runsCaught": {
+     "meanDiff": -0.02263374485596708,
+     "ci95": [
+      -0.08024691358024691,
+      0.028806584362139915
+     ],
+     "p": 0.4244,
+     "n": 18,
+     "bBetter": 3
+    },
+    "auc": {
+     "meanDiff": -0.006984335796017359,
+     "ci95": [
+      -0.018317174977228227,
+      0.004618510018861162
+     ],
+     "p": 0.2386,
+     "n": 18,
+     "bBetter": 8
+    },
+    "promptsPerMin": {
+     "meanDiff": -0.34402327991572956,
+     "ci95": [
+      -0.653344154748655,
+      -0.10264217414917644
+     ],
+     "p": 0.0004,
+     "n": 18,
+     "bBetter": 0
+    },
+    "meetsMargins": false
+   }
+  },
+  "550": {
+   "summary": {
+    "runsCaught": 0.9206349206349207,
+    "promptsPerMin": 0.5224684850819463,
+    "auc": 0.8709362035226617,
+    "eer": 0.2021261407355235,
+    "tar01": 0.31844329886070916,
+    "threshold": 0.3693734857142857,
+    "timeToCatch": 17.216000000000005,
+    "windows": 550.0,
+    "thresholdSDMean": null,
+    "users": 14,
+    "enrolSeconds": 149.0
+   },
+   "vsFull": {
+    "runsCaught": {
+     "meanDiff": -0.021164021164021163,
+     "ci95": [
+      -0.12962962962962962,
+      0.06613756613756613
+     ],
+     "p": 0.7464,
+     "n": 14,
+     "bBetter": 3
+    },
+    "auc": {
+     "meanDiff": 0.012474848309357014,
+     "ci95": [
+      0.00048062847216279663,
+      0.026159426859128167
+     ],
+     "p": 0.04,
+     "n": 14,
+     "bBetter": 9
+    },
+    "promptsPerMin": {
+     "meanDiff": -0.31278700034603885,
+     "ci95": [
+      -0.7442055848219596,
+      0.08190436976225457
+     ],
+     "p": 0.1334,
+     "n": 14,
+     "bBetter": 1
+    },
+    "meetsMargins": false
+   }
+  },
+  "FULL": {
+   "summary": {
+    "runsCaught": 0.9512670565302145,
+    "promptsPerMin": 0.6154514103153574,
+    "auc": 0.8764274174997897,
+    "eer": 0.1877069160145945,
+    "tar01": 0.34810410902826344,
+    "threshold": 0.3914248807017544,
+    "timeToCatch": 17.357578947368424,
+    "windows": 671.578947368421,
+    "thresholdSDMean": 0.034183047394922034,
+    "users": 19,
+    "enrolSeconds": 181.7
+   },
+   "vsFull": {}
+  }
+ },
+ "perUser": {
+  "330": {
+   "user1": {
+    "threshold": 0.044475799999999996,
+    "runsCaught": 0.5555555555555556,
+    "promptsPerMin": 0.0,
+    "auc": 0.8748148148148148,
+    "eer": 0.21235690235690236,
+    "tar01": 0.15151515151515152,
+    "timeToCatch": 18.830000000000002,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user101": {
+    "threshold": 0.1653114,
+    "runsCaught": 0.8888888888888888,
+    "promptsPerMin": 0.0,
+    "auc": 0.8635978835978836,
+    "eer": 0.22075998075998077,
+    "tar01": 0.18181818181818182,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user104": {
+    "threshold": 0.0188,
+    "runsCaught": 0.8888888888888888,
+    "promptsPerMin": 0.0,
+    "auc": 0.817169527250828,
+    "eer": 0.27672990063233965,
+    "tar01": 0.08130081300813008,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user107": {
+    "threshold": 0.16503059999999997,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9803114478114479,
+    "eer": 0.06927609427609427,
+    "tar01": 0.7840909090909091,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user108": {
+    "threshold": 0.10961699999999999,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.8232191069574247,
+    "eer": 0.2148840429214261,
+    "tar01": 0.19626168224299065,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user111": {
+    "threshold": 0.2702714,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9003011803011803,
+    "eer": 0.1977899877899878,
+    "tar01": 0.18681318681318682,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user115": {
+    "threshold": 0.14075279999999998,
+    "runsCaught": 1.0,
+    "promptsPerMin": 2.144695453245639,
+    "auc": 0.7556623931623931,
+    "eer": 0.31717236467236465,
+    "tar01": 0.17307692307692307,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user119": {
+    "threshold": 0.16786759999999998,
+    "runsCaught": 0.8888888888888888,
+    "promptsPerMin": 0.0,
+    "auc": 0.8846401118099231,
+    "eer": 0.1979454926624738,
+    "tar01": 0.330188679245283,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user16": {
+    "threshold": 0.1935226,
+    "runsCaught": 0.8888888888888888,
+    "promptsPerMin": 0.0,
+    "auc": 0.8045169912180221,
+    "eer": 0.3009660175639557,
+    "tar01": 0.10309278350515463,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user19": {
+    "threshold": 0.2692,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9850658898598974,
+    "eer": 0.03687473990844778,
+    "tar01": 0.8801498127340824,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user29": {
+    "threshold": 0.09741,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.8857024793388429,
+    "eer": 0.2051576369758188,
+    "tar01": 0.34710743801652894,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user69": {
+    "threshold": 0.14431259999999999,
+    "runsCaught": 0.7777777777777778,
+    "promptsPerMin": 0.0,
+    "auc": 0.9088888888888889,
+    "eer": 0.19026936026936025,
+    "tar01": 0.1,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user70": {
+    "threshold": 0.160457,
+    "runsCaught": 0.8888888888888888,
+    "promptsPerMin": 0.0,
+    "auc": 0.739412997903564,
+    "eer": 0.3302795248078267,
+    "tar01": 0.16981132075471697,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user8": {
+    "threshold": 0.1058894,
+    "runsCaught": 0.8888888888888888,
+    "promptsPerMin": 0.0,
+    "auc": 0.7560505698005698,
+    "eer": 0.33641737891737894,
+    "tar01": 0.09615384615384616,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user85": {
+    "threshold": 0.5072926,
+    "runsCaught": 1.0,
+    "promptsPerMin": 2.3478771277636468,
+    "auc": 0.933598440545809,
+    "eer": 0.1578362573099415,
+    "tar01": 0.42105263157894735,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user86": {
+    "threshold": 0.3541178,
+    "runsCaught": 1.0,
+    "promptsPerMin": 1.8743556902314826,
+    "auc": 0.7917086834733894,
+    "eer": 0.27828509181450356,
+    "tar01": 0.10084033613445378,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user89": {
+    "threshold": 0.8267606,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9997128911857595,
+    "eer": 0.008690783807062877,
+    "tar01": 0.9922480620155039,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user9": {
+    "threshold": 0.47776339999999995,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9921755368814192,
+    "eer": 0.042119514472455655,
+    "tar01": 0.8823529411764706,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   },
+   "user91": {
+    "threshold": 0.5674513999999999,
+    "runsCaught": 1.0,
+    "promptsPerMin": 3.6268020672771777,
+    "auc": 0.6751641071966276,
+    "eer": 0.37551038843721773,
+    "tar01": 0.07317073170731707,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 330
+   }
+  },
+  "440": {
+   "user1": {
+    "threshold": 0.2264894,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.882020202020202,
+    "eer": 0.20212121212121212,
+    "tar01": 0.16161616161616163,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user101": {
+    "threshold": 0.04369160000000002,
+    "runsCaught": 0.4444444444444444,
+    "promptsPerMin": 0.0,
+    "auc": 0.8459066859066859,
+    "eer": 0.23429052429052427,
+    "tar01": 0.12987012987012986,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user104": {
+    "threshold": 0.06910880000000001,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.8311713339355615,
+    "eer": 0.2500903342366757,
+    "tar01": 0.0975609756097561,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user108": {
+    "threshold": 0.18847200000000003,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.8124125995154032,
+    "eer": 0.25246452059536173,
+    "tar01": 0.16822429906542055,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user111": {
+    "threshold": 0.210943,
+    "runsCaught": 0.8888888888888888,
+    "promptsPerMin": 0.0,
+    "auc": 0.901050061050061,
+    "eer": 0.19964183964183962,
+    "tar01": 0.15384615384615385,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user115": {
+    "threshold": 0.17722460000000007,
+    "runsCaught": 0.7777777777777778,
+    "promptsPerMin": 0.0,
+    "auc": 0.775815527065527,
+    "eer": 0.29755698005698006,
+    "tar01": 0.125,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user119": {
+    "threshold": 0.23792880000000005,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.860020964360587,
+    "eer": 0.2375541579315164,
+    "tar01": 0.2358490566037736,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user16": {
+    "threshold": 0.0914938,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.7703856433753341,
+    "eer": 0.29800305460099275,
+    "tar01": 0.10309278350515463,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user19": {
+    "threshold": 0.7636032,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9830961298377029,
+    "eer": 0.0338909696213067,
+    "tar01": 0.9288389513108615,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user29": {
+    "threshold": 0.18023860000000003,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.8959044995408632,
+    "eer": 0.17418426691153965,
+    "tar01": 0.371900826446281,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user69": {
+    "threshold": 0.2657742,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9191043771043771,
+    "eer": 0.14531986531986532,
+    "tar01": 0.05454545454545454,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user70": {
+    "threshold": 0.1803702000000002,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.8471208944793851,
+    "eer": 0.22691125087351505,
+    "tar01": 0.22641509433962265,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user8": {
+    "threshold": 0.07032620000000002,
+    "runsCaught": 0.5555555555555556,
+    "promptsPerMin": 0.0,
+    "auc": 0.7702279202279202,
+    "eer": 0.30754985754985753,
+    "tar01": 0.16346153846153846,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user85": {
+    "threshold": 0.6720526000000001,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9373255360623781,
+    "eer": 0.14738791423001948,
+    "tar01": 0.4105263157894737,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user86": {
+    "threshold": 0.4303436,
+    "runsCaught": 1.0,
+    "promptsPerMin": 1.8743556902314826,
+    "auc": 0.7675474634298164,
+    "eer": 0.29520697167755994,
+    "tar01": 0.1092436974789916,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user89": {
+    "threshold": 0.8328738,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9997416020671834,
+    "eer": 0.007579672695951766,
+    "tar01": 0.9922480620155039,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user9": {
+    "threshold": 0.6476062,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.994254590725179,
+    "eer": 0.033473389355742296,
+    "tar01": 0.9327731092436975,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user91": {
+    "threshold": 0.8385386,
+    "runsCaught": 1.0,
+    "promptsPerMin": 3.6268020672771777,
+    "auc": 0.7404938271604938,
+    "eer": 0.32482384823848237,
+    "tar01": 0.15447154471544716,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   }
+  },
+  "550": {
+   "user1": {
+    "threshold": 0.213929,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.8917994762439206,
+    "eer": 0.18387205387205388,
+    "tar01": 0.32323232323232326,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user101": {
+    "threshold": 0.2742044,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.8791053391053391,
+    "eer": 0.2064886964886965,
+    "tar01": 0.18181818181818182,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user104": {
+    "threshold": 0.19684220000000008,
+    "runsCaught": 1.0,
+    "promptsPerMin": 1.8134010336385888,
+    "auc": 0.8489972899728997,
+    "eer": 0.24380307136404697,
+    "tar01": 0.10569105691056911,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user108": {
+    "threshold": 0.379062,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.8551678781585323,
+    "eer": 0.20761855313257183,
+    "tar01": 0.18691588785046728,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user115": {
+    "threshold": 0.14893320000000002,
+    "runsCaught": 0.7777777777777778,
+    "promptsPerMin": 0.0,
+    "auc": 0.7787393162393162,
+    "eer": 0.3160612535612536,
+    "tar01": 0.14423076923076922,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user119": {
+    "threshold": 0.3609874000000002,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9089937106918239,
+    "eer": 0.18878406708595388,
+    "tar01": 0.3867924528301887,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user16": {
+    "threshold": 0.17229840000000002,
+    "runsCaught": 0.7777777777777778,
+    "promptsPerMin": 0.0,
+    "auc": 0.7820694921725849,
+    "eer": 0.3194234440626193,
+    "tar01": 0.13402061855670103,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user19": {
+    "threshold": 0.8171532,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9961825495907893,
+    "eer": 0.01899292550977944,
+    "tar01": 0.951310861423221,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user29": {
+    "threshold": 0.3271164,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9314600550964187,
+    "eer": 0.14882460973370065,
+    "tar01": 0.35537190082644626,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user69": {
+    "threshold": 0.24293,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9280942760942761,
+    "eer": 0.14531986531986532,
+    "tar01": 0.11818181818181818,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user70": {
+    "threshold": 0.0376046,
+    "runsCaught": 0.3333333333333333,
+    "promptsPerMin": 0.0,
+    "auc": 0.8696296296296296,
+    "eer": 0.19979734451432565,
+    "tar01": 0.27358490566037735,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user86": {
+    "threshold": 0.3687772000000001,
+    "runsCaught": 1.0,
+    "promptsPerMin": 1.8743556902314826,
+    "auc": 0.7929878618113912,
+    "eer": 0.2858201058201058,
+    "tar01": 0.13445378151260504,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user89": {
+    "threshold": 0.8957782,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9998679299454494,
+    "eer": 0.007209302325581396,
+    "tar01": 1.0,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user91": {
+    "threshold": 0.7356126000000001,
+    "runsCaught": 1.0,
+    "promptsPerMin": 3.6268020672771777,
+    "auc": 0.7300120445648901,
+    "eer": 0.35775067750677503,
+    "tar01": 0.16260162601626016,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   }
+  },
+  "FULL": {
+   "user1": {
+    "threshold": 0.14294360000000006,
+    "runsCaught": 0.9259259259259259,
+    "promptsPerMin": 0.0,
+    "auc": 0.8734954483102632,
+    "eer": 0.21285072951739617,
+    "tar01": 0.16161616161616163,
+    "timeToCatch": 18.830000000000002,
+    "thresholdSD": 0.008101832313742419,
+    "windows": 605
+   },
+   "user101": {
+    "threshold": 0.14186240000000003,
+    "runsCaught": 0.7407407407407408,
+    "promptsPerMin": 0.0,
+    "auc": 0.8622446689113356,
+    "eer": 0.21396184062850732,
+    "tar01": 0.04329004329004329,
+    "timeToCatch": 17.216,
+    "thresholdSD": 0.013630709784893814,
+    "windows": 605
+   },
+   "user104": {
+    "threshold": 0.2599228666666667,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.604467011212863,
+    "auc": 0.7997932349693867,
+    "eer": 0.2655073772959952,
+    "tar01": 0.05420054200542005,
+    "timeToCatch": 17.216,
+    "thresholdSD": 0.028922859831858466,
+    "windows": 660
+   },
+   "user107": {
+    "threshold": 0.31258700000000006,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9928030303030303,
+    "eer": 0.034823232323232325,
+    "tar01": 0.7954545454545454,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 440
+   },
+   "user108": {
+    "threshold": 0.41630800000000007,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.6948546016745997,
+    "auc": 0.8625914387908158,
+    "eer": 0.19993538710049616,
+    "tar01": 0.19937694704049844,
+    "timeToCatch": 17.216,
+    "thresholdSD": 0.07935734604937339,
+    "windows": 715
+   },
+   "user111": {
+    "threshold": 0.38677880000000003,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9286039886039886,
+    "eer": 0.14142857142857143,
+    "tar01": 0.31868131868131866,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user115": {
+    "threshold": 0.06271386666666669,
+    "runsCaught": 0.5925925925925926,
+    "promptsPerMin": 0.0,
+    "auc": 0.7744112060778727,
+    "eer": 0.3065622032288699,
+    "tar01": 0.11538461538461538,
+    "timeToCatch": 18.292,
+    "thresholdSD": 0.036271237182833094,
+    "windows": 605
+   },
+   "user119": {
+    "threshold": 0.44906566666666664,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9091486140228279,
+    "eer": 0.18218262287444678,
+    "tar01": 0.3553459119496855,
+    "timeToCatch": 17.216,
+    "thresholdSD": 0.044772520563548066,
+    "windows": 715
+   },
+   "user16": {
+    "threshold": 0.3448825333333334,
+    "runsCaught": 1.0,
+    "promptsPerMin": 2.2994672900777986,
+    "auc": 0.7530558737431589,
+    "eer": 0.34404352806414656,
+    "tar01": 0.10652920962199312,
+    "timeToCatch": 17.216,
+    "thresholdSD": 0.0013484404671075625,
+    "windows": 660
+   },
+   "user19": {
+    "threshold": 0.7677979333333335,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9985555093170574,
+    "eer": 0.01961714523512276,
+    "tar01": 0.9662921348314607,
+    "timeToCatch": 17.216,
+    "thresholdSD": 0.03722087784689303,
+    "windows": 1540
+   },
+   "user29": {
+    "threshold": 0.33475013333333337,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.6144582014808443,
+    "auc": 0.9277553310886644,
+    "eer": 0.15156004489337824,
+    "tar01": 0.3278236914600551,
+    "timeToCatch": 17.216,
+    "thresholdSD": 0.023212411723328823,
+    "windows": 660
+   },
+   "user69": {
+    "threshold": 0.29728933333333335,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9361234567901234,
+    "eer": 0.12934904601571268,
+    "tar01": 0.15151515151515152,
+    "timeToCatch": 17.216,
+    "thresholdSD": 0.030392407329682413,
+    "windows": 605
+   },
+   "user70": {
+    "threshold": 0.19424933333333336,
+    "runsCaught": 0.9259259259259259,
+    "promptsPerMin": 1.4028196675317386,
+    "auc": 0.84414511996273,
+    "eer": 0.2448637316561845,
+    "tar01": 0.2610062893081761,
+    "timeToCatch": 17.216,
+    "thresholdSD": 0.00651724650549088,
+    "windows": 605
+   },
+   "user8": {
+    "threshold": 0.14684360000000002,
+    "runsCaught": 0.8888888888888888,
+    "promptsPerMin": 0.0,
+    "auc": 0.7647150997150998,
+    "eer": 0.3060683760683761,
+    "tar01": 0.14423076923076922,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user85": {
+    "threshold": 0.5373058,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9561247563352826,
+    "eer": 0.11715399610136452,
+    "tar01": 0.45263157894736844,
+    "timeToCatch": 17.216,
+    "thresholdSD": null,
+    "windows": 550
+   },
+   "user86": {
+    "threshold": 0.2745826666666667,
+    "runsCaught": 1.0,
+    "promptsPerMin": 1.8743556902314829,
+    "auc": 0.7187706193588547,
+    "eer": 0.34234982882041703,
+    "tar01": 0.1092436974789916,
+    "timeToCatch": 17.216,
+    "thresholdSD": 0.05909900283501694,
+    "windows": 715
+   },
+   "user89": {
+    "threshold": 0.9513170666666667,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.576352266505288,
+    "auc": 0.9998047660063163,
+    "eer": 0.007085845535457939,
+    "tar01": 0.9948320413436692,
+    "timeToCatch": 17.216,
+    "thresholdSD": 0.007579164551145051,
+    "windows": 605
+   },
+   "user9": {
+    "threshold": 0.49169686666666673,
+    "runsCaught": 1.0,
+    "promptsPerMin": 0.0,
+    "auc": 0.9914150845523394,
+    "eer": 0.04150223052183837,
+    "tar01": 0.9047619047619048,
+    "timeToCatch": 17.216,
+    "thresholdSD": 0.11699065987886953,
+    "windows": 495
+   },
+   "user91": {
+    "threshold": 0.9241752666666666,
+    "runsCaught": 1.0,
+    "promptsPerMin": 3.6268020672771777,
+    "auc": 0.7585636856368563,
+    "eer": 0.30558566696778083,
+    "tar01": 0.15176151761517617,
+    "timeToCatch": 17.216,
+    "thresholdSD": 0.019328994060047046,
+    "windows": 880
+   }
+  }
+ },
+ "selected": "FULL",
+ "selectedWindowsMean": 671.578947368421,
+ "proposesChange": true
+}

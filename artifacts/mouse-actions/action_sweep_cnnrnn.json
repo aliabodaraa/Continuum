@@ -1,0 +1,1092 @@
+{
+  "perUser": [
+    {
+      "participant": 1,
+      "enrolActions": 40,
+      "genuineActions": 113,
+      "impostorParticipants": 19,
+      "impostorActions": 2793,
+      "sets": {
+        "1": {
+          "eer": 0.318618924048427,
+          "auc": 0.7500514877585873,
+          "tarAtFar01": 0.02654867256637168,
+          "nGenuineSets": 113,
+          "nImpostorSets": 2793
+        },
+        "5": {
+          "eer": 0.20176395309181405,
+          "auc": 0.8630707776048191,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 109,
+          "nImpostorSets": 2717
+        },
+        "10": {
+          "eer": 0.14419776447808486,
+          "auc": 0.9019172094114886,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 104,
+          "nImpostorSets": 2622
+        },
+        "13": {
+          "eer": 0.1286839210236813,
+          "auc": 0.9127053056182811,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 101,
+          "nImpostorSets": 2565
+        },
+        "20": {
+          "eer": 0.10479510778275476,
+          "auc": 0.9293769246920492,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 94,
+          "nImpostorSets": 2432
+        }
+      }
+    },
+    {
+      "participant": 8,
+      "enrolActions": 57,
+      "genuineActions": 159,
+      "impostorParticipants": 19,
+      "impostorActions": 2747,
+      "sets": {
+        "1": {
+          "eer": 0.3710096549008295,
+          "auc": 0.7001485897708879,
+          "tarAtFar01": 0.07547169811320754,
+          "nGenuineSets": 159,
+          "nImpostorSets": 2747
+        },
+        "5": {
+          "eer": 0.2646054999335757,
+          "auc": 0.793186072631973,
+          "tarAtFar01": 0.16129032258064516,
+          "nGenuineSets": 155,
+          "nImpostorSets": 2671
+        },
+        "10": {
+          "eer": 0.27467132505175984,
+          "auc": 0.820266563146998,
+          "tarAtFar01": 0.25333333333333335,
+          "nGenuineSets": 150,
+          "nImpostorSets": 2576
+        },
+        "13": {
+          "eer": 0.27760584186036463,
+          "auc": 0.8311472266556483,
+          "tarAtFar01": 0.24489795918367346,
+          "nGenuineSets": 147,
+          "nImpostorSets": 2519
+        },
+        "20": {
+          "eer": 0.2356274697641001,
+          "auc": 0.8590977128487606,
+          "tarAtFar01": 0.2357142857142857,
+          "nGenuineSets": 140,
+          "nImpostorSets": 2386
+        }
+      }
+    },
+    {
+      "participant": 9,
+      "enrolActions": 69,
+      "genuineActions": 147,
+      "impostorParticipants": 19,
+      "impostorActions": 2759,
+      "sets": {
+        "1": {
+          "eer": 0.2777305195365569,
+          "auc": 0.8046566216192893,
+          "tarAtFar01": 0.047619047619047616,
+          "nGenuineSets": 147,
+          "nImpostorSets": 2759
+        },
+        "5": {
+          "eer": 0.1735102392948088,
+          "auc": 0.8960041077074249,
+          "tarAtFar01": 0.04195804195804196,
+          "nGenuineSets": 143,
+          "nImpostorSets": 2683
+        },
+        "10": {
+          "eer": 0.12419080258943171,
+          "auc": 0.9245766413547477,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 138,
+          "nImpostorSets": 2588
+        },
+        "13": {
+          "eer": 0.1036100501924287,
+          "auc": 0.9347322826580037,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 135,
+          "nImpostorSets": 2531
+        },
+        "20": {
+          "eer": 0.08571270329441201,
+          "auc": 0.9474301501251042,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 128,
+          "nImpostorSets": 2398
+        }
+      }
+    },
+    {
+      "participant": 16,
+      "enrolActions": 51,
+      "genuineActions": 180,
+      "impostorParticipants": 19,
+      "impostorActions": 2726,
+      "sets": {
+        "1": {
+          "eer": 0.4283056166951985,
+          "auc": 0.5971060569006277,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 180,
+          "nImpostorSets": 2726
+        },
+        "5": {
+          "eer": 0.3807182675814751,
+          "auc": 0.6621012006861063,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 176,
+          "nImpostorSets": 2650
+        },
+        "10": {
+          "eer": 0.3216797702017601,
+          "auc": 0.6975520994266489,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 171,
+          "nImpostorSets": 2555
+        },
+        "13": {
+          "eer": 0.30330693125929314,
+          "auc": 0.7185462655838957,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 168,
+          "nImpostorSets": 2498
+        },
+        "20": {
+          "eer": 0.2794978530064475,
+          "auc": 0.7540004989954434,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 161,
+          "nImpostorSets": 2365
+        }
+      }
+    },
+    {
+      "participant": 19,
+      "enrolActions": 81,
+      "genuineActions": 248,
+      "impostorParticipants": 19,
+      "impostorActions": 2658,
+      "sets": {
+        "1": {
+          "eer": 0.02023865870530838,
+          "auc": 0.9942717056239229,
+          "tarAtFar01": 0.9637096774193549,
+          "nGenuineSets": 248,
+          "nImpostorSets": 2658
+        },
+        "5": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 244,
+          "nImpostorSets": 2582
+        },
+        "10": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 239,
+          "nImpostorSets": 2487
+        },
+        "13": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 236,
+          "nImpostorSets": 2430
+        },
+        "20": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 229,
+          "nImpostorSets": 2297
+        }
+      }
+    },
+    {
+      "participant": 29,
+      "enrolActions": 53,
+      "genuineActions": 159,
+      "impostorParticipants": 19,
+      "impostorActions": 2747,
+      "sets": {
+        "1": {
+          "eer": 0.29559633951732367,
+          "auc": 0.7668285356466631,
+          "tarAtFar01": 0.06918238993710692,
+          "nGenuineSets": 159,
+          "nImpostorSets": 2747
+        },
+        "5": {
+          "eer": 0.19355442567118752,
+          "auc": 0.8849772345744616,
+          "tarAtFar01": 0.1870967741935484,
+          "nGenuineSets": 155,
+          "nImpostorSets": 2671
+        },
+        "10": {
+          "eer": 0.1389052795031056,
+          "auc": 0.9284730848861283,
+          "tarAtFar01": 0.12666666666666668,
+          "nGenuineSets": 150,
+          "nImpostorSets": 2576
+        },
+        "13": {
+          "eer": 0.12953255935164856,
+          "auc": 0.9390644705679017,
+          "tarAtFar01": 0.17687074829931973,
+          "nGenuineSets": 147,
+          "nImpostorSets": 2519
+        },
+        "20": {
+          "eer": 0.09945515507124895,
+          "auc": 0.9572506286672254,
+          "tarAtFar01": 0.17142857142857143,
+          "nGenuineSets": 140,
+          "nImpostorSets": 2386
+        }
+      }
+    },
+    {
+      "participant": 69,
+      "enrolActions": 61,
+      "genuineActions": 173,
+      "impostorParticipants": 19,
+      "impostorActions": 2733,
+      "sets": {
+        "1": {
+          "eer": 0.29975846483463725,
+          "auc": 0.7402629814576288,
+          "tarAtFar01": 0.03468208092485549,
+          "nGenuineSets": 173,
+          "nImpostorSets": 2733
+        },
+        "5": {
+          "eer": 0.24173835775989738,
+          "auc": 0.8590727184861692,
+          "tarAtFar01": 0.08875739644970414,
+          "nGenuineSets": 169,
+          "nImpostorSets": 2657
+        },
+        "10": {
+          "eer": 0.17682212829154054,
+          "auc": 0.9052093448334951,
+          "tarAtFar01": 0.12195121951219512,
+          "nGenuineSets": 164,
+          "nImpostorSets": 2562
+        },
+        "13": {
+          "eer": 0.16138406416979706,
+          "auc": 0.9176528929718203,
+          "tarAtFar01": 0.09937888198757763,
+          "nGenuineSets": 161,
+          "nImpostorSets": 2505
+        },
+        "20": {
+          "eer": 0.14141170802216332,
+          "auc": 0.9289738507698035,
+          "tarAtFar01": 0.14285714285714285,
+          "nGenuineSets": 154,
+          "nImpostorSets": 2372
+        }
+      }
+    },
+    {
+      "participant": 70,
+      "enrolActions": 59,
+      "genuineActions": 163,
+      "impostorParticipants": 19,
+      "impostorActions": 2743,
+      "sets": {
+        "1": {
+          "eer": 0.3547278180488427,
+          "auc": 0.7261607348543644,
+          "tarAtFar01": 0.04294478527607362,
+          "nGenuineSets": 163,
+          "nImpostorSets": 2743
+        },
+        "5": {
+          "eer": 0.23891942752438966,
+          "auc": 0.8423970588582088,
+          "tarAtFar01": 0.1069182389937107,
+          "nGenuineSets": 159,
+          "nImpostorSets": 2667
+        },
+        "10": {
+          "eer": 0.18130566944719356,
+          "auc": 0.9005473531134496,
+          "tarAtFar01": 0.18831168831168832,
+          "nGenuineSets": 154,
+          "nImpostorSets": 2572
+        },
+        "13": {
+          "eer": 0.13911892881123852,
+          "auc": 0.9225099732729451,
+          "tarAtFar01": 0.16556291390728478,
+          "nGenuineSets": 151,
+          "nImpostorSets": 2515
+        },
+        "20": {
+          "eer": 0.11759200951581304,
+          "auc": 0.9488175202910719,
+          "tarAtFar01": 0.19444444444444445,
+          "nGenuineSets": 144,
+          "nImpostorSets": 2382
+        }
+      }
+    },
+    {
+      "participant": 85,
+      "enrolActions": 68,
+      "genuineActions": 211,
+      "impostorParticipants": 19,
+      "impostorActions": 2695,
+      "sets": {
+        "1": {
+          "eer": 0.28907666470293414,
+          "auc": 0.7829216822446342,
+          "tarAtFar01": 0.06635071090047394,
+          "nGenuineSets": 211,
+          "nImpostorSets": 2695
+        },
+        "5": {
+          "eer": 0.13502498464398957,
+          "auc": 0.9141502177509947,
+          "tarAtFar01": 0.028985507246376812,
+          "nGenuineSets": 207,
+          "nImpostorSets": 2619
+        },
+        "10": {
+          "eer": 0.08912656321099621,
+          "auc": 0.9396506409753496,
+          "tarAtFar01": 0.0297029702970297,
+          "nGenuineSets": 202,
+          "nImpostorSets": 2524
+        },
+        "13": {
+          "eer": 0.08033071722617954,
+          "auc": 0.9459946672967594,
+          "tarAtFar01": 0.01507537688442211,
+          "nGenuineSets": 199,
+          "nImpostorSets": 2467
+        },
+        "20": {
+          "eer": 0.07287649957155098,
+          "auc": 0.9535400599828621,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 192,
+          "nImpostorSets": 2334
+        }
+      }
+    },
+    {
+      "participant": 86,
+      "enrolActions": 51,
+      "genuineActions": 193,
+      "impostorParticipants": 19,
+      "impostorActions": 2713,
+      "sets": {
+        "1": {
+          "eer": 0.23785878393992463,
+          "auc": 0.8419584078959682,
+          "tarAtFar01": 0.09844559585492228,
+          "nGenuineSets": 193,
+          "nImpostorSets": 2713
+        },
+        "5": {
+          "eer": 0.10126948010907055,
+          "auc": 0.9563296434741259,
+          "tarAtFar01": 0.31746031746031744,
+          "nGenuineSets": 189,
+          "nImpostorSets": 2637
+        },
+        "10": {
+          "eer": 0.06526015119898745,
+          "auc": 0.9759347312968221,
+          "tarAtFar01": 0.40217391304347827,
+          "nGenuineSets": 184,
+          "nImpostorSets": 2542
+        },
+        "13": {
+          "eer": 0.055189701746389944,
+          "auc": 0.9801860889091455,
+          "tarAtFar01": 0.425414364640884,
+          "nGenuineSets": 181,
+          "nImpostorSets": 2485
+        },
+        "20": {
+          "eer": 0.040310520760028154,
+          "auc": 0.9861282156540777,
+          "tarAtFar01": 0.5229885057471264,
+          "nGenuineSets": 174,
+          "nImpostorSets": 2352
+        }
+      }
+    },
+    {
+      "participant": 89,
+      "enrolActions": 65,
+      "genuineActions": 120,
+      "impostorParticipants": 19,
+      "impostorActions": 2786,
+      "sets": {
+        "1": {
+          "eer": 0.05644592007657334,
+          "auc": 0.9926836563771237,
+          "tarAtFar01": 0.8416666666666667,
+          "nGenuineSets": 120,
+          "nImpostorSets": 2786
+        },
+        "5": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 116,
+          "nImpostorSets": 2710
+        },
+        "10": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 111,
+          "nImpostorSets": 2615
+        },
+        "13": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 108,
+          "nImpostorSets": 2558
+        },
+        "20": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 101,
+          "nImpostorSets": 2425
+        }
+      }
+    },
+    {
+      "participant": 91,
+      "enrolActions": 198,
+      "genuineActions": 59,
+      "impostorParticipants": 19,
+      "impostorActions": 2847,
+      "sets": {
+        "1": {
+          "eer": 0.45765093199502305,
+          "auc": 0.581956623981235,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 59,
+          "nImpostorSets": 2847
+        },
+        "5": {
+          "eer": 0.3818149010859224,
+          "auc": 0.6370853974607132,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 55,
+          "nImpostorSets": 2771
+        },
+        "10": {
+          "eer": 0.3999252615844544,
+          "auc": 0.6357847533632287,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 50,
+          "nImpostorSets": 2676
+        },
+        "13": {
+          "eer": 0.38297466143485004,
+          "auc": 0.6358281949420357,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 47,
+          "nImpostorSets": 2619
+        },
+        "20": {
+          "eer": 0.3701226870474658,
+          "auc": 0.6349155269509252,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 40,
+          "nImpostorSets": 2486
+        }
+      }
+    },
+    {
+      "participant": 98,
+      "enrolActions": 53,
+      "genuineActions": 112,
+      "impostorParticipants": 19,
+      "impostorActions": 2794,
+      "sets": {
+        "1": {
+          "eer": 0.010190842621944984,
+          "auc": 0.9991275948460988,
+          "tarAtFar01": 0.9821428571428571,
+          "nGenuineSets": 112,
+          "nImpostorSets": 2794
+        },
+        "5": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 108,
+          "nImpostorSets": 2718
+        },
+        "10": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 103,
+          "nImpostorSets": 2623
+        },
+        "13": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 100,
+          "nImpostorSets": 2566
+        },
+        "20": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 93,
+          "nImpostorSets": 2433
+        }
+      }
+    },
+    {
+      "participant": 101,
+      "enrolActions": 26,
+      "genuineActions": 145,
+      "impostorParticipants": 19,
+      "impostorActions": 2761,
+      "sets": {
+        "1": {
+          "eer": 0.28335685471281025,
+          "auc": 0.7723013900510809,
+          "tarAtFar01": 0.006896551724137931,
+          "nGenuineSets": 145,
+          "nImpostorSets": 2761
+        },
+        "5": {
+          "eer": 0.1702088038353342,
+          "auc": 0.8945996275605214,
+          "tarAtFar01": 0.028368794326241134,
+          "nGenuineSets": 141,
+          "nImpostorSets": 2685
+        },
+        "10": {
+          "eer": 0.11770383829207359,
+          "auc": 0.9252384737678855,
+          "tarAtFar01": 0.014705882352941176,
+          "nGenuineSets": 136,
+          "nImpostorSets": 2590
+        },
+        "13": {
+          "eer": 0.11304316852138241,
+          "auc": 0.9325861040283298,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 133,
+          "nImpostorSets": 2533
+        },
+        "20": {
+          "eer": 0.08740079365079365,
+          "auc": 0.9464781746031746,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 126,
+          "nImpostorSets": 2400
+        }
+      }
+    },
+    {
+      "participant": 104,
+      "enrolActions": 149,
+      "genuineActions": 60,
+      "impostorParticipants": 19,
+      "impostorActions": 2846,
+      "sets": {
+        "1": {
+          "eer": 0.446890372452565,
+          "auc": 0.5997657531037713,
+          "tarAtFar01": 0.016666666666666666,
+          "nGenuineSets": 60,
+          "nImpostorSets": 2846
+        },
+        "5": {
+          "eer": 0.3928184631253223,
+          "auc": 0.6469571944301186,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 56,
+          "nImpostorSets": 2770
+        },
+        "10": {
+          "eer": 0.4116767454645409,
+          "auc": 0.6615503023639362,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 51,
+          "nImpostorSets": 2675
+        },
+        "13": {
+          "eer": 0.39577762923351156,
+          "auc": 0.6692529284441049,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 48,
+          "nImpostorSets": 2618
+        },
+        "20": {
+          "eer": 0.3415566570152623,
+          "auc": 0.7100260097168376,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 41,
+          "nImpostorSets": 2485
+        }
+      }
+    },
+    {
+      "participant": 107,
+      "enrolActions": 40,
+      "genuineActions": 100,
+      "impostorParticipants": 19,
+      "impostorActions": 2806,
+      "sets": {
+        "1": {
+          "eer": 0.04905559515324305,
+          "auc": 0.9907127583749109,
+          "tarAtFar01": 0.82,
+          "nGenuineSets": 100,
+          "nImpostorSets": 2806
+        },
+        "5": {
+          "eer": 0.0018315018315018315,
+          "auc": 0.9998130341880341,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 96,
+          "nImpostorSets": 2730
+        },
+        "10": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 91,
+          "nImpostorSets": 2635
+        },
+        "13": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 88,
+          "nImpostorSets": 2578
+        },
+        "20": {
+          "eer": 0.0,
+          "auc": 1.0,
+          "tarAtFar01": 1.0,
+          "nGenuineSets": 81,
+          "nImpostorSets": 2445
+        }
+      }
+    },
+    {
+      "participant": 108,
+      "enrolActions": 50,
+      "genuineActions": 177,
+      "impostorParticipants": 19,
+      "impostorActions": 2729,
+      "sets": {
+        "1": {
+          "eer": 0.3675659841046057,
+          "auc": 0.6648375990874329,
+          "tarAtFar01": 0.02824858757062147,
+          "nGenuineSets": 177,
+          "nImpostorSets": 2729
+        },
+        "5": {
+          "eer": 0.2993655344914362,
+          "auc": 0.7554780388217941,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 173,
+          "nImpostorSets": 2653
+        },
+        "10": {
+          "eer": 0.27983404073122603,
+          "auc": 0.7882902379090807,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 168,
+          "nImpostorSets": 2558
+        },
+        "13": {
+          "eer": 0.26165049131862406,
+          "auc": 0.7993699489901009,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 165,
+          "nImpostorSets": 2501
+        },
+        "20": {
+          "eer": 0.24672853232979816,
+          "auc": 0.8117890437906261,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 158,
+          "nImpostorSets": 2368
+        }
+      }
+    },
+    {
+      "participant": 111,
+      "enrolActions": 44,
+      "genuineActions": 155,
+      "impostorParticipants": 19,
+      "impostorActions": 2751,
+      "sets": {
+        "1": {
+          "eer": 0.3743014270470562,
+          "auc": 0.671884710545139,
+          "tarAtFar01": 0.04516129032258064,
+          "nGenuineSets": 155,
+          "nImpostorSets": 2751
+        },
+        "5": {
+          "eer": 0.2898075137711209,
+          "auc": 0.7836925171752182,
+          "tarAtFar01": 0.026490066225165563,
+          "nGenuineSets": 151,
+          "nImpostorSets": 2675
+        },
+        "10": {
+          "eer": 0.2465434851863651,
+          "auc": 0.8403286609323564,
+          "tarAtFar01": 0.02054794520547945,
+          "nGenuineSets": 146,
+          "nImpostorSets": 2580
+        },
+        "13": {
+          "eer": 0.21758701069045897,
+          "auc": 0.8642641543949511,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 143,
+          "nImpostorSets": 2523
+        },
+        "20": {
+          "eer": 0.15586697021904997,
+          "auc": 0.9053624169333006,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 136,
+          "nImpostorSets": 2390
+        }
+      }
+    },
+    {
+      "participant": 115,
+      "enrolActions": 157,
+      "genuineActions": 53,
+      "impostorParticipants": 19,
+      "impostorActions": 2853,
+      "sets": {
+        "1": {
+          "eer": 0.3396325615538758,
+          "auc": 0.7078017842853269,
+          "tarAtFar01": 0.05660377358490566,
+          "nGenuineSets": 53,
+          "nImpostorSets": 2853
+        },
+        "5": {
+          "eer": 0.22891756630632087,
+          "auc": 0.8267180116555084,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 49,
+          "nImpostorSets": 2777
+        },
+        "10": {
+          "eer": 0.2273574672903532,
+          "auc": 0.8656785980611484,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 44,
+          "nImpostorSets": 2682
+        },
+        "13": {
+          "eer": 0.2194703832752613,
+          "auc": 0.8791265969802555,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 41,
+          "nImpostorSets": 2625
+        },
+        "20": {
+          "eer": 0.17029789443867435,
+          "auc": 0.9177013502030026,
+          "tarAtFar01": 0.0,
+          "nGenuineSets": 34,
+          "nImpostorSets": 2492
+        }
+      }
+    },
+    {
+      "participant": 119,
+      "enrolActions": 54,
+      "genuineActions": 179,
+      "impostorParticipants": 19,
+      "impostorActions": 2727,
+      "sets": {
+        "1": {
+          "eer": 0.284188940309301,
+          "auc": 0.8027054102058251,
+          "tarAtFar01": 0.17318435754189945,
+          "nGenuineSets": 179,
+          "nImpostorSets": 2727
+        },
+        "5": {
+          "eer": 0.15428355876488656,
+          "auc": 0.9192283235436762,
+          "tarAtFar01": 0.22285714285714286,
+          "nGenuineSets": 175,
+          "nImpostorSets": 2651
+        },
+        "10": {
+          "eer": 0.10458436895885115,
+          "auc": 0.9635528859431096,
+          "tarAtFar01": 0.40588235294117647,
+          "nGenuineSets": 170,
+          "nImpostorSets": 2556
+        },
+        "13": {
+          "eer": 0.08373289435534692,
+          "auc": 0.9739632379898067,
+          "tarAtFar01": 0.48502994011976047,
+          "nGenuineSets": 167,
+          "nImpostorSets": 2499
+        },
+        "20": {
+          "eer": 0.0610471259509721,
+          "auc": 0.9867920540997465,
+          "tarAtFar01": 0.66875,
+          "nGenuineSets": 160,
+          "nImpostorSets": 2366
+        }
+      }
+    }
+  ],
+  "summary": {
+    "1": {
+      "nUsers": 20,
+      "eer": {
+        "median": 0.2976774021759805,
+        "mean": 0.27811004374784903,
+        "iqr": [
+          0.26776258563739885,
+          0.36842690180366167
+        ],
+        "min": 0.010190842621944984,
+        "max": 0.45765093199502305,
+        "ci95_median": [
+          0.2805436871246836,
+          0.3611469010767242
+        ]
+      },
+      "auc": {
+        "median": 0.7584400117026252,
+        "ci95_median": [
+          0.7039751870281075,
+          0.8036810159125571
+        ]
+      },
+      "tarAtFar01": {
+        "median": 0.05211141060197664,
+        "ci95_median": [
+          0.03146533424773848,
+          0.08695864698406491
+        ]
+      }
+    },
+    "5": {
+      "nUsers": 20,
+      "eer": {
+        "median": 0.1976591893815008,
+        "mean": 0.1925076239411027,
+        "iqr": [
+          0.1265861085102598,
+          0.270906003392962
+        ],
+        "min": 0.0,
+        "max": 0.3928184631253223,
+        "ci95_median": [
+          0.14465427170443806,
+          0.25317192884673656
+        ]
+      },
+      "auc": {
+        "median": 0.8740240060896404,
+        "ci95_median": [
+          0.8099520421437407,
+          0.9166892706473355
+        ]
+      },
+      "tarAtFar01": {
+        "median": 0.06535771920387305,
+        "ci95_median": [
+          0.013245033112582781,
+          0.20497695852534564
+        ]
+      }
+    },
+    "10": {
+      "nUsers": 20,
+      "eer": {
+        "median": 0.14155152199059523,
+        "mean": 0.1651892330740362,
+        "iqr": [
+          0.08315996020799402,
+          0.2535754451527138
+        ],
+        "min": 0.0,
+        "max": 0.4116767454645409,
+        "ci95_median": [
+          0.09685546608492368,
+          0.23695047623835913
+        ]
+      },
+      "auc": {
+        "median": 0.9148929930941214,
+        "ci95_median": [
+          0.8530036294967525,
+          0.9516017634592295
+        ]
+      },
+      "tarAtFar01": {
+        "median": 0.07582709490461241,
+        "ci95_median": [
+          0.0,
+          0.32775362318840584
+        ]
+      }
+    },
+    "13": {
+      "nUsers": 20,
+      "eer": {
+        "median": 0.12910824018766492,
+        "mean": 0.15264994772352283,
+        "iqr": [
+          0.07404546335623215,
+          0.230015410286102
+        ],
+        "min": 0.0,
+        "max": 0.39577762923351156,
+        "ci95_median": [
+          0.08203180579076323,
+          0.21852869698286015
+        ]
+      },
+      "auc": {
+        "median": 0.9275480386506374,
+        "ci95_median": [
+          0.8716953756876034,
+          0.959978952643283
+        ]
+      },
+      "tarAtFar01": {
+        "median": 0.05722712943599987,
+        "ci95_median": [
+          0.0,
+          0.3351561619122787
+        ]
+      }
+    },
+    "20": {
+      "nUsers": 20,
+      "eer": {
+        "median": 0.10212513142700186,
+        "mean": 0.13051498437202674,
+        "iqr": [
+          0.055862974653236114,
+          0.18663028827003078
+        ],
+        "min": 0.0,
+        "max": 0.3701226870474658,
+        "ci95_median": [
+          0.06696181276126154,
+          0.16308243232886216
+        ]
+      },
+      "auc": {
+        "median": 0.9469541623641394,
+        "ci95_median": [
+          0.9115318835681516,
+          0.9716894221606516
+        ]
+      },
+      "tarAtFar01": {
+        "median": 0.07142857142857142,
+        "ci95_median": [
+          0.0,
+          0.3793513957307061
+        ]
+      }
+    }
+  },
+  "method": "Antal & Egyed-Zsigmond, IET Biometrics 8(5):285-294, 2019",
+  "dataset": "SapiMouse (Antal et al., SACI 2021)",
+  "classifier": "CNN+GRU on resampled action sequences [Chong TIFS 2020 / RUMBA CNS 2020]",
+  "featureNames": [
+    "vx_mean",
+    "vx_std",
+    "vx_min",
+    "vx_max",
+    "vy_mean",
+    "vy_std",
+    "vy_min",
+    "vy_max",
+    "v_mean",
+    "v_std",
+    "v_min",
+    "v_max",
+    "a_mean",
+    "a_std",
+    "a_min",
+    "a_max",
+    "jerk_mean",
+    "jerk_std",
+    "jerk_min",
+    "jerk_max",
+    "omega_mean",
+    "omega_std",
+    "omega_min",
+    "omega_max",
+    "curv_mean",
+    "curv_std",
+    "curv_min",
+    "curv_max",
+    "action_type",
+    "elapsed_time",
+    "traj_length",
+    "end_to_end_dist",
+    "direction_bin",
+    "straightness",
+    "n_points",
+    "sum_of_angles",
+    "largest_deviation",
+    "n_sharp_angles",
+    "accel_time_beginning"
+  ],
+  "setSizes": [
+    1,
+    5,
+    10,
+    13,
+    20
+  ]
+}

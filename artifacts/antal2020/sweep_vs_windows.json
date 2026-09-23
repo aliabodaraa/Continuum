@@ -1,0 +1,113 @@
+{
+ "stepDt": 0.0273,
+ "blockSeconds": 3.54,
+ "blocksFile": "/app/artifacts/antal2020/sweep.json",
+ "windowsFile": "/app/artifacts/mouse-ws50-aligned/population_scores.json",
+ "byT": {
+  "3.54": {
+   "kWindows": 9,
+   "kBlocks": 1,
+   "n": 20,
+   "windows": {
+    "aucMedian": 0.9389356303418803,
+    "eerMedian": 0.12139423076923077,
+    "aucMean": 0.9179631914970778
+   },
+   "blocks": {
+    "aucMedian": 0.7668813087365123,
+    "eerMedian": 0.2883310128785242,
+    "aucMean": 0.7398770877900506
+   },
+   "pairedDiffMean": 0.17808610370702724,
+   "ci95": [
+    0.11424412987620793,
+    0.247430529113869
+   ],
+   "p": 0.0
+  },
+  "7.08": {
+   "kWindows": 22,
+   "kBlocks": 2,
+   "n": 20,
+   "windows": {
+    "aucMedian": 0.9724310776942355,
+    "eerMedian": 0.10292397660818713,
+    "aucMean": 0.9379928989139517
+   },
+   "blocks": {
+    "aucMedian": 0.8343558282208589,
+    "eerMedian": 0.25076687116564417,
+    "aucMean": 0.7621372423419379
+   },
+   "pairedDiffMean": 0.17585565657201352,
+   "ci95": [
+    0.10349300354487069,
+    0.2545592597971648
+   ],
+   "p": 0.0
+  },
+  "10.620000000000001": {
+   "kWindows": 35,
+   "kBlocks": 3,
+   "n": 20,
+   "windows": {
+    "aucMedian": 0.9824561403508771,
+    "eerMedian": 0.017543859649122806,
+    "aucMean": 0.9535818713450291
+   },
+   "blocks": {
+    "aucMedian": 0.8490566037735849,
+    "eerMedian": 0.22028301886792453,
+    "aucMean": 0.7729918838130941
+   },
+   "pairedDiffMean": 0.18058998753193517,
+   "ci95": [
+    0.10265687854442333,
+    0.2623295229925817
+   ],
+   "p": 0.0
+  },
+  "14.16": {
+   "kWindows": 48,
+   "kBlocks": 4,
+   "n": 20,
+   "windows": {
+    "aucMedian": 0.9967105263157895,
+    "eerMedian": 0.006578947368421052,
+    "aucMean": 0.9555921052631581
+   },
+   "blocks": {
+    "aucMedian": 0.8651315789473684,
+    "eerMedian": 0.25,
+    "aucMean": 0.7779682387787652
+   },
+   "pairedDiffMean": 0.17762386648439282,
+   "ci95": [
+    0.10005878204032809,
+    0.2620698407951697
+   ],
+   "p": 0.0
+  },
+  "17.7": {
+   "kWindows": 61,
+   "kBlocks": 5,
+   "n": 20,
+   "windows": {
+    "aucMedian": 1.0,
+    "eerMedian": 0.0,
+    "aucMean": 0.9666666666666666
+   },
+   "blocks": {
+    "aucMedian": 0.8672316384180792,
+    "eerMedian": 0.3022598870056497,
+    "aucMean": 0.7898614358075199
+   },
+   "pairedDiffMean": 0.17680523085914668,
+   "ci95": [
+    0.09869120570457408,
+    0.25804020777579534
+   ],
+   "p": 0.0
+  }
+ }
+}

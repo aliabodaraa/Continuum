@@ -1,0 +1,50 @@
+2026-09-04 20:39:23.897060: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-09-04 20:39:23.966822: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+Balabit blocks (10828, 128, 2) | users 10 | epochs 160
+max-abs scale [4000. 4000.]
+
+--- condition 300 ----------------------------------------------
+  user7    train   200 test   100  AUC@1 0.878
+  user9    train   200 test   100  AUC@1 0.995
+  user12   train   200 test   100  AUC@1 0.801
+  user15   train   200 test   100  AUC@1 0.828
+  user16   train   200 test   100  AUC@1 0.884
+  user20   train   200 test   100  AUC@1 0.951
+  user21   train   200 test   100  AUC@1 0.902
+  user23   train   200 test   100  AUC@1 0.853
+  user29   train   200 test   100  AUC@1 0.909
+  user35   train   193 test    96  AUC@1 0.834
+
+--- condition ALL ----------------------------------------------
+  user7    train  1817 test   896  AUC@1 0.969
+  user9    train  1746 test   861  AUC@1 1.000
+  user12   train   404 test   199  AUC@1 0.878
+  user15   train   306 test   151  AUC@1 0.834
+  user16   train   712 test   351  AUC@1 0.891
+  user20   train  1131 test   558  AUC@1 0.810
+  user21   train   363 test   180  AUC@1 0.945
+  user23   train   291 test   144  AUC@1 0.867
+  user29   train   287 test   142  AUC@1 0.877
+  user35   train   193 test    96  AUC@1 0.772
+
+==============================================================================
+REPRODUCTION OF ANTAL & FEJER (2020) ON BALABIT — their dataset, their protocol
+==============================================================================
+ condition  blocks      ours mean+/-std            paper
+       300       1         0.883+/-0.056      0.92 (0.09)
+       300       2         0.932+/-0.041                 
+       300       3         0.956+/-0.031                 
+       300       4         0.969+/-0.025                 
+       300       5         0.978+/-0.020                 
+       ALL       1         0.884+/-0.067      0.98 (0.02)
+       ALL       2         0.924+/-0.061                 
+       ALL       3         0.943+/-0.058                 
+       ALL       4         0.955+/-0.058                 
+       ALL       5         0.962+/-0.060                 
+
+the paper's figures are single values per condition (Table 5, PLAIN);
+the block counts here show how our result moves with aggregation.
+
+wrote /app/artifacts/antal2020/balabit_160ep.json
+EXIT=0

@@ -1,0 +1,126 @@
+2026-09-11 21:56:24.712652: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-09-11 21:56:24.747488: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+blocks (8879, 128, 2) | base subjects 100 | holdout 20
+MCDCNN towers (40,k6,s2)+(60,k3) / (40,k4,s2)+(60,k2) -> Dense(60)
+Adam lr=0.002 decay=0.0001 batch=32 | pretrain 60ep | per-user 16ep
+scaling: per-block z-score (settings.py STANDARD_SCALER + ACTION_BASED)
+
+Epoch 1/60
+198/198 - 2s - loss: 4.4086 - accuracy: 0.0432 - val_loss: 4.0674 - val_accuracy: 0.0833 - 2s/epoch - 11ms/step
+Epoch 2/60
+198/198 - 1s - loss: 3.8903 - accuracy: 0.0855 - val_loss: 3.6209 - val_accuracy: 0.1307 - 1s/epoch - 6ms/step
+Epoch 3/60
+198/198 - 1s - loss: 3.5431 - accuracy: 0.1216 - val_loss: 3.4140 - val_accuracy: 0.1549 - 1s/epoch - 5ms/step
+Epoch 4/60
+198/198 - 1s - loss: 3.3473 - accuracy: 0.1474 - val_loss: 3.2758 - val_accuracy: 0.1638 - 1s/epoch - 5ms/step
+Epoch 5/60
+198/198 - 1s - loss: 3.2022 - accuracy: 0.1679 - val_loss: 3.1277 - val_accuracy: 0.1826 - 1s/epoch - 6ms/step
+Epoch 6/60
+198/198 - 1s - loss: 3.1004 - accuracy: 0.1932 - val_loss: 3.1244 - val_accuracy: 0.1880 - 1s/epoch - 5ms/step
+Epoch 7/60
+198/198 - 1s - loss: 2.9956 - accuracy: 0.2100 - val_loss: 3.0045 - val_accuracy: 0.2077 - 1s/epoch - 6ms/step
+Epoch 8/60
+198/198 - 1s - loss: 2.8864 - accuracy: 0.2316 - val_loss: 2.9311 - val_accuracy: 0.2265 - 1s/epoch - 7ms/step
+Epoch 9/60
+198/198 - 1s - loss: 2.8148 - accuracy: 0.2522 - val_loss: 2.9673 - val_accuracy: 0.2301 - 1s/epoch - 5ms/step
+Epoch 10/60
+198/198 - 1s - loss: 2.7455 - accuracy: 0.2609 - val_loss: 2.8780 - val_accuracy: 0.2363 - 1s/epoch - 5ms/step
+Epoch 11/60
+198/198 - 1s - loss: 2.6506 - accuracy: 0.2915 - val_loss: 2.8262 - val_accuracy: 0.2337 - 1s/epoch - 6ms/step
+Epoch 12/60
+198/198 - 1s - loss: 2.5759 - accuracy: 0.3062 - val_loss: 2.7929 - val_accuracy: 0.2560 - 1s/epoch - 5ms/step
+Epoch 13/60
+198/198 - 1s - loss: 2.5234 - accuracy: 0.3257 - val_loss: 2.7573 - val_accuracy: 0.2731 - 1s/epoch - 5ms/step
+Epoch 14/60
+198/198 - 1s - loss: 2.4605 - accuracy: 0.3349 - val_loss: 2.7981 - val_accuracy: 0.2739 - 1s/epoch - 5ms/step
+Epoch 15/60
+198/198 - 1s - loss: 2.4007 - accuracy: 0.3404 - val_loss: 2.7116 - val_accuracy: 0.2901 - 1s/epoch - 6ms/step
+Epoch 16/60
+198/198 - 1s - loss: 2.3545 - accuracy: 0.3535 - val_loss: 2.7405 - val_accuracy: 0.2883 - 1s/epoch - 5ms/step
+Epoch 17/60
+198/198 - 1s - loss: 2.2855 - accuracy: 0.3673 - val_loss: 2.7416 - val_accuracy: 0.2892 - 1s/epoch - 6ms/step
+Epoch 18/60
+198/198 - 1s - loss: 2.2592 - accuracy: 0.3809 - val_loss: 2.6976 - val_accuracy: 0.2874 - 1s/epoch - 6ms/step
+Epoch 19/60
+198/198 - 1s - loss: 2.2043 - accuracy: 0.3850 - val_loss: 2.7074 - val_accuracy: 0.3205 - 1s/epoch - 5ms/step
+Epoch 20/60
+198/198 - 1s - loss: 2.1599 - accuracy: 0.4095 - val_loss: 2.6670 - val_accuracy: 0.3115 - 1s/epoch - 6ms/step
+Epoch 21/60
+198/198 - 1s - loss: 2.1361 - accuracy: 0.4038 - val_loss: 2.6673 - val_accuracy: 0.3107 - 1s/epoch - 6ms/step
+Epoch 22/60
+198/198 - 1s - loss: 2.0786 - accuracy: 0.4182 - val_loss: 2.6485 - val_accuracy: 0.3035 - 1s/epoch - 6ms/step
+Epoch 23/60
+198/198 - 1s - loss: 2.0411 - accuracy: 0.4285 - val_loss: 2.6676 - val_accuracy: 0.3151 - 1s/epoch - 6ms/step
+Epoch 24/60
+198/198 - 1s - loss: 2.0070 - accuracy: 0.4477 - val_loss: 2.6232 - val_accuracy: 0.3107 - 1s/epoch - 6ms/step
+Epoch 25/60
+198/198 - 1s - loss: 1.9753 - accuracy: 0.4427 - val_loss: 2.6734 - val_accuracy: 0.3124 - 1s/epoch - 6ms/step
+Epoch 26/60
+198/198 - 1s - loss: 1.9515 - accuracy: 0.4489 - val_loss: 2.6320 - val_accuracy: 0.3214 - 1s/epoch - 6ms/step
+Epoch 27/60
+198/198 - 1s - loss: 1.9121 - accuracy: 0.4577 - val_loss: 2.6576 - val_accuracy: 0.3393 - 1s/epoch - 6ms/step
+Epoch 28/60
+198/198 - 1s - loss: 1.8876 - accuracy: 0.4664 - val_loss: 2.6368 - val_accuracy: 0.3205 - 1s/epoch - 6ms/step
+Epoch 29/60
+198/198 - 1s - loss: 1.8622 - accuracy: 0.4704 - val_loss: 2.6431 - val_accuracy: 0.3223 - 1s/epoch - 6ms/step
+Epoch 30/60
+198/198 - 1s - loss: 1.8363 - accuracy: 0.4817 - val_loss: 2.6558 - val_accuracy: 0.3259 - 1s/epoch - 5ms/step
+Epoch 31/60
+198/198 - 1s - loss: 1.8073 - accuracy: 0.4895 - val_loss: 2.6943 - val_accuracy: 0.3223 - 1s/epoch - 6ms/step
+Epoch 32/60
+198/198 - 1s - loss: 1.7778 - accuracy: 0.4957 - val_loss: 2.7191 - val_accuracy: 0.3286 - 1s/epoch - 6ms/step
+Epoch 33/60
+198/198 - 1s - loss: 1.7505 - accuracy: 0.4947 - val_loss: 2.6970 - val_accuracy: 0.3232 - 1s/epoch - 5ms/step
+Epoch 34/60
+198/198 - 1s - loss: 1.7361 - accuracy: 0.4975 - val_loss: 2.6677 - val_accuracy: 0.3232 - 1s/epoch - 5ms/step
+Epoch 35/60
+198/198 - 1s - loss: 1.7205 - accuracy: 0.5023 - val_loss: 2.7215 - val_accuracy: 0.3277 - 1s/epoch - 6ms/step
+Epoch 36/60
+198/198 - 1s - loss: 1.7023 - accuracy: 0.5153 - val_loss: 2.6980 - val_accuracy: 0.3286 - 1s/epoch - 6ms/step
+Epoch 37/60
+198/198 - 1s - loss: 1.6741 - accuracy: 0.5134 - val_loss: 2.7086 - val_accuracy: 0.3259 - 1s/epoch - 5ms/step
+Epoch 38/60
+198/198 - 1s - loss: 1.6553 - accuracy: 0.5192 - val_loss: 2.7368 - val_accuracy: 0.3268 - 1s/epoch - 5ms/step
+Epoch 39/60
+198/198 - 1s - loss: 1.6228 - accuracy: 0.5312 - val_loss: 2.7328 - val_accuracy: 0.3303 - 1s/epoch - 5ms/step
+
+representation learning: identification val top-1 = 0.3393 (chance 0.0100)
+
+ subject  enrol   gen    imp    AUC@1    AUC@2    AUC@3    AUC@4    AUC@5
+       1     49    16    339    0.818    0.873    0.915    0.937    0.948
+       8     48    16    339    0.566    0.576    0.597    0.610    0.612
+       9     42    19    336    0.952    0.969    0.976    0.983    0.985
+      16     55    15    340    0.825    0.871    0.889    0.909    0.915
+      19    123    43    312    0.967    0.979    0.985    0.990    0.993
+      29     57    19    336    0.618    0.664    0.687    0.741    0.777
+      69     48    17    338    0.756    0.820    0.858    0.878    0.883
+      70     52    17    338    0.745    0.811    0.849    0.869    0.885
+      85     45    15    340    0.831    0.881    0.887    0.894    0.897
+      86     59    19    336    0.638    0.662    0.672    0.685    0.678
+      89     52    21    334    0.951    0.971    0.982    0.986    0.990
+      91     72    19    336    0.754    0.806    0.843    0.861    0.876
+      98     25    10    345    0.949    0.963    0.971    0.977    0.980
+     101     52    12    343    0.605    0.629    0.665    0.716    0.773
+     104     52    19    336    0.608    0.628    0.661    0.684    0.696
+     107     36    14    341    0.973    0.981    0.983    0.985    0.986
+     108     59    17    338    0.905    0.959    0.982    0.993    0.999
+     111     45    14    341    0.841    0.890    0.908    0.917    0.924
+     115     51    16    339    0.562    0.567    0.586    0.620    0.647
+     119     60    17    338    0.786    0.849    0.916    0.933    0.932
+
+======================================================================================
+ANTAL & FEJER (2020) METHOD ON SAPIMOUSE  n=20 held-out subjects
+======================================================================================
+ blocks       mean+/-std    median             IQR    POOLED   med EER
+      1     0.783+/-0.139     0.802  0.633-0.916       0.679    30.51%
+      2     0.817+/-0.141     0.860  0.663-0.960       0.689    22.59%
+      3     0.841+/-0.137     0.888  0.683-0.972       0.695    19.12%
+      4     0.858+/-0.129     0.902  0.735-0.979       0.697    17.53%
+      5     0.869+/-0.123     0.906  0.776-0.981       0.697    14.75%
+
+the paper reports mean+/-std of per-user AUC; its best on Balabit is 0.98 (0.02).
+the POOLED column is the SapiMouse (2021) reporting style, shown so the two
+are never confused; pooling mixes score scales and normally reads lower.
+
+wrote /app/artifacts/antal2020/sweep_legacy_zscore.json

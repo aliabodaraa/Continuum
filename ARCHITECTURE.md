@@ -25,8 +25,8 @@ and extensible to a browser extension or desktop agent later.
 ## 2. Services (all containerized)
 | Service | Port | Stack | Responsibility |
 |---|---|---|---|
-| **model-api** | 5000 | Python / TensorFlow | Serves the keystroke + mouse models; fine-tunes per-user models. Owns model/data storage (`ARTIFACTS_DIR`, `DATA_DIR`), confines every path. |
-| **ca-service** | 4100 | Node | The continuous-auth engine. Turns raw events into signed **verdicts**. Stateless w.r.t. the caller (every endpoint takes an explicit `userId`). Owns behavioral DB (`ca.db`). |
+| **model-api** | 5000 | Python / TensorFlow | Serves the keystroke + mouse models; fine-tunes per-user models. Owns model/data storage (`ARTIFACTS_DIR`, `DATA_DIR`), confines every path. Reachable **only** from ca-service (the `model` Docker network) and requires `MODEL_API_KEY` on every route but `/health`. |
+| **ca-service** | 4100 | Node | The continuous-auth engine. Turns raw events into signed **verdicts**. Identity comes only from the gateway's assertion, never the request body. Owns behavioral DB (`ca.db`) — samples, profiles, the decision log, **the durable escalation counters**, and **the training-job queue**. The only service that may address model-api. |
 | **passkey-service** | 4000 | Node | FIDO2/WebAuthn registration + assertion (step-up). Owns `passkey.db`. |
 | **gateway** | 8080 | Node | Multi-tenant front door: resolves identity, signs verdicts (RS256) + exposes JWKS, pushes CAEP events, serves the SDK. The only public entry for the product bundle. |
 | **apps/demo** | 3000 | Node | Reference integration app (login as `ali`/`aiham`, dashboard, "write opinion"). |
@@ -37,6 +37,58 @@ Boundary rationale: **polyglot forced** (TF is Python), **resource asymmetry**
 model-serving pattern like TF Serving/Triton), and **security-domain partitioning**
 (passkey secrets, behavioral data, and tenant signing are separated). The demo talks
 to the CA **through** its layer, never to model-api directly.
+
+### 2b. Network segmentation — the layering is enforced, not conventional
+Compose used to declare no networks at all, so every container shared one default bridge.
+"The demo never talks to model-api directly" was then a statement about our code, not about
+what was *possible*: the demo, acme, or anything else on that bridge could call
+`POST /api/user/predict` for any `userId`. That is a **biometric scoring oracle** — submit
+candidate windows for a victim, read back the genuine probability, hill-climb a forgery the
+real system accepts — plus `/api/user/train` (poison a model) and `/api/user/rollback`.
+
+Three networks now make the topology match the diagram:
+
+| Network | Members | Purpose |
+|---|---|---|
+| `edge` | gateway, web, acme | Browser-facing. |
+| `internal` | gateway, web, ca-service, passkey-service | Identity-scoped service calls. |
+| `model` | **ca-service, model-api only** | The scoring oracle. Nothing else can address it. |
+
+The gateway is the only container on both `edge` and `internal`; **ca-service is the only
+container on `model`**. Verified by attempting the connection: `web` and `acme` resolving
+`model-api` fails with `ENOTFOUND`, `acme` reaching `ca-service` fails the same way, and
+ca-service reaches model-api normally.
+
+Topology is only half of it. model-api also requires **`MODEL_API_KEY`** on every route
+except `/health`, so a future misconfiguration that re-attaches a container to `model`
+does not silently reopen the oracle. The key is a *service* credential — it answers "is
+this ca-service?" The question "may this request act for this person?" is answered one hop
+earlier, by the gateway's RS256 identity assertion. Only ca-service holds both, so the two
+checks compose: nothing reaches a model unless the gateway vouched for the principal.
+
+### 2c. The ca → model hop is bounded, and "no answer" is a defined outcome
+The three modules that called model-api each carried their own bare `fetch` — no
+credential, no deadline. A wedged TensorFlow process therefore hung the keystroke check
+*forever*, and the keystroke check is the authentication path: the failure mode of the
+whole security layer under a dependency stall was undefined.
+
+`services/ca-service/lib/modelClient.js` is now the single way across that hop. Every call
+carries the key and a deadline sized to the operation (inference 5 s, training 10 min), with
+one retry on connection failure only — never on a timeout (the deadline already stated how
+long we were willing to wait) and never for training (expensive, not idempotent; durability
+comes from the queue instead).
+
+When the model cannot answer there are three options and two are wrong:
+
+- *fail-open* — call it genuine. Anyone who can stall the model gets a free pass, defeating the system.
+- *fail-closed* — call it suspicious. An outage steps up every legitimate user at once: self-inflicted DoS.
+- **no verdict** — refuse to answer. **This is what we do.**
+
+ca-service returns `503 model_unavailable`: no verdict, no risk token, no lock, no recorded
+clean run. The caller's last known state simply stands, so nothing is granted and nothing is
+revoked, and the SDK already ignores non-200 responses so no client change was needed. Every
+occurrence is logged at `[SECURITY]` precisely because refusing to answer is the *quiet*
+option — a rise in these is either an outage or someone arranging one.
 
 ---
 
@@ -81,8 +133,14 @@ to the CA **through** its layer, never to model-api directly.
 - **Features (per digraph step):** `[id1, id2, dwell1, dwell2, dd, ud]` — key codes
   ÷254, hold times of both keys, down-down and up-down flight times (seconds).
   Faithful to Lu et al. (2020) / the referenced keystroke-dynamics capstone architecture.
-- **Windows:** `WINDOW_SIZE=50`, `STRIDE=10`, stride-aligned only (no padded/tail
-  windows — those are out-of-distribution and destabilize scores).
+- **Windows:** `WINDOW_SIZE=50` (matches Lu et al.'s Clarkson II experiments, Table 1
+  of that paper, which use sequence length 50), `STRIDE=10` (stride-aligned only, no
+  padded/tail windows — those are out-of-distribution and destabilize scores).
+  **STRIDE=10 is NOT from Lu et al.** — verified 2026-09-12 against the paper's own
+  text: its live sliding window (§4.1, Fig. 7) explicitly advances by one keystroke
+  per new key entered, and no alternate training-time stride is specified anywhere
+  in the paper. STRIDE=10 is this project's own engineering choice (decision
+  frequency vs. compute/training-volume tradeoff), not a literature-derived value.
 - **Model:** 1D-CNN + 2×GRU base (`artifacts/ws50-gru`), **fine-tuned per user**
   (transfer learning) with the user's enrollment typing as positives and impostor
   windows (other users + dataset negatives) as negatives.
@@ -98,13 +156,30 @@ to the CA **through** its layer, never to model-api directly.
   `artifacts/ws50-gru/results.json`.
 
 ## 5. Mouse dynamics engine
-- **Feature vector F=7:** `[dx, dy, v, a, dθ, dt, is_click]` — clicks are a learned
-  feature, so enrollment **requires real clicks** (`MOUSE_ENROLL_CLICKS=10`), not just
-  movement. Base model `artifacts/mouse-ws50-base`; SapiMouse negatives.
-- Live checks use a **consecutive-strike debounce** (`MOUSE_STRIKES_TO_LOCK`) before a
-  step-up, to tolerate momentary noise.
-- *Known limitation:* the mouse base is weak (anchor-free labels are hard to learn);
-  a v2 retrain scored worse and was not promoted. Documented for future work.
+- **Chosen by a pre-registered study** (`artifacts/repr_arch_study/`, experiments A–I; base
+  paper SapiMouse, Antal, Fejér & Buza, IEEE SACI 2021).
+- **Feature vector F=2:** `[|dx|, |dy|]` in pixels per step (`FEATURE_VERSION a5-absdxdy-v1`),
+  50-step windows, stride 10; idle > 0.5 s splits the stream, zero-displacement moves are dropped,
+  near-static windows skipped. Browser and training extractors are value-identical.
+- **Model:** SapiMouse's FCN (`artifacts/mouse-fcn-a5`, identification-trained on 100 users);
+  per user, `api.py` freezes conv1+bn1 and fine-tunes the rest with a binary head
+  (`arch.json`). Negatives: `data/mouse_only/Mouse_A5_W50_base.h5` (base users only).
+- **Decision:** per-user threshold = 1st percentile of the user's enrolment scores; suspicious
+  when 30 of the last 60 windows (~17 s of movement) are below it. Chosen by genuine passkey
+  prompts per minute of movement (Experiment I: 0.29/min, 86.5% of 40-s impostor runs caught); the
+  pre-registered rule required ≥ 90% capture and would have kept 5th percentile / 12 of 20
+  (2.85 prompts/min) — the quieter point is the owner's policy decision. Each profile stores its
+  whole enrolment-percentile table (`mouse_profiles.enrol_percentiles`), so the percentile can
+  change without retraining; every scored check is logged in `mouse_decisions`.
+- **Enrolment:** 6 samples × 55 windows = 330 (~90 s); each sample saves itself when complete and
+  the clients show "Sample k of 6"; step-size spread ≥ 5 px per sample. Training receives one
+  chronological stream, so model-api holds out its contiguous 20% tail (gap 5) as evaluated.
+  ca-service refuses retired 7-column windows.
+- Every client steps up on the **first** suspicious decision: gateway `MOUSE_STRIKES_TO_LOCK = 1`,
+  demo 1, extension — the measured operating point counts one decision as one prompt.
+- **Extension:** trains only a head on the frozen FCN on the device (`extension/src/mouse-model.js`;
+  full fine-tuning on the CPU backend would take hours); its own operating point is the 2nd
+  percentile and the mean of the last 60 scores (Experiment I: 0.22 prompts/min, 87.3% caught).
 
 ## 6. The continuous-auth decision pipeline (`ca-service`)
 Every keystroke `check` computes `passkeyTriggered = !isWarmup && isSuspicious && hasPasskey`,
@@ -120,7 +195,60 @@ guarded by three invariants that each closed a real evasion hole:
    A genuine user's first scored window is high (clears probation); an impostor's is ~0.00
    (re-challenges immediately, no grace).
 
-Verdict risk levels: `warmup` / `suspicious` / `genuine`.
+Verdict risk levels: `warmup` / `suspicious` / `genuine`. A model outage produces no
+verdict at all (503, §2c) rather than a fourth level — an absent decision is not a decision.
+
+### 6b. Escalation evidence is durable
+The keystroke debounce (2 suspicious of the last 3 checks) and the mouse strike counter are
+**evidence accumulated across checks**. Both used to live in process memory — a `Map` in
+ca-service, another `Map` in the gateway, and `req.session.mouseSuspiciousStreak` in the
+demo: three copies of one fact, none of which survived a restart.
+
+The problem is not the lost counter, it is *who benefits from losing it*. An impostor one
+check short of a step-up got a clean slate from any deploy, crash or OOM kill. A debounce
+whose evidence cannot outlive a restart is a debounce with a reset button. Three owners also
+meant the SDK and the demo could disagree about how suspicious the same person just was.
+
+Both counters now live in `decision_state` (`lib/decisionState.js`), owned by the service
+that owns the behavioral data they are derived from. Callers keep their **threshold** — for
+the mouse channel both the gateway and the demo step up at 1 strike, the point that was measured
+— and no longer keep the **count**; ca-service returns it as `suspiciousStreak`. Both are cleared when spent on a
+step-up, and when the profile they were measured against is deleted.
+
+This is also what unblocks a second gateway replica: two processes each holding half the
+evidence would never reach a threshold. (The tenant registry is still a JSON file, so
+replication remains blocked on that — see `TODO.md` §1c.)
+
+### 6c. Long-running model work is queued, not detached
+Retraining was `setImmediate(...)` guarded by an in-memory `Set`. Both halves died on
+restart: the in-flight run vanished mid-training, and so did the guard preventing a
+duplicate. Nothing recorded that training had been *owed*, so the work was simply lost and
+the user's model quietly stopped keeping up with them.
+
+`training_jobs` is now the durable record of owed work (`lib/trainingQueue.js`):
+
+- **Enqueue is a write.** `enqueue(userId, modality, reason)` is idempotent — a job already
+  `queued` or `running` for that pair is returned instead of duplicated. That is the durable
+  replacement for the `Set`, and callers can enqueue freely without tracking pending work.
+- **Crash recovery.** On boot the worker returns anything still marked `running` to
+  `queued`: a process that no longer exists cannot be running anything, so such rows are
+  always debris. `attempts` bounds the retry, so a permanently unsatisfiable job fails
+  loudly instead of crash-looping the worker on every restart.
+- **One job at a time**, deliberately: training is CPU-bound TF work sharing a host with
+  live inference, and the authentication path is the thing that must stay fast.
+- `GET /v1/training/jobs` exposes the lifecycle. Previously a lost job was indistinguishable
+  from one that had never been scheduled.
+
+**Why not Redis + Bull** (the reflex, and the reference architecture's choice): this is one
+producer, one consumer, one machine, a handful of jobs a day. A table and a loop give the
+same durability, dedupe and crash recovery with no new stateful service to deploy, back up
+or fail — and inherit `ca.db`'s existing volume and export scripts. The *pattern* is worth
+borrowing; the infrastructure is not.
+
+Enrollment still trains synchronously, because the user is waiting and "trained" is the
+result they asked for. *Still open:* model-api runs single-threaded Flask, so a synchronous
+enrollment train still blocks concurrent inference on that process — the fix is gunicorn
+with separate inference and training workers (`TODO.md`).
 
 ## 7. Passkey step-up + shared lock
 - **Step-up:** on a suspicious verdict the SDK opens a WebAuthn assertion modal; a
@@ -182,6 +310,15 @@ Implementation details:
   restarts). Safe to publish as a public image.
 - Persistent state on named volumes: `continuum_user_models`, `continuum_ca_db`,
   `continuum_passkey_db`, `continuum_gateway_data`, (demo) `continuum_db`.
+- **Health-gated startup.** All four services expose `/health`, and nothing used them:
+  `depends_on` said `condition: service_started`, which for model-api is actively
+  misleading — TensorFlow takes tens of seconds to load, so the container is "up" long
+  before it can score anything, and ca-service would accept traffic it could not serve.
+  Every service now has a `healthcheck:` and every `depends_on` waits for
+  `condition: service_healthy`. `/health` is deliberately the one route model-api leaves
+  unauthenticated: gating it would mean handing the orchestrator a credential, and it
+  reveals nothing beyond whether the model loaded.
+- **Three networks** (`edge` / `internal` / `model`) in all three stacks — see §2b.
 
 ## 12. Publishing & CI
 - **`scripts/release.sh`** — builds + pushes all five images to a registry, versioned
@@ -210,14 +347,22 @@ Implementation details:
 | Site-key reuse by another app | Origin-bound keys → `403 origin_not_allowed`; SDK hides panel + warns |
 | Forged gateway session tokens | Signed with a required, per-deployment `GATEWAY_SESSION_SECRET` (fail-fast + startup warning) |
 | Secret leakage in images/repo | Runtime-generated gateway key; fail-fast env secrets; secrets git-ignored + purged from history |
+| Biometric scoring oracle (hill-climb a forgery) | model-api on an isolated `model` network reachable only from ca-service, **and** `MODEL_API_KEY` on every route but `/health` |
+| Model poisoning / rollback by a co-located container | Same two controls; `/api/user/train` and `/api/user/rollback` are unreachable and credentialed |
+| Stalled model hangs the auth path | Deadline on every model call; `503 model_unavailable` = no verdict issued, logged at `[SECURITY]` |
+| Restart amnesty mid-escalation | Debounce + strike counters persisted in `decision_state`, cleared only when spent |
+| Retrain lost to a crash | `training_jobs` queue; `running` rows requeued on boot, bounded attempts |
 
 ## 15. Repository layout (top level)
 ```
 services/{model-api,ca-service,passkey-service,gateway}   # the product
+  ca-service/lib/modelClient.js     # the ONE authenticated, deadline-bounded hop to model-api
+  ca-service/lib/decisionState.js   # durable escalation counters (debounce, mouse strikes)
+  ca-service/lib/trainingQueue.js   # durable training jobs + crash-recovering worker
 sdk/                     # guard.js + capture libs (served by gateway/web)
 packages/{continuum-node,continuum-python}                # host middleware
 apps/{demo,acme}         # reference integrations
-artifacts/{ws50-gru,mouse-ws50-base}                      # pretrained base models (only these tracked)
+artifacts/{ws50-gru,mouse-fcn-a5}                         # pretrained base models (only these tracked)
 scripts/                 # release.sh, data-export.sh, data-import.sh
 .github/workflows/publish.yml                             # CI image publishing
 docker-compose{,.prod,.bundle}.yml + .env.example

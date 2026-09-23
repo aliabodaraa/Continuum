@@ -12,11 +12,15 @@ services/passkey-service/*.db
 
 # Runtime-generated per-user models must NOT be baked into the image — they
 # belong on a persistent volume. Base models (artifacts/ws50-gru,
-# artifacts/mouse-ws50-base) ARE baked so the service works out of the box.
+# artifacts/mouse-fcn-a5) ARE baked so the service works out of the box.
 artifacts/users/
+# Mouse study outputs (raw score streams, per-user evaluation models): research evidence,
+# never loaded by the service.
+artifacts/repr_arch_study/
+artifacts/final_eval/
 
 # Dead / experimental model variants the running service never loads — excluded
-# to keep the image lean. Only ws50-gru (keystroke base) and mouse-ws50-base
+# to keep the image lean. Only ws50-gru (keystroke base) and mouse-fcn-a5
 # (mouse base) are needed at runtime.
 artifacts/*.BROKEN*
 artifacts/*-v2
@@ -26,7 +30,7 @@ artifacts/ws20-gru/
 artifacts/ws50/
 
 # Large training-only datasets the running service never needs. Mouse
-# enrollment needs data/mouse_only/Mouse_WS50.h5 (kept); the keystroke base was
+# enrollment needs data/mouse_only/Mouse_A5_W50_base.h5 (kept); the keystroke base was
 # trained offline from the Rand_WS*.h5 files, so they're excluded from images.
 # (Dev bind-mounts the whole tree, so training still sees them locally.)
 data/Rand_WS*.h5

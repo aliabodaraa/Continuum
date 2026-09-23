@@ -1,0 +1,29 @@
+holdout targets: 20   base (negative-pool) users: 100
+negative pool: (1200, 50, 7) from 30 base users
+
+   1/20 user1      enrol= 250 held= 201 imp= 4358(19u)  EER=18.37%  AUC=0.899   26.8s
+   2/20 user8      enrol= 250 held= 208 imp= 4351(19u)  EER=30.51%  AUC=0.768   26.4s
+   3/20 user9      enrol= 250 held= 238 imp= 4321(19u)  EER=15.06%  AUC=0.930   25.2s
+   4/20 user16     enrol= 250 held= 195 imp= 4364(19u)  EER=34.73%  AUC=0.728   24.7s
+   5/20 user19     enrol= 250 held= 546 imp= 4013(19u)  EER= 0.00%  AUC=1.000   23.9s
+   6/20 user29     enrol= 250 held= 244 imp= 4315(19u)  EER=21.00%  AUC=0.872   27.1s
+   7/20 user69     enrol= 250 held= 221 imp= 4338(19u)  EER=23.56%  AUC=0.856   28.3s
+   8/20 user70     enrol= 250 held= 216 imp= 4343(19u)  EER=24.61%  AUC=0.825   27.5s
+   9/20 user85     enrol= 250 held= 193 imp= 4366(19u)  EER=15.86%  AUC=0.917   28.3s
+  10/20 user86     enrol= 250 held= 239 imp= 4320(19u)  EER=21.63%  AUC=0.869   27.5s
+  11/20 user89     enrol= 250 held= 267 imp= 4292(19u)  EER= 0.75%  AUC=1.000   27.2s
+  12/20 user91     enrol= 250 held= 248 imp= 4311(19u)  EER=49.00%  AUC=0.583   27.1s
+  13/20 user98     enrol= 250 held= 128 imp= 4431(19u)  EER= 0.00%  AUC=1.000   28.9s
+  14/20 user101    enrol= 250 held= 164 imp= 4395(19u)  EER=22.30%  AUC=0.846   26.1s
+  15/20 user104    enrol= 250 held= 251 imp= 4308(19u)  EER=28.43%  AUC=0.812   25.9s
+  16/20 user107    enrol= 250 held= 177 imp= 4382(19u)  EER= 4.33%  AUC=0.992   25.5s
+  17/20 user108    enrol= 250 held= 214 imp= 4345(19u)  EER=31.33%  AUC=0.739   24.4s
+  18/20 user111    enrol= 250 held= 184 imp= 4375(19u)  EER=19.00%  AUC=0.887   25.4s
+  19/20 user115    enrol= 250 held= 211 imp= 4348(19u)  EER=28.58%  AUC=0.791   24.2s
+  20/20 user119    enrol= 250 held= 214 imp= 4345(19u)  EER=18.69%  AUC=0.911   26.0s
+
+20 users in 8.8 min
+  EER median 21.31%  IQR 15.66%-28.47%  p10 0.67% p90 31.67%  min 0.00% max 49.00%
+  AUC median 0.871
+
+wrote /app/artifacts/xai/mouse_population.json

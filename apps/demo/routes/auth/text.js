@@ -28,7 +28,7 @@ const requireUnlockedSession = (req, res, next) => {
 
 const requireTrainedRhythm = async (req, res, next) => {
   try {
-    const { data: status } = await ca.keystrokeStatus(req.caUid);
+    const { data: status } = await ca.keystrokeStatus(req.session.userId);
     if (!status.trained) {
       return res.status(423).json({
         error: "Typing rhythm enrollment required before using this feature",
@@ -50,7 +50,7 @@ router.get("/config", requireAuth, async (req, res, next) => {
 });
 
 router.get("/typing-status", requireAuth, async (req, res, next) => {
-  try { passthrough(res, await ca.keystrokeStatus(req.caUid)); } catch (e) { next(e); }
+  try { passthrough(res, await ca.keystrokeStatus(req.session.userId)); } catch (e) { next(e); }
 });
 
 // Destructive: drops the trained typing profile and unmarks its training texts. Now also
@@ -58,15 +58,15 @@ router.get("/typing-status", requireAuth, async (req, res, next) => {
 // precisely what an impostor at an unlocked machine would do, since it lets them re-enroll as
 // themselves. requireUnlockedSession alone only checked that a passkey EXISTS.
 router.post("/typing-reset", requireAuth, requireUnlockedSession, requireFreshPasskey, async (req, res, next) => {
-  try { passthrough(res, await ca.keystrokeReset(req.caUid)); } catch (e) { next(e); }
+  try { passthrough(res, await ca.keystrokeReset(req.session.userId)); } catch (e) { next(e); }
 });
 
 router.post("/typing-retrain", requireAuth, async (req, res, next) => {
-  try { passthrough(res, await ca.keystrokeRetrain(req.caUid)); } catch (e) { next(e); }
+  try { passthrough(res, await ca.keystrokeRetrain(req.session.userId)); } catch (e) { next(e); }
 });
 
 router.post("/enroll", requireAuth, requireUnlockedSession, async (req, res, next) => {
-  try { passthrough(res, await ca.keystrokeEnroll(req.caUid, req.body)); } catch (e) { next(e); }
+  try { passthrough(res, await ca.keystrokeEnroll(req.session.userId, req.body)); } catch (e) { next(e); }
 });
 
 router.post("/submit", requireAuth, requireUnlockedSession, requireTrainedRhythm, async (req, res, next) => {
@@ -75,7 +75,7 @@ router.post("/submit", requireAuth, requireUnlockedSession, requireTrainedRhythm
       req.body.passkeyVerifiedForAction &&
       Number(req.session.passkeyVerifiedUserId) === Number(req.session.userId);
 
-    const r = await ca.keystrokeSubmit(req.caUid, {
+    const r = await ca.keystrokeSubmit(req.session.userId, {
       textContent: req.body.textContent,
       keystrokeTimings: req.body.keystrokeTimings,
       keystrokeEvents: req.body.keystrokeEvents,
@@ -101,7 +101,7 @@ router.post("/submit", requireAuth, requireUnlockedSession, requireTrainedRhythm
 
 router.post("/check", requireAuth, requireUnlockedSession, requireTrainedRhythm, async (req, res, next) => {
   try {
-    const r = await ca.keystrokeCheck(req.caUid, {
+    const r = await ca.keystrokeCheck(req.session.userId, {
       textContent: req.body.textContent,
       keystrokeTimings: req.body.keystrokeTimings,
       keystrokeEvents: req.body.keystrokeEvents,
@@ -113,23 +113,23 @@ router.post("/check", requireAuth, requireUnlockedSession, requireTrainedRhythm,
 });
 
 router.post("/contribute", requireAuth, requireUnlockedSession, requireTrainedRhythm, async (req, res, next) => {
-  try { passthrough(res, await ca.keystrokeContribute(req.caUid, req.body)); } catch (e) { next(e); }
+  try { passthrough(res, await ca.keystrokeContribute(req.session.userId, req.body)); } catch (e) { next(e); }
 });
 
 router.get("/history", requireAuth, async (req, res, next) => {
-  try { passthrough(res, await ca.keystrokeHistory(req.caUid)); } catch (e) { next(e); }
+  try { passthrough(res, await ca.keystrokeHistory(req.session.userId)); } catch (e) { next(e); }
 });
 
 router.get("/stats", requireAuth, async (req, res, next) => {
   try {
-    const r = await ca.keystrokeStats(req.caUid);
+    const r = await ca.keystrokeStats(req.session.userId);
     const hasPasskeys = !!req.session.hasPasskey;
     res.status(r.status).json({ ...r.data, passkeysRegistered: hasPasskeys, passkey_count: hasPasskeys ? 1 : 0 });
   } catch (e) { next(e); }
 });
 
 router.get("/decisions", requireAuth, async (req, res, next) => {
-  try { passthrough(res, await ca.keystrokeDecisions(req.caUid)); } catch (e) { next(e); }
+  try { passthrough(res, await ca.keystrokeDecisions(req.session.userId)); } catch (e) { next(e); }
 });
 
 // CSV export — the CA service holds decisions by user_id; usernames (needed for
@@ -144,7 +144,7 @@ router.get("/decisions/export", requireAuth, async (req, res, next) => {
       for (const u of db.prepare("SELECT id, username FROM users").all()) names[u.id] = u.username;
       rows = (data.rows || []).map((r) => ({ ...r, username: names[r.user_id] || `user-${r.user_id}` }));
     } else {
-      const { data } = await ca.keystrokeDecisions(req.caUid);
+      const { data } = await ca.keystrokeDecisions(req.session.userId);
       rows = data.decisions || [];
     }
     const header = all

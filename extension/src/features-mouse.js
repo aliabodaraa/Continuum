@@ -3,7 +3,11 @@
 // MUST match the windows the mouse base model was trained on.
 //
 // Raw event: { t (ms), x, y, state }  with state ∈ "Move" | "Pressed" | "Released" | "Drag"
-// Feature vector F=7: [dx, dy, v, a, dtheta, dt, is_click]
+// Feature vector F=2: [|dx|, |dy|] in PIXELS per step -- SapiMouse's best raw representation
+// (Antal, Fejer & Buza, IEEE SACI 2021, Table I), adopted by the pre-registered study in
+// artifacts/repr_arch_study (Experiment A). The step filter below is unchanged; window selection
+// still uses the screen-normalised path, which depends only on |dx| and |dy|, so the windows kept
+// are bit-identical to the ones the model was trained and evaluated on.
 (function () {
   var SCREEN_SCALE = 1920.0;
   // Gaps above this emit NO motion vector — the pointer was parked, not moving. 2.0s was too
@@ -17,7 +21,6 @@
   // because the stream is NOT broken here — prev is reset and the run continues, so windows
   // simply splice across the pause instead of recording it.
   var IDLE_SPLIT_SECONDS = 0.5;
-  var DT_CLIP_SECONDS = 1.0;
   var WINDOW_SIZE = 50;
   var WINDOW_STRIDE = 10;
   // Minimum cursor path a window must cover to be scored/trained. The mouse base model is a
@@ -28,25 +31,27 @@
   // dropping idle/scroll-reading windows (still cursor ≈ 0.02, ±3px drift ≈ 0.06).
   var MIN_WINDOW_PATH = 0.08;
 
-  function clip(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-
-  // dx, dy are steps[i][0], steps[i][1] (screen-fraction displacement); path = summed magnitude.
+  // steps[i] = [|dx|, |dy|] in pixels; path = summed step length in screen widths (1920 px).
   function windowPathLength(win) {
     var s = 0;
-    for (var i = 0; i < win.length; i++) s += Math.hypot(win[i][0], win[i][1]);
+    // Same value as before the representation change: hypot(clip(dx/1920), clip(dy/1920))
+    // depends only on |dx| and |dy|.
+    for (var i = 0; i < win.length; i++) {
+      s += Math.hypot(Math.min(win[i][0] / SCREEN_SCALE, 1), Math.min(win[i][1] / SCREEN_SCALE, 1));
+    }
     return s;
   }
 
   function eventsToSteps(events) {
     var steps = [];
-    var prev = null, prevV = 0, prevDir = null;
+    var prev = null;
     for (var i = 0; i < events.length; i++) {
       var e = events[i];
-      if (prev === null) { prev = { t: e.t, x: e.x, y: e.y }; prevDir = null; prevV = 0; continue; }
+      if (prev === null) { prev = { t: e.t, x: e.x, y: e.y }; continue; }
       var dtMs = e.t - prev.t;
       var dt = dtMs / 1000.0;
       if (dt <= 0) { prev = { t: e.t, x: e.x, y: e.y }; continue; }
-      if (dt > IDLE_SPLIT_SECONDS) { prev = { t: e.t, x: e.x, y: e.y }; prevDir = null; prevV = 0; continue; }
+      if (dt > IDLE_SPLIT_SECONDS) { prev = { t: e.t, x: e.x, y: e.y }; continue; }
       var dxPx = e.x - prev.x;
       var dyPx = e.y - prev.y;
       var dist = Math.hypot(dxPx, dyPx);
@@ -62,27 +67,10 @@
       // the next genuine movement measures dx/dy/dt from the last real position — a long
       // stationary spell then falls to the IDLE_SPLIT rule above, as it should.
       if (dist === 0 && e.state !== "Pressed" && e.state !== "Released") continue;
-      var v = dist / Math.max(dtMs, 1.0);
-      var a = Math.abs(v - prevV);
-      var direction = dist > 0 ? Math.atan2(dyPx, dxPx) : (prevDir || 0);
-      var dtheta = 0;
-      if (prevDir !== null && dist > 0) {
-        var d = direction - prevDir;
-        dtheta = ((d + Math.PI) % (2 * Math.PI)) - Math.PI;
-      }
-      var isClick = (e.state === "Pressed" || e.state === "Released" || e.state === "Drag") ? 1 : 0;
-      steps.push([
-        clip(dxPx / SCREEN_SCALE, -1, 1),
-        clip(dyPx / SCREEN_SCALE, -1, 1),
-        Math.log1p(v),
-        Math.log1p(a),
-        dtheta / Math.PI,
-        Math.min(dt, DT_CLIP_SECONDS),
-        isClick,
-      ]);
+      // Pixels, unclipped: the model reads the magnitude of each step. Clicks at zero
+      // displacement stay in the stream as [0, 0], exactly as in training.
+      steps.push([Math.abs(dxPx), Math.abs(dyPx)]);
       prev = { t: e.t, x: e.x, y: e.y };
-      prevV = v;
-      if (dist > 0) prevDir = direction;
     }
     return steps;
   }
@@ -97,11 +85,25 @@
     return windows;
   }
 
+  // Windows saved by the retired 7-feature extractor stored dx and dy as pixels / 1920 (clipped
+  // to +-1), so |dx| and |dy| in pixels come back exactly as |col| * 1920 -- the same conversion
+  // ca-service's migration uses, verified against the training pipeline. Current windows pass
+  // through unchanged.
+  function fromRetired7(windows) {
+    if (!Array.isArray(windows) || !windows.length || !windows[0][0] || windows[0][0].length !== 7) return windows;
+    return windows.map(function (w) {
+      return w.map(function (r) { return [Math.abs(r[0]) * SCREEN_SCALE, Math.abs(r[1]) * SCREEN_SCALE]; });
+    });
+  }
+
   globalThis.ContinuumMouseFeatures = {
     eventsToSteps: eventsToSteps,
     stepsToWindows: stepsToWindows,
+    fromRetired7: fromRetired7,
     WINDOW_SIZE: WINDOW_SIZE,
     WINDOW_STRIDE: WINDOW_STRIDE,
+    FEATURES: 2,
+    FEATURE_VERSION: "a5-absdxdy-v1",
   };
 })();
 if (typeof module !== "undefined" && module.exports) module.exports = globalThis.ContinuumMouseFeatures;
