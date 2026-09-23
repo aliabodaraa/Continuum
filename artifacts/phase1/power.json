@@ -1,0 +1,183 @@
+{
+ "note": "Power of 20-user paired comparisons, from the per-user differences observed in the two untouched tests.",
+ "tests": {
+  "P6 (S1 - S0)": {
+   "n": 20,
+   "endpoints": {
+    "promptsPerMin": {
+     "observedMeanDiff": 0.15187447165598494,
+     "sdPerUser": 0.3714621334997531,
+     "se": 0.08306145815725498,
+     "mde80": 0.2327037352514932,
+     "usersTied": 17
+    },
+    "runsCaught": {
+     "observedMeanDiff": 0.17894736842105263,
+     "sdPerUser": 0.2766091306660153,
+     "se": 0.06185168193663318,
+     "mde80": 0.17328274433844248,
+     "usersTied": 10
+    },
+    "auc": {
+     "observedMeanDiff": 0.024496882947014752,
+     "sdPerUser": 0.03099094120670424,
+     "se": 0.006929785122489004,
+     "mde80": 0.01941438205238836,
+     "usersTied": 0
+    },
+    "eer": {
+     "observedMeanDiff": -0.01920850421128805,
+     "sdPerUser": 0.027964348817868565,
+     "se": 0.006253018490326999,
+     "mde80": 0.017518362807222767,
+     "usersTied": 0
+    },
+    "decAucPct15": {
+     "observedMeanDiff": 0.0287619763277658,
+     "sdPerUser": 0.03618943320493203,
+     "se": 0.00809220327134161,
+     "mde80": 0.022670995301941586,
+     "usersTied": 1
+    },
+    "decAucPct33": {
+     "observedMeanDiff": 0.025695488721804514,
+     "sdPerUser": 0.032952884831207674,
+     "se": 0.007368489053730204,
+     "mde80": 0.020643448405594737,
+     "usersTied": 7
+    }
+   },
+   "ruleSimulation": [
+    {
+     "truePromptsDiff": 0.0,
+     "trueCaptureDiff": 0.0,
+     "pAdopt": 0.01,
+     "pPromptMarginMet": 0.2965,
+     "pCaptureMarginMet": 0.113,
+     "pBothMarginsMet": 0.046
+    },
+    {
+     "truePromptsDiff": 0.0,
+     "trueCaptureDiff": 0.05,
+     "pAdopt": 0.047,
+     "pPromptMarginMet": 0.2965,
+     "pCaptureMarginMet": 0.4255,
+     "pBothMarginsMet": 0.1495
+    },
+    {
+     "truePromptsDiff": 0.0,
+     "trueCaptureDiff": 0.1,
+     "pAdopt": 0.142,
+     "pPromptMarginMet": 0.2965,
+     "pCaptureMarginMet": 0.92,
+     "pBothMarginsMet": 0.283
+    },
+    {
+     "truePromptsDiff": -0.05,
+     "trueCaptureDiff": 0.1,
+     "pAdopt": 0.2405,
+     "pPromptMarginMet": 0.4495,
+     "pCaptureMarginMet": 0.92,
+     "pBothMarginsMet": 0.423
+    },
+    {
+     "truePromptsDiff": 0.15187447165598494,
+     "trueCaptureDiff": 0.17894736842105263,
+     "pAdopt": 0.045,
+     "pPromptMarginMet": 0.045,
+     "pCaptureMarginMet": 1.0,
+     "pBothMarginsMet": 0.045
+    }
+   ]
+  },
+  "K3 (S2 - S0)": {
+   "n": 20,
+   "endpoints": {
+    "promptsPerMin": {
+     "observedMeanDiff": 0.10631068745593422,
+     "sdPerUser": 0.3705280057306844,
+     "se": 0.08285258083812419,
+     "mde80": 0.23211854768737616,
+     "usersTied": 18
+    },
+    "runsCaught": {
+     "observedMeanDiff": 0.013157894736842113,
+     "sdPerUser": 0.13540153737339602,
+     "se": 0.03027670418248918,
+     "mde80": 0.08482276028709897,
+     "usersTied": 10
+    },
+    "auc": {
+     "observedMeanDiff": 0.018222098974126976,
+     "sdPerUser": 0.01940834218422816,
+     "se": 0.004339837245451091,
+     "mde80": 0.012158422929297096,
+     "usersTied": 0
+    },
+    "eer": {
+     "observedMeanDiff": -0.023550473148480598,
+     "sdPerUser": 0.022805779047527418,
+     "se": 0.005099527223011171,
+     "mde80": 0.014286758975079751,
+     "usersTied": 0
+    },
+    "decAucPct15": {
+     "observedMeanDiff": 0.01280405267247372,
+     "sdPerUser": 0.021486880824175734,
+     "se": 0.004804612614729364,
+     "mde80": 0.013460530632236567,
+     "usersTied": 3
+    },
+    "decAucPct33": {
+     "observedMeanDiff": 0.007806163135110488,
+     "sdPerUser": 0.017652807086366303,
+     "se": 0.003947287663880505,
+     "mde80": 0.011058661909812665,
+     "usersTied": 5
+    }
+   },
+   "ruleSimulation": [
+    {
+     "truePromptsDiff": 0.0,
+     "trueCaptureDiff": 0.0,
+     "pAdopt": 0.069,
+     "pPromptMarginMet": 0.3435,
+     "pCaptureMarginMet": 0.448,
+     "pBothMarginsMet": 0.106
+    },
+    {
+     "truePromptsDiff": 0.0,
+     "trueCaptureDiff": 0.05,
+     "pAdopt": 0.254,
+     "pPromptMarginMet": 0.3435,
+     "pCaptureMarginMet": 0.9365,
+     "pBothMarginsMet": 0.306
+    },
+    {
+     "truePromptsDiff": 0.0,
+     "trueCaptureDiff": 0.1,
+     "pAdopt": 0.3315,
+     "pPromptMarginMet": 0.3435,
+     "pCaptureMarginMet": 1.0,
+     "pBothMarginsMet": 0.3435
+    },
+    {
+     "truePromptsDiff": -0.05,
+     "trueCaptureDiff": 0.1,
+     "pAdopt": 0.4635,
+     "pPromptMarginMet": 0.4845,
+     "pCaptureMarginMet": 1.0,
+     "pBothMarginsMet": 0.4845
+    },
+    {
+     "truePromptsDiff": 0.10631068745593422,
+     "trueCaptureDiff": 0.013157894736842113,
+     "pAdopt": 0.001,
+     "pPromptMarginMet": 0.254,
+     "pCaptureMarginMet": 0.629,
+     "pBothMarginsMet": 0.121
+    }
+   ]
+  }
+ }
+}

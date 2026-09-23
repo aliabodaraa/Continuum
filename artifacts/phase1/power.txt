@@ -1,0 +1,32 @@
+
+== P6 (S1 - S0), n=20
+   endpoint        observed      SE   MDE80  tied
+   promptsPerMin    +0.1519  0.0831  0.2327  17
+   runsCaught       +0.1789  0.0619  0.1733  10
+   auc              +0.0245  0.0069  0.0194  0
+   eer              -0.0192  0.0063  0.0175  0
+   decAucPct15      +0.0288  0.0081  0.0227  1
+   decAucPct33      +0.0257  0.0074  0.0206  7
+   adoption rule, probability of adopting a system whose TRUE difference is:
+     prompts +0.000/min, capture  +0.0 pts -> adopt   1.0%  (prompt margin met  29.6%, capture margin met  11.3%)
+     prompts +0.000/min, capture  +5.0 pts -> adopt   4.7%  (prompt margin met  29.6%, capture margin met  42.5%)
+     prompts +0.000/min, capture +10.0 pts -> adopt  14.2%  (prompt margin met  29.6%, capture margin met  92.0%)
+     prompts -0.050/min, capture +10.0 pts -> adopt  24.1%  (prompt margin met  45.0%, capture margin met  92.0%)
+     prompts +0.152/min, capture +17.9 pts -> adopt   4.5%  (prompt margin met   4.5%, capture margin met 100.0%)
+
+== K3 (S2 - S0), n=20
+   endpoint        observed      SE   MDE80  tied
+   promptsPerMin    +0.1063  0.0829  0.2321  18
+   runsCaught       +0.0132  0.0303  0.0848  10
+   auc              +0.0182  0.0043  0.0122  0
+   eer              -0.0236  0.0051  0.0143  0
+   decAucPct15      +0.0128  0.0048  0.0135  3
+   decAucPct33      +0.0078  0.0039  0.0111  5
+   adoption rule, probability of adopting a system whose TRUE difference is:
+     prompts +0.000/min, capture  +0.0 pts -> adopt   6.9%  (prompt margin met  34.4%, capture margin met  44.8%)
+     prompts +0.000/min, capture  +5.0 pts -> adopt  25.4%  (prompt margin met  34.4%, capture margin met  93.7%)
+     prompts +0.000/min, capture +10.0 pts -> adopt  33.1%  (prompt margin met  34.4%, capture margin met 100.0%)
+     prompts -0.050/min, capture +10.0 pts -> adopt  46.4%  (prompt margin met  48.4%, capture margin met 100.0%)
+     prompts +0.106/min, capture  +1.3 pts -> adopt   0.1%  (prompt margin met  25.4%, capture margin met  62.9%)
+
+wrote artifacts/phase1/power.json
