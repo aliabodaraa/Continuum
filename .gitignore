@@ -32,6 +32,9 @@ data/sapimouse/
 data/keyrecs/
 data/Keystrokes/
 data/*.csv
+# Bogazici Mouse Dynamics Dataset (CC BY 4.0, 4.87 GB split zip): the untouched test set of
+# PREREGISTRATION_L stage C. Nothing in it is parsed before Amendment L-1.
+data/bogazici/
 
 
 # ─── Runtime-generated per-user models (biometric) ───

@@ -13,23 +13,26 @@ This script supplies the missing half — FAR from real, unseen people — and t
 honest operating curve: TAR at a FIXED FAR, EER, AUC, all with bootstrap confidence
 intervals, at both the deployed threshold (0.50) and the user's calibrated one.
 
-Why the impostors come from Aalto
----------------------------------
-Two other sources were rejected:
+Where the impostors come from
+-----------------------------
+Unseen people from a public dataset, converted by keyrecs_to_windows.py (KeyRecs, the
+99 participants behind artifacts/xai/sweep_final.json) or aalto_to_windows.py (Aalto).
+The result names the source from the file's own `source` attribute, so it cannot claim
+one dataset while scoring another. Two other sources were rejected:
   * data/Rand_WS50.h5 has NO subject labels, so a "held-out" split there cannot be
     subject-disjoint — the same typist may sit on both sides.
   * The other app users are already baked into this model: the profile records
     negativeSource="app-users+dataset", so scoring against them is train/test
     contamination, and several of them are duplicate identities of the same human
     (identical event counts under a demo id and a hashed CA uid).
-Aalto participants have never been seen by the base model or the per-user head.
+Dataset participants have never been seen by the base model or the per-user head.
 
 Genuine windows come from the user's is_training=0 samples — real typing that was
 never used to fit the head — so TAR is out-of-sample too.
 
 Usage (inside the model-api container):
     python keystroke_user_sweep.py --user-id 1 \
-        --impostors /app/data/aalto_impostors.h5 \
+        --impostors /app/data/keyrecs_impostors.h5 \
         --out /app/artifacts/keystroke_sweep_user1.json
 """
 import argparse
@@ -220,7 +223,8 @@ def packet_rate(p_low, k=3, n=6):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--user-id", type=int, required=True)
-    ap.add_argument("--impostors", required=True, help="h5 from aalto_to_windows.py")
+    ap.add_argument("--impostors", required=True,
+                    help="h5 from keyrecs_to_windows.py or aalto_to_windows.py")
     ap.add_argument("--out", default=None)
     ap.add_argument("--max-impostor-windows", type=int, default=4000)
     args = ap.parse_args()
@@ -242,6 +246,7 @@ def main():
     with h5py.File(args.impostors, "r") as f:
         imp_all = np.asarray(f["windows"])
         parts = np.asarray(f["participant"])
+        source = str(f.attrs.get("source", os.path.basename(args.impostors)))
     if len(imp_all) > args.max_impostor_windows:
         rng = np.random.default_rng(11)
         sel = rng.choice(len(imp_all), args.max_impostor_windows, replace=False)
@@ -259,9 +264,10 @@ def main():
 
     res = {
         "userId": args.user_id, "modelPath": model_path,
-        "protocol": "subject-disjoint (impostors = unseen Aalto participants; "
+        "protocol": f"subject-disjoint (impostors = unseen participants of {source}; "
                     "genuine = user's is_training=0 samples)",
-        "impostorSource": "Aalto 136M keystrokes (Dhakal et al., CHI 2018)",
+        "impostorSource": source,
+        "impostorFile": os.path.basename(args.impostors),
         "nGenuineWindows": int(len(gen)), "nImpostorWindows": int(len(imp)),
         "nImpostorSubjects": int(len(np.unique(parts))),
         "genuineMean": float(gen.mean()), "impostorMean": float(imp.mean()),
@@ -271,6 +277,7 @@ def main():
         "atLiveThreshold": {
             "threshold": LIVE_THRESHOLD, "far": far_live, "frr": frr_live,
             "tar": 1 - frr_live,
+            "packetRule": "3 of 6, binomial (treats windows as independent)",
             "packetFalseLockRate": packet_rate(frr_live),
             "packetImpostorCatchRate": packet_rate(1 - far_live),
         },

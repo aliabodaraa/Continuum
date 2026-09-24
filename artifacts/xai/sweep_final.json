@@ -1,8 +1,9 @@
 {
   "userId": 1,
   "modelPath": "/app/artifacts/users/user-1/final_model",
-  "protocol": "subject-disjoint (impostors = unseen Aalto participants; genuine = user's is_training=0 samples)",
-  "impostorSource": "Aalto 136M keystrokes (Dhakal et al., CHI 2018)",
+  "protocol": "subject-disjoint (impostors = unseen participants of KeyRecs free-text (Dias et al., Data in Brief 2023, CC-BY 4.0); genuine = user's is_training=0 samples)",
+  "impostorSource": "KeyRecs free-text (Dias et al., Data in Brief 2023, CC-BY 4.0)",
+  "impostorFile": "keyrecs_impostors.h5",
   "nGenuineWindows": 196,
   "nImpostorWindows": 4000,
   "nImpostorSubjects": 99,
@@ -52,5 +53,6 @@
         0.9897959183673469
       ]
     }
-  }
+  },
+  "provenanceNote": "Corrected 2026-09-24: this file said Aalto because keystroke_user_sweep.py hard-coded that label. The impostors were the 99 KeyRecs participants (data/keyrecs_impostors.h5, 52,234 windows; commit 104344f). The numbers are unchanged."
 }
