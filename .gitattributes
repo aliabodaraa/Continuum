@@ -29,3 +29,11 @@ services/model-api/repr_arch_study.py -text
 services/model-api/preprocess_mouse.py -text
 # Protocol L results, whose hashes later steps record.
 artifacts/phase2/L/*.json -text
+# Protocol KS (phase 3): frozen pre-registration, code and the modules it hashes.
+artifacts/phase3/PREREGISTRATION_KS*.md -text
+services/model-api/analysis/phase3/*.py -text
+services/model-api/population_sweep.py -text
+services/model-api/keystroke_user_sweep.py -text
+services/model-api/aalto_to_windows.py -text
+services/model-api/preprocessing.py -text
+artifacts/phase3/*.json -text

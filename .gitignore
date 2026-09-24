@@ -126,3 +126,5 @@ pdfs/
 *.db.*
 *.db-*
 *.bak
+# Protocol KS smoke-test outputs.
+artifacts/phase3/smoke/
