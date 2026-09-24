@@ -27,3 +27,5 @@ services/model-api/analysis/phase2/*.py -text
 services/model-api/analysis/phase1/p1lib.py -text
 services/model-api/repr_arch_study.py -text
 services/model-api/preprocess_mouse.py -text
+# Protocol L results, whose hashes later steps record.
+artifacts/phase2/L/*.json -text
