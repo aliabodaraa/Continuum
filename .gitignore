@@ -35,6 +35,10 @@ data/*.csv
 # Bogazici Mouse Dynamics Dataset (CC BY 4.0, 4.87 GB split zip): the untouched test set of
 # PREREGISTRATION_L stage C. Nothing in it is parsed before Amendment L-1.
 data/bogazici/
+# Protocol L network weights and smoke-test outputs (same policy as artifacts/mouse-fcn-a5-j80/).
+# The results (selection_scores.json, SELECTION_L.json, scores_D.json, stage_D.*) are committed.
+artifacts/phase2/L/models/
+artifacts/phase2/L/smoke/
 
 
 # ─── Runtime-generated per-user models (biometric) ───

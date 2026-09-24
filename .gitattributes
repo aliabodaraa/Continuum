@@ -22,4 +22,8 @@ artifacts/repr_arch_study/SPLIT_*.json -text
 artifacts/repr_arch_study/SELECTION_*.json -text
 services/model-api/make_split_*.py -text
 services/model-api/analysis/phase1/eval_decision_level.py -text
-services/model-api/analysis/phase2/make_split_l.py -text
+services/model-api/analysis/phase2/*.py -text
+# Code whose hashes protocol L records (l_common.CODE and code_hashes()).
+services/model-api/analysis/phase1/p1lib.py -text
+services/model-api/repr_arch_study.py -text
+services/model-api/preprocess_mouse.py -text
