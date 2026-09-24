@@ -1,0 +1,52 @@
+{
+ "note": "EXPLORATORY, post hoc on the spent lockbox 1 (P6 streams), S1 as deployed; decides nothing.",
+ "users": 20,
+ "window": {
+  "perUserMean": {
+   "auc": 0.8787306733287915,
+   "eer": 0.1881040303691963
+  },
+  "pooledPct": {
+   "eer": 0.21444091634043785,
+   "auc": 0.8600072984630999,
+   "frrAtFar1": 0.8785123966942149,
+   "frrAtFar5": 0.6342975206611571,
+   "frrAtFar10": 0.45041322314049587
+  },
+  "n": {
+   "genuine": 4840,
+   "impostor": 57000
+  }
+ },
+ "decision60": {
+  "seconds": 17.22,
+  "perUserMean": {
+   "auc": 0.9653508771929825,
+   "eer": 0.06151315789473684
+  },
+  "perUserMeanAucPct": 0.9677631578947368,
+  "pooledPct": {
+   "eer": 0.10487038491751767,
+   "auc": 0.9538000785545955,
+   "frrAtFar1": 0.7611940298507462,
+   "frrAtFar5": 0.31343283582089554,
+   "frrAtFar10": 0.11940298507462686
+  },
+  "n": {
+   "genuine": 67,
+   "impostor": 760
+  },
+  "deployedRule": {
+   "far": 0.12105263157894737,
+   "frr": 0.04477611940298507
+  }
+ },
+ "operatingPointP6": {
+  "promptsPerMin": 0.3264869719687934,
+  "runsCaught": 0.95,
+  "usersNeverPrompted": 16,
+  "usersBelow80pctCapture": 2,
+  "timeToCatchMedianS": 17.216
+ },
+ "operatingPointSource": "analysis_J_P6.json (pre-registered P6 test, test halves)"
+}
