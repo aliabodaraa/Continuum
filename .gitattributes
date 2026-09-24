@@ -13,3 +13,13 @@ variables.data-* binary
 
 # Shell scripts must stay LF even on Windows checkouts.
 *.sh text eol=lf
+
+# Frozen, hashed study files (artifacts/repr_arch_study/*.sha256): stored and checked out
+# byte for byte, so every recorded SHA-256 verifies from any clone on any platform.
+artifacts/repr_arch_study/PREREGISTRATION*.md -text
+artifacts/repr_arch_study/AMENDMENT*.md -text
+artifacts/repr_arch_study/SPLIT_*.json -text
+artifacts/repr_arch_study/SELECTION_*.json -text
+services/model-api/make_split_*.py -text
+services/model-api/analysis/phase1/eval_decision_level.py -text
+services/model-api/analysis/phase2/make_split_l.py -text
