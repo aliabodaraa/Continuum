@@ -1,0 +1,54 @@
+PROTOCOL L, STAGE D
+19 targets; REF = mean over 3 sample orders, L = mean over 3 seeds
+
+PRIMARY  L - REF, per-user AUC of 9.9-s decisions (pct): -0.0082 [-0.0285, +0.0112] p 0.430, better for 6/19
+         kill criterion (lower 95% bound > 0): NOT PASSED -> L stops here
+         SE 0.0102, MDE80 0.0285
+
+N = 15 (5.1 s)  (reported)
+  REF (S1, per-user fine-tuning)     per-user AUC 0.9439   pooled pct: EER 16.59%  AUC 0.9035  FRR@FAR1%  71.3%  FRR@FAR5%  36.0%
+  F2 (frozen base-80 + head)         per-user AUC 0.9418   pooled pct: EER 13.33%  AUC 0.9249  FRR@FAR1%  56.4%  FRR@FAR5%  31.1%
+  L (metric embedding + head)        per-user AUC 0.9407   pooled pct: EER 13.54%  AUC 0.9220  FRR@FAR1%  59.9%  FRR@FAR5%  30.1%
+  L, centroid cosine (reference)     per-user AUC 0.9096   pooled pct: EER 16.15%  AUC 0.8972  FRR@FAR1%  77.2%  FRR@FAR5%  46.4%
+  L-REF     per-user AUC -0.0032 [-0.0238, +0.0207] p 0.755, better for 7/19
+  F2-REF    per-user AUC -0.0022 [-0.0209, +0.0167] p 0.832, better for 8/19
+  L-F2      per-user AUC -0.0010 [-0.0144, +0.0139] p 0.869, better for 8/19
+  Lcos-REF  per-user AUC -0.0343 [-0.0589, -0.0093] p 0.005, better for 4/19
+
+N = 33 (9.9 s)  <- primary length
+  REF (S1, per-user fine-tuning)     per-user AUC 0.9656   pooled pct: EER 13.37%  AUC 0.9210  FRR@FAR1%  59.1%  FRR@FAR5%  34.2%
+  F2 (frozen base-80 + head)         per-user AUC 0.9637   pooled pct: EER  9.11%  AUC 0.9414  FRR@FAR1%  51.8%  FRR@FAR5%  19.1%
+  L (metric embedding + head)        per-user AUC 0.9574   pooled pct: EER 11.51%  AUC 0.9373  FRR@FAR1%  43.3%  FRR@FAR5%  18.8%
+  L, centroid cosine (reference)     per-user AUC 0.9261   pooled pct: EER 13.99%  AUC 0.9126  FRR@FAR1%  69.7%  FRR@FAR5%  43.6%
+  L-REF     per-user AUC -0.0082 [-0.0285, +0.0112] p 0.430, better for 6/19
+  F2-REF    per-user AUC -0.0019 [-0.0162, +0.0127] p 0.803, better for 8/19
+  L-F2      per-user AUC -0.0063 [-0.0200, +0.0067] p 0.371, better for 8/19
+  Lcos-REF  per-user AUC -0.0395 [-0.0658, -0.0150] p 0.000, better for 3/19
+  L-REF     pooled pct EER -1.86 pts [-6.84, +3.50]
+  F2-REF    pooled pct EER -4.26 pts [-7.47, +1.11]
+  L-F2      pooled pct EER +2.41 pts [-1.46, +4.50]
+  L s101: per-user AUC 0.9565; vs REF -0.0092 [-0.0286, +0.0094] p 0.349, better for 6/19
+  L s102: per-user AUC 0.9600; vs REF -0.0056 [-0.0285, +0.0152] p 0.644, better for 7/19
+  L s103: per-user AUC 0.9558; vs REF -0.0099 [-0.0311, +0.0105] p 0.365, better for 6/19
+  worst 10% of targets: REF: user91 0.816, user16 0.892; F2: user115 0.869, user91 0.876; L: user115 0.780, user91 0.848; Lcos: user115 0.738, user91 0.840
+  known weak users: user91 REF 0.816 F2 0.876 L 0.848 Lcos 0.840; user70 REF 0.996 F2 0.915 L 0.972 Lcos 0.884; user1 REF 1.000 F2 0.995 L 0.997 Lcos 0.867; user16 REF 0.892 F2 0.963 L 0.974 Lcos 0.931
+  ties at AUC 1.0: REF 6, F2 4, L 6, Lcos 4, L_and_REF 5
+
+N = 60 (17.2 s)  (reported)
+  REF (S1, per-user fine-tuning)     per-user AUC 0.9780   pooled pct: EER 11.10%  AUC 0.9289  FRR@FAR1%  62.8%  FRR@FAR5%  31.1%
+  F2 (frozen base-80 + head)         per-user AUC 0.9688   pooled pct: EER  9.57%  AUC 0.9456  FRR@FAR1%  45.0%  FRR@FAR5%  21.7%
+  L (metric embedding + head)        per-user AUC 0.9668   pooled pct: EER 11.10%  AUC 0.9459  FRR@FAR1%  35.0%  FRR@FAR5%  17.2%
+  L, centroid cosine (reference)     per-user AUC 0.9337   pooled pct: EER 12.90%  AUC 0.9202  FRR@FAR1%  66.7%  FRR@FAR5%  36.7%
+  L-REF     per-user AUC -0.0112 [-0.0367, +0.0118] p 0.379, better for 5/19
+  F2-REF    per-user AUC -0.0092 [-0.0226, +0.0040] p 0.186, better for 4/19
+  L-F2      per-user AUC -0.0020 [-0.0192, +0.0137] p 0.851, better for 5/19
+  Lcos-REF  per-user AUC -0.0442 [-0.0749, -0.0168] p 0.000, better for 4/19
+
+WINDOW LEVEL (mean over targets): REF AUC 0.858 EER 20.6% TAR@FAR1% 28.4%; F2 AUC 0.870 EER 19.9% TAR@FAR1% 28.4%; L AUC 0.873 EER 19.2% TAR@FAR1% 29.7%; Lcos AUC 0.845 EER 22.2% TAR@FAR1% 26.4%
+SCORES AT EXACTLY 1.0 (unsplittable ties): REF 0.00%, F2 0.00%, L 0.00%, Lcos 0.00%
+
+OPERATING POINT (live loop: 20th percentile of each system's own threshold-source scores, 33 of 60, check every 6 windows)
+  REF (S1, per-user fine-tuning)     prompts/min 0.37  runs caught  93.8%  users never prompted  84.2%  | 17.2-s decisions: FAR 13.0%  FRR 9.4%
+  F2 (frozen base-80 + head)         prompts/min 0.48  runs caught  96.1%  users never prompted  73.7%  | 17.2-s decisions: FAR 10.8%  FRR 10.0%
+  L (metric embedding + head)        prompts/min 0.47  runs caught  95.9%  users never prompted  78.9%  | 17.2-s decisions: FAR 11.2%  FRR 12.8%
+  L, centroid cosine (reference)     prompts/min 0.45  runs caught  91.8%  users never prompted  77.2%  | 17.2-s decisions: FAR 16.2%  FRR 10.6%
