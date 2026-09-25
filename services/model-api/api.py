@@ -1,5 +1,8 @@
 import json
 import os
+import re
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 try:
@@ -156,19 +159,120 @@ model_error = None
 _scaler = None
 _dataset_negatives = None
 _user_model_cache = {}
+_user_model_locks = {}
+_user_model_locks_guard = threading.Lock()
+
+# Warm cache (TODO 5b). A cold load of a user's model can take longer than ca-service's 5 s
+# inference deadline; the caller then gives up, retries, and used to start a second load of the
+# same model. Now one load runs per model and later callers wait for it, the server loads the
+# models of recently active users in the background at boot, and a model is loaded again as soon
+# as training or a rollback replaces it.
+_LIVE_MODEL = re.compile(r"(^|[/\\])users[/\\]user-[^/\\]+[/\\](final_model|mouse_model)$")
+LAST_USED_FILE = os.path.join(ARTIFACTS_DIR, "users", ".last_used.json")
+WARM_DAYS = float(os.getenv("MODEL_WARM_DAYS", "14"))
+WARM_MAX = int(os.getenv("MODEL_WARM_MAX", "8"))
+_track_use = False            # set by the server only: scripts that import this module record nothing
+_last_used = {}
+_last_used_saved = 0.0
+
+
+def _model_lock(path):
+    with _user_model_locks_guard:
+        return _user_model_locks.setdefault(path, threading.Lock())
 
 
 def get_user_model(path):
-    if path not in _user_model_cache:
-        _user_model_cache[path] = load_model(path)
-        print(f"[cache] Loaded user model: {path}")
-    return _user_model_cache[path]
+    cached = _user_model_cache.get(path)
+    if cached is not None:
+        return cached
+    with _model_lock(path):
+        if path not in _user_model_cache:
+            _user_model_cache[path] = load_model(path)
+            print(f"[cache] Loaded user model: {path}")
+        return _user_model_cache[path]
 
 
 def invalidate_user_model_cache(path):
-    if path in _user_model_cache:
-        del _user_model_cache[path]
-        print(f"[cache] Evicted stale model: {path}")
+    with _model_lock(path):
+        if path in _user_model_cache:
+            del _user_model_cache[path]
+            print(f"[cache] Evicted stale model: {path}")
+
+
+def warm_user_model_async(path):
+    """Load a live user model in the background (server only)."""
+    if not _track_use or not _LIVE_MODEL.search(path):
+        return
+
+    def run():
+        try:
+            get_user_model(path)
+        except Exception as exc:                     # a failed warm-up must never break serving
+            print(f"[cache] Warm-up of {path} failed: {exc}")
+    threading.Thread(target=run, daemon=True).start()
+
+
+def note_model_use(path):
+    """Remember when a live user model last served a prediction, so the next boot can warm it.
+    Written at once for a model's first use since boot, then at most every 10 minutes."""
+    global _last_used_saved
+    if not _track_use or not _LIVE_MODEL.search(path):
+        return
+    now = time.time()
+    first = path not in _last_used
+    _last_used[path] = now
+    if not first and now - _last_used_saved < 600:
+        return
+    _last_used_saved = now
+    try:
+        used = {}
+        if os.path.exists(LAST_USED_FILE):
+            with open(LAST_USED_FILE, encoding="utf-8") as f:
+                used = json.load(f)
+        used.update({os.path.relpath(p, ARTIFACTS_DIR).replace(os.sep, "/"): t for p, t in _last_used.items()})
+        tmp = LAST_USED_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(used, f)
+        os.replace(tmp, LAST_USED_FILE)
+    except (OSError, ValueError) as exc:
+        print(f"[cache] Could not record model use: {exc}")
+
+
+def warm_recent_user_models():
+    """Server boot: record use from now on, and load in the background the live models used or
+    trained in the last WARM_DAYS days, newest first, at most WARM_MAX. A model's time is the later
+    of its last recorded prediction and its last training (the directory's modification time), so a
+    model just rebuilt for a user who has not checked since is warmed too."""
+    global _track_use
+    _track_use = True
+    cutoff = time.time() - WARM_DAYS * 86400
+    latest = {}
+    try:
+        root = os.path.join(ARTIFACTS_DIR, "users")
+        for user in os.listdir(root) if os.path.isdir(root) else []:
+            for leaf in ("final_model", "mouse_model"):
+                p = os.path.join(root, user, leaf)
+                if _LIVE_MODEL.search(p) and os.path.isdir(p):
+                    latest[p] = os.path.getmtime(p)
+        if os.path.exists(LAST_USED_FILE):
+            with open(LAST_USED_FILE, encoding="utf-8") as f:
+                for rel, t in json.load(f).items():
+                    p = os.path.join(ARTIFACTS_DIR, rel)
+                    if p in latest:
+                        latest[p] = max(latest[p], float(t))
+    except (OSError, ValueError) as exc:
+        print(f"[cache] Could not list recent models: {exc}")
+    paths = [p for p, t in sorted(latest.items(), key=lambda kv: kv[1], reverse=True) if t >= cutoff][:WARM_MAX]
+
+    def run():
+        for p in paths:
+            try:
+                get_user_model(p)
+            except Exception as exc:
+                print(f"[cache] Warm-up of {p} failed: {exc}")
+        print(f"[cache] Warm-up done: {len(paths)} user models")
+    print(f"[cache] Warming {len(paths)} recently used user models in the background")
+    threading.Thread(target=run, daemon=True).start()
 
 
 _scaler_cache = {}
@@ -878,6 +982,7 @@ def train_user_payload(payload):
             previous_model_available = True
         model_instance.save(path)
         invalidate_user_model_cache(path)
+        warm_user_model_async(path)
 
         eval_loss, eval_acc = model_instance.evaluate(X_val, y_val, verbose=0)
         # Calibrate the decision threshold on held-out validation data only.
@@ -1037,6 +1142,7 @@ def rollback_user_payload(payload):
         shutil.rmtree(path)
     shutil.copytree(prev_path, path)
     invalidate_user_model_cache(path)
+    warm_user_model_async(path)
     return {"ok": True, "userId": payload["userId"], "modelPath": path, "rolledBack": True}, 200
 
 
@@ -1064,6 +1170,7 @@ def predict_user_payload(payload):
     try:
         if user_model is None:
             user_model = get_user_model(path)
+            note_model_use(path)
         windows = scale_windows(to_window_array(payload["windows"]), req_scaler)
         predictions = user_model.predict(windows, verbose=0)
         genuine_scores = predictions[:, 1]
@@ -1194,6 +1301,7 @@ class ContinuumHandler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     init_model()
     preflight_negatives()
+    warm_recent_user_models()
     if Flask is not None:
         debug = os.getenv("MODEL_DEBUG", "1") == "1"
         print(f"Starting Flask model API on http://localhost:{PORT} (debug={debug})")

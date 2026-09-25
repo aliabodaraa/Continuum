@@ -150,9 +150,18 @@ disk, and one such cold load exceeded the 5 s deadline (validate_pipeline check 
 2026-09-23: model-api loaded the same model twice, i.e. ca-service had abandoned the first
 request). The caller then gets "model temporarily unavailable" for that one check.
 
-*Fix:* run model-api under gunicorn with more than one worker, and ideally a separate worker
-class or process for `/api/user/train` so training never competes with an inference slot; warm
-the model cache for recently active users at boot.
+> **Cold loads addressed 2026-09-25** (`api.py`). One load runs per model: a caller that times
+> out and retries now waits for the load already in progress instead of starting a second one
+> (three simultaneous first requests: one load, all 200 in about 2.2 s). At boot the server loads,
+> in the background, the live models used or trained in the last 14 days (`MODEL_WARM_DAYS`),
+> newest first, at most 8 (`MODEL_WARM_MAX`); use is recorded in
+> `artifacts/users/.last_used.json` by the server only. A model is loaded again as soon as
+> training or a rollback replaces it. Checked: `validate_pipeline.js` passed right after three
+> fresh restarts, and `e2e_mouse_a5.js` passed with warm-after-train visible in the log.
+
+*Still open:* run model-api under gunicorn with more than one worker, and ideally a separate
+worker class or process for `/api/user/train`, so training never competes with an inference slot.
+Mind the memory: each worker loads TensorFlow and its own model cache.
 
 ## 6. Future work already noted elsewhere
 
