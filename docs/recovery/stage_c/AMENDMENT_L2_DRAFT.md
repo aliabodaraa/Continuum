@@ -61,15 +61,17 @@ spent (P6), and REF's own network and negatives file were built from these users
 
 ## 4. Data handling fixed with the code
 
+- **Selection is Amendment L-1's.** L-1 fixes the enrolment, the genuine sessions, the impostor
+  sessions and eligibility. The unauthorised sessions of each target's test folders are its impostors,
+  each session one run of at most 150 windows.
 - **Sessions.** Every Bogazici session file is its own stream. Windows, decisions and the live loop
   never cross a session boundary.
-- **Impostor runs.** For each other user, their test sessions are taken in the order L-1 fixes and
-  cut at 150 windows in total. The 150 windows may span several sessions; each session's piece stays
-  a separate stream.
 - **Live loop.** It is reported per 1,000 genuine windows. It is also reported per minute, using the
-  seconds-per-window figure that L-1 measures from the data (SapiMouse's 0.269 s does not transfer).
-- **Scores** are stored at full float precision. REF's leave-one-sample-out scores are rounded to 6
-  decimals by `api.py`, as in production.
+  seconds-per-window figure L-1 measures from the training data (SapiMouse's 0.269 s does not
+  transfer).
+- **Memory.** Targets are built and scored one at a time.
+- **Precision.** Scores are stored at full float precision. REF's leave-one-sample-out scores are
+  rounded to 6 decimals by `api.py`, as in production.
 
 ## 5. Order of work
 
