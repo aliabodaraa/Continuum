@@ -19,7 +19,11 @@ Mapping to the deployed input (Amendment L-1):
     in each 1/60-s frame; press and release events are always kept. SapiMouse was recorded in a browser.
   * Windows = repr_arch_study.windows(raw_steps(...), 1.0, "A5"), the deployed A5 windows, built per
     session file: no window or decision spans two sessions.
-Selection (Amendment L-1): see load(). load() stays disabled until L-1 is frozen (LAYOUT_CONFIRMED).
+Selection (Amendment L-1): see target_index() and load().
+Inspection (bogazici_inspect.json, 25 Sep): 157,187 labelled test files (94,286 label 0, 62,901 label 1), every
+test file labelled once, file names unique. Each user's internal_tests and external_tests hold the SAME number of
+label-0 files: the user's genuine sessions are stored in both folders under different names. A session is
+therefore identified by its first timestamp, and sampling draws distinct sessions (_pick).
 """
 import argparse
 import collections
@@ -37,17 +41,18 @@ sys.path.insert(0, HERE)
 import l_common as LC  # noqa: E402
 
 ROOT_B = os.path.join(LC.ROOT, "data", "bogazici", "extracted", "boun-mouse-dynamics-dataset")
-LAYOUT_CONFIRMED = False          # set when Amendment L-1 is frozen
+LAYOUT_CONFIRMED = True           # Amendment L-1 frozen (25 Sep 2026), after the structure-only inspection
 TRAIN, INTERNAL, EXTERNAL = "training", "internal_tests", "external_tests"
 FRAME_MS = 1000.0 / 60.0
 MAX_GENUINE_SESSIONS, MAX_IMPOSTOR_SESSIONS, IMP_RUN = 200, 200, 150
 SAMPLE_SEED = 20260925
 PRESS, RELEASE = "Pressed", "Released"
 STATE = {"press": PRESS, "pressed": PRESS, "release": RELEASE, "released": RELEASE, "drag": "Drag", "move": "Move"}
-# The real files (checked on 5 sample sessions, 25 Sep): header client_timestamp,x,y,button,state,window;
-# state Move / Drag / Pressed / Released and button None / Left, the same vocabulary as SapiMouse
-# (Move, Drag, Pressed, Released; NoButton, Left, Right). Movement events arrive every 2-10 ms (median),
-# SapiMouse's every 17 ms, one 60-Hz frame: hence the frame coalescing below.
+# The real files (5 sample sessions, then every user's first training session in the inspection, 25 Sep):
+# header client_timestamp,x,y,button,state,window; states Move / Drag / Pressed / Released only and buttons
+# None / Left / Right, SapiMouse's vocabulary (NoButton for None). Movement events arrive every 8-15 ms
+# (median per user), SapiMouse's every 17 ms, one 60-Hz frame: hence the frame coalescing below (16-18 ms
+# after it).
 
 
 # ------------------------------------------------------------------ parsing ---
@@ -179,10 +184,27 @@ def enrolment(udir):
 
 
 def _sample(names, k, seed):
+    """Inspection only: k of the names, seeded."""
     if len(names) <= k:
         return list(names)
     idx = np.sort(np.random.default_rng(seed).choice(len(names), k, replace=False))
     return [names[i] for i in idx]
+
+
+def _pick(cands, k, seed, key, taken=()):
+    """Up to k DISTINCT sessions (Amendment L-1 section 4): the candidates are visited in a seeded random
+    order and a file whose session key (its first timestamp) is already taken is skipped as a copy of that
+    session. Every user's genuine sessions are stored twice, once per test folder, under different names."""
+    seen, out = set(taken), []
+    for i in np.random.default_rng(seed).permutation(len(cands)):
+        kk = key(cands[i])
+        if kk is None or kk in seen:
+            continue
+        seen.add(kk)
+        out.append(cands[i])
+        if len(out) == k:
+            break
+    return out
 
 
 def target_index(root, udir, labels):
@@ -190,27 +212,30 @@ def target_index(root, udir, labels):
     u = os.path.basename(udir)
     num = int(u[4:])
     E, end_ms, used = enrolment(udir)
-    tests = files_of(udir, INTERNAL) + files_of(udir, EXTERNAL)
+    tests = sorted(files_of(udir, INTERNAL) + files_of(udir, EXTERNAL), key=os.path.basename)
     lab = {p: labels.get(os.path.basename(p)) for p in tests}
     unlabelled = [os.path.basename(p) for p, v in lab.items() if v is None]
-    gen = []
-    for p in (p for p, v in lab.items() if v == 0):
-        t0 = first_time(p)
-        if t0 is not None and end_ms is not None and t0 * 1000.0 > end_ms:
-            gen.append((t0, os.path.basename(p), p))
-    gen.sort()
-    gen_all = [p for _, _, p in gen]
-    imp_all = sorted((p for p, v in lab.items() if v == 1), key=os.path.basename)
+    t0 = {p: first_time(p) for p, v in lab.items() if v == 0}
+    own_keys = {t for t in t0.values() if t is not None}          # every session of the target, any date
+    gen_all = sorted((p for p, t in t0.items() if t is not None and end_ms is not None and t * 1000.0 > end_ms),
+                     key=lambda p: (t0[p], os.path.basename(p)))
+    genuine = _pick(gen_all, MAX_GENUINE_SESSIONS, [SAMPLE_SEED, num, 0], t0.get)
+    genuine.sort(key=lambda p: (t0[p], os.path.basename(p)))
+    imp_all = [p for p, v in lab.items() if v == 1]
+    impostor = _pick(imp_all, MAX_IMPOSTOR_SESSIONS, [SAMPLE_SEED, num, 1], first_time, taken=own_keys)
+    impostor.sort(key=os.path.basename)
     return {"user": u, "enrol": E, "enrolEndMs": end_ms, "enrolSessions": used,
-            "genuine": _sample(gen_all, MAX_GENUINE_SESSIONS, [SAMPLE_SEED, num, 0]),
-            "impostor": _sample(imp_all, MAX_IMPOSTOR_SESSIONS, [SAMPLE_SEED, num, 1]),
-            "counts": {"label0": sum(v == 0 for v in lab.values()), "label1": len(imp_all),
-                       "label0AfterEnrolment": len(gen_all), "unlabelled": len(unlabelled)}}
+            "genuine": genuine, "impostor": impostor,
+            "counts": {"label0Files": len(t0), "label0Sessions": len(own_keys), "label1Files": len(imp_all),
+                       "genuineFilesAfterEnrolment": len(gen_all),
+                       "genuineSessionsAfterEnrolment": len({t0[p] for p in gen_all}),
+                       "genuinePicked": len(genuine), "impostorPicked": len(impostor),
+                       "unlabelled": len(unlabelled)}}
 
 
 def build(ix):
     """Windows of one target: genuine sessions in time order, impostor sessions cut at 150 windows;
-    byte-identical files are kept once."""
+    byte-identical files are kept once (a safety net behind _pick's first-timestamp rule)."""
     seen, genuine, impostor, names = set(), [], {}, {"genuine": [], "impostor": []}
     for p in ix["genuine"]:
         h = file_sha(p)

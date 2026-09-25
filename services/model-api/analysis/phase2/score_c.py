@@ -4,6 +4,9 @@
     python score_c.py --smoke           # SMOKE TEST ONLY: synthetic sessions, under L/stageC/smoke/
 
 Refuses to run unless Amendments L-1 and L-2 exist and every stage-C file matches AMENDMENT_L2.sha256.
+Restartable: each finished target is saved under stageC/partial/ with the frozen hashes, and a re-run of
+the same command (after a crash or a sleeping laptop) reuses those targets instead of scoring them again.
+Every target is seeded on its own, so where a restart falls changes no score.
 
 Per eligible Bogazici user (Amendment L-1 fixes eligibility, sessions and impostor sources):
   enrolment  the first 440 windows of the training sessions, in time order (8 samples of 55)
@@ -16,9 +19,11 @@ Systems (section 3):
   F2   the same network frozen (c_common: base-100 cohort, logistic head, leave-one-sample-out).
 """
 import argparse
+import json
 import os
 import shutil
 import sys
+import time
 
 import numpy as np
 
@@ -99,7 +104,20 @@ def main():
     mu, Cn = C.cohort_c(emb)
     targets = list(data["targets"])
     units = {"REF": {}, "F2": {}}
+    part_dir = None if a.smoke else os.path.join(folder, "partial")
+    if part_dir:
+        os.makedirs(part_dir, exist_ok=True)
     for t in targets:
+        pf = os.path.join(part_dir, f"{t}.json") if part_dir else None
+        if pf and os.path.exists(pf):
+            saved = json.load(open(pf))
+            if saved.get("hashes") != hashes or saved.get("target") != t:
+                raise SystemExit(f"{pf} was scored under other files; move it away and re-run")
+            for name in units:
+                units[name][t] = C.units_from_json({t: saved["systems"][name]})[t]
+            print(f"[L-C] {t}: reused from {pf} (scored before a restart)", flush=True)
+            continue
+        t_start = time.time()
         d = data["get"](t)
         enrol = np.asarray(d["enrol"][:LC.BUDGET])
         if len(enrol) != LC.BUDGET:
@@ -113,14 +131,20 @@ def main():
                     and all(np.isfinite(x).all() for r in u["runs"].values() for x in r)):
                 raise SystemExit(f"{name} {t}: non-finite scores")
             units[name][t] = u
+        if pf:
+            LC.write_json(pf, {"hashes": hashes, "target": t,
+                               "systems": {name: C.units_to_json({t: units[name][t]})[t] for name in units}})
         print(f"[L-C] {t}: {sum(len(s) for s in d['test'])} genuine windows in {len(d['test'])} sessions, "
-              f"{len(tests) - 1} impostor sessions", flush=True)
+              f"{len(tests) - 1} impostor sessions ({time.time() - t_start:.0f} s; "
+              f"{len(units['REF'])} of {len(targets)} targets done)", flush=True)
         del d
     out = {**hashes, "protocol": "L", "stage": "C", "smokeTest": a.smoke, "targets": targets,
            "excluded": data.get("excluded", {}), "manifest": data.get("manifest", {}),
            "deployed": {k: os.path.relpath(v, LC.ROOT).replace(os.sep, "/") for k, v in C.DEPLOYED.items()},
            "refPayload": C.REF_PAYLOAD, "systems": {k: C.units_to_json(v) for k, v in units.items()}}
     LC.write_json(path, out)
+    if part_dir:
+        shutil.rmtree(part_dir, ignore_errors=True)   # this run's own restart files; scores_C.json holds them all
     print(f"[L-C] wrote {path}")
 
 

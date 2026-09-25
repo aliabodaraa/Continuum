@@ -37,10 +37,11 @@ OUT_C = os.path.join(LC.OUT, "stageC")
 AMEND = {"L-1": os.path.join(LC.STUDY, "AMENDMENT_L1.md"), "L-2": os.path.join(LC.STUDY, "AMENDMENT_L2.md")}
 AMEND_SHA = os.path.join(LC.STUDY, "AMENDMENT_L2.sha256")
 Q2_MARGIN = -0.010
-# Seconds of movement per window step (stride 10) in Bogazici, measured from the data and fixed by
-# Amendment L-1 (SapiMouse: 10 x 0.0269 s). None until then: the live loop is then reported per
-# 1,000 windows only.
-SEC_PER_WINDOW_B = None
+# Seconds of movement per window step (stride 10) in Bogazici, fixed by Amendment L-1 from the structure-only
+# inspection (bogazici_inspect.json): the median over the 19 users of 10 x the mean step duration of their first
+# training session after 60-Hz coalescing (per user 0.250-0.352 s; SapiMouse: 10 x 0.0269 s). It only converts
+# the live loop to minutes.
+SEC_PER_WINDOW_B = 0.2897181464995065
 REF_PAYLOAD = {"modality": "mouse", "thresholdScheme": "leave-one-sample-out", "sampleWindows": LC.SAMPLE,
                "overlapGap": 5, "epochs": 15, "batchSize": 32}
 
