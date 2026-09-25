@@ -37,3 +37,6 @@ services/model-api/keystroke_user_sweep.py -text
 services/model-api/aalto_to_windows.py -text
 services/model-api/preprocessing.py -text
 artifacts/phase3/*.json -text
+# Stage C (protocol L) will hash these as well.
+services/model-api/api.py -text
+services/model-api/loso.py -text
