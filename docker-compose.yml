@@ -115,6 +115,10 @@ services:
       #   eager (default) — popup enrolls everything missing at load
       #   lazy            — passkey only; each modality enrolls when its toggle is enabled
       ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
+      # User-study logging (lib/studyLog.js, docs/recovery/user_study/LOGGING_SPEC.md): off unless 1.
+      # When on, requests that carry a study context are logged in the study_* tables, and model
+      # folders are hashed through the read-only /model-store mount below.
+      STUDY_LOGGING: ${STUDY_LOGGING:-0}
     # The ONLY service attached to both `internal` and `model` — it is the sole path in.
     networks: [internal, model]
     healthcheck:
@@ -126,6 +130,8 @@ services:
     volumes:
       - ./services/ca-service:/app
       - ca_node_modules:/app/node_modules
+      # model-api's per-user model store, read-only, for the study log's model hashes only.
+      - ./artifacts/users:/model-store:ro
     command: npm start
 
   gateway:

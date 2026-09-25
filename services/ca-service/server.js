@@ -11,6 +11,7 @@ const mouseActions = require("./lib/mouseActions");
 const lock = require("./lib/lock");
 const decisionState = require("./lib/decisionState");
 const trainingQueue = require("./lib/trainingQueue");
+const studyLog = require("./lib/studyLog");
 const { ModelUnavailableError } = require("./lib/modelClient");
 
 const PORT = Number(process.env.PORT || 4100);
@@ -289,6 +290,7 @@ app.get("/v1/users/:userId/onboarding", requireIdentity, (req, res) => {
 app.post("/v1/keystroke/enroll", requireIdentity, async (req, res) => {
   try {
     const userId = uid(req);
+    studyLog.register(userId, studyLog.parseContext(req.body.study));   // so its training is logged
     const { textContent, keystrokeTimings, keystrokeEvents, sourcePath } = req.body;
     if (!textContent || String(textContent).trim().length < 120) {
       return res.status(400).json({ error: "Enrollment sample must be at least 120 characters" });
@@ -324,11 +326,13 @@ app.post("/v1/keystroke/enroll", requireIdentity, async (req, res) => {
 app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
   try {
     const userId = uid(req);
-    const { textContent, keystrokeTimings, keystrokeEvents, hasPasskey } = req.body;
-    if (!textContent || String(textContent).trim().length < ks.CHECK_MIN_TEXT_CHARS) {
+    const { textContent, textLength, keystrokeTimings, keystrokeEvents, hasPasskey } = req.body;
+    // A client may send the trimmed text's LENGTH instead of the text (the study extension does).
+    const typedLength = textContent != null ? String(textContent).trim().length : Number(textLength);
+    if (!Number.isFinite(typedLength) || typedLength < ks.CHECK_MIN_TEXT_CHARS) {
       return res.json({ ok: true, checked: false, message: "More typed text is required before rhythm verification" });
     }
-    const checkQuality = ks.typingQuality(textContent, keystrokeEvents);
+    const checkQuality = ks.typingQuality(textContent, keystrokeEvents, typedLength);
     if (keystrokeTimings) {
       const trueKeys = Number(keystrokeTimings.keyCount);
       const truePasted = Number(keystrokeTimings.pastedLength || 0);
@@ -377,10 +381,20 @@ app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
     if (passkeyTriggered) { decisionState.resetKeystrokeHistory(userId); lock.setLocked(userId); }
 
     ks.logAuthDecision(userId, db, { source: "check", evaluation, passkeyTriggered });
+    // User study (lib/studyLog.js; a no-op outside it): the packet's full-precision scores and keys.
+    const studyCtx = studyLog.parseContext(req.body.study);
+    const studyDecisionId = studyCtx ? studyLog.recordCheck(userId, studyCtx, {
+      channel: "keystroke", ruleVersion: ks.RULE_VERSION, threshold: ks.WINDOW_DECISION_THRESHOLD,
+      scores: warmupScores, keys: evaluation.recentWindowKeys,
+      lowWindows: warmupLows,
+      verdict: passkeyTriggered ? "challenge" : isWarmup ? "warmup" : effectiveSuspicious ? "suspicious" : "ok",
+      promptRequired: passkeyTriggered,
+    }) : null;
 
     res.json({
       ok: !passkeyTriggered, checked: true, warmup: isWarmup,
       requiresPasskeyChallenge: passkeyTriggered,
+      ...(studyDecisionId ? { studyDecisionId } : {}),
       // How many windows the model ACTUALLY scored this check. 0 = the warmup
       // "placeholder" verdict (no scorable window yet) — used by the SDK to tell a
       // real suspicious verdict apart from the not-enough-data placeholder, so
@@ -564,6 +578,16 @@ app.post("/v1/keystroke/retrain", requireIdentity, async (req, res) => {
   } catch (err) { return sendError(res, "retrain", err); }
 });
 
+// ---- user study: passkey prompt events as the study client saw them (lib/studyLog.js) ----
+app.post("/v1/study/prompt", requireIdentity, (req, res) => {
+  const ctx = studyLog.parseContext(req.body.study);
+  if (!ctx) return res.status(400).json({ ok: false, error: "no valid study context (or STUDY_LOGGING is off)" });
+  const stored = studyLog.recordPrompt(uid(req), ctx, {
+    channel: req.body.channel, decisionId: req.body.decisionId, event: req.body.event,
+  });
+  res.status(stored ? 200 : 400).json({ ok: stored });
+});
+
 // ---- login-triggered background retrain when new impostors appeared ----
 app.post("/v1/keystroke/maybe-retrain-impostors", requireIdentity, (req, res) => {
   ks.maybeRetrainForNewImpostors(uid(req), db);
@@ -657,12 +681,15 @@ app.post("/v1/mouse/actions/reset", requireIdentity, (req, res) => {
 });
 
 app.post("/v1/mouse/enroll", requireIdentity, async (req, res) => {
-  try { const r = await mouse.enrollMouse(uid(req), req.body.windows); res.status(r.status).json(r.body); }
+  try {
+    studyLog.register(uid(req), studyLog.parseContext(req.body.study));   // so its training is logged
+    const r = await mouse.enrollMouse(uid(req), req.body.windows); res.status(r.status).json(r.body);
+  }
   catch (err) { return sendError(res, "mouse-enroll", err); }
 });
 app.post("/v1/mouse/check", requireIdentity, async (req, res) => {
   try {
-    const r = await mouse.checkMouse(uid(req), req.body.windows);
+    const r = await mouse.checkMouse(uid(req), req.body.windows, req.body.study);
     if (r.body && r.body.checked) {
       r.body.riskToken = signRisk(uid(req), riskLevel(r.body.warmup, r.body.isSuspicious), "mouse");
     }

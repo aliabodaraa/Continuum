@@ -4,6 +4,7 @@
 // windows with a Lu-style packet vote. The per-SESSION strike debounce and the
 // passkey step-up stay in the demo (they are session/policy concerns).
 const db = require("../db");
+const studyLog = require("./studyLog");
 
 // Model storage (base model, scaler, negatives, per-user save paths) is OWNED
 // by the model-api: we send `modality: "mouse"` and it derives everything.
@@ -258,6 +259,12 @@ async function retrainMouse(userId, extra = {}) {
   ).run(userId, result.modelPath, positiveWindows.length, result.balancedAccuracy ?? null,
         threshold, MOUSE_FEATURE_VERSION, JSON.stringify(result.enrolScorePercentiles || {}),
         JSON.stringify(loso), MOUSE_DECISION_VERSION);
+  // User study: all 440 leave-one-sample-out scores, the source of the threshold.
+  studyLog.recordProfile(userId, {
+    channel: "mouse", ruleVersion: MOUSE_DECISION_VERSION, threshold,
+    thresholdSource: `loso-p${THRESHOLD_PERCENTILE}`, modelPath: result.modelPath,
+    windowCount: positiveWindows.length, thresholdScores: result.losoScores,
+  });
 
   return {
     status: 200,
@@ -290,7 +297,7 @@ function ensureModelOwed(userId, totalWindows, current) {
 
 // Live check: score the recent windows and packet-vote. Returns a SINGLE-packet
 // verdict; the demo applies the consecutive-strike debounce + step-up.
-async function checkMouse(userId, windows) {
+async function checkMouse(userId, windows, study = null) {
   if (staleClientWindows(windows)) {
     return { status: 400, body: { ok: false, error: "This client sends the retired 7-feature mouse windows. Reload the page or update the extension." } };
   }
@@ -359,8 +366,15 @@ async function checkMouse(userId, windows) {
       `INSERT INTO mouse_decisions (user_id, window_count, threshold, low_windows, vote_k, vote_n, warmup, suspicious, scores)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(userId, scores.length, userThreshold, lows, VOTE_K, VOTE_N, isWarmup ? 1 : 0, isSuspicious ? 1 : 0,
-          JSON.stringify(scores.map((v) => Math.round(v * 1e4) / 1e4)));
+          JSON.stringify(scores));   // full precision: EER/AUC are computed from these offline
   } catch (e) { /* logging must never block a verdict */ }
+  // User study (lib/studyLog.js; a no-op outside it). The client numbers its windows per session.
+  const studyCtx = studyLog.parseContext(study);
+  const studyDecisionId = studyCtx ? studyLog.recordCheck(userId, studyCtx, {
+    channel: "mouse", ruleVersion: MOUSE_DECISION_VERSION, threshold: userThreshold,
+    scores: buffer, keys: Array.isArray(study.windowKeys) ? study.windowKeys.slice(-MOUSE_SUSTAIN_WINDOW).slice(-buffer.length) : null,
+    lowWindows: lows, verdict: isWarmup ? "warmup" : isSuspicious ? "suspicious" : "ok", promptRequired: false,
+  }) : null;
 
   return {
     status: 200,
@@ -372,6 +386,7 @@ async function checkMouse(userId, windows) {
       suspiciousStreak,
       windowCount: scores.length,
       recentWindowScores: packet,
+      ...(studyDecisionId ? { studyDecisionId } : {}),
       meanScore: packet.length ? packet.reduce((a, b) => a + b, 0) / packet.length : 0,
       lowWindows: lows,
       // Reported so the SDK panel can show the same reading the extension popup does: how

@@ -89,6 +89,10 @@ services:
       # Signs behavioral risk verdicts; the app's CONTINUUM_SECRET must match.
       # REQUIRED — no shared fallback. Generate: openssl rand -hex 32
       CA_SIGNING_SECRET: ${CA_SIGNING_SECRET:?Set CA_SIGNING_SECRET in .env (openssl rand -hex 32)}
+      # User-study logging (lib/studyLog.js, docs/recovery/user_study/LOGGING_SPEC.md): off unless 1.
+      # When on, requests that carry a study context are logged in the study_* tables, and model
+      # folders are hashed through the read-only /model-store mount below.
+      STUDY_LOGGING: ${STUDY_LOGGING:-0}
     expose:
       - "4100"
     # The only service on both networks — the sole path to the model.
@@ -101,6 +105,7 @@ services:
       start_period: 10s
     volumes:
       - continuum_ca_db:/app/data   # behavioral data (persistent)
+      - continuum_user_models:/model-store:ro   # model hashes for the study log only
 
   web:
     build:

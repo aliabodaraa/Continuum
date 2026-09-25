@@ -197,6 +197,12 @@ const MIN_HUMAN_DWELL_SECONDS = 0.01;
  * model can be fine-tuned on and applied to live typing.
  */
 function eventSteps(events) {
+  return eventStepsTimed(events).map((s) => s.row);
+}
+
+// eventSteps with each step's client timestamps (t0 = first keydown, t1 = second keydown), which
+// identify a window across overlapping checks for the user-study log. The rows are eventSteps'.
+function eventStepsTimed(events) {
   const normalized = normalizeEvents(events);
   const lastDownByFieldAndKey = new Map();
   const keyUps = new Map();
@@ -255,6 +261,8 @@ function eventSteps(events) {
         ud,
       ],
       dd,
+      t0: first.timestampRelative,
+      t1: second.timestampRelative,
     });
   }
 
@@ -271,9 +279,24 @@ function eventSteps(events) {
   const steps = [];
   for (let i = 0; i < raw.length; i += 1) {
     if (raw[i].dd > PAUSE_DD_SECONDS) continue; // composition pause — not rhythm
-    steps.push(raw[i].row);
+    steps.push({ row: raw[i].row, t0: raw[i].t0, t1: raw[i].t1 });
   }
   return steps;
+}
+
+// eventsToFeatureWindows plus one key per window: "<first step t0>-<last step t1>" in client
+// milliseconds. Two windows with the same key hold the same 50 steps.
+function featureWindowsWithKeys(events) {
+  const steps = eventStepsTimed(events);
+  if (steps.length < WINDOW_SIZE) return { windows: [], keys: [] };
+  const windows = [];
+  const keys = [];
+  for (let start = 0; start <= steps.length - WINDOW_SIZE; start += WINDOW_STRIDE) {
+    const w = steps.slice(start, start + WINDOW_SIZE);
+    windows.push(w.map((s) => s.row));
+    keys.push(`${w[0].t0}-${w[WINDOW_SIZE - 1].t1}`);
+  }
+  return { windows, keys };
 }
 
 function eventsToFeatureWindows(events) {
@@ -371,9 +394,13 @@ function checkRhythmConsistency(candidateEvents, historicalEventsList) {
   };
 }
 
-function typingQuality(textContent, events) {
+// `knownLength` lets a client send the trimmed text LENGTH instead of the text (the user-study
+// extension does): the length is all this uses.
+function typingQuality(textContent, events, knownLength = null) {
   const normalized = normalizeEvents(events);
-  const textLength = String(textContent || "").trim().length;
+  const textLength = textContent != null || !Number.isFinite(Number(knownLength))
+    ? String(textContent || "").trim().length
+    : Math.max(0, Math.floor(Number(knownLength)));
   const keydownCount = normalized.filter((evt) => evt.eventType === "keydown").length;
   const pasteEvents = normalized.filter((evt) => evt.eventType === "paste");
   const pastedLength = pasteEvents.reduce((total, evt) => total + Number(evt.pastedLength || 0), 0);
@@ -544,6 +571,11 @@ function isServedProfile(profile) {
 // Authenticated + deadline-bounded. See lib/modelClient.js for why the local copy of this
 // function (a bare, credential-less, unbounded fetch) had to go.
 const { postModelApi } = require("./modelClient");
+const studyLog = require("./studyLog");
+// The live keystroke decision rule, as the user-study log records it: fixed 0.50 window boundary,
+// packet vote over the last RECENT_WINDOW_COUNT windows.
+const RULE_VERSION =
+  `lu-050-${Math.ceil(RECENT_WINDOW_COUNT * PACKET_VOTE_FRACTION)}of${RECENT_WINDOW_COUNT}`;
 
 function saveProfile(userId, db, profile) {
   db.prepare(
@@ -699,6 +731,13 @@ async function trainUserTypingProfile(userId, db) {
   };
 
   saveProfile(userId, db, profile);
+  // User study: the live cutoff is the fixed 0.50, so the threshold-source scores are the per-user
+  // validation (held-out genuine) scores model-api computed for this model.
+  studyLog.recordProfile(userId, {
+    channel: "keystroke", ruleVersion: RULE_VERSION, threshold: WINDOW_DECISION_THRESHOLD,
+    thresholdSource: "fixed-0.50; scores = validation genuine", modelPath: result.modelPath,
+    windowCount: result.positiveWindowCount, thresholdScores: result.validationGenuineScores,
+  });
   return profile;
 }
 
@@ -770,12 +809,14 @@ async function evaluateKeystrokes({ events, timings, userId, db }) {
     ...analyzeKeystrokeTiming(normalized),
     ...(timings || {}),
   };
-  const allWindows = eventsToFeatureWindows(normalized);
+  // The same windows as eventsToFeatureWindows, each with its key for the user-study log.
+  const { windows: allWindows, keys: allKeys } = featureWindowsWithKeys(normalized);
   // We score the last SCORED_WINDOW_COUNT windows in one prediction: the last
   // RECENT_WINDOW_COUNT of them (the packet) drive the live Lu vote, while the
   // mean over the last ROLLING_WINDOW_COUNT is the "rolling mean" used to decide
   // when a stretch of typing is clean enough to offer as an adaptive-learning sample.
   const windows = allWindows.slice(-SCORED_WINDOW_COUNT);
+  const windowKeys = allKeys.slice(-SCORED_WINDOW_COUNT);
   const profile = getUserTypingProfile(userId, db);
 
   if (
@@ -888,6 +929,7 @@ async function evaluateKeystrokes({ events, timings, userId, db }) {
       profile,
       windowCount: allWindows.length,
       recentWindowScores: perWindowScores,
+      recentWindowKeys: windowKeys.slice(-perWindowScores.length),
       cnnLstm: result,
     };
   } catch (err) {
@@ -987,4 +1029,6 @@ module.exports = {
   normalizeEvents,
   resetUserTypingProfile,
   trainUserTypingProfile,
+  featureWindowsWithKeys,
+  RULE_VERSION,
 };

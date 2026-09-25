@@ -207,4 +207,74 @@ db.exec(`CREATE TABLE IF NOT EXISTS mouse_decisions (
 )`);
 db.exec("CREATE INDEX IF NOT EXISTS idx_mouse_decisions_user ON mouse_decisions(user_id, id)");
 
+// USER STUDY LOGGING (docs/recovery/user_study/LOGGING_SPEC.md; lib/studyLog.js). Written only when
+// STUDY_LOGGING=1 and the request carries a study context, so production databases stay empty here.
+// Scores are stored at full precision: EER and AUC are computed offline from them.
+db.exec(`
+  -- Which Continuum user is which study participant (pseudonym only; the key to real names is offline).
+  CREATE TABLE IF NOT EXISTS study_participants (
+    user_id INTEGER PRIMARY KEY,
+    pseudonym TEXT NOT NULL UNIQUE,
+    first_seen DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  -- One row per (re)training: the model and every score its threshold source produced.
+  CREATE TABLE IF NOT EXISTS study_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    channel TEXT NOT NULL,                 -- keystroke | mouse
+    rule_version TEXT NOT NULL,
+    threshold REAL,
+    threshold_source TEXT,
+    model_path TEXT,
+    model_sha256 TEXT,
+    window_count INTEGER,
+    threshold_scores TEXT,                 -- JSON array, full precision
+    trained_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  -- One row per scored check (decision), and the prompt it led to.
+  CREATE TABLE IF NOT EXISTS study_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    session_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    condition TEXT NOT NULL,
+    client_ts REAL,
+    rule_version TEXT,
+    threshold REAL,
+    window_count INTEGER,
+    low_windows INTEGER,
+    verdict TEXT,                          -- warmup | ok | suspicious | challenge
+    prompt_required INTEGER DEFAULT 0,
+    checked_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  -- One row per window scored by a check. Checks overlap, so a window is scored again by later
+  -- checks; window_key identifies it (mouse: the client's counter; keystroke: its first and last
+  -- step's client timestamps), and the export keeps each window once.
+  CREATE TABLE IF NOT EXISTS study_windows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    decision_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    session_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    condition TEXT NOT NULL,
+    window_key TEXT NOT NULL,
+    score REAL NOT NULL,
+    day_since_enrolment INTEGER
+  );
+  -- Passkey prompts as the client saw them: shown, then passed / failed / dismissed.
+  CREATE TABLE IF NOT EXISTS study_prompts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    session_id TEXT NOT NULL,
+    channel TEXT,
+    decision_id INTEGER,
+    event TEXT NOT NULL,                   -- shown | passed | failed | dismissed
+    client_ts REAL,
+    logged_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_study_windows_user ON study_windows(user_id, id);
+  CREATE INDEX IF NOT EXISTS idx_study_decisions_user ON study_decisions(user_id, id);
+  CREATE INDEX IF NOT EXISTS idx_study_profiles_user ON study_profiles(user_id, id);
+`);
+
 module.exports = db;
