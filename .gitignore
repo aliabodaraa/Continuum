@@ -128,3 +128,6 @@ pdfs/
 *.bak
 # Protocol KS smoke-test outputs.
 artifacts/phase3/smoke/
+# Protocol L stage C: per-user models and smoke-test outputs (results are committed).
+artifacts/phase2/L/stageC/models/
+artifacts/phase2/L/stageC/smoke/
