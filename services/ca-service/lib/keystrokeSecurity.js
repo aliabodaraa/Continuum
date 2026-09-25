@@ -530,7 +530,15 @@ function negativeSampleRows(userId, db) {
 // change what a retrain would learn from.
 function needsNegativesRefresh(userId, db) {
   const profile = getUserTypingProfile(userId, db);
-  return !!profile && profile.negatives !== NEGATIVES_SOURCE;
+  return isServedProfile(profile) && profile.negatives !== NEGATIVES_SOURCE;
+}
+
+// A profile the live check actually scores with. Rows from an older feature scheme are kept
+// but treated as untrained; retraining them is the enrolment flow's job, not a refresh's (two
+// such rows have samples that give no window under the current scheme, so a refresh would be
+// queued on every visit and never save anything).
+function isServedProfile(profile) {
+  return !!profile && profile.type === "per-user-cnn-lstm" && Number(profile.version) >= PROFILE_VERSION;
 }
 
 // Authenticated + deadline-bounded. See lib/modelClient.js for why the local copy of this
@@ -969,6 +977,7 @@ module.exports = {
   eventsToFeatureWindows,
   logAuthDecision,
   needsNegativesRefresh,
+  isServedProfile,
   typingQuality,
   getUserTypingBaseline,
   getUserTypingProfile,

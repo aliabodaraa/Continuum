@@ -40,3 +40,5 @@ artifacts/phase3/*.json -text
 # Stage C (protocol L) will hash these as well.
 services/model-api/api.py -text
 services/model-api/loso.py -text
+# Amendment L-2 hashes the deployed mouse scaler and hold-out list.
+artifacts/mouse-fcn-a5/*.json -text

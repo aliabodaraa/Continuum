@@ -163,6 +163,14 @@ request). The caller then gets "model temporarily unavailable" for that one chec
 worker class or process for `/api/user/train`, so training never competes with an inference slot.
 Mind the memory: each worker loads TensorFlow and its own model cache.
 
+**Memory grows with every training (found 2026-09-25).** Retraining the 84 keystroke profiles
+for T3.3 in one model-api process took it from about 1 GB to about 11 GB resident, roughly
+125 MB kept per training, and the PC ran short of memory. Experiment KS showed the same growth
+in a plain training loop despite `clear_session()` per target (5.5 GB during one arm). A restart
+frees it. Until the cause is found, restart model-api after a bulk retrain, and run training in
+a worker process that exits (or is recycled) after each job. The gunicorn item above would do
+this with `max_requests` on the training worker.
+
 ## 6. Future work already noted elsewhere
 
 - **Mouse FAR ceiling (~24%)** — a model/biometric limit (bimodal per-user EER), confirmed by

@@ -7,7 +7,7 @@
  *
  *   2. the alias rule does not exclude legitimate impostors
  *   4. no user's own samples reach their own negative pool, by alias OR by duplicate text
- *  4b. every profile was trained on the Aalto negatives only (T3.3)
+ *  4b. every served profile was trained on the Aalto negatives only (T3.3)
  *   5. the calibrated threshold is not, and cannot become, the live cutoff
  *
  * Run inside the ca-service container:
@@ -119,14 +119,17 @@ check("no profiled user has a same-person alias in their negative pool", contami
 
 // Since T3.3 no app user's samples are sent as negatives at all: every profile must have been
 // trained on the Aalto file alone (NEGATIVES_SOURCE), which makes check 4 hold by construction.
-console.log(`\nCHECK 4b — every keystroke profile trained on ${ks.NEGATIVES_SOURCE} negatives only`);
-const stale = db.prepare("SELECT user_id u, model_json j FROM user_typing_profiles").all()
-  .map((r) => ({ u: r.u, p: JSON.parse(r.j) }))
-  .filter(({ p }) => p.negatives !== ks.NEGATIVES_SOURCE || p.negativeSource !== "dataset");
+// Only served profiles count: a row from an older feature scheme is never scored (ks.isServedProfile).
+console.log(`\nCHECK 4b — every served keystroke profile trained on ${ks.NEGATIVES_SOURCE} negatives only`);
+const allProfiles = db.prepare("SELECT user_id u, model_json j FROM user_typing_profiles").all()
+  .map((r) => ({ u: r.u, p: JSON.parse(r.j) }));
+const served = allProfiles.filter(({ p }) => ks.isServedProfile(p));
+console.log(`    ${served.length} served, ${allProfiles.length - served.length} older-scheme rows not scored (skipped)`);
+const stale = served.filter(({ p }) => p.negatives !== ks.NEGATIVES_SOURCE || p.negativeSource !== "dataset");
 for (const { u, p } of stale) {
   console.log(`      user ${u}: negatives=${p.negatives || "-"} source=${p.negativeSource || "-"}`);
 }
-check(`all ${profiled.length} profiles use ${ks.NEGATIVES_SOURCE}, dataset source only`, stale.length === 0,
+check(`all ${served.length} served profiles use ${ks.NEGATIVES_SOURCE}, dataset source only`, stale.length === 0,
   `${stale.length} stale`);
 
 // ---------------------------------------------------------------- check 5
