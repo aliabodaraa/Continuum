@@ -1,0 +1,538 @@
+2026-09-25 18:26:48.614744: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-09-25 18:26:48.652856: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+Loaded 2000 impostor windows from /app/data/mouse_only/Mouse_A5_W50_base.h5
+Feature scaler loaded from /app/artifacts/mouse-fcn-a5/scaler.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user1/mouse_model
+[L-C] user1: 42790 genuine windows in 200 sessions, 184 impostor sessions (191 s; 1 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user2/mouse_model
+[L-C] user2: 15036 genuine windows in 81 sessions, 183 impostor sessions (180 s; 2 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user3/mouse_model
+[L-C] user3: 53292 genuine windows in 200 sessions, 196 impostor sessions (182 s; 3 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user4/mouse_model
+[L-C] user4: 60035 genuine windows in 200 sessions, 186 impostor sessions (209 s; 4 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user5/mouse_model
+[L-C] user5: 30152 genuine windows in 194 sessions, 196 impostor sessions (184 s; 5 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user6/mouse_model
+[L-C] user6: 61834 genuine windows in 200 sessions, 190 impostor sessions (210 s; 6 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user7/mouse_model
+[L-C] user7: 42911 genuine windows in 200 sessions, 194 impostor sessions (209 s; 7 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user8/mouse_model
+[L-C] user8: 47290 genuine windows in 200 sessions, 188 impostor sessions (212 s; 8 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user9/mouse_model
+[L-C] user9: 31539 genuine windows in 200 sessions, 194 impostor sessions (207 s; 9 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user10/mouse_model
+[L-C] user10: 57976 genuine windows in 200 sessions, 181 impostor sessions (219 s; 10 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user11/mouse_model
+[L-C] user11: 40683 genuine windows in 200 sessions, 188 impostor sessions (207 s; 11 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user12/mouse_model
+[L-C] user12: 52915 genuine windows in 200 sessions, 190 impostor sessions (214 s; 12 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user13/mouse_model
+[L-C] user13: 55589 genuine windows in 200 sessions, 195 impostor sessions (200 s; 13 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user14/mouse_model
+[L-C] user14: 47640 genuine windows in 200 sessions, 187 impostor sessions (217 s; 14 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user15/mouse_model
+[L-C] user15: 24839 genuine windows in 113 sessions, 191 impostor sessions (194 s; 15 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user16/mouse_model
+[L-C] user16: 54974 genuine windows in 200 sessions, 189 impostor sessions (195 s; 16 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user17/mouse_model
+[L-C] user17: 63997 genuine windows in 199 sessions, 191 impostor sessions (226 s; 17 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user18/mouse_model
+[L-C] user18: 23838 genuine windows in 129 sessions, 185 impostor sessions (194 s; 18 of 19 targets done)
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold0
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold1
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold2
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold3
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold4
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold5
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold6
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold7
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model_loso/fold7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model
+[cache] Evicted stale model: /app/artifacts/phase2/L/stageC/models/user19/mouse_model
+[L-C] user19: 39810 genuine windows in 200 sessions, 195 impostor sessions (218 s; 19 of 19 targets done)
+[L-C] wrote /app/artifacts/phase2/L/stageC/scores_C.json

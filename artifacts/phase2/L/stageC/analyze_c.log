@@ -1,0 +1,12 @@
+PROTOCOL L, STAGE C (Bogazici)
+19 targets; Q1 not tested (L stopped at stage D)
+
+Q2  F2 - REF, per-user AUC of 33-window decisions: +0.0203 [+0.0039, +0.0376], better for 12/19
+    non-inferior (lower bound > -0.01): YES; SE 0.0087, MDE80 0.0244
+KEY SECONDARY  pooled pct EER F2 - REF: -7.76 pts [-10.93, -3.19] -> F2 better
+
+N = 15 windows: REF per-user AUC 0.6931, pooled EER 41.0%, FRR@FAR1% 95.8%, FRR@FAR5% 84.0%; F2 per-user AUC 0.7111, pooled EER 35.2%, FRR@FAR1% 95.8%, FRR@FAR5% 82.0% | F2 - REF +0.0180 [+0.0041, +0.0324], better for 11/19
+N = 33 windows: REF per-user AUC 0.7223, pooled EER 40.7%, FRR@FAR1% 93.4%, FRR@FAR5% 81.7%; F2 per-user AUC 0.7426, pooled EER 32.9%, FRR@FAR1% 94.0%, FRR@FAR5% 78.2% | F2 - REF +0.0203 [+0.0039, +0.0376], better for 12/19
+N = 60 windows: REF per-user AUC 0.7398, pooled EER 40.9%, FRR@FAR1% 91.8%, FRR@FAR5% 79.7%; F2 per-user AUC 0.7636, pooled EER 31.9%, FRR@FAR1% 92.4%, FRR@FAR5% 76.1% | F2 - REF +0.0238 [+0.0048, +0.0446], better for 11/19
+REF: window AUC 0.640 EER 39.7% | live loop 4.05 prompts per 1,000 windows (0.84/min), runs caught 53.3%, never prompted 4/19 | 60-window decisions FAR 57.0% FRR 24.3%
+F2: window AUC 0.654 EER 38.8% | live loop 4.74 prompts per 1,000 windows (0.98/min), runs caught 72.4%, never prompted 0/19 | 60-window decisions FAR 40.0% FRR 27.8%
