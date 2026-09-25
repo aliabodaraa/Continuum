@@ -143,7 +143,10 @@ option — a rise in these is either an outage or someone arranging one.
   frequency vs. compute/training-volume tradeoff), not a literature-derived value.
 - **Model:** 1D-CNN + 2×GRU base (`artifacts/ws50-gru`), **fine-tuned per user**
   (transfer learning) with the user's enrollment typing as positives and impostor
-  windows (other users + dataset negatives) as negatives.
+  windows as negatives: max(2 × positives, 60) windows of 200 Aalto typists
+  (`data/aalto_neg_A200.h5`, KS's A200 arm, adopted 2026-09-25; before that, other app
+  users' samples, in practice the 40 seeded KeyRecs accounts). Validation negatives are
+  split by typist.
 - **Live decision (Lu et al. packet vote, lengthened):** score the most recent
   `RECENT_WINDOW_COUNT=20` windows (Lu et al. use 6; 20 was adopted on 2026-09-23 on the
   99-user paired sweep: false lock −8.84 pts, capture +0.40 pts); a window is "low" if its

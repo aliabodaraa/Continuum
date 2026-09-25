@@ -18,7 +18,8 @@ They run the **bundle** and embed the SDK + middleware in **their own** app.
 
 ## Base models are baked in
 The `model-api` image bakes the pretrained base models (`ws50-gru` keystroke,
-`mouse-fcn-a5` mouse) and the mouse negative pool (`Mouse_A5_W50_base.h5`), so a fresh install works out of
+`mouse-fcn-a5` mouse) and both negative pools (`Mouse_A5_W50_base.h5` for mouse, `aalto_neg_A200.h5` for
+keystroke; build the latter with `services/model-api/build_aalto_negatives.py`), so a fresh install works out of
 the box. Per-user models are trained at enrollment and live on a **named volume**
 (`continuum_user_models`), never in the image.
 

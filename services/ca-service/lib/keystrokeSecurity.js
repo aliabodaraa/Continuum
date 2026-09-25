@@ -61,6 +61,16 @@ const WINDOW_DECISION_THRESHOLD = 0.50;
 // evaluation by never leaving "warmup". Past this bound we stop treating a
 // window-less session as warmup and flag it so the passkey challenge can fire.
 const UNVERIFIABLE_KEY_COUNT = 120;
+// Negatives for per-user training (T3.3): real typists from the Aalto 136M-keystroke study,
+// the 200 of experiment KS's A200 arm, instead of other app users' samples. Until then the
+// live negatives were the 40 seeded KeyRecs accounts, i.e. KS's REF arm, and all three Aalto
+// arms beat it: A1000 - REF +0.020 [+0.010, +0.031] per-user AUC of 20-window decisions
+// (confirmatory), A200 - REF +0.027 [+0.017, +0.039] (docs/recovery/RESULTS_KS.md). A200 was
+// picked post hoc among the three. A mix of app users and Aalto was not tested, so app-user
+// samples are no longer sent. The file (build_aalto_negatives.py) lives on model-api's side;
+// all its windows are eligible and model-api groups them by typist for the validation split.
+const NEGATIVES_SOURCE = "aalto-A200";
+const NEGATIVES_DATASET_PATH = process.env.KEYSTROKE_NEGATIVES_PATH || "/app/data/aalto_neg_A200.h5";
 // MODEL_API_URL now lives in lib/modelClient.js — the single, authenticated, bounded hop.
 
 function normalizeEvents(events) {
@@ -514,51 +524,13 @@ function negativeSampleRows(userId, db) {
     .filter((r) => !aliases.has(r.user_id));
 }
 
-// Same grouping requirement as the positives (see above).
-function getNegativeWindowsGrouped(userId, db) {
-  const rows = negativeSampleRows(userId, db);
-  const windows = [];
-  const groups = [];
-  for (const row of rows) {
-    for (const w of eventsToFeatureWindows(getSampleEvents(row.id, db))) {
-      windows.push(w);
-      groups.push(row.id);
-    }
-  }
-  return { windows, groups };
-}
-
-// Distinct count of other users' training-eligible samples — the actual size of the pool a
-// retrain could draw from. Unlike negativeSampleRows(), not capped by MAX_TRAINING_SAMPLES:
-// this counts how many PEOPLE are available, not how many SAMPLES get pulled from them.
-function countNegativePoolUsers(userId, db) {
-  const aliases = aliasUserIds(userId, db);
-  const rows = db
-    .prepare(
-      `SELECT DISTINCT user_id as u FROM keystroke_texts
-       WHERE user_id <> ? AND is_training = 1 AND is_suspicious = 0`,
-    )
-    .all(userId);
-  return rows.filter((r) => !aliases.has(r.u)).length;
-}
-
-// Has the negative pool grown enough since this user's last training to be worth a refresh?
-// Measured directly (2026-09-07, population_sweep.py --neg-pool-size): shrinking the training
-// pool from 40 to 10 participants cost a paired +3.97pp EER (95% CI [+1.19,+7.14]) and -0.041
-// AUC (95% CI [-0.067,-0.015]) on the same 20 users — a real, tested effect, unlike positive/
-// enrolment volume (r=+0.04, null). So a user enrolled early, on a small pool, and never
-// retrained since is sitting on a demonstrably weaker model with no way to catch up.
-// Doubled-or-+20 is a conservative STARTING threshold, not a value tuned from data — the
-// experiment above tested one pool-size ratio (4x), not a curve, so no "optimal" threshold
-// is known yet.
-const POOL_REFRESH_GROWTH_RATIO = 2.0;
-const POOL_REFRESH_GROWTH_FLOOR = 20;
-function needsPoolRefresh(userId, db) {
+// Was this profile trained on other negatives than the current NEGATIVES_SOURCE? Such a profile
+// is retrained once (server.js activity path and the login hook below). This replaces the old
+// pool-growth refresh: negatives no longer come from other app users, so new enrolments do not
+// change what a retrain would learn from.
+function needsNegativesRefresh(userId, db) {
   const profile = getUserTypingProfile(userId, db);
-  if (!profile || profile.negativePoolUserCount == null) return false;
-  const before = profile.negativePoolUserCount;
-  const now = countNegativePoolUsers(userId, db);
-  return now >= before * POOL_REFRESH_GROWTH_RATIO || now - before >= POOL_REFRESH_GROWTH_FLOOR;
+  return !!profile && profile.negatives !== NEGATIVES_SOURCE;
 }
 
 // Authenticated + deadline-bounded. See lib/modelClient.js for why the local copy of this
@@ -615,15 +587,16 @@ async function trainUserTypingProfile(userId, db) {
     return null;
   }
 
-  const negative = getNegativeWindowsGrouped(userId, db);
-  const negativeWindows = negative.windows;
+  const previous = getUserTypingProfile(userId, db);
   const result = await postModelApi("/api/user/train", {
     userId,
     positiveWindows,
-    negativeWindows,
+    // all max(2 x positives, 60) negatives come from the Aalto file (NEGATIVES_SOURCE)
+    negativeWindows: [],
+    negativeDatasetPath: NEGATIVES_DATASET_PATH,
+    negativeDatasetMaxWindows: 0,
     // one source-sample id per window, so the split keeps whole samples together
     positiveGroups: positive.groups,
-    negativeGroups: negative.groups,
     overlapGap: Math.ceil(WINDOW_SIZE / WINDOW_STRIDE),
     minPositiveWindows: MIN_POSITIVE_WINDOWS,
     // Model storage is OWNED by the model-api: we say what (userId + modality),
@@ -636,11 +609,17 @@ async function trainUserTypingProfile(userId, db) {
   // A degraded negative pool produces a weak model that still trains "successfully".
   // It used to pass unremarked; surface it so a broken dataset path is visible in
   // the service log instead of only in the resulting accuracy months later.
-  if (result && (result.datasetNegativeError || result.negativeSource === "synthetic")) {
+  // With no app-user negatives any more, a missing Aalto file would fall through to synthetic
+  // noise, so this is now a failed training: the new model is rolled back and the previous
+  // profile keeps serving.
+  if (result && (result.datasetNegativeError || result.negativeSource !== "dataset")) {
     console.error(
       `[train] DEGRADED NEGATIVES user=${userId} source=${result.negativeSource} ` +
         `reason=${result.datasetNegativeError || "no dataset negatives available"}`,
     );
+    if (result.previousModelPath) await postModelApi("/api/user/rollback", { userId });
+    throw new Error(`keystroke training needs the ${NEGATIVES_SOURCE} negatives: ` +
+      `${result.datasetNegativeError || `got ${result.negativeSource}`}`);
   }
 
   // ---- Model-update ACCEPTANCE TEST (validation-gated update) ----
@@ -651,8 +630,16 @@ async function trainUserTypingProfile(userId, db) {
   // we score both the new fit and the pre-retrain snapshot on held-out
   // genuine windows; if the new one is clearly worse we ROLL BACK and keep
   // the proven model. The stored samples still count toward future retrains.
+  // The gate guards against a bad fit of the SAME recipe. The one retrain that moves a profile
+  // to NEGATIVES_SOURCE is a deliberate recipe change, tested in KS, and it skips the gate:
+  // a rollback there would re-save the old profile, which would ask for this retrain again.
+  const migrating = !!previous && previous.negatives !== NEGATIVES_SOURCE;
+  if (migrating) {
+    console.log(`[retrain-gate] user=${userId} negatives ${previous.negatives || "app-users"} -> ` +
+      `${NEGATIVES_SOURCE}: recipe change, gate skipped`);
+  }
   try {
-    if (result.previousModelPath) {
+    if (result.previousModelPath && !migrating) {
       const heldOut = getHeldOutWindows(userId, db);
       if (heldOut.length >= 30) {
         const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
@@ -696,13 +683,11 @@ async function trainUserTypingProfile(userId, db) {
     positiveWindowCount: result.positiveWindowCount,
     negativeWindowCount: result.negativeWindowCount,
     negativeSource: result.negativeSource,
+    negatives: NEGATIVES_SOURCE,
     trainedFrom: result.trainedFrom,
     trainingAccuracy: result.accuracy,
     balancedAccuracy: result.balancedAccuracy,
     trainedAt: new Date().toISOString(),
-    // How many distinct other users this training's negative pool could draw from — the
-    // baseline needsPoolRefresh() compares future pool growth against. See its own comment.
-    negativePoolUserCount: countNegativePoolUsers(userId, db),
   };
 
   saveProfile(userId, db, profile);
@@ -952,40 +937,18 @@ function logAuthDecision(userId, db, { source, evaluation, passkeyTriggered = fa
 // retrain is resumed rather than silently forgotten.
 const trainingQueue = require("./trainingQueue");
 
-function hasNewImpostorsSince(userId, db, since) {
-  // Only count users who are fully enrolled (MIN_TRAINING_SAMPLES samples)
-  // and whose most recent training sample arrived after our last model training.
-  // A partially-enrolled user contributes too few windows to justify a retrain.
-  const row = db
-    .prepare(
-      `SELECT COUNT(*) as count FROM (
-         SELECT user_id
-         FROM keystroke_texts
-         WHERE user_id <> ?
-           AND is_training = 1
-           AND is_suspicious = 0
-         GROUP BY user_id
-         HAVING COUNT(*) >= ?
-           AND MAX(submitted_at) > ?
-       )`,
-    )
-    .get(userId, MIN_TRAINING_SAMPLES, since || "1970-01-01");
-  return row.count > 0;
-}
-
-// Called after login: if any other user has enrolled since this user's model was last
-// trained, retrain in the background so the model benefits from the new impostor data
-// without delaying the login response.
+// Called after login. It used to retrain whenever any other user had enrolled since this
+// user's model was trained, so the model could learn from the new impostors. Negatives now
+// come from the fixed Aalto file (NEGATIVES_SOURCE), so the one retrain still owed is the move
+// of an older profile onto it. The route keeps its name for the SDK.
 //
 // This used to fire-and-forget a `setImmediate`. Both halves of that were lost on restart —
 // the run itself, and the guard that stopped it being started twice — and nothing recorded
 // that the work had been owed. Now it records a row and returns; the worker in
 // lib/trainingQueue.js does the work and re-queues it if the service dies mid-run.
 function maybeRetrainForNewImpostors(userId, db) {
-  const profile = getUserTypingProfile(userId, db);
-  if (!profile || !profile.trainedAt) return null;
-  if (!hasNewImpostorsSince(userId, db, profile.trainedAt)) return null;
-  return trainingQueue.enqueue(userId, "keystroke", "new-impostors");
+  if (!needsNegativesRefresh(userId, db)) return null;
+  return trainingQueue.enqueue(userId, "keystroke", "negatives-refresh");
 }
 
 module.exports = {
@@ -1001,11 +964,11 @@ module.exports = {
   CHECK_MIN_TEXT_CHARS,
   analyzeKeystrokeTiming,
   checkRhythmConsistency,
-  countNegativePoolUsers,
+  NEGATIVES_SOURCE,
   evaluateKeystrokes,
   eventsToFeatureWindows,
   logAuthDecision,
-  needsPoolRefresh,
+  needsNegativesRefresh,
   typingQuality,
   getUserTypingBaseline,
   getUserTypingProfile,

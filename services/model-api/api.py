@@ -302,27 +302,39 @@ _dataset_negatives_cache = {}
 _dataset_negative_errors = {}
 
 
-def get_dataset_negatives(window_size, num_features, max_windows=2000, dataset_path=None):
+def get_dataset_negatives(window_size, num_features, max_windows=2000, dataset_path=None,
+                          with_participants=False):
     """
     Real impostor windows sampled from a training dataset — each window belongs
     to a participant who is "not the current user", making far stronger
     negatives than synthetic noise. Defaults to the keystroke NEGATIVE_DATASET_
     PATH; a per-request `dataset_path` lets the mouse modality draw impostors
-    from SapiMouse (Mouse_WS*.h5).
+    from SapiMouse (Mouse_WS*.h5) and the live keystroke profile from Aalto
+    (aalto_neg_A200.h5, T3.3). `max_windows` <= 0 keeps every window.
+
+    with_participants=True returns (windows, participant ids or None); the ids
+    exist only in files that store a `participant` dataset (the Aalto file).
     """
     path = dataset_path or NEGATIVE_DATASET_PATH
-    if path not in _dataset_negatives_cache:
+    if max_windows is None or max_windows <= 0:
+        max_windows = 0
+    cache_key = (path, max_windows)
+    if cache_key not in _dataset_negatives_cache:
         try:
             import h5py
 
             with h5py.File(path, "r") as f:
                 key = "train_data" if "train_data" in f else "X"
                 data = f[key]
-                rng = np.random.default_rng(13)
-                idx = np.sort(rng.choice(len(data), size=min(max_windows, len(data)), replace=False))
-                _dataset_negatives_cache[path] = np.array(data[idx], dtype=np.float32)
+                if max_windows and max_windows < len(data):
+                    rng = np.random.default_rng(13)
+                    idx = np.sort(rng.choice(len(data), size=max_windows, replace=False))
+                else:
+                    idx = np.arange(len(data))
+                pids = np.asarray(f["participant"])[idx] if "participant" in f else None
+                _dataset_negatives_cache[cache_key] = (np.array(data[idx], dtype=np.float32), pids)
             _dataset_negative_errors.pop(path, None)
-            print(f"Loaded {len(_dataset_negatives_cache[path])} impostor windows from {path}")
+            print(f"Loaded {len(_dataset_negatives_cache[cache_key][0])} impostor windows from {path}")
         except Exception as exc:
             # This used to print a warning and hand back an empty array, so a
             # mistyped path degraded every retrain to app-user-only (or synthetic)
@@ -330,9 +342,10 @@ def get_dataset_negatives(window_size, num_features, max_windows=2000, dataset_p
             # it reaches the training response and the stored profile.
             _dataset_negative_errors[path] = f"{type(exc).__name__}: {exc}"
             print(f"ERROR: dataset negatives unavailable at {path}: {exc}")
-            _dataset_negatives_cache[path] = np.empty((0, window_size, num_features), dtype=np.float32)
+            _dataset_negatives_cache[cache_key] = (
+                np.empty((0, window_size, num_features), dtype=np.float32), None)
 
-    neg = _dataset_negatives_cache[path]
+    neg, pids = _dataset_negatives_cache[cache_key]
     if neg.shape[1:] != (window_size, num_features):
         # Previously returned empty with no message at all — the most silent of
         # the two failure modes, and the one a modality mix-up would hit.
@@ -341,8 +354,8 @@ def get_dataset_negatives(window_size, num_features, max_windows=2000, dataset_p
                 f"shape mismatch: dataset holds {neg.shape[1:]}, "
                 f"model needs {(window_size, num_features)}")
             print(f"ERROR: {_dataset_negative_errors[path]} ({path})")
-        return np.empty((0, window_size, num_features), dtype=np.float32)
-    return neg
+        neg, pids = np.empty((0, window_size, num_features), dtype=np.float32), None
+    return (neg, pids) if with_participants else neg
 
 
 def dataset_negative_status(path=None):
@@ -777,12 +790,21 @@ def train_user_payload(payload):
         negative_source = "app-users" if len(negatives) > 0 else None
 
         target_negatives = max(len(positives) * 2, 60)
+        dataset_groups = None
         if len(negatives) < target_negatives:
-            dataset_negatives = get_dataset_negatives(window_size, num_features, dataset_path=neg_dataset_path)
+            # negativeDatasetMaxWindows: how many of the file's windows are eligible (default 2000,
+            # <= 0 = all). The live keystroke profile sends 0 so all of KS's A200 windows count.
+            dataset_negatives, dataset_pids = get_dataset_negatives(
+                window_size, num_features, dataset_path=neg_dataset_path,
+                max_windows=int(payload.get("negativeDatasetMaxWindows", 2000)), with_participants=True)
             if len(dataset_negatives) > 0:
                 rng = np.random.default_rng(21)
                 take = min(target_negatives - len(negatives), len(dataset_negatives))
-                picked = dataset_negatives[rng.choice(len(dataset_negatives), size=take, replace=False)]
+                pick = rng.choice(len(dataset_negatives), size=take, replace=False)
+                picked = dataset_negatives[pick]
+                if dataset_pids is not None:
+                    # Validation negatives come from typists absent from training, as in KS.
+                    dataset_groups = [f"ds-{int(p)}" for p in dataset_pids[pick]]
                 negatives = np.concatenate([negatives, picked], axis=0) if len(negatives) else picked
                 negative_source = (negative_source + "+dataset") if negative_source else "dataset"
 
@@ -797,6 +819,10 @@ def train_user_payload(payload):
         val_fraction = float(payload.get("valFraction", DEFAULT_VAL_FRACTION))
         pos_groups = payload.get("positiveGroups")
         neg_groups = payload.get("negativeGroups")
+        if dataset_groups is not None:
+            n_own = len(negatives) - len(dataset_groups)
+            own = list(neg_groups)[:n_own] if neg_groups is not None else []
+            neg_groups = own + [f"pad-{i}" for i in range(n_own - len(own))] + dataset_groups
         if len(negatives) and neg_groups is not None and len(neg_groups) != len(negatives):
             # dataset/synthetic negatives were appended after the caller's own,
             # so the supplied ids cover only the first block; pad the remainder

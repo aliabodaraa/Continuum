@@ -422,13 +422,12 @@ app.post("/v1/keystroke/submit", requireIdentity, async (req, res) => {
       sourcePath: req.body.sourcePath || null, isTraining: adaptiveTrainingSample,
     });
     if (adaptiveTrainingSample) maybeRetrainAdaptively(userId);
-    // Opportunistic pool-refresh check — piggybacks on regular activity rather than a
-    // scheduler (none exists in this system). Only meaningful for a user who already has a
-    // model; skip if this submission already queued an adaptive retrain (enqueue() is
-    // idempotent either way, so this is just avoiding a redundant DB scan, not a correctness
-    // requirement).
-    if (!adaptiveTrainingSample && ks.getUserTypingProfile(userId, db) && ks.needsPoolRefresh(userId, db)) {
-      trainingQueue.enqueue(userId, "keystroke", "pool-refresh");
+    // Opportunistic negatives-refresh check — piggybacks on regular activity rather than a
+    // scheduler (none exists in this system): a profile trained before the Aalto negatives
+    // (ks.NEGATIVES_SOURCE) is retrained once. Skip if this submission already queued an
+    // adaptive retrain, which moves the profile anyway (enqueue() is idempotent either way).
+    if (!adaptiveTrainingSample && ks.needsNegativesRefresh(userId, db)) {
+      trainingQueue.enqueue(userId, "keystroke", "negatives-refresh");
     }
 
     const passkeyTriggered = !passkeyVerified && evaluation.isSuspicious && !!hasPasskey;

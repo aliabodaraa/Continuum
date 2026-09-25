@@ -40,9 +40,11 @@ COPY services/model-api/ ./services/model-api/
 COPY artifacts/ ./artifacts/
 
 # Mouse enrollment's negative pool: the (|dx|, |dy|) windows of the 100 SapiMouse base users
-# (train_mouse_fcn.py), api.py's MOUSE_NEG_DATASET_PATH default. Keystroke negatives come from the
-# DB, so only this one dataset is needed at runtime.
+# (train_mouse_fcn.py), api.py's MOUSE_NEG_DATASET_PATH default.
 COPY data/mouse_only/Mouse_A5_W50_base.h5 ./data/mouse_only/Mouse_A5_W50_base.h5
+# Keystroke training's negative pool: 200 Aalto typists (build_aalto_negatives.py), the path
+# ca-service sends (KEYSTROKE_NEGATIVES_PATH default).
+COPY data/aalto_neg_A200.h5 ./data/aalto_neg_A200.h5
 
 EXPOSE 5000
 

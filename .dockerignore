@@ -35,3 +35,7 @@ artifacts/ws50/
 # (Dev bind-mounts the whole tree, so training still sees them locally.)
 data/Rand_WS*.h5
 data/Mouse_WS50.h5
+# Study downloads (Bogazici 38 GB, Aalto zip 1.6 GB): the keystroke negatives the image needs
+# are the extracted data/aalto_neg_A200.h5 (kept).
+data/bogazici/
+data/*.zip
