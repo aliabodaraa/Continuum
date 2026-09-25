@@ -83,7 +83,8 @@ function daySinceEnrolment(userId, channel) {
 
 /**
  * One scored check: the decision row and one row per scored window. `scores` and `keys` are
- * aligned (keys identify windows across overlapping checks). Returns the decision id or null.
+ * aligned (keys identify windows across overlapping checks); `details` holds the verdict's other
+ * inputs, so scripts/study_replay.js can re-derive it. Returns the decision id or null.
  */
 function recordCheck(userId, ctx, d) {
   if (!ctx || !register(userId, ctx)) return null;
@@ -95,10 +96,11 @@ function recordCheck(userId, ctx, d) {
     db.transaction(() => {
       decisionId = db.prepare(
         `INSERT INTO study_decisions (user_id, session_id, channel, condition, client_ts, rule_version,
-           threshold, window_count, low_windows, verdict, prompt_required)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           threshold, window_count, low_windows, verdict, prompt_required, details)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(userId, ctx.sessionId, d.channel, ctx.condition, ctx.clientTs, d.ruleVersion, d.threshold,
-            scores.length, d.lowWindows, d.verdict, d.promptRequired ? 1 : 0).lastInsertRowid;
+            scores.length, d.lowWindows, d.verdict, d.promptRequired ? 1 : 0,
+            d.details ? JSON.stringify(d.details) : null).lastInsertRowid;
       const ins = db.prepare(
         `INSERT INTO study_windows (decision_id, user_id, session_id, channel, condition, window_key, score,
            day_since_enrolment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,

@@ -276,5 +276,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_study_decisions_user ON study_decisions(user_id, id);
   CREATE INDEX IF NOT EXISTS idx_study_profiles_user ON study_profiles(user_id, id);
 `);
+// The inputs of a decision's verdict besides its scores (JSON), so an export can be replayed exactly.
+addColumnIfMissing("study_decisions", "details", "TEXT");
 
 module.exports = db;

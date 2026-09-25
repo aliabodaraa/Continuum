@@ -374,6 +374,7 @@ async function checkMouse(userId, windows, study = null) {
     channel: "mouse", ruleVersion: MOUSE_DECISION_VERSION, threshold: userThreshold,
     scores: buffer, keys: Array.isArray(study.windowKeys) ? study.windowKeys.slice(-MOUSE_SUSTAIN_WINDOW).slice(-buffer.length) : null,
     lowWindows: lows, verdict: isWarmup ? "warmup" : isSuspicious ? "suspicious" : "ok", promptRequired: false,
+    details: { voteK: VOTE_K, voteN: VOTE_N, suspiciousStreak },
   }) : null;
 
   return {

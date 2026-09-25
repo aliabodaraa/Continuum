@@ -389,6 +389,12 @@ app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
       lowWindows: warmupLows,
       verdict: passkeyTriggered ? "challenge" : isWarmup ? "warmup" : effectiveSuspicious ? "suspicious" : "ok",
       promptRequired: passkeyTriggered,
+      details: {
+        packetSuspicious: evaluation.isSuspicious === true, windowTotal: Number(evaluation.windowCount || 0),
+        overwhelmingImpostor, unverifiable, pastePolicy: isPastePolicy, degenerateInput,
+        recentSuspicious, hasPasskey: !!hasPasskey, modelAvailable: evaluation.modelAvailable !== false,
+        suspiciousWindow: KS_SUSPICIOUS_WINDOW, suspiciousMin: KS_SUSPICIOUS_MIN,
+      },
     }) : null;
 
     res.json({
