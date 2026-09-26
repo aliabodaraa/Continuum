@@ -134,6 +134,9 @@ services:
       # and must be UNIQUE per deployment — a shared value makes session tokens forgeable
       # and user ids identical across installs. Generate: openssl rand -hex 32
       GATEWAY_SESSION_SECRET: ${GATEWAY_SESSION_SECRET:?Set GATEWAY_SESSION_SECRET in .env (openssl rand -hex 32)}
+      # Gates tenant registration (X-Admin-Key). REQUIRED: unset, registration would be open
+      # to anyone who can reach the gateway. Generate: openssl rand -hex 32
+      GATEWAY_ADMIN_KEY: ${GATEWAY_ADMIN_KEY:?Set GATEWAY_ADMIN_KEY in .env (openssl rand -hex 32)}
       # Comma-separated tenant API keys (blank = open, for local dev only).
       GATEWAY_API_KEYS: ${GATEWAY_API_KEYS:-}
     ports:

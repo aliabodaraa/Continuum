@@ -42,6 +42,17 @@ never actually set, and a verified passkey never actually cleared it.
 `POST /v1/tenants` generates `siteKey` (9 random bytes) + `secret` (24 random bytes) and
 persists the whole tenant registry as one JSON file. Three separate problems.
 
+> **1a, 1b and 1d fixed 2026-09-26** (`server.js` `loadJson`/`saveJson`). A save writes
+> `<file>.tmp` and renames it over the old file. A failed tenant save returns
+> `500 tenant_registry_write_failed`, drops the tenant from memory and issues no credentials. A
+> registry or identity file that exists but cannot be read or parsed stops the gateway at boot with
+> a message naming the file; only a missing file starts empty. `identity.json` gets the same atomic
+> write, and a failed identity save is logged loudly without blocking the sign-in: the id is derived
+> from the secret, so it stays correct. Site keys are drawn again on collision. Checked on a scratch
+> gateway (`services/gateway/check_store.js`, 11 checks): fresh boot, a saved registration, a failed
+> save (500, nothing kept, file intact), a truncated file refusing to boot. **1c stays open** (one
+> process only, until the registry moves to SQLite).
+
 ### 1a. A failed disk write still returns `200`
 `saveJson()` catches the write error, logs it, and returns normally — then the handler
 unconditionally sends `res.json({ siteKey, secret })`. On a read-only or full disk the
@@ -97,6 +108,11 @@ in **no** compose file and **not** in `.env.example`. On a fresh deploy, anyone 
 *Fix:* add it to `docker-compose.bundle.yml` with the same fail-fast `${VAR:?…}` treatment as
 `CA_SIGNING_SECRET` / `GATEWAY_SESSION_SECRET`, or refuse registration outright when unset.
 
+> **Fixed 2026-09-26 for the bundle.** `docker-compose.bundle.yml` now requires
+> `GATEWAY_ADMIN_KEY` (`${…:?}`), and `.env.example` and `DEPLOY.md` list it. The dev compose leaves
+> it unset on purpose (the study's end-to-end test and `extension/STUDY_MODE.md` register tenants
+> without it), and the gateway logs a `[SECURITY]` warning at boot when it is unset.
+
 ---
 
 ## 3. `pk_demo` is origin-unbound
@@ -119,6 +135,8 @@ read `server.js`.
 *Fix:* a short "Register a tenant" section in `DEPLOY.md` with the `curl`, plus where each
 returned value goes (`siteKey` → `<script data-site-key>`, `secret` → backend `CONTINUUM_SECRET`).
 
+> **Done 2026-09-26:** `DEPLOY.md` "Register a tenant (one per app)".
+
 ---
 
 ## 5. Same-origin co-tenancy is undefended (by design — document it)
@@ -134,6 +152,9 @@ origins are fine, since the namespace keys on `siteKey`.
 
 *Not a bug — a deployment rule.* Needs to be written down: **origin binding is a defense
 against site-key theft, not a tenancy boundary. The tenancy boundary is the secret.**
+
+> **Written down 2026-09-26** in `DEPLOY.md` ("Two apps, two tenants"). `pk_demo` (§3) is flagged
+> there as demo-only as well.
 
 ---
 

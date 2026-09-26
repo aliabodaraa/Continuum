@@ -30,8 +30,13 @@ if (SESSION_SECRET === "dev-gateway-session-secret") {
 }
 const SESSION_TTL_SEC = Number(process.env.GATEWAY_SESSION_TTL_SEC || 12 * 3600);
 const RISK_TTL_SEC = Number(process.env.GATEWAY_RISK_TTL_SEC || 90);
-// Admin key to gate tenant registration. If unset (dev), registration is open.
+// Admin key to gate tenant registration. If unset (dev), registration is open; the bundle compose
+// file requires it (TODO §2).
 const ADMIN_KEY = process.env.GATEWAY_ADMIN_KEY || "";
+if (!ADMIN_KEY) {
+  console.warn("[gateway][SECURITY] GATEWAY_ADMIN_KEY is not set: anyone who can reach this gateway can " +
+    "register a tenant (POST /v1/tenants). Fine for local development only.");
+}
 // Default demo tenant's secret — must equal the demo host's CONTINUUM_SECRET.
 const DEMO_SECRET = process.env.CA_SIGNING_SECRET || "dev-continuum-risk-secret";
 const USER_ID_BASE = Number(process.env.GATEWAY_USER_ID_BASE || 900000);
@@ -40,15 +45,37 @@ const IDENTITY_FILE = path.join(DATA_DIR, "identity.json");
 const TENANTS_FILE = path.join(DATA_DIR, "tenants.json");
 const SDK_PUBLIC = path.join(__dirname, "sdk-public");
 
-function loadJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { return fallback; } }
-function saveJson(file, obj) { try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(file, JSON.stringify(obj, null, 2)); } catch (e) { console.error("save", file, e.message); } }
+// The tenant registry and the identity store are plain JSON files (TODO §1). Two rules keep them safe:
+//  * a missing file starts empty, but a file that exists and cannot be read or parsed stops the
+//    gateway. Reading it as empty used to re-seed pk_demo over the wreckage and re-allocate every
+//    user id, orphaning their biometric profiles, with nothing in the log.
+//  * a save writes a temporary file and renames it over the old one (atomic on one filesystem), so a
+//    crash mid-write leaves the previous version, and a failed save throws so the caller can refuse
+//    instead of answering from memory only.
+function loadJson(file, fallback) {
+  let text;
+  try { text = fs.readFileSync(file, "utf8"); } catch (e) {
+    if (e.code === "ENOENT") return fallback;
+    throw new Error(`[gateway] cannot read ${file}: ${e.message}`);
+  }
+  try { return JSON.parse(text); } catch (e) {
+    throw new Error(`[gateway] ${file} is not valid JSON (${e.message}). Refusing to start rather than ` +
+      `treat it as empty; restore it from a backup (a leftover ${path.basename(file)}.tmp may hold the last write).`);
+  }
+}
+function saveJson(file, obj) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = file + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
+  fs.renameSync(tmp, file);
+}
 
 // ---- tenant registry ----
 let tenants = loadJson(TENANTS_FILE, { tenants: {} });
 // Seed the demo tenant so the bundled Acme app works out of the box.
 if (!tenants.tenants["pk_demo"]) {
   tenants.tenants["pk_demo"] = { name: "Demo", secret: DEMO_SECRET, origins: [], webhookUrl: process.env.DEMO_WEBHOOK_URL || null, createdAt: new Date().toISOString() };
-  saveJson(TENANTS_FILE, tenants);
+  saveJson(TENANTS_FILE, tenants);   // throws at boot if the data directory is not writable
 }
 // Keep the demo tenant's webhook in sync with env (so CAEP is demonstrable).
 if (tenants.tenants["pk_demo"] && process.env.DEMO_WEBHOOK_URL) tenants.tenants["pk_demo"].webhookUrl = process.env.DEMO_WEBHOOK_URL;
@@ -109,7 +136,11 @@ function userFor(siteKey, externalId) {
   const h = crypto.createHmac("sha256", SESSION_SECRET).update(key).digest("hex");
   const userId = parseInt(h.slice(0, 13), 16); // stable id within JS safe-integer range
   store.users[key] = { userId, externalId, createdAt: new Date().toISOString() };
-  saveJson(IDENTITY_FILE, store);
+  try { saveJson(IDENTITY_FILE, store); } catch (e) {
+    // The id is still right for this session (it is derived from the secret), so the sign-in goes
+    // ahead; the next save retries the record. Say so loudly: an unsaved record is lost on restart.
+    console.error(`[gateway] could not persist the id for ${key}: ${e.message}`);
+  }
   return { userId, username: (siteKey + "-" + externalId).slice(0, 48) };
 }
 
@@ -367,10 +398,16 @@ app.post("/v1/tenants", adminGate, (req, res) => {
     });
   }
   const webhookUrl = req.body.webhookUrl ? String(req.body.webhookUrl) : null; // CAEP push target
-  const siteKey = "pk_" + crypto.randomBytes(9).toString("hex");
+  let siteKey;
+  do { siteKey = "pk_" + crypto.randomBytes(9).toString("hex"); } while (tenants.tenants[siteKey]);
   const secret = crypto.randomBytes(24).toString("hex");
   tenants.tenants[siteKey] = { name, secret, origins, webhookUrl, createdAt: new Date().toISOString() };
-  saveJson(TENANTS_FILE, tenants);
+  try { saveJson(TENANTS_FILE, tenants); } catch (e) {
+    // Never hand out credentials that live only in memory and vanish on the next restart.
+    delete tenants.tenants[siteKey];
+    console.error(`[gateway] tenant registration not saved: ${e.message}`);
+    return res.status(500).json({ error: "tenant_registry_write_failed" });
+  }
   res.json({ siteKey, secret, name, origins, webhookUrl, note: "Put siteKey in the SDK <script data-site-key>, and secret in your backend CONTINUUM_SECRET." });
 });
 app.get("/v1/tenants", adminGate, (req, res) => {

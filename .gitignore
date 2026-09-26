@@ -83,6 +83,7 @@ services/gateway/gateway-verdict-key.pem
 services/gateway/gateway-identity-key.pem
 services/gateway/tenants.json
 services/gateway/identity.json
+services/gateway/*.json.tmp
 
 # ─── Data migration snapshots (biometric — never push to a remote) ───
 continuum-data-*.tgz
