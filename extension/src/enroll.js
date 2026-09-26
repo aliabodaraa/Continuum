@@ -94,7 +94,9 @@ ta.addEventListener("keydown", function (e) { rec("keydown", e); }, true);
 ta.addEventListener("keyup", function (e) { rec("keyup", e); }, true);
 
 function rec(type, e) {
-  events.push({ keyCode: e.keyCode || 0, type: type, t: performance.now() - t0, field: "enroll" });
+  // event time, not handler time, as in content.js and the SDK
+  var now = performance.now(), ts = typeof e.timeStamp === "number" ? e.timeStamp : 0;
+  events.push({ keyCode: e.keyCode || 0, type: type, t: (ts > 0 && ts <= now + 1 ? ts : now) - t0, field: "enroll" });
   update();
 }
 

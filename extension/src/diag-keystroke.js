@@ -118,7 +118,8 @@ function makeCapture(boxId, countId, onWins) {
   var events = [], t0 = performance.now();
   var el = q(boxId);
   function rec(type, e) {
-    events.push({ keyCode: e.keyCode || 0, type: type, t: performance.now() - t0, field: boxId });
+    var now = performance.now(), ts = typeof e.timeStamp === "number" ? e.timeStamp : 0;   // event time, as in content.js
+    events.push({ keyCode: e.keyCode || 0, type: type, t: (ts > 0 && ts <= now + 1 ? ts : now) - t0, field: boxId });
     if (events.length % 10 === 0) {
       var wins = F.stepsToWindows(F.eventSteps(events));
       q(countId).textContent = wins.length + " windows (" + events.length + " events)";

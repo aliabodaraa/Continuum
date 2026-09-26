@@ -28,6 +28,15 @@
   var events = [];              // raw key-timing — stays in THIS page, never sent
   var lastWindowCount = 0;
   var t0 = performance.now();
+  // Event time, not handler time: event.timeStamp is when the browser created the event, on the
+  // same clock as performance.now(). A busy page that runs these handlers late would otherwise
+  // compress the typing rhythm the model scores (and can trip the chaotic-timing rule). The SDK's
+  // tracker does the same (sdk/js/keystroke-tracker.js), so enrolment and live checks agree.
+  function evtTime(e) {
+    var now = performance.now();
+    var ts = e && typeof e.timeStamp === "number" ? e.timeStamp : 0;
+    return ts > 0 && ts <= now + 1 ? ts : now;
+  }
   var dead = false;
   var handlers = [], winHandlers = [];   // document-level and window-level listeners
 
@@ -265,7 +274,7 @@
       // Study mode: nothing while paused, and no event at all from a password field (not even masked).
       if (study && (studyPaused || isPassword(tgt))) return;
       var kc = isPassword(tgt) ? 0 : (e.keyCode || 0);   // mask the KEY on password fields
-      events.push({ keyCode: kc, type: type, t: performance.now() - t0, field: fieldOf(tgt), ftype: (tgt && (tgt.type || tgt.tagName)) || "unknown" });
+      events.push({ keyCode: kc, type: type, t: evtTime(e) - t0, field: fieldOf(tgt), ftype: (tgt && (tgt.type || tgt.tagName)) || "unknown" });
       if (events.length > 2000) {
         // Same re-basing as the mouse buffer: trimming shrinks the window count, so
         // lastWindowCount must drop with it or new windows stop being emitted (verdict freeze).
@@ -315,16 +324,16 @@
   var onPaste = function (e) {
     if (!study || studyPaused || dead || !enabled || excluded || isHidden(e.target) || isPassword(e.target)) return;
     var n = 0; try { n = ((e.clipboardData && e.clipboardData.getData("text")) || "").length; } catch (x) {}
-    events.push({ keyCode: 0, type: "paste", t: performance.now() - t0, field: fieldOf(e.target), ftype: (e.target && (e.target.type || e.target.tagName)) || "unknown", pastedLength: n });
+    events.push({ keyCode: 0, type: "paste", t: evtTime(e) - t0, field: fieldOf(e.target), ftype: (e.target && (e.target.type || e.target.tagName)) || "unknown", pastedLength: n });
   };
   document.addEventListener("paste", onPaste, true); handlers.push(["paste", onPaste]);
 
   // ---- mouse capture (positions + timing only — same privacy story as keys) ----
   var mouseEvents = [], mouseDown = false, lastMouseWindows = 0;
-  function recMouse(x, y, st) {
+  function recMouse(x, y, st, e) {
     if (dead || !enabled || excluded || lockEl || !mouseTracking) return;
     if (study && studyPaused) return;   // E4: nothing while the participant's pause is on
-    mouseEvents.push({ t: performance.now(), x: x, y: y, state: st });
+    mouseEvents.push({ t: evtTime(e), x: x, y: y, state: st });
     if (mouseEvents.length > 3000) {
       // Trimming the event buffer shrinks the window count computed from it. lastMouseWindows
       // is compared against that count to detect a NEW window, so it must be re-based to the
@@ -359,8 +368,8 @@
     }
   }
   function onM(type, fn) { document.addEventListener(type, fn, true); handlers.push([type, fn]); }
-  onM("mousemove", function (e) { recMouse(e.clientX, e.clientY, mouseDown ? "Drag" : "Move"); });
-  onM("mousedown", function (e) { mouseDown = true; recMouse(e.clientX, e.clientY, "Pressed"); });
-  onM("mouseup", function (e) { mouseDown = false; recMouse(e.clientX, e.clientY, "Released"); });
+  onM("mousemove", function (e) { recMouse(e.clientX, e.clientY, mouseDown ? "Drag" : "Move", e); });
+  onM("mousedown", function (e) { mouseDown = true; recMouse(e.clientX, e.clientY, "Pressed", e); });
+  onM("mouseup", function (e) { mouseDown = false; recMouse(e.clientX, e.clientY, "Released", e); });
   dlog("[continuum-guard] content script ACTIVE on " + origin + " — features.js: " + (globalThis.ContinuumFeatures ? "loaded" : "MISSING") + ", enabled=" + enabled + ", excluded=" + excluded);
 })();
