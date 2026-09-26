@@ -169,7 +169,9 @@ for T3.3 in one model-api process took it from about 1 GB to about 11 GB residen
 in a plain training loop despite `clear_session()` per target (5.5 GB during one arm). A restart
 frees it. Until the cause is found, restart model-api after a bulk retrain, and run training in
 a worker process that exits (or is recycled) after each job. The gunicorn item above would do
-this with `max_requests` on the training worker.
+this with `max_requests` on the training worker. Since T3.4 (2026-09-26) mouse enrolments train
+no network (F2: one embedding pass and nine logistic fits, about 6 s), so they no longer add to
+this: model-api stayed at about 1 GB through seven F2 trainings. Keystroke retrains still do.
 
 ## 6. Future work already noted elsewhere
 
@@ -191,6 +193,12 @@ this with `max_requests` on the training worker.
 > measured, prompt cost included; see RUN_LOG 2026-09-23. The numbers below stay as the "before"
 > (item 4). Still open: item 3 (validation on data SapiMouse cannot provide) and the browser
 > extension, which keeps its in-sample line.
+>
+> **Update 2026-09-26 (T3.4):** the same threshold rule now runs on F2 (the frozen network with a
+> per-user logistic head), which protocol L found non-inferior to S1 on the untouched Bogazici
+> users. That test is also the first on data from outside SapiMouse (item 3): both systems were far
+> weaker there (per-user AUC about 0.72-0.74 against about 0.96 on SapiMouse). A per-user line
+> cannot fix a network that transfers poorly to other hardware and tasks.
 
 The per-user line is the **1st percentile of that user's 330 enrolment window scores**, so in
 practice it is set by their **three lowest enrolment windows**. A user who produced a few odd

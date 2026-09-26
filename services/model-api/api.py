@@ -199,6 +199,16 @@ def invalidate_user_model_cache(path):
             print(f"[cache] Evicted stale model: {path}")
 
 
+def load_live_model(path):
+    """Load a live profile into the cache: an F2 head (with the shared frozen embedder) or a
+    per-user network."""
+    if is_f2_profile(path):
+        _f2_state()
+        _f2_head(path)
+    else:
+        get_user_model(path)
+
+
 def warm_user_model_async(path):
     """Load a live user model in the background (server only)."""
     if not _track_use or not _LIVE_MODEL.search(path):
@@ -206,7 +216,7 @@ def warm_user_model_async(path):
 
     def run():
         try:
-            get_user_model(path)
+            load_live_model(path)
         except Exception as exc:                     # a failed warm-up must never break serving
             print(f"[cache] Warm-up of {path} failed: {exc}")
     threading.Thread(target=run, daemon=True).start()
@@ -267,7 +277,7 @@ def warm_recent_user_models():
     def run():
         for p in paths:
             try:
-                get_user_model(p)
+                load_live_model(p)
             except Exception as exc:
                 print(f"[cache] Warm-up of {p} failed: {exc}")
         print(f"[cache] Warm-up done: {len(paths)} user models")
@@ -1144,11 +1154,256 @@ def train_user_loso_payload(payload):
     return res, 200
 
 
+# ---- F2: the frozen deployed network with a per-user logistic head (T3.4) ------------------------
+# Protocol L tested F2 against S1 (artifacts/repr_arch_study/PREREGISTRATION_L.md, Amendments L-1 and
+# L-2). On the untouched Bogazici users it was non-inferior (per-user AUC of 33-window decisions
+# +0.0203 [+0.0039, +0.0376]) and better on pooled EER (-7.76 points [-10.93, -3.19]); on the
+# development users no difference was detected (stage D: -0.0019 [-0.0162, +0.0127]). It trains in
+# seconds instead of nine fine-tunes, does not
+# depend on the order of the samples, and keeps no per-user network. This is the analysis recipe
+# (analysis/phase2: score_c.score_f2 and l_common.head_scores) moved into serving; validate_f2.py
+# checks that this code reproduces those scores.
+#   embedding  e(w) = unit(embed(scale(w)) - mu): the deployed network's "embedding" layer, frozen and
+#              loaded once for every user; the scaler as stage C applied it (float64, zero spread -> 1)
+#   cohort     mu and C = unit(Z - mu) from f2_cohort.npz (build_f2_cohort.py: 40 windows from each of
+#              the network's 100 training users, seed 7)
+#   head       LogisticRegression(C=1, lbfgs, max_iter=5000): the user's windows (label 1) against
+#              2 x n cohort rows drawn with default_rng(21) (label 0)
+#   threshold  leave-one-sample-out: for each 55-window sample, a head refit without that sample and
+#              the loso.PURGE windows on each side of it (same negatives) scores the sample
+# A profile is one JSON file, f2_head.json, in the user's mouse model folder. A cohort rebuilt later
+# does not match the heads trained on the old one, so predictions refuse such a head (409); rebuild
+# the profiles by changing ca-service's MOUSE_DECISION_VERSION.
+F2_COHORT_PATH = os.getenv("MOUSE_F2_COHORT_PATH", os.path.join(ARTIFACTS_DIR, "mouse-fcn-a5", "f2_cohort.npz"))
+F2_HEAD_FILE = "f2_head.json"
+F2_NEG_SEED = 21
+_f2 = {}
+_f2_lock = threading.Lock()
+
+
+def _sha256_file(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _sha256_dir(path):
+    """Directory hash, defined as analysis/phase2/c_common.dir_sha (the value Amendment L-2 froze)."""
+    import hashlib
+    h = hashlib.sha256()
+    for base, _, files in sorted(os.walk(path)):
+        for f in sorted(files):
+            p = os.path.join(base, f)
+            h.update(os.path.relpath(p, path).replace(os.sep, "/").encode())
+            h.update(_sha256_file(p).encode())
+    return h.hexdigest()
+
+
+def _f2_state():
+    """The frozen embedder, the scaler and the cohort, loaded once for every user. Refuses a cohort
+    file built for another network or scaler than the deployed ones."""
+    with _f2_lock:
+        if _f2:
+            return _f2
+        import tensorflow as tf
+        with np.load(F2_COHORT_PATH, allow_pickle=False) as z:
+            mu, C, meta = z["mu"], z["C"], json.loads(str(z["meta"]))
+        state = {"mu": mu, "C": C, "cohortSha256": _sha256_file(F2_COHORT_PATH),
+                 "baseModelSha256": _sha256_dir(MOUSE_BASE_MODEL_PATH),
+                 "scalerSha256": _sha256_file(MOUSE_SCALER_PATH)}
+        if (meta.get("baseModelSha256"), meta.get("scalerSha256")) != (state["baseModelSha256"], state["scalerSha256"]):
+            raise RuntimeError(f"{F2_COHORT_PATH} was built for another network or scaler than the deployed "
+                               "ones; rebuild it with build_f2_cohort.py")
+        with open(MOUSE_SCALER_PATH, encoding="utf-8") as f:
+            sc = json.load(f)
+        state["mean"] = np.asarray(sc["mean"], np.float64)
+        state["std"] = np.asarray(sc["std"], np.float64)
+        state["std"][state["std"] == 0] = 1.0
+        base = load_model(MOUSE_BASE_MODEL_PATH, compile=False)
+        state["embed"] = tf.keras.Model(base.input, base.get_layer("embedding").output)
+        state["dim"] = int(state["embed"].output_shape[-1])
+        _f2.update(state)
+        print(f"[f2] frozen embedder and cohort loaded ({len(C)} cohort rows, cohort sha "
+              f"{state['cohortSha256'][:12]})")
+        return _f2
+
+
+def _f2_embed(windows):
+    """e(w) for raw windows, exactly as analysis/phase2 computes it: scale in float64, embed with
+    one predict call (batch 1024), centre on the cohort mean, L2-normalise."""
+    st = _f2_state()
+    X = np.asarray(windows)
+    if not len(X):
+        return np.zeros((0, st["dim"]), np.float32)
+    scaled = ((np.asarray(X, np.float64) - st["mean"]) / st["std"]).astype(np.float32)
+    Z = st["embed"].predict(scaled, batch_size=1024, verbose=0) - st["mu"]
+    return Z / np.maximum(np.linalg.norm(Z, axis=1, keepdims=True), 1e-12)
+
+
+def _f2_fit(P, neg):
+    from sklearn.linear_model import LogisticRegression
+    X = np.concatenate([P, neg])
+    y = np.r_[np.ones(len(P)), np.zeros(len(neg))]
+    return LogisticRegression(C=1.0, solver="lbfgs", max_iter=5000).fit(X, y)
+
+
+def _f2_head(path):
+    """A user's F2 head, cached with the per-user networks (invalidate_user_model_cache evicts it)."""
+    cached = _user_model_cache.get(path)
+    if cached is not None:
+        return cached
+    with _model_lock(path):
+        if path not in _user_model_cache:
+            from sklearn.linear_model import LogisticRegression
+            with open(os.path.join(path, F2_HEAD_FILE), encoding="utf-8") as f:
+                h = json.load(f)
+            clf = LogisticRegression(C=1.0, solver="lbfgs", max_iter=5000)
+            clf.classes_ = np.asarray(h["classes"], dtype=h["classesDtype"])
+            clf.coef_ = np.asarray([h["coef"]], dtype=h["coefDtype"])
+            clf.intercept_ = np.asarray(h["intercept"], dtype=h["interceptDtype"])
+            clf.n_features_in_ = len(h["coef"])
+            _user_model_cache[path] = (clf, h)
+            print(f"[cache] Loaded F2 head: {path}")
+        return _user_model_cache[path]
+
+
+def is_f2_profile(path):
+    return os.path.isfile(os.path.join(path, F2_HEAD_FILE))
+
+
+def train_user_f2_payload(payload):
+    """Mouse enrolment under F2 (headScheme "f2" on the leave-one-sample-out path).
+
+    positiveWindows are the user's enrolment in time order, a whole number of loso.SAMPLE-window
+    samples, as for S1. Returns the same fields as train_user_loso_payload (losoScores at full
+    precision, losoScorePercentiles, enrolScorePercentiles), so ca-service reads its threshold
+    unchanged. The previous profile is snapshotted to <path>_prev, and the new head file appears
+    atomically in the existing folder, so a check never finds the folder missing.
+    """
+    import shutil
+    import sklearn
+
+    if load_model is None or np is None or loso is None:
+        return {"error": "TensorFlow training stack is not available"}, 503
+    if not payload or "userId" not in payload or "positiveWindows" not in payload:
+        return {"error": "userId and positiveWindows are required"}, 400
+    if (payload.get("modality") or "keystroke") != "mouse":
+        return {"error": "headScheme f2 is for the mouse modality"}, 400
+    if payload.get("thresholdScheme") != "leave-one-sample-out":
+        return {"error": "headScheme f2 goes with thresholdScheme leave-one-sample-out"}, 400
+    if payload.get("scalerPath") or payload.get("baseModelPath"):
+        return {"error": "F2 uses the deployed network and scaler, which its cohort was built for"}, 400
+    if int(payload.get("sampleWindows", loso.SAMPLE)) != loso.SAMPLE:
+        return {"error": f"sampleWindows must be {loso.SAMPLE}, the evaluated sample size"}, 400
+    try:
+        positives = to_window_array(payload["positiveWindows"])
+        path = confine_path(payload.get("modelPath")) or user_model_path(payload["userId"], "mouse")
+    except ValueError as exc:
+        return {"error": str(exc)}, 400
+    n = len(positives)
+    samples = n // loso.SAMPLE
+    if n % loso.SAMPLE or samples < 2:
+        return {"error": f"need a whole number (>= 2) of {loso.SAMPLE}-window samples, got {n} windows"}, 400
+
+    t0 = time.time()
+    try:
+        st = _f2_state()
+        E = _f2_embed(positives)
+    except Exception as exc:
+        return {"error": f"F2 is unavailable: {exc}"}, 503
+    C = st["C"]
+    if 2 * n > len(C):
+        return {"error": f"the cohort has {len(C)} rows; {n} windows need {2 * n} negatives"}, 400
+    neg = C[np.random.default_rng(F2_NEG_SEED).choice(len(C), 2 * n, replace=False)]
+    full = _f2_fit(E, neg)
+    oof = np.zeros(n)
+    for s in range(samples):
+        lo, hi = s * loso.SAMPLE, (s + 1) * loso.SAMPLE
+        keep = np.array([i for i in range(n) if i < lo - loso.PURGE or i >= hi + loso.PURGE])
+        oof[lo:hi] = _f2_fit(E[keep], neg).predict_proba(E[lo:hi])[:, 1]
+    enrol = full.predict_proba(E)[:, 1]
+
+    head = {
+        "scheme": "f2", "userId": str(payload["userId"]), "windows": n, "negatives": int(len(neg)),
+        "classes": full.classes_.tolist(), "classesDtype": str(full.classes_.dtype),
+        "coef": full.coef_.ravel().tolist(), "coefDtype": str(full.coef_.dtype),
+        "intercept": full.intercept_.tolist(), "interceptDtype": str(full.intercept_.dtype),
+        "iterations": int(full.n_iter_[0]),
+        "cohortSha256": st["cohortSha256"], "baseModelSha256": st["baseModelSha256"],
+        "scalerSha256": st["scalerSha256"], "sklearn": sklearn.__version__,
+        "trainedAtUtc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    os.makedirs(path, exist_ok=True)
+    prev_path = path + "_prev"
+    previous = bool(os.listdir(path))
+    if previous:
+        shutil.rmtree(prev_path, ignore_errors=True)
+        shutil.copytree(path, prev_path)
+        invalidate_user_model_cache(prev_path)
+    tmp = os.path.join(path, F2_HEAD_FILE + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(head, f)
+    os.replace(tmp, os.path.join(path, F2_HEAD_FILE))
+    for entry in os.listdir(path):                  # the previous profile's files (an S1 network)
+        p = os.path.join(path, entry)
+        if entry == F2_HEAD_FILE:
+            continue
+        if os.path.isdir(p):
+            shutil.rmtree(p)
+        else:
+            os.remove(p)
+    invalidate_user_model_cache(path)
+    warm_user_model_async(path)
+
+    return {
+        "ok": True, "userId": payload["userId"], "modelPath": path, "modality": "mouse",
+        "headScheme": "f2", "thresholdScheme": "leave-one-sample-out",
+        "positiveWindowCount": n, "negativeWindowCount": int(len(neg)),
+        "losoSamples": samples, "losoSampleWindows": loso.SAMPLE,
+        "losoScores": [float(v) for v in oof],
+        "losoScorePercentiles": {str(q): float(np.percentile(oof, q)) for q in LOSO_PERCENTILES},
+        "enrolScorePercentiles": {str(q): float(np.percentile(enrol, q)) for q in LOSO_PERCENTILES},
+        "previousModelAvailable": previous,
+        "cohortSha256": st["cohortSha256"], "baseModelSha256": st["baseModelSha256"],
+        "trainingSeconds": round(time.time() - t0, 3),
+    }, 200
+
+
+def predict_user_f2_payload(path, payload):
+    """Score windows with a user's F2 head: p = predict_proba(e(w)). Same response as the network path."""
+    try:
+        clf, head = _f2_head(path)
+        st = _f2_state()
+    except Exception as exc:
+        return {"error": f"F2 profile unavailable: {exc}"}, 503
+    if head.get("cohortSha256") != st["cohortSha256"]:
+        return {"error": "this F2 head was trained on another cohort; retrain the profile", "retrain": True}, 409
+    windows = to_window_array(payload["windows"])
+    proba = clf.predict_proba(_f2_embed(windows))
+    mean_score = float(np.mean(proba[:, 1])) if len(proba) else 0.0
+    threshold = float(payload.get("threshold", 0.65))
+    return {
+        "ok": True, "model_loaded": True, "headScheme": "f2",
+        "prediction": proba.tolist(),
+        "genuineScore": mean_score,
+        "threshold": threshold,
+        "isSuspicious": bool(mean_score < threshold),
+        "windowCount": int(len(windows)),
+    }, 200
+
+
 def dispatch_train(body):
-    """/api/user/train: the action-based path, the leave-one-sample-out enrolment, or the
+    """/api/user/train: the action-based path, F2, the leave-one-sample-out enrolment (S1), or the
     original single-model path, chosen by the payload."""
     if body and body.get("actions") is not None:
         return train_user_actions_payload(body)
+    if body and body.get("headScheme") not in (None, "s1", "f2"):
+        return {"error": f"unknown headScheme {body.get('headScheme')!r}"}, 400
+    if body and body.get("headScheme") == "f2":
+        return train_user_f2_payload(body)
     if body and body.get("thresholdScheme") == "leave-one-sample-out":
         return train_user_loso_payload(body)
     return train_user_payload(body)
@@ -1185,6 +1440,16 @@ def predict_user_payload(payload):
         req_scaler = confine_path(payload.get("scalerPath")) or (MOUSE_SCALER_PATH if modality == "mouse" else None)
     except ValueError as exc:
         return {"error": str(exc)}, 400
+    if modality == "mouse" and is_f2_profile(path):
+        if payload.get("scalerPath"):
+            return {"error": "F2 profiles use the deployed scaler"}, 400
+        try:
+            res = predict_user_f2_payload(path, payload)
+        except Exception as exc:
+            return {"error": str(exc)}, 500
+        if res[1] == 200:
+            note_model_use(path)
+        return res
     if not os.path.exists(path):
         # Personal model not yet created — use global model as fallback
         if model is None:

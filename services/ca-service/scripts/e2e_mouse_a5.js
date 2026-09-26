@@ -1,7 +1,8 @@
-// End-to-end check of the adopted mouse pipeline (S1) through ca-service's own code, its training
-// queue and the live model-api: gates, accumulation to 8 samples, queued leave-one-sample-out
-// training, the per-user threshold, verdicts with 33 of 60, the rebuild of a profile trained under
-// an earlier decision rule, stale-client refusal.
+// End-to-end check of the deployed mouse pipeline (F2 since T3.4; the rule string is
+// mouse.MOUSE_DECISION_VERSION) through ca-service's own code, its training queue and the live
+// model-api: gates, accumulation to 8 samples, queued leave-one-sample-out training, the per-user
+// threshold, verdicts with 33 of 60, the rebuild of a profile trained under an earlier decision
+// rule, stale-client refusal.
 // Reads real SapiMouse windows (|dx|, |dy|) as JSON on stdin:
 //   { enrolA: [...], enrolB: [...], enrolC: [...], genuine: [...], impostor: [...] }
 //   docker exec -i -w /app continuum-ca-service-1 node scripts/e2e_mouse_a5.js < payload.json
@@ -63,7 +64,7 @@ process.stdin.on("end", async () => {
     check("the job is recorded durably in training_jobs", !!job && ["queued", "running"].includes(job.state) && job.reason === "enrol", JSON.stringify(job));
 
     let w = await waitTrained();
-    check("the ca-service worker trains the profile (8 fold models + the final model)", w.st.enrolled, `${w.secs} s${w.timedOut ? " (timed out)" : ""}${w.st.trainingError ? " error: " + w.st.trainingError : ""}`);
+    check(`the ca-service worker trains the profile (${mouse.MOUSE_DECISION_VERSION}: 8 leave-one-sample-out folds + the final head)`, w.st.enrolled, `${w.secs} s${w.timedOut ? " (timed out)" : ""}${w.st.trainingError ? " error: " + w.st.trainingError : ""}`);
     const prof = db.prepare("SELECT threshold, sample_windows, loso_percentiles, enrol_percentiles, decision_version, feature_version FROM mouse_profiles WHERE user_id = ?").get(TEST_USER) || {};
     const loso = JSON.parse(prof.loso_percentiles || "{}");
     const insample = JSON.parse(prof.enrol_percentiles || "{}");
@@ -83,7 +84,7 @@ process.stdin.on("end", async () => {
     console.log(`    observed: genuine ${gLow}/60 low (suspicious=${gLow >= mouse.VOTE_K}), impostor ${iLow}/60 low (suspicious=${iLow >= mouse.VOTE_K})`);
     check("impostor windows score lower than the genuine user's", iLow > gLow, `${iLow} vs ${gLow}`);
 
-    // A profile from an earlier decision rule (what every pre-S1 profile is after the upgrade).
+    // A profile from an earlier decision rule (what every S1 profile is after the F2 upgrade).
     db.prepare("UPDATE mouse_profiles SET decision_version = NULL WHERE user_id = ?").run(TEST_USER);
     r = await mouse.checkMouse(TEST_USER, d.genuine);
     check("a profile from an earlier decision rule is not scored, and its rebuild is queued", r.status === 422 && r.body.retrain === true && r.body.training === true && r.body.enrolled === false, `${r.status} ${r.body.error}`);

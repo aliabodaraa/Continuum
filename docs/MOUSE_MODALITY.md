@@ -33,14 +33,22 @@ representation, its Table I; Experiment A found no richer representation measura
 - Shared network: SapiMouse's FCN — Conv1D 128/k8, 256/k5, 128/k3, each BatchNorm + ReLU, global
   average pooling (`embedding`, 128-d) — trained on 100-way identification
   (`train_mouse_fcn.py` → `artifacts/mouse-fcn-a5`, scaler, `arch.json`).
-- Per user (server): `api.py` builds base → `embedding` → Dense(2, softmax), freezes `conv1` and
-  `bn1`, fine-tunes with Adam 3e-4, 15 epochs, batch 32, early stopping 6; negatives = 2 × positives
-  from `data/mouse_only/Mouse_A5_W50_base.h5` (base users only). Enrolment (S1) is one call
-  (`train_user_loso_payload`): 8 leave-one-sample-out fold models each score the 55-window sample
-  they never saw, then the final model trains on all 8 samples with the last 11 windows of each for
-  early stopping (4 purged before each slice). Returns the percentiles of the pooled out-of-sample
-  scores and of the in-sample enrolment scores. `validate_loso.py` checks the plans against
-  `protocol_j_p1.py` and reproduces the stored P1 Method-B scores exactly.
+- Per user (server, F2, deployed 2026-09-26, recovery plan T3.4): the network stays frozen.
+  `api.py` (`train_user_f2_payload`) embeds the user's 440 windows with its `embedding` layer,
+  centres them on a cohort mean and L2-normalises them, and fits a logistic head (C = 1, lbfgs)
+  against 880 cohort rows. The cohort is `artifacts/mouse-fcn-a5/f2_cohort.npz`: 40 windows from each
+  of the network's 100 training users, seed 7, built by `build_f2_cohort.py` with stage C's own
+  function. The threshold source is leave-one-sample-out: for each 55-window sample, a head fitted
+  without it (and without the 4 windows on each side) scores it. A profile is one file,
+  `f2_head.json`; no per-user network is trained or loaded, and an enrolment takes about 6 s through
+  the training queue. `validate_f2.py` checks that serving reproduces protocol L's analysis code bit
+  for bit (the cohort, the leave-one-sample-out scores and scores on held-out windows).
+- Per user (server, S1, 2026-09-23 to 2026-09-26; still in `api.py`, selected by
+  `MOUSE_HEAD_SCHEME = "s1"` in `lib/mouse.js`): base → `embedding` → Dense(2, softmax), `conv1` and
+  `bn1` frozen, fine-tuned with Adam 3e-4, 15 epochs, batch 32, early stopping 6; negatives = 2 ×
+  positives from `data/mouse_only/Mouse_A5_W50_base.h5` (base users only). One call
+  (`train_user_loso_payload`) trains 8 leave-one-sample-out fold models and then the final model on
+  all 8 samples (about 2.5 min). `validate_loso.py` reproduces the stored P1 Method-B scores exactly.
 - Per user (extension): head only on the frozen `embedding`, trained in the page
   (`extension/src/mouse-model.js`); negatives are the same 660 base-user windows, bundled as
   precomputed embeddings (`extension/data/mouse-impostors.json`). Experiment G: no measurable
@@ -48,16 +56,25 @@ representation, its Table I; Experiment A found no richer representation measura
 
 ## Decision
 
-- Server (S1, deployed 2026-09-23): per-user threshold = 20th percentile of the user's
-  leave-one-sample-out scores; a window is low below it; suspicious when 33 of the last 60 windows
-  are low. Each profile stores both tables (out-of-sample and in-sample) for q ∈ {1, 2, 5, 10, 15,
-  20, 30, 40, 50} and the rule it was trained for (`decision_version`); a profile from an earlier
-  rule is rebuilt from its stored samples, never scored against this vote. On the untouched first
-  lockbox (P6, 20 users): 95.0% of 40-s impostor runs caught (2 users below 80%) at 0.33 genuine
-  prompts per minute of movement, against 77.1% (8 users below 80%) at 0.17 for the rule it
-  replaced (q = 1 of the in-sample scores, 30 of 60, from Experiment I). The pre-registered P6 test
-  did not adopt S1 (prompt increase +0.15 [0.00, +0.31] against a +0.10 margin): S0 stands in the
-  record and S1 is deployed as the owner's disclosed deviation (RUN_LOG).
+- Server (F2 since 2026-09-26, rule `f2-loso-p20-33of60`; the same rule S1 used): per-user
+  threshold = 20th percentile of the user's leave-one-sample-out scores; a window is low below it;
+  suspicious when 33 of the last 60 windows are low. Each profile stores both tables (out-of-sample
+  and in-sample) for q ∈ {1, 2, 5, 10, 15, 20, 30, 40, 50} and the rule it was trained for
+  (`decision_version`); a profile from an earlier rule is rebuilt from its stored samples, never
+  scored against this vote.
+- Evidence for F2 (protocol L, pre-registered; `docs/recovery/RESULTS_L_stageC.md`): on the untouched
+  Bogazici users it was non-inferior to S1 (per-user AUC of 33-window decisions +0.0203 [+0.0039,
+  +0.0376], better for 12 of 19) and better on pooled EER (-7.76 points [-10.93, -3.19]); on the 19
+  development users no difference was detected (-0.0019 [-0.0162, +0.0127]). At this rule on Bogazici
+  it prompted more than S1 (median 0.76 against 0.33 prompts per minute of movement) and caught more
+  impostor runs (72% against 53%). Both are weak there (per-user AUC about 0.72-0.74, against about
+  0.96 on SapiMouse): the SapiMouse-trained network transfers poorly to other hardware and tasks.
+- S1 (2026-09-23 to 2026-09-26): on the untouched first lockbox (P6, 20 users) it caught 95.0% of
+  40-s impostor runs (2 users below 80%) at 0.33 genuine prompts per minute of movement, against
+  77.1% (8 users below 80%) at 0.17 for the rule it replaced (q = 1 of the in-sample scores, 30 of
+  60, from Experiment I). The pre-registered P6 test did not adopt S1 (prompt increase +0.15 [0.00,
+  +0.31] against a +0.10 margin): S0 stands in the record and S1 was deployed as the owner's
+  disclosed deviation (RUN_LOG).
 - Extension (unchanged): q = 2 of its in-sample scores, suspicious when the mean of the last 60
   scores is below the threshold (Experiment I: 0.22 prompts/min, 87.3% caught).
 - History of the server point: the pre-registered rule of Experiment I required ≥ 90% capture and

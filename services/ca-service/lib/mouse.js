@@ -25,22 +25,25 @@ const WINDOW_STRIDE = 10;
 const MOUSE_FEATURES = 2;
 const MOUSE_FEATURE_VERSION = "a5-absdxdy-v1";
 
-// ---- Enrolment and decision: S1 (AMENDMENT_J1.md §2), the owner's decision of 2026-09-23 ----
+// ---- Enrolment and decision: F2 since 2026-09-26 (T3.4); S1 from 2026-09-23 ----
 // Enrolment = 440 windows, 8 samples of 55 (~2 min of movement). It ACCUMULATES over sessions: a
 // session is stored once it passes the per-session gate, and a model is owed once the total reaches
-// 440. The model is always trained on the user's LATEST 440 windows, the amount the lockbox
+// 440. The profile is always built from the user's LATEST 440 windows, the amount the lockbox
 // evaluated (previously 330, trained on up to 1200).
-// Threshold = the 20th percentile of the user's LEAVE-ONE-SAMPLE-OUT scores: eight fold models each
-// score the enrolment sample they never saw (model-api train_user_loso_payload, the recipe
-// protocol_j_p1.py evaluated). The old threshold, the 1st percentile of the final model's scores on
-// its own training windows, collapsed to 0.009-0.054 for some users, which let nearly any movement
-// pass (TODO §7). A window is "low" below the threshold; the session is suspicious when VOTE_K of
-// the last VOTE_N windows are low (~17 s of movement).
-// On the untouched first lockbox (P6, 20 users, base-80 network) S1 caught 95.0% of 40-s impostor
-// runs against 77.1% for the old rule (2 users below 80% capture instead of 8), at 0.33 instead of
-// 0.17 genuine passkey prompts per minute of movement (16 and 18 of 20 users never prompted). The
-// pre-registered test did not adopt it, because the prompt increase (+0.15 [0.00, +0.31]) missed its
-// +0.10 margin: S0 stands in the record, and S1 is deployed as a disclosed deviation (RUN_LOG).
+// Model, F2 (protocol L): the deployed network stays frozen; model-api embeds the windows and fits a
+// per-user logistic head against cohort windows (train_user_f2_payload). No per-user network is
+// trained. On the untouched Bogazici users F2 was non-inferior to S1 (per-user AUC of 33-window
+// decisions +0.0203 [+0.0039, +0.0376]) and better on pooled EER (-7.76 points [-10.93, -3.19]); on
+// the development users no difference was detected (-0.0019 [-0.0162, +0.0127]). At this rule on
+// Bogazici it prompted more than S1 (median +0.43 per minute of movement) while catching more
+// impostor runs (+19 points): RUN_LOG, docs/recovery/RESULTS_L_stageC.md.
+// Threshold = the 20th percentile of the user's LEAVE-ONE-SAMPLE-OUT scores: for each sample, a
+// head fitted without it scores it. A window is "low" below the threshold; the session is suspicious
+// when VOTE_K of the last VOTE_N windows are low (~17 s of movement). The rule is S1's, as tested.
+// S1 (AMENDMENT_J1.md §2, a disclosed deviation from the P6 verdict) used the same threshold and vote
+// on nine fine-tuned networks per user; on the untouched first lockbox it caught 95.0% of 40-s
+// impostor runs against 77.1% for the in-sample 1st-percentile rule before it, whose threshold
+// collapsed to 0.009-0.054 for some users (TODO §7). MOUSE_HEAD_SCHEME = "s1" restores it.
 // The browser extension trains a different model and uses its own measured point (Experiment I:
 // mean of the last 60 windows below the 2nd percentile); it is unchanged.
 const MIN_ENROLL_WINDOWS = 440;
@@ -59,9 +62,13 @@ const THRESHOLD_PERCENTILE = 20;
 const THRESHOLD_SOURCE = "leave-one-sample-out";
 const VOTE_N = 60;
 const VOTE_K = 33;
-// Stored with every profile. A profile trained under another rule (the old in-sample threshold goes
-// with 30 of 60, not 33) is retrained, never scored against this vote.
-const MOUSE_DECISION_VERSION = "s1-loso-p20-33of60";
+// The model the threshold and vote run on: "f2" (frozen network + per-user head) or "s1" (per-user
+// fine-tuned networks).
+const MOUSE_HEAD_SCHEME = "f2";
+// Stored with every profile ("f2-loso-p20-33of60"). A profile built under another model or rule
+// (S1's networks, the old in-sample threshold with 30 of 60) is rebuilt from its stored samples,
+// never scored against this one.
+const MOUSE_DECISION_VERSION = `${MOUSE_HEAD_SCHEME}-loso-p${THRESHOLD_PERCENTILE}-${VOTE_K}of${VOTE_N}`;
 // Kept under the old names for callers that report them (SDK panel, gateway).
 const MOUSE_SUSTAIN_WINDOW = VOTE_N;
 const MOUSE_SUSTAIN_LOW = VOTE_K;
@@ -163,9 +170,9 @@ async function enrollMouse(userId, windows) {
   }
 
   // Enough for a model. It is trained by the durable queue (lib/trainingQueue.js), not inside this
-  // request: the leave-one-sample-out recipe fits nine models (8 folds + the final one), 2-3 minutes
-  // on CPU (145-158 s measured). Clients poll /status, which reports `training` until the profile
-  // is stored.
+  // request. F2 embeds the windows once and fits nine logistic heads (8 folds + the final one) in
+  // seconds; S1's nine networks took 145-158 s. Clients poll /status, which reports `training` until
+  // the profile is stored.
   const wasEnrolled = mouseEnrolled(userId);
   const job = trainingQueue.enqueue(userId, "mouse", wasEnrolled ? "extra-sample" : "enrol");
   return {
@@ -176,7 +183,7 @@ async function enrollMouse(userId, windows) {
       training: true,
       message: wasEnrolled
         ? "Sample saved. Your mouse model is being rebuilt from your latest samples."
-        : `Saved sample ${SAMPLES_REQUIRED} of ${SAMPLES_REQUIRED}. Building your mouse model — two to three minutes.`,
+        : `Saved sample ${SAMPLES_REQUIRED} of ${SAMPLES_REQUIRED}. Building your mouse model — usually under a minute.`,
       samplesOnFile: Math.min(SAMPLES_REQUIRED, Math.floor(total / SAMPLE_WINDOWS)),
       samplesRequired: SAMPLES_REQUIRED,
       sampleWindows: SAMPLE_WINDOWS,
@@ -219,16 +226,17 @@ async function retrainMouse(userId, extra = {}) {
   }
   const positiveWindows = kept.reverse().flat();
 
-  // epochs 15 / batch 32 / overlap gap 5: the settings the lockbox evaluation used.
+  // S1's fine-tuning settings (epochs 15, batch 32, overlap gap 5) are the ones the lockbox
+  // evaluation used; F2 has none.
   const result = await postModelApi("/api/user/train", {
     userId,
     positiveWindows,
     modality: "mouse",
     thresholdScheme: THRESHOLD_SOURCE,
     sampleWindows: SAMPLE_WINDOWS,
-    overlapGap: Math.ceil(MOUSE_WINDOW_SIZE / WINDOW_STRIDE),
-    epochs: 15,
-    batchSize: 32,
+    ...(MOUSE_HEAD_SCHEME === "f2"
+      ? { headScheme: "f2" }
+      : { overlapGap: Math.ceil(MOUSE_WINDOW_SIZE / WINDOW_STRIDE), epochs: 15, batchSize: 32 }),
   });
   const loso = result.losoScorePercentiles || {};
   const threshold = Number(loso[String(THRESHOLD_PERCENTILE)]);

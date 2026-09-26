@@ -168,23 +168,30 @@ option — a rise in these is either an outage or someone arranging one.
 - **Feature vector F=2:** `[|dx|, |dy|]` in pixels per step (`FEATURE_VERSION a5-absdxdy-v1`),
   50-step windows, stride 10; idle > 0.5 s splits the stream, zero-displacement moves are dropped,
   near-static windows skipped. Browser and training extractors are value-identical.
-- **Model:** SapiMouse's FCN (`artifacts/mouse-fcn-a5`, identification-trained on 100 users);
-  per user, `api.py` freezes conv1+bn1 and fine-tunes the rest with a binary head
-  (`arch.json`). Negatives: `data/mouse_only/Mouse_A5_W50_base.h5` (base users only).
-- **Decision (S1, AMENDMENT_J1 §2; deployed 2026-09-23):** per-user threshold = 20th percentile
-  of the user's leave-one-sample-out scores (8 fold models, each scoring the enrolment sample it
-  never saw); suspicious when 33 of the last 60 windows (~17 s of movement) are below it. On the
-  untouched first lockbox it caught 95.0% of 40-s impostor runs (2 of 20 users below 80%) at
-  0.33 genuine prompts/min, against 77.1% (8 users) at 0.17 for the previous rule (1st percentile
-  of in-sample scores, 30 of 60). The pre-registered test did not adopt it (the prompt increase
-  missed its margin), so S0 stands in the record and S1 is the owner's disclosed deviation.
+- **Model (F2, protocol L; deployed 2026-09-26):** SapiMouse's FCN (`artifacts/mouse-fcn-a5`,
+  identification-trained on 100 users) stays frozen; per user, `api.py` fits a logistic head on its
+  `embedding` (centred on a cohort mean, L2-normalised) against 880 rows of a fixed cohort
+  (`f2_cohort.npz`, 40 windows from each of the 100 training users). A profile is one
+  `f2_head.json`; no per-user network. Pre-registered evidence: non-inferior to S1 on the untouched
+  Bogazici users (per-user AUC of 33-window decisions +0.0203 [+0.0039, +0.0376]) and better on
+  pooled EER (-7.76 points); no difference on the development users. `validate_f2.py` checks that
+  serving reproduces the tested analysis code bit for bit.
+- **Decision (`f2-loso-p20-33of60`; S1's rule, AMENDMENT_J1 §2):** per-user threshold = 20th
+  percentile of the user's leave-one-sample-out scores (for each enrolment sample, a head fitted
+  without it scores it); suspicious when 33 of the last 60 windows (~17 s of movement) are below it.
+  S1 (2026-09-23 to 26) used this rule on nine fine-tuned networks per user; on the untouched first
+  lockbox it caught 95.0% of 40-s impostor runs (2 of 20 users below 80%) at 0.33 genuine
+  prompts/min, against 77.1% (8 users) at 0.17 for the rule before it (1st percentile of in-sample
+  scores, 30 of 60). The pre-registered test did not adopt S1 (the prompt increase missed its
+  margin), so S0 stands in the record and S1 was the owner's disclosed deviation.
   Each profile stores both percentile tables (`loso_percentiles`, `enrol_percentiles`) and its
   `decision_version`; an older profile is rebuilt, never scored with this vote. Every scored
   check is logged in `mouse_decisions`.
 - **Enrolment:** 8 samples × 55 windows = 440 (~2 min); each sample saves itself when complete and
   the clients show "Sample k of 8"; step-size spread ≥ 5 px per sample. The model is trained on
-  the user's latest 440 windows by ca-service's durable training queue (nine fits, 2–3 min on
-  CPU); the enrolment reply is 202 `training: true` and clients poll `/status`.
+  the user's latest 440 windows by ca-service's durable training queue (nine logistic fits on one
+  embedding pass, about 6 s; S1's nine networks took 2–3 min); the enrolment reply is 202
+  `training: true` and clients poll `/status`.
   ca-service refuses retired 7-column windows.
 - Every client steps up on the **first** suspicious decision: gateway `MOUSE_STRIKES_TO_LOCK = 1`,
   demo 1, extension — the measured operating point counts one decision as one prompt.

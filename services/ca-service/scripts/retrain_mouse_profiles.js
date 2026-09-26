@@ -1,9 +1,10 @@
 // Retrain every stored mouse profile through lib/mouse.js retrainMouse -- the same code the training
 // queue runs for a live enrolment. Used when the training recipe or the operating point changes, so
-// existing users get the current recipe (S1: latest 440 windows, leave-one-sample-out threshold at
-// the 20th percentile) with both percentile tables stored alongside it. Runs in this process, one
-// user at a time (each takes a minute or two); a profile it skips is rebuilt from the queue the
-// next time that user's mouse status or check is read.
+// existing users get the current recipe (mouse.MOUSE_DECISION_VERSION; since T3.4 F2: latest 440
+// windows, a per-user head on the frozen network, leave-one-sample-out threshold at the 20th
+// percentile) with both percentile tables stored alongside it. Runs in this process, one user at a
+// time (seconds each under F2; S1 took about 2.5 min); a profile it skips is rebuilt from the queue
+// the next time that user's mouse status or check is read.
 //
 //   docker exec -w /app continuum-ca-service-1 node scripts/retrain_mouse_profiles.js [--dry-run]
 const db = require("../db");
