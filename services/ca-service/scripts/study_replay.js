@@ -48,7 +48,7 @@ for (const f of fs.readdirSync(IN).filter((n) => n.endsWith(".jsonl")).sort()) {
       const packet = low / s.length >= ks.PACKET_VOTE_FRACTION;
       if (packet !== x.packetSuspicious) fail(f, d, `packet vote ${packet} vs logged ${x.packetSuspicious}`);
     }
-    const overwhelming = s.length >= 4 && low >= Math.ceil(s.length * 0.75);
+    const overwhelming = s.length >= ks.WARMUP_FAST_MIN_WINDOWS && low >= Math.ceil(s.length * ks.WARMUP_FAST_FRACTION);
     if (overwhelming !== !!x.overwhelmingImpostor) fail(f, d, `overwhelming ${overwhelming} vs logged ${x.overwhelmingImpostor}`);
     const warmup = x.windowTotal <= ks.RECENT_WINDOW_COUNT && !overwhelming && !x.unverifiable && !x.pastePolicy && !x.degenerateInput;
     const effective = (!warmup && !!x.packetSuspicious) || !!x.degenerateInput;

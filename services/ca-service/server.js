@@ -358,7 +358,9 @@ app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
 
     const warmupScores = Array.isArray(evaluation.recentWindowScores) ? evaluation.recentWindowScores.map(Number) : [];
     const warmupLows = warmupScores.filter((s) => s < ks.WINDOW_DECISION_THRESHOLD).length;
-    const overwhelmingImpostor = warmupScores.length >= 4 && warmupLows >= Math.ceil(warmupScores.length * 0.75);
+    // Minimum 8 windows since 2026-09-26 (was 4); see WARMUP_FAST_MIN_WINDOWS in lib/keystrokeSecurity.js.
+    const overwhelmingImpostor = warmupScores.length >= ks.WARMUP_FAST_MIN_WINDOWS &&
+      warmupLows >= Math.ceil(warmupScores.length * ks.WARMUP_FAST_FRACTION);
     // Un-modelable typing (no window despite abundant keystrokes) and a paste
     // violation are BOTH definite verdicts, not warmup — they must be challenged,
     // otherwise they're a free pass around the whole model. (A paste evaluation

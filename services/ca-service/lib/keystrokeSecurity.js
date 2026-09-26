@@ -29,6 +29,15 @@ const PROFILE_VERSION = 3;
 // verdict needs 21 windows (>= 250 digraph steps) instead of 7 (>= 110); on
 // stored real sessions 20 windows took about 400 keydowns.
 const RECENT_WINDOW_COUNT = 20;
+// Warm-up fast path (server.js): before the first full packet, a check whose scored windows number
+// k >= WARMUP_FAST_MIN_WINDOWS with at least ceil(WARMUP_FAST_FRACTION * k) below 0.50 challenges at
+// once. It was 4 windows; the OWNER chose 8 on 2026-09-26, before the user study, on exploratory
+// numbers from experiment KS's A200 scores (99 users, a check after every window;
+// _backups/warmup_fastpath_rate.py): genuine users locked at session start 8.1% -> 2.0%, impostor
+// runs caught within warm-up 91.1% -> 87.0%. Runs it misses still meet the 10-of-20 vote after
+// warm-up. A single long pause among a genuine user's first ~90 keys used to be enough.
+const WARMUP_FAST_MIN_WINDOWS = 8;
+const WARMUP_FAST_FRACTION = 0.75;
 // Wider recent span used for the adaptive "contribute" rolling mean. Requires
 // sustained clean typing (≈3 of the former 6-window packets) rather than a single
 // lucky stretch, and rolls forward so an earlier rough patch ages out instead of
@@ -573,9 +582,9 @@ function isServedProfile(profile) {
 const { postModelApi } = require("./modelClient");
 const studyLog = require("./studyLog");
 // The live keystroke decision rule, as the user-study log records it: fixed 0.50 window boundary,
-// packet vote over the last RECENT_WINDOW_COUNT windows.
+// packet vote over the last RECENT_WINDOW_COUNT windows, and the warm-up fast path's minimum.
 const RULE_VERSION =
-  `lu-050-${Math.ceil(RECENT_WINDOW_COUNT * PACKET_VOTE_FRACTION)}of${RECENT_WINDOW_COUNT}`;
+  `lu-050-${Math.ceil(RECENT_WINDOW_COUNT * PACKET_VOTE_FRACTION)}of${RECENT_WINDOW_COUNT}-warm${WARMUP_FAST_MIN_WINDOWS}`;
 
 function saveProfile(userId, db, profile) {
   db.prepare(
@@ -1031,4 +1040,6 @@ module.exports = {
   trainUserTypingProfile,
   featureWindowsWithKeys,
   RULE_VERSION,
+  WARMUP_FAST_MIN_WINDOWS,
+  WARMUP_FAST_FRACTION,
 };
