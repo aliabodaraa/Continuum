@@ -173,6 +173,19 @@ this with `max_requests` on the training worker. Since T3.4 (2026-09-26) mouse e
 no network (F2: one embedding pass and nine logistic fits, about 6 s), so they no longer add to
 this: model-api stayed at about 1 GB through seven F2 trainings. Keystroke retrains still do.
 
+> **Memory growth closed 2026-09-26** (`api.py` `train_isolated`). Measured outside the server
+> (`_backups/leak_probe.py`, 10 keystroke trainings in one process): about 42 MB kept per training,
+> and neither `clear_session()`, `malloc_trim`, `MALLOC_ARENA_MAX=2`, a cached base model nor
+> skipping the save changed it, so the memory is held inside TensorFlow. Every `/api/user/train`
+> now runs in a fresh child process (spawn) that exits when done; the server only evicts the
+> replaced models from its cache and warms the new one. A test server on the same code stayed at
+> 737 MB over 10 trainings. Results are unchanged: F2 LOSO scores and keystroke validation scores
+> through the child equal in-process training bit for bit, and e2e_mouse_a5 reproduces its
+> threshold (0.703466024387348). Cost: about 8 s of process start per training (F2 enrolment
+> 6 s -> 14-16 s). `MODEL_TRAIN_IN_CHILD=0` restores in-process training;
+> `MODEL_TRAIN_CONCURRENCY` (default 2) caps simultaneous trainings. Still open: the gunicorn item
+> above (inference and training still share the CPU).
+
 ## 6. Future work already noted elsewhere
 
 - **Mouse FAR ceiling (~24%)** — a model/biometric limit (bimodal per-user EER), confirmed by

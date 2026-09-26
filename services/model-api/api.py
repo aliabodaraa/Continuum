@@ -1409,6 +1409,85 @@ def dispatch_train(body):
     return train_user_payload(body)
 
 
+# ---- Training in a child process (TODO 5b) --------------------------------------------------------
+# Every Keras training kept about 40 MB in this process for good (measured 2026-09-26 with
+# _backups/leak_probe.py: 10 keystroke trainings, 781 -> 1157 MB). Neither clear_session, malloc_trim,
+# MALLOC_ARENA_MAX=2, a cached base model nor skipping the save stopped it, so the memory is held
+# inside TensorFlow. The server therefore runs each training in a fresh child process that exits
+# when it is done; the operating system takes all of its memory back. The child runs the same
+# dispatch_train on the same files, so results do not change. The parent only drops the cached
+# models the child replaced and warms the new one. MODEL_TRAIN_IN_CHILD=0 restores in-process
+# training. Scripts that import this module and call the train functions directly are unaffected.
+TRAIN_IN_CHILD = os.getenv("MODEL_TRAIN_IN_CHILD", "1") == "1"
+TRAIN_CHILD_TIMEOUT_S = float(os.getenv("MODEL_TRAIN_TIMEOUT_S", "900"))   # ca-service waits 600 s
+_train_slots = threading.BoundedSemaphore(int(os.getenv("MODEL_TRAIN_CONCURRENCY", "2")))
+
+
+def _train_child(body, conn):
+    try:
+        result = dispatch_train(body)
+    except BaseException as exc:                     # report, never hang the parent
+        result = ({"error": f"training worker: {type(exc).__name__}: {exc}"}, 500)
+    try:
+        conn.send(result)
+    finally:
+        conn.close()
+
+
+def _trained_paths(body, result):
+    """The live model folders a training may have replaced, for cache eviction in the parent."""
+    paths = set()
+    if isinstance(result, dict) and result.get("modelPath"):
+        paths.add(result["modelPath"])
+    try:
+        explicit = confine_path(body.get("modelPath"))
+        if explicit:
+            paths.add(explicit)
+        elif body.get("userId") is not None:
+            if body.get("actions") is not None:
+                paths.add(user_action_model_path(body["userId"]))
+            else:
+                paths.add(user_model_path(body["userId"], body.get("modality") or "keystroke"))
+    except (ValueError, TypeError):
+        pass
+    return paths
+
+
+def train_isolated(body):
+    """/api/user/train in a child process (see above)."""
+    if not TRAIN_IN_CHILD:
+        return dispatch_train(body)
+    import multiprocessing as mp
+
+    ctx = mp.get_context("spawn")
+    with _train_slots:
+        recv, send = ctx.Pipe(duplex=False)
+        child = ctx.Process(target=_train_child, args=(body, send), daemon=True)
+        child.start()
+        send.close()
+        try:
+            if recv.poll(TRAIN_CHILD_TIMEOUT_S):
+                payload, status = recv.recv()
+            else:
+                payload, status = {"error": f"training exceeded {TRAIN_CHILD_TIMEOUT_S:.0f} s"}, 504
+        except EOFError:                             # the child died without answering
+            child.join(5)
+            payload, status = {"error": f"training worker exited with code {child.exitcode}"}, 500
+        finally:
+            recv.close()
+            if child.is_alive():
+                child.join(10)
+            if child.is_alive():
+                child.kill()
+                child.join()
+    for path in _trained_paths(body or {}, payload):
+        invalidate_user_model_cache(path)
+        invalidate_user_model_cache(path + "_prev")
+        if status == 200:
+            warm_user_model_async(path)
+    return payload, status
+
+
 def rollback_user_payload(payload):
     """Restore the pre-retrain model snapshot (validation-gate rollback)."""
     if not payload or "userId" not in payload:
@@ -1517,7 +1596,7 @@ def create_flask_app():
         # than on a mode flag means an old client cannot accidentally land in
         # the new pipeline or the reverse. `thresholdScheme` selects the
         # leave-one-sample-out enrolment (S1) on the window path.
-        payload, status = dispatch_train(request.get_json())
+        payload, status = train_isolated(request.get_json())
         return jsonify(payload), status
 
     @app.route("/api/user/predict", methods=["POST"])
@@ -1574,7 +1653,7 @@ class ContinuumHandler(BaseHTTPRequestHandler):
             raw_body = self.rfile.read(length).decode("utf-8")
             payload = json.loads(raw_body) if raw_body else {}
             if self.path == "/api/user/train":
-                response, status = dispatch_train(payload)
+                response, status = train_isolated(payload)
             elif self.path == "/api/user/predict":
                 response, status = predict_user_payload(payload)
             elif self.path == "/api/user/rollback":
