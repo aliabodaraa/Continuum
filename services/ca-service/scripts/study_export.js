@@ -36,8 +36,8 @@ const toIso = (t) => (t ? new Date(t.replace(" ", "T") + "Z").toISOString() : nu
 const FIELDS = {
   participant: ["type", "participant", "exportedAt", "counts"],
   profile: ["type", "profileId", "channel", "ruleVersion", "threshold", "thresholdSource", "modelSha256", "windowCount", "thresholdScores", "trainedAt"],
-  window: ["type", "channel", "sessionId", "windowKey", "profileId", "score", "condition", "daySinceEnrolment", "firstDecisionId", "timesScored"],
-  decision: ["type", "decisionId", "channel", "sessionId", "condition", "clientTs", "checkedAt", "profileId", "ruleVersion", "threshold", "windowCount", "lowWindows", "verdict", "promptRequired", "details", "windowKeys", "scores"],
+  window: ["type", "channel", "sessionId", "windowKey", "profileId", "score", "condition", "client", "daySinceEnrolment", "firstDecisionId", "timesScored"],
+  decision: ["type", "decisionId", "channel", "sessionId", "condition", "client", "clientTs", "checkedAt", "profileId", "ruleVersion", "threshold", "windowCount", "lowWindows", "verdict", "promptRequired", "details", "windowKeys", "scores"],
   prompt: ["type", "sessionId", "channel", "decisionId", "event", "clientTs", "loggedAt"],
 };
 const line = (type, obj) => {
@@ -80,7 +80,7 @@ for (const p of participants) {
       const w = windows.get(k);
       if (!w) {
         windows.set(k, { channel: d.channel, sessionId: d.session_id, windowKey: r.window_key, profileId, score: r.score,
-          condition: r.condition, daySinceEnrolment: r.day_since_enrolment, firstDecisionId: d.id, timesScored: 1 });
+          condition: r.condition, client: d.client, daySinceEnrolment: r.day_since_enrolment, firstDecisionId: d.id, timesScored: 1 });
       } else {
         w.timesScored += 1;
         const diff = Math.abs(w.score - r.score);
@@ -89,7 +89,7 @@ for (const p of participants) {
       }
     }
     decisionLines.push(line("decision", {
-      decisionId: d.id, channel: d.channel, sessionId: d.session_id, condition: d.condition, clientTs: d.client_ts,
+      decisionId: d.id, channel: d.channel, sessionId: d.session_id, condition: d.condition, client: d.client, clientTs: d.client_ts,
       checkedAt: toIso(d.checked_at), profileId, ruleVersion: d.rule_version, threshold: d.threshold,
       windowCount: d.window_count, lowWindows: d.low_windows, verdict: d.verdict, promptRequired: !!d.prompt_required,
       details: d.details ? JSON.parse(d.details) : null, windowKeys: rows.map((r) => r.window_key), scores: rows.map((r) => r.score),

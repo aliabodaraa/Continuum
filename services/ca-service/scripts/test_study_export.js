@@ -16,9 +16,9 @@ const run = (script, flag, dir) => { try { return { code: 0, out: execFileSync("
 
 (async () => {
   // a participant with a mouse profile: three overlapping checks, genuine then impostor
-  const mu = db.prepare("SELECT user_id FROM mouse_profiles WHERE decision_version = 's1-loso-p20-33of60' LIMIT 1").get().user_id;
+  const mu = db.prepare("SELECT user_id FROM mouse_profiles WHERE decision_version = ? LIMIT 1").get(mouse.MOUSE_DECISION_VERSION).user_id;
   studyLog.register(mu, studyLog.parseContext({ participant: "ZZTEST1", sessionId: "sess-zz-0001", condition: "genuine" }));
-  studyLog.recordProfile(mu, { channel: "mouse", ruleVersion: "s1-loso-p20-33of60", threshold: 0.95, thresholdSource: "loso-p20",
+  studyLog.recordProfile(mu, { channel: "mouse", ruleVersion: mouse.MOUSE_DECISION_VERSION, threshold: 0.95, thresholdSource: "loso-p20",
     modelPath: "/app/artifacts/users/user-1/mouse_model", windowCount: 440, thresholdScores: Array.from({ length: 440 }, (_, i) => i / 440) });
   const own = db.prepare("SELECT windows FROM mouse_samples WHERE user_id = ? ORDER BY id DESC LIMIT 3").all(mu).flatMap((r) => JSON.parse(r.windows));
   const other = db.prepare("SELECT windows FROM mouse_samples WHERE user_id <> ? ORDER BY id DESC LIMIT 3").all(mu).flatMap((r) => JSON.parse(r.windows));

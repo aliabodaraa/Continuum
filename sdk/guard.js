@@ -55,7 +55,7 @@
   // sample = MOUSE_SAMPLE_WINDOWS windows (~16 s of movement), MOUSE_SAMPLES_REQUIRED of them
   // (8 x 55 = 440 windows). /status reports both; these are the defaults.
   var MOUSE_SAMPLE_WINDOWS = 55, MOUSE_SAMPLES_REQUIRED = 8;
-  // The model is built by the server's training queue (2-3 min measured), not inside the request
+  // The model is built by the server's training queue (F2: about 6 s; S1 took 2-3 min), not inside the request
   // that saves the last sample; the wizard polls /status this often until it exists, says so when
   // it takes unusually long, and stops waiting (the job itself carries on) after the last bound.
   var MOUSE_TRAIN_POLL_MS = 3000, MOUSE_TRAIN_SLOW_MS = 5 * 60000, MOUSE_TRAIN_GIVE_UP_MS = 15 * 60000;
@@ -506,8 +506,8 @@
   // once MOUSE_SAMPLES_REQUIRED samples are on file (8 x 55 = 440 windows).
   // Each sample saves itself the moment it is complete, so the user only ever sees a counter.
   // The server enforces the same numbers (ca-service lib/mouse.js) and reports them in /status.
-  // It builds the model in its training queue (2-3 minutes: eight leave-one-sample-out fold
-  // models and the final one), so the sample that completes the set comes back with
+  // It builds the model in its training queue (F2 since T3.4: a logistic head per leave-one-sample-out
+  // fold on the frozen embedding, about 6 s; S1's nine networks took 2-3 minutes), so the sample that completes the set comes back with
   // `training: true` and the wizard polls /status until the build is done.
   function mouseSampleFlow(opts) {
     // opts: { title, intro, stepBar, onClose, dismissLabel, allowReset, resolveOnTrained(result) }
@@ -524,7 +524,7 @@
       return "Sample " + (st.onFile + 1) + " of " + st.required;
     }
     function subline() {
-      if (building) return "Training on your samples — two to three minutes. You can leave this open.";
+      if (building) return "Training on your samples — usually under a minute. You can leave this open.";
       if (note) return note;
       if (st.onFile >= st.required) return st.enrolled ? "All " + st.required + " samples on file · each extra sample rebuilds your model from your latest ones" : "";
       return (st.required - st.onFile) + " more to go · about " + (st.required - st.onFile) * 16 + " s of movement";

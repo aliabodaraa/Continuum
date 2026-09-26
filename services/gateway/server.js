@@ -453,6 +453,10 @@ app.get("/v1/sdk/onboarding", auth, async (req, res) => res.json(await onboardin
 app.get("/v1/sdk/keystroke/config", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/config`, "GET", undefined, caAssert(req))));
 app.get("/v1/sdk/keystroke/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/status/${req.uid}`, "GET", undefined, caAssert(req))));
 app.post("/v1/sdk/keystroke/enroll", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/enroll`, "POST", { ...req.body, userId: req.uid }, caAssert(req))));
+// Enrolment resets. sdk/guard.js (resetProfile) has called these since the reset button existed, but
+// the gateway never had them, so a reset through the gateway got 404 and changed nothing.
+app.post("/v1/sdk/keystroke/reset", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/reset`, "POST", { userId: req.uid }, caAssert(req))));
+app.post("/v1/sdk/mouse/reset", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/mouse/reset`, "POST", { userId: req.uid }, caAssert(req))));
 // User study (ca-service lib/studyLog.js): bind the session's user to its participant pseudonym.
 app.post("/v1/sdk/study/register", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/study/register`, "POST", { ...req.body, userId: req.uid }, caAssert(req))));
 // User study (ca-service lib/studyLog.js): a passkey prompt event as the study client saw it.

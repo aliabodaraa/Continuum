@@ -208,6 +208,15 @@
       <span class="dot" id="dot"></span>
     </header>
 
+    <!-- User-study mode (E4): who is recorded, whether it is recording, and the participant's pause. -->
+    <div id="studyPanel" class="card" style="display:none">
+      <div class="row"><span>Continuum study</span><span class="val" id="studyWho">…</span></div>
+      <div id="studyRec" style="padding:12px 0 6px;font-weight:800;font-size:15px">…</div>
+      <button id="studyPause" style="width:100%;margin:6px 0 4px;padding:11px;border:0;border-radius:10px;font:700 14px system-ui;cursor:pointer;color:#fff;background:#dc2626">Pause recording</button>
+      <div id="studyHint" style="color:var(--muted);font-size:12px;line-height:1.5;padding:4px 0 10px">Pause before you type anything private. While paused, nothing you type or do with the mouse is recorded, on any site. Shortcut: Alt+Shift+P.</div>
+      <div id="studyErr" style="display:none;color:#dc2626;font-size:12px;padding-bottom:8px"></div>
+    </div>
+
     <div id="noAccount" class="card" style="display:none">
       <div style="padding:12px 0 4px;font-weight:700">🔒 Sign in to Chrome to activate</div>
       <div style="padding-bottom:12px;color:var(--muted);font-size:12px;line-height:1.5">

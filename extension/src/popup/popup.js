@@ -55,6 +55,27 @@ function initSection(sectId, headId, storeKey) {
 initSection("sectKeys", "headKeys", "cg_sect_keys");
 initSection("sectMouse", "headMouse", "cg_sect_mouse");
 
+function renderStudy(s) {
+  show("noAccount", false);
+  q("mainPanel").style.display = "none";
+  var st = s.study, paused = !!st.paused;
+  q("studyWho").textContent = st.participant + (st.condition && st.condition.indexOf("impostor:") === 0 ? " · impostor session" : "")
+    + (st.client === "lab" ? " · lab" : "");
+  q("studyRec").textContent = s.locked ? "🔒 Locked: verify with your passkey on the page"
+    : paused ? "⏸ Paused: nothing is recorded" : "● Recording";
+  q("studyRec").style.color = paused ? "var(--muted)" : "#dc2626";
+  q("studyPause").textContent = paused ? "Resume recording" : "Pause recording";
+  q("studyPause").style.background = paused ? "#16a34a" : "#dc2626";
+  q("dot").className = "dot" + (paused ? " off" : "");
+  show("studyErr", !!s.studyError);
+  if (s.studyError) q("studyErr").textContent = "Server: " + s.studyError;
+}
+q("studyPause").addEventListener("click", function () {
+  api.storage.local.get(["cg_study_paused"], function (d) {
+    api.storage.local.set({ cg_study_paused: !(d && d.cg_study_paused === true) }, refresh);
+  });
+});
+
 function refresh() {
   api.runtime.sendMessage({ type: "cg:status" }, function (s) {
     // Reading lastError is what marks the failure handled. The popup polls once a second,
@@ -62,6 +83,9 @@ function refresh() {
     // "Unchecked runtime.lastError: No SW". There is nothing to do about it — the next poll
     // wakes the worker and succeeds — but it has to be read rather than ignored.
     if (api.runtime.lastError || !s) return;
+    // User-study mode: the study panel replaces everything else (no scores are shown to participants).
+    show("studyPanel", !!s.study);
+    if (s.study) { renderStudy(s); return; }
     // No Chrome/Google account signed in → the whole panel is inert (samples/models are
     // keyed to that account, so there is nothing to show or train against).
     var noAccount = s.accountChecked && !s.accountId;

@@ -54,5 +54,13 @@
       "id": "guard@continuum.dev",
       "strict_min_version": "115.0"
     }
+  },
+  "commands": {
+    "toggle-study-pause": {
+      "suggested_key": {
+        "default": "Alt+Shift+P"
+      },
+      "description": "Continuum study: pause or resume recording"
+    }
   }
 }

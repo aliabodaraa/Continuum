@@ -9,10 +9,11 @@ Normally the extension scores typing and mouse movement **on the device**. In st
 of the deployed **server** system instead, exactly like a site that embeds the SDK:
 
 - every page visit is one study session; the content script sends the raw key-event tail (key codes and
-  timings; password fields masked to key 0) and its numbered mouse windows through the service worker to
-  the gateway (`/v1/sdk/keystroke/check`, `/v1/sdk/mouse/check`);
+  timings) and its numbered mouse windows through the service worker to the gateway
+  (`/v1/sdk/keystroke/check`, `/v1/sdk/mouse/check`); a password field produces no event at all;
 - ca-service scores them with the server models (keystroke: Lu et al.'s per-user network on the Aalto
-  negatives, 10 of 20 at 0.50; mouse: S1, 33 of 60) and logs every score, decision, threshold source and
+  negatives, 10 of 20 at 0.50; mouse: F2, the frozen deployed network with a per-user logistic head,
+  threshold at the 20th percentile of leave-one-sample-out scores, 33 of 60) and logs every score, decision, threshold source and
   passkey prompt (`services/ca-service/lib/studyLog.js`); on-device scoring is off;
 - a server verdict locks every tab; the passkey step-up runs on the gateway's `/study.html` and clears the
   server lock; after it, probation re-challenges any scored suspicious verdict (as the SDK does);
@@ -20,7 +21,15 @@ of the deployed **server** system instead, exactly like a site that embeds the S
   key codes is sent, and text could be reconstructed from it; the consent form says so.
 
 Settings live on the options page (experimenter only). `condition` is `genuine`, or
-`impostor:<pseudonym of the person typing>` during an impostor session.
+`impostor:<pseudonym of the person typing>` during an impostor session; `client` ("Machine") is
+`extension-study` on the participant's own computer and `lab` on a lab machine.
+
+## The participant's pause
+
+The toolbar badge shows **REC** while recording and **II** while paused. The popup's "Pause recording"
+button, or **Alt+Shift+P**, pauses capture on every page: while paused nothing of either channel is
+captured or sent, and the buffers are emptied when the pause starts and again when it ends. The pause is
+never lifted automatically; tell participants to resume after typing something private.
 
 ## Before the first participant
 
@@ -39,7 +48,8 @@ Settings live on the options page (experimenter only). `condition` is `genuine`,
    add `-H "X-Admin-Key: …"`.)
 3. **Checks** (LOGGING_SPEC §5), all on this machine's stack:
    - `node extension/scripts/e2e_headless_study.mjs`: a scripted genuine and impostor session end to end,
-     including the lock, the passkey step-up, the export, the privacy scan and the replay;
+     including the lock, the passkey step-up, the pause and password-field checks, the export, the
+     privacy scan and the replay;
    - `scripts/test_study_log.js` and `scripts/test_study_export.js` in ca-service, on a copy of the database
      (commands in their headers).
 
@@ -53,9 +63,9 @@ Settings live on the options page (experimenter only). `condition` is `genuine`,
 
 ## Impostor sessions
 
-On the lab machine set up for participant A, with A's pseudonym saved: before B starts, set "Who is typing" to
-"Another participant (impostor session)" and enter B's pseudonym; save. Set it back to genuine afterwards.
-The pseudonym in the settings is always the account's owner (A).
+On the lab machine set up for participant A, with A's pseudonym saved and "Machine" set to "Lab machine":
+before B starts, set "Who is typing" to "Another participant (impostor session)" and enter B's pseudonym;
+save. Set it back to genuine afterwards. The pseudonym in the settings is always the account's owner (A).
 
 ## Export
 

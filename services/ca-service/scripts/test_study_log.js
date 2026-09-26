@@ -29,7 +29,7 @@ const studyLog = require("../lib/studyLog");
   assert(keysUnique, "window keys are unique within a sample");
 
   // 2. A study mouse check logs full-precision scores with the client's keys; the verdict is unchanged.
-  const mu = db.prepare("SELECT user_id FROM mouse_profiles WHERE decision_version = 's1-loso-p20-33of60' LIMIT 1").get();
+  const mu = db.prepare("SELECT user_id FROM mouse_profiles WHERE decision_version = ? LIMIT 1").get(mouse.MOUSE_DECISION_VERSION);
   const rows = db.prepare("SELECT windows FROM mouse_samples WHERE user_id = ? ORDER BY id DESC LIMIT 3").all(mu.user_id);
   const windows = rows.flatMap((r) => JSON.parse(r.windows)).slice(0, 70);
   const keys = windows.map((_, i) => String(1000 + i));
@@ -47,7 +47,7 @@ const studyLog = require("../lib/studyLog");
   const md = db.prepare("SELECT scores FROM mouse_decisions ORDER BY id DESC LIMIT 1").get();
   assert(JSON.parse(md.scores).every((s, i) => s === logged.body.recentWindowScores[i]), "mouse_decisions now stores full precision too");
   const dec = db.prepare("SELECT * FROM study_decisions WHERE id = ?").get(dId);
-  assert(dec.condition === "genuine" && dec.session_id === "sess-test-0001" && dec.rule_version === "s1-loso-p20-33of60" && dec.client_ts === 12345.5,
+  assert(dec.condition === "genuine" && dec.session_id === "sess-test-0001" && dec.rule_version === mouse.MOUSE_DECISION_VERSION && dec.client_ts === 12345.5,
     "decision row carries condition, session, rule and client time", `${dec.verdict}, thr ${dec.threshold}`);
 
   // 3. Keystroke: the evaluation returns one key per packet score.
@@ -76,6 +76,9 @@ const studyLog = require("../lib/studyLog");
   const bad = [{ participant: "T01", sessionId: "short", condition: "genuine" }, { participant: "T01", sessionId: "sess-test-0003", condition: "impostor:T01" },
     { participant: "T01", sessionId: "sess-test-0003", condition: "maybe" }, { participant: "a b", sessionId: "sess-test-0003", condition: "genuine" }];
   assert(bad.every((b) => studyLog.parseContext(b) === null), "invalid contexts are rejected (session, self-impostor, unknown condition, pseudonym)");
+  const lab = studyLog.parseContext({ participant: "T01", sessionId: "sess-test-0005", condition: "genuine", client: "lab" });
+  const phone = studyLog.parseContext({ participant: "T01", sessionId: "sess-test-0005", condition: "genuine", client: "phone" });
+  assert(lab && lab.client === "lab" && phone === null, "client: 'lab' accepted, an unknown client voids the context");
   // ku is bound to T02 above; claiming T01 (bound to the mouse user) must be refused
   const hijack = studyLog.recordCheck(ku.user_id, studyLog.parseContext({ participant: "T01", sessionId: "sess-test-0004", condition: "genuine" }),
     { channel: "keystroke", scores: [0.9], keys: ["k"], lowWindows: 0, verdict: "ok" });
@@ -89,7 +92,7 @@ const studyLog = require("../lib/studyLog");
   // 6. Profile records only for participants.
   studyLog.recordProfile(999999, { channel: "mouse", ruleVersion: "x", thresholdScores: [1] });
   assert(!db.prepare("SELECT 1 FROM study_profiles WHERE user_id = 999999").get(), "no profile record for a non-participant");
-  studyLog.recordProfile(mu.user_id, { channel: "mouse", ruleVersion: "s1-loso-p20-33of60", threshold: 0.5, thresholdSource: "loso-p20",
+  studyLog.recordProfile(mu.user_id, { channel: "mouse", ruleVersion: mouse.MOUSE_DECISION_VERSION, threshold: 0.5, thresholdSource: "loso-p20",
     modelPath: "/app/artifacts/users/user-1/mouse_model", windowCount: 440, thresholdScores: [0.123456789012345, 0.9] });
   const pr = db.prepare("SELECT threshold_scores, model_sha256 FROM study_profiles WHERE user_id = ? ORDER BY id DESC LIMIT 1").get(mu.user_id);
   assert(JSON.parse(pr.threshold_scores)[0] === 0.123456789012345, "profile threshold scores stored at full precision",

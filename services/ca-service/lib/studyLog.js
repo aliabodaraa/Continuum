@@ -21,6 +21,8 @@ const MODEL_STORE_DIR = process.env.MODEL_STORE_DIR || "/model-store";
 
 const PSEUDONYM = /^[A-Za-z0-9_-]{1,32}$/;
 const SESSION = /^[A-Za-z0-9_-]{8,64}$/;
+// LOGGING_SPEC.md §2: the participant's own browser, or the lab machine of an impostor session.
+const CLIENTS = new Set(["extension-study", "lab"]);
 
 /** The validated study context of a request body, or null (not a study request). */
 function parseContext(raw) {
@@ -33,8 +35,12 @@ function parseContext(raw) {
   const conditionOk = condition === "genuine" ||
     (impostorOf !== null && PSEUDONYM.test(impostorOf) && impostorOf !== participant);
   if (!conditionOk) return null;
+  // Like the condition, the client is declared by the study client, never inferred: a value outside
+  // the list voids the context rather than being stored as something it is not.
+  const client = raw.client == null ? null : String(raw.client);
+  if (client !== null && !CLIENTS.has(client)) return null;
   const clientTs = Number(raw.clientTs);
-  return { participant, sessionId, condition, clientTs: Number.isFinite(clientTs) ? clientTs : null };
+  return { participant, sessionId, condition, client, clientTs: Number.isFinite(clientTs) ? clientTs : null };
 }
 
 /** A context naming only the participant (study setup, before any session exists), or null. */
@@ -101,10 +107,10 @@ function recordCheck(userId, ctx, d) {
     let decisionId = null;
     db.transaction(() => {
       decisionId = db.prepare(
-        `INSERT INTO study_decisions (user_id, session_id, channel, condition, client_ts, rule_version,
+        `INSERT INTO study_decisions (user_id, session_id, channel, condition, client, client_ts, rule_version,
            threshold, window_count, low_windows, verdict, prompt_required, details)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(userId, ctx.sessionId, d.channel, ctx.condition, ctx.clientTs, d.ruleVersion, d.threshold,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(userId, ctx.sessionId, d.channel, ctx.condition, ctx.client || null, ctx.clientTs, d.ruleVersion, d.threshold,
             scores.length, d.lowWindows, d.verdict, d.promptRequired ? 1 : 0,
             d.details ? JSON.stringify(d.details) : null).lastInsertRowid;
       const ins = db.prepare(

@@ -734,7 +734,7 @@ async function trainUserTypingProfile(userId, db) {
   // User study: the live cutoff is the fixed 0.50, so the threshold-source scores are the per-user
   // validation (held-out genuine) scores model-api computed for this model.
   studyLog.recordProfile(userId, {
-    channel: "keystroke", ruleVersion: RULE_VERSION, threshold: WINDOW_DECISION_THRESHOLD,
+    channel: "keystroke", ruleVersion: `${RULE_VERSION};${NEGATIVES_SOURCE}`, threshold: WINDOW_DECISION_THRESHOLD,
     thresholdSource: "fixed-0.50; scores = validation genuine", modelPath: result.modelPath,
     windowCount: result.positiveWindowCount, thresholdScores: result.validationGenuineScores,
   });

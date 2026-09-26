@@ -9,8 +9,10 @@
 //      as real key and pointer events on a test page, scored by the server through the extension
 //   3. a scripted IMPOSTOR session: account 29's typing and user2's movement; the lock, then the
 //      passkey step-up on the study page (the virtual authenticator's credential)
-//   4. the export: both channels and conditions, every threshold-source score, model hashes,
-//      the prompt events; the privacy scan passes and the replay reproduces every live verdict
+//   4. privacy (LOGGING_SPEC §5): with the participant's pause on, typing and movement create nothing;
+//      after resume, only post-resume windows are scored; typing in a password field creates nothing
+//   5. the export: both channels and conditions and clients, every threshold-source score, model
+//      hashes, the prompt events; the privacy scan passes and the replay reproduces every live verdict
 // Everything the test created is removed at the end (study rows, enrolments, the passkey); one
 // "study-e2e" tenant is kept and reused.
 //
@@ -30,7 +32,8 @@ const CHROME = path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Ap
 const GW = process.env.CONTINUUM_GATEWAY || "http://localhost:8080";
 const CA = "continuum-ca-service-1";
 const PORT = 9338;
-const P = "ZZE2E", TYPIST = "ZZE2F";            // the account's pseudonym, and the impostor typing on it
+// A fresh test participant per run (the tenant is reused), so nothing of an earlier run can leak in.
+const P = "ZZE2E" + Math.random().toString(36).slice(2, 7).toUpperCase(), TYPIST = "ZZE2F";
 const KS_GENUINE = 26, KS_IMPOSTOR = 29;        // seeded KeyRecs accounts (typing source)
 const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-study-e2e-"));
 
@@ -66,7 +69,7 @@ const sapi = (u, s) => fs.readFileSync(path.join(ROOT, "data", "sapimouse", u, s
 
 // ---------- test page ----------
 const pageServer = http.createServer((req, res) => { res.writeHead(200, { "Content-Type": "text/html" });
-  res.end('<!doctype html><title>study e2e</title><textarea id="t" style="width:1800px;height:900px"></textarea>'); });
+  res.end('<!doctype html><title>study e2e</title><input type="password" id="pw" style="width:400px"><textarea id="t" style="width:1800px;height:900px"></textarea>'); });
 await new Promise((r) => pageServer.listen(0, "127.0.0.1", r));
 const PAGE = `http://127.0.0.1:${pageServer.address().port}/`;
 
@@ -186,7 +189,7 @@ try {
     if (ks.trained && ms.enrolled && !ms.training) break;
     await sleep(5000);
   }
-  check("both server models train (keystroke on the Aalto negatives, mouse S1)", !!(ks && ks.trained && ms && ms.enrolled), `${((Date.now() - tTrain) / 1000).toFixed(0)} s`);
+  check("both server models train (keystroke on the Aalto negatives, mouse on the live rule)", !!(ks && ks.trained && ms && ms.enrolled), `${((Date.now() - tTrain) / 1000).toFixed(0)} s`);
   // regression: the gateway's onboarding lookup once lacked the service key and assertion, so every
   // user read as not enrolled and the SDK offered enrolment again
   const ob = await gw("/v1/sdk/onboarding", null, "GET");
@@ -209,8 +212,10 @@ try {
   await send("Target.closeTarget", { targetId: vid });
 
   // ---- 2. genuine session ----
-  const setStudy = (condition) => evaluate(sw, `new Promise(r => chrome.storage.local.set({ cg_study: { on: true, gateway: ${JSON.stringify(GW)},
-    siteKey: ${JSON.stringify(siteKey)}, participant: ${JSON.stringify(P)}, condition: ${JSON.stringify(condition)} } }, () => r(true)))`);
+  const setStudy = (condition, client = "extension-study") => evaluate(sw, `new Promise(r => chrome.storage.local.set({ cg_study: { on: true, gateway: ${JSON.stringify(GW)},
+    siteKey: ${JSON.stringify(siteKey)}, participant: ${JSON.stringify(P)}, condition: ${JSON.stringify(condition)}, client: ${JSON.stringify(client)} } }, () => r(true)))`);
+  const setPaused = (v) => evaluate(sw, `new Promise(r => chrome.storage.local.set({ cg_study_paused: ${v ? "true" : "false"} }, () => r(true)))`);
+  await setPaused(false);
   await setStudy("genuine");
   await sleep(800);
   const { targetId: pid } = await send("Target.createTarget", { url: PAGE });
@@ -220,21 +225,24 @@ try {
   await evaluate(page, "document.getElementById('t').focus(); true");
   const locked = () => evaluate(sw, "state.locked");
   const tg = Date.now();
-  await typeReplay(page, genuineTexts.slice(10, 14));
   await mouseReplay(page, sapi("user1", "session_2020_05_14_1min.csv"), 45);
+  await typeReplay(page, genuineTexts.slice(10, 14));
   await sleep(4000);
   const genLocked = await locked();
   const gen = JSON.parse(caNode(`console.log(JSON.stringify(db.prepare("SELECT channel, verdict, COUNT(*) n FROM study_decisions WHERE user_id=? AND condition='genuine' GROUP BY channel, verdict").all(${userId})))`));
   console.log(`    genuine session (${((Date.now() - tg) / 1000).toFixed(0)} s): ${JSON.stringify(gen)}; locked: ${genLocked}`);
   check("genuine typing is scored by the server and logged, with verdicts past warm-up", gen.some((r) => r.channel === "keystroke" && r.verdict !== "warmup"));
   check("genuine movement is scored by the server and logged", gen.some((r) => r.channel === "mouse" && r.verdict !== "warmup"));
+  check("the recording indicator shows REC", (await evaluate(sw, "badgeForState().text")) === "REC");
 
   // ---- 3. impostor session ----
+  let stepUps = 0;
   async function stepUp() {
     await evaluate(page, "(() => { const b = document.getElementById('__cgVerifyBtn'); if (b) b.click(); return !!b; })()");
     const pop = await target((t) => t.type === "page" && t.url.includes("/study.html?mode=verify"), 60);
     const ps = await attach(pop.targetId);
-    await authenticator(ps, creds);
+    stepUps += 1;
+    await authenticator(ps, creds.map((c) => ({ ...c, signCount: (c.signCount || 0) + 100 * stepUps })));
     await send("Page.reload", {}, ps);
     const clicked = await waitFor(ps, visibleButton(".ov .b"), 30000);
     let released = false;
@@ -242,7 +250,7 @@ try {
     return { clicked, released };
   }
   if (genLocked) { console.log("    note: the genuine session was locked (a false lock); clearing it through the step-up"); await stepUp(); }
-  await setStudy("impostor:" + TYPIST);
+  await setStudy("impostor:" + TYPIST, "lab");
   await sleep(800);
   await send("Page.reload", {}, page);   // a new page visit = a new study session
   await waitFor(page, "document.readyState === 'complete'");
@@ -261,7 +269,44 @@ try {
   }
   await sleep(2000);
 
-  // ---- 4. export, privacy scan, replay ----
+  // ---- 4. privacy: the participant's pause, and password fields ----
+  const decisionCount = () => Number(caNode(`console.log(db.prepare('SELECT COUNT(*) n FROM study_decisions WHERE user_id=?').get(${userId}).n)`).trim());
+  const maxDecision = () => Number(caNode(`console.log(db.prepare('SELECT COALESCE(MAX(id),0) m FROM study_decisions WHERE user_id=?').get(${userId}).m)`).trim());
+  await setStudy("genuine");
+  await setPaused(true);
+  await sleep(800);
+  await send("Page.reload", {}, page);
+  await waitFor(page, "document.readyState === 'complete'");
+  await sleep(1500);
+  await evaluate(page, "document.getElementById('t').focus(); true");
+  check("the recording indicator shows the pause", (await evaluate(sw, "badgeForState().text")) === "II");
+  const n0 = decisionCount();
+  await typeReplay(page, genuineTexts.slice(14, 17));
+  await mouseReplay(page, sapi("user1", "session_2020_05_14_1min.csv"), 25);
+  await sleep(4000);
+  check("while paused, typing and movement create nothing", decisionCount() === n0, `${decisionCount() - n0} new decision(s)`);
+  const lastBefore = maxDecision();
+  const resumedAt = await evaluate(page, "performance.now()");
+  await setPaused(false);
+  await sleep(1500);
+  await evaluate(page, "document.getElementById('t').focus(); true");
+  await typeReplay(page, genuineTexts.slice(17, 19), locked);
+  await sleep(4000);
+  const after = JSON.parse(caNode(`console.log(JSON.stringify(db.prepare("SELECT w.window_key k FROM study_windows w JOIN study_decisions d ON d.id=w.decision_id WHERE d.user_id=? AND d.id>? AND d.channel='keystroke'").all(${userId}, ${lastBefore}).map(r=>r.k)))`));
+  const earliest = Math.min(...after.map((k) => Number(k.split("-")[0])));
+  check("after resume, checks resume, and every scored window starts after the resume", after.length > 0 && earliest >= resumedAt - 1500,
+    `${after.length} window(s), earliest start ${earliest.toFixed(0)} ms vs resume at ${resumedAt.toFixed(0)} ms (page clock)`);
+  if (await locked()) { console.log("    note: probation re-challenged after resume; clearing it"); await stepUp(); }
+  await send("Page.reload", {}, page);
+  await waitFor(page, "document.readyState === 'complete'");
+  await sleep(1500);
+  await evaluate(page, "document.getElementById('pw').focus(); true");
+  const p0 = decisionCount();
+  await typeReplay(page, genuineTexts.slice(0, 3));
+  await sleep(4000);
+  check("typing in a password field creates nothing (no key event is sent)", decisionCount() === p0, `${decisionCount() - p0} new decision(s)`);
+
+  // ---- 5. export, privacy scan, replay ----
   caScript("-e", "require('fs').rmSync('/tmp/e2e_study_export',{recursive:true,force:true})");
   const ex = caScript("scripts/study_export.js", "--out", "/tmp/e2e_study_export");
   check("the export runs and its privacy scan is clean", ex.code === 0, ex.out.trim().split("\n").filter((l) => /privacy|re-scored/.test(l)).join(" | "));
@@ -275,6 +320,11 @@ try {
   const conds = new Set(decs.map((d) => `${d.channel}/${d.condition}`));
   check("decisions of both channels under both conditions", ["keystroke/genuine", "mouse/genuine"].every((c) => conds.has(c)) && [...conds].some((c) => c.endsWith(`impostor:${TYPIST}`)), [...conds].join(", "));
   check("every decision's windows carry keys (none unkeyed)", decs.every((d) => d.windowKeys.every((k) => !k.startsWith("unkeyed"))));
+  check("client per decision: extension-study for the genuine sessions, lab for the impostor session",
+    decs.every((d) => (d.condition === "genuine" ? d.client === "extension-study" : d.client === "lab")),
+    [...new Set(decs.map((d) => `${d.condition}/${d.client}`))].join(", "));
+  check("the keystroke profile's version names its negatives", profs.some((p) => p.channel === "keystroke" && /aalto-A200/.test(p.ruleVersion)),
+    profs.map((p) => p.ruleVersion).join(", "));
   check("sessions: one per page visit", new Set(decs.map((d) => d.sessionId)).size >= 2);
   const prompts = lines.filter((l) => l.type === "prompt").map((p) => p.event);
   check("prompt events logged (shown, then passed)", !impLocked || (prompts.includes("shown") && prompts.includes("passed")), prompts.join(","));
@@ -286,7 +336,14 @@ try {
 } finally {
   // ---- cleanup: the test participant's study rows and server enrolments; Chrome; temp files ----
   try {
-    if (token) { await gw("/v1/sdk/keystroke/reset"); await gw("/v1/sdk/mouse/reset"); }
+    if (token) {
+      for (const p of ["/v1/sdk/keystroke/reset", "/v1/sdk/mouse/reset"]) {
+        const r = await gw(p);
+        if (r.status !== 200) check(`cleanup: ${p}`, false, `HTTP ${r.status}`);
+      }
+    }
+    // a server lock left by an interrupted run would outlive the test user's reset
+    if (userId) caNode(`db.prepare('DELETE FROM session_locks WHERE user_id=?').run(${userId}); console.log('lock cleared')`, true);
     // the test passkey, cleared from inside the gateway container (its service key stays there)
     if (userId) execFileSync("docker", ["exec", "continuum-gateway-1", "node", "-e", `fetch(process.env.PASSKEY_API_URL+'/v1/users/${userId}/reset',{method:'POST',headers:{'X-Api-Key':process.env.PASSKEY_API_KEY||''}}).then(r=>console.log('passkey reset',r.status))`], { encoding: "utf8" });
     if (userId) caNode(`for (const t of ['study_windows','study_decisions','study_prompts','study_profiles','study_participants']) db.prepare('DELETE FROM '+t+' WHERE user_id=?').run(${userId}); console.log('cleaned')`, true);

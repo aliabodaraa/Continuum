@@ -44,7 +44,16 @@
   var STUDY_MOUSE_N = 60, STUDY_MOUSE_MS = 1600, STUDY_KS_TAIL = 1400;   // as sdk/guard.js
   var lastStudyWindowCount = 0, ksInFlight = false, ksMissed = false;
   var studyMouse = [], mouseSeq = 0, lastStudyMouseKey = null, mouseInFlight = false, studyTimer = null;
+  var studyPaused = false;   // E4: the participant's pause; nothing of either channel is captured
+  // Buffers are dropped when the pause starts AND when it ends, so no check after a pause can carry
+  // anything from around it.
+  function clearCapture() {
+    events = []; lastWindowCount = 0; mouseEvents = []; lastMouseWindows = 0;
+    lastStudyWindowCount = 0; ksMissed = false; studyMouse = []; lastStudyMouseKey = null;
+  }
   function setStudy(v) {
+    var paused = !!(v && v.participant && v.paused);
+    if (paused !== studyPaused) { clearCapture(); studyPaused = paused; }
     study = v && v.participant ? v : null;
     if (study && !studyTimer) studyTimer = setInterval(studyMouseTick, STUDY_MOUSE_MS);
     if (!study && studyTimer) { clearInterval(studyTimer); studyTimer = null; }
@@ -54,7 +63,7 @@
   // The study page (enrolment and step-up) is not participant data: no checks from it.
   function onStudyPage() { return !!rpOrigin && origin === rpOrigin; }
   function studyKsMaybe(windowCount) {
-    if (!study || onStudyPage() || windowCount <= lastStudyWindowCount) return;
+    if (!study || studyPaused || onStudyPage() || windowCount <= lastStudyWindowCount) return;
     if (ksInFlight) { ksMissed = true; return; }
     lastStudyWindowCount = windowCount;
     ksInFlight = true; ksMissed = false;
@@ -70,7 +79,7 @@
     });
   }
   function studyMouseTick() {
-    if (!study || dead || lockEl || mouseInFlight || onStudyPage() || studyMouse.length < STUDY_MOUSE_N) return;
+    if (!study || studyPaused || dead || lockEl || mouseInFlight || onStudyPage() || studyMouse.length < STUDY_MOUSE_N) return;
     var last = studyMouse[studyMouse.length - 1].k;
     if (last === lastStudyMouseKey) return;   // no new movement since the last check
     lastStudyMouseKey = last;
@@ -253,6 +262,8 @@
     try {
       var tgt = e.target;
       if (isHidden(tgt)) return;
+      // Study mode: nothing while paused, and no event at all from a password field (not even masked).
+      if (study && (studyPaused || isPassword(tgt))) return;
       var kc = isPassword(tgt) ? 0 : (e.keyCode || 0);   // mask the KEY on password fields
       events.push({ keyCode: kc, type: type, t: performance.now() - t0, field: fieldOf(tgt), ftype: (tgt && (tgt.type || tgt.tagName)) || "unknown" });
       if (events.length > 2000) {
@@ -302,7 +313,7 @@
   on("keyup");
   // Study mode only: a paste event with its LENGTH (the server refuses pasted text as rhythm).
   var onPaste = function (e) {
-    if (!study || dead || !enabled || excluded || isHidden(e.target)) return;
+    if (!study || studyPaused || dead || !enabled || excluded || isHidden(e.target) || isPassword(e.target)) return;
     var n = 0; try { n = ((e.clipboardData && e.clipboardData.getData("text")) || "").length; } catch (x) {}
     events.push({ keyCode: 0, type: "paste", t: performance.now() - t0, field: fieldOf(e.target), ftype: (e.target && (e.target.type || e.target.tagName)) || "unknown", pastedLength: n });
   };
@@ -312,6 +323,7 @@
   var mouseEvents = [], mouseDown = false, lastMouseWindows = 0;
   function recMouse(x, y, st) {
     if (dead || !enabled || excluded || lockEl || !mouseTracking) return;
+    if (study && studyPaused) return;   // E4: nothing while the participant's pause is on
     mouseEvents.push({ t: performance.now(), x: x, y: y, state: st });
     if (mouseEvents.length > 3000) {
       // Trimming the event buffer shrinks the window count computed from it. lastMouseWindows

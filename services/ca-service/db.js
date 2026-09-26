@@ -278,5 +278,7 @@ db.exec(`
 `);
 // The inputs of a decision's verdict besides its scores (JSON), so an export can be replayed exactly.
 addColumnIfMissing("study_decisions", "details", "TEXT");
+// Which study client produced the decision: "extension-study" (the participant's own browser) or "lab".
+addColumnIfMissing("study_decisions", "client", "TEXT");
 
 module.exports = db;

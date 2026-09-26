@@ -63,6 +63,11 @@
       <option value="impostor">Another participant (impostor session)</option>
     </select>
     <input id="studyImpostor" type="text" placeholder="pseudonym of the person typing, e.g. P12" style="margin-top:8px;display:none" />
+    <label for="studyClient" style="margin-top:12px">Machine</label>
+    <select id="studyClient" style="width:100%;padding:10px 12px;border:1.5px solid var(--field-border);border-radius:10px;font:inherit;background:var(--field-bg);color:var(--text)">
+      <option value="extension-study">The participant's own computer</option>
+      <option value="lab">Lab machine</option>
+    </select>
     <button id="studySave">Save study settings</button>
     <button id="studyEnrol" style="background:none;border:1.5px solid var(--field-border);color:var(--text);margin-left:8px">Open enrolment page</button>
     <div id="studyMsg" style="display:none;font-size:13px;font-weight:600;margin-top:10px"></div>

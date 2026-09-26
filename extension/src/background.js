@@ -92,18 +92,22 @@ var mouseScores = [];  // rolling mouse window scores (up to MOUSE_SUSTAIN_WINDO
 // so there is one system under test. Enrolment and the passkey step-up run on the gateway's
 // /study.html (passkeys are bound to that origin) under the same identity, externalId
 // "study:<pseudonym>". `condition` is "genuine" or "impostor:<pseudonym of the person typing>".
-var study = { on: false, gateway: "", siteKey: "", participant: "", condition: "genuine" };
+var study = { on: false, gateway: "", siteKey: "", participant: "", condition: "genuine", client: "extension-study" };
+// E4: the participant's pause. While it is on, no page captures anything on either channel and no
+// check is sent. Set from the popup or the keyboard shortcut; persisted, and never lifted automatically.
+var studyPaused = false;
 var studySession = null;       // { token, userId } from the gateway's /v1/sdk/session
 var studyProbation = false;    // after a step-up: re-challenge on any scored suspicious verdict (as the SDK)
 var studyPrompt = null;        // the open step-up: { channel, decisionId, sessionId, tabId }
 var studyError = null;
 function studyOn() { return !!(study && study.on && study.gateway && study.siteKey && study.participant); }
-function studyInfo() { return studyOn() ? { participant: study.participant, condition: study.condition } : null; }
+function studyInfo() { return studyOn() ? { participant: study.participant, condition: study.condition, client: study.client, paused: studyPaused } : null; }
 function loadStudy(v) {
   v = v || {};
   study = {
     on: v.on === true, gateway: String(v.gateway || "").replace(/\/+$/, ""), siteKey: String(v.siteKey || ""),
     participant: String(v.participant || ""), condition: String(v.condition || "genuine"),
+    client: v.client === "lab" ? "lab" : "extension-study",
   };
   studySession = null; studyProbation = false; studyError = null;
 }
@@ -126,7 +130,7 @@ async function studyPost(path, body) {
   }
 }
 function studyContext(sessionId, clientTs, extra) {
-  return Object.assign({ participant: study.participant, sessionId: sessionId, condition: study.condition, clientTs: clientTs }, extra || {});
+  return Object.assign({ participant: study.participant, sessionId: sessionId, condition: study.condition, client: study.client, clientTs: clientTs }, extra || {});
 }
 function studyPromptEvent(event) {
   var p = studyPrompt;
@@ -170,6 +174,11 @@ function studyOpenPage(mode, reason) {
     try { api.windows.create({ url: url, type: "popup", width: 520, height: 680 }, function (w) { track(w && w.tabs && w.tabs[0]); }); return; } catch (e) {}
   }
   api.tabs.create({ url: url }, track);
+}
+function setStudyPaused(v) { try { api.storage.local.set({ cg_study_paused: !!v }); } catch (e) {} }
+// The pause shortcut (manifest "commands"): quicker than opening the popup before typing something private.
+if (api.commands && api.commands.onCommand) {
+  api.commands.onCommand.addListener(function (cmd) { if (cmd === "toggle-study-pause" && studyOn()) setStudyPaused(!studyPaused); });
 }
 function fromStudyPage(sender) { return studyOn() && sender && sender.url && sender.url.indexOf(study.gateway + "/study.html") === 0; }
 // Closing the step-up page while still locked = the prompt was dismissed.
@@ -371,9 +380,10 @@ function finishAccountSwitch(cb) {
   if (cb) cb();
 }
 
-api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress", "cg_mouse_tracking", MOUSE_PCT_KEY, "cg_debug", "cg_study"], function (d) {
+api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress", "cg_mouse_tracking", MOUSE_PCT_KEY, "cg_debug", "cg_study", "cg_study_paused"], function (d) {
   d = d || {};
   loadStudy(d.cg_study);
+  studyPaused = d.cg_study_paused === true;
   config.exclusions = d.cg_exclusions || [];
   debugLog = d.cg_debug === true;
   RP_BASE = (d.cg_rp_base || RP_BASE_DEFAULT).replace(/\/+$/, "");
@@ -430,6 +440,11 @@ if (api.storage.onChanged) {
   api.storage.onChanged.addListener(function (changes, area) {
     if (area === "local" && changes.cg_rp_base) {
       RP_BASE = (changes.cg_rp_base.newValue || RP_BASE_DEFAULT).replace(/\/+$/, "");
+    }
+    if (area === "local" && changes.cg_study_paused) {
+      studyPaused = changes.cg_study_paused.newValue === true;
+      broadcastConfig();   // every page stops (or resumes) capturing at once
+      refreshAllBadges();
     }
     if (area === "local" && changes.cg_study) {
       loadStudy(changes.cg_study.newValue);
@@ -524,7 +539,7 @@ function statusObj() {
     accountId: state.accountId || null, accountEmail: state.accountEmail || null, accountChecked: state.accountChecked,
     keySamples: state.keySamples, mouseSamples: state.mouseSamples, lockReason: state.lockReason,
     rpError: state.rpError || null, rpBase: RP_BASE,
-    study: studyInfo(), studyError: studyError,   // user-study mode (see USER STUDY MODE)
+    study: studyInfo(), studyError: studyError, studyPaused: studyPaused,   // user-study mode (see USER STUDY MODE)
   };
 }
 
@@ -661,6 +676,8 @@ var ICON_OFF = { 16: "icons/icon-off16.png", 32: "icons/icon-off32.png", 48: "ic
 function badgeForState() {
   if (!anyTrained()) return { text: "⚙️", color: "#475569" };          // nothing trained → needs setup
   if (state.locked) return { text: "🔒", color: "#dc2626" };
+  // Study mode: the recording indicator (E4). No scores are shown to participants.
+  if (studyOn()) return studyPaused ? { text: "II", color: "#64748b" } : { text: "REC", color: "#dc2626" };
   if (state.verdict && state.verdict.status === "suspicious") return { text: "!", color: "#dc2626" };
   if (state.verdict && state.verdict.status === "genuine") return { text: state.verdict.mean + "%", color: "#16a34a" };
   if (monitoringEnabled()) return { text: state.steps > 0 ? String(Math.min(state.steps, 99)) : "", color: "#4f46e5" };
@@ -994,7 +1011,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       return;
     case "cg:study-check": {
       // From a content script in study mode: { channel, sessionId, clientTs, body, windowKeys }.
-      if (!studyOn() || state.locked || !msg.body) { reply({ ok: false }); return true; }
+      if (!studyOn() || studyPaused || state.locked || !msg.body) { reply({ ok: false, paused: studyPaused }); return true; }
       var ch = msg.channel === "mouse" ? "mouse" : "keystroke";
       var path = ch === "mouse" ? "/v1/sdk/mouse/check" : "/v1/sdk/keystroke/check";
       var extra = ch === "mouse" ? { windowKeys: msg.windowKeys || [] } : null;
