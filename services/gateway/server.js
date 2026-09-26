@@ -325,14 +325,29 @@ function originAllowed(tenant, req) {
 }
 
 const pkCache = new Map();
+// Through fwd(), which sends PASSKEY_API_KEY. This used a bare fetch: since passkey-service began
+// enforcing the key (860b4d6), every lookup came back 401, `hasPasskey` read false for every user,
+// and so the gateway path never raised a keystroke or mouse step-up (found 2026-09-26 by the
+// user-study end-to-end test). A failed lookup is logged and not cached as "no passkey".
 async function hasPasskey(uid) {
   const c = pkCache.get(uid); if (c && Date.now() - c.t < 60000) return c.v;
-  try { const d = await fetch(`${PASSKEY_URL}/v1/users/${uid}/passkeys`).then((r) => r.json()); const v = !!d.hasPasskey; pkCache.set(uid, { v, t: Date.now() }); return v; }
-  catch (e) { return false; }
+  try {
+    const r = await fwd(`${PASSKEY_URL}/v1/users/${uid}/passkeys`, "GET");
+    if (r.status !== 200) { console.error(`[gateway] passkey lookup for user ${uid} failed: HTTP ${r.status}`); return false; }
+    const v = !!JSON.parse(r.text).hasPasskey; pkCache.set(uid, { v, t: Date.now() }); return v;
+  } catch (e) { console.error(`[gateway] passkey lookup for user ${uid} failed: ${e.message}`); return false; }
 }
-async function onboardingFor(uid) {
+// Through fwd() with an identity assertion: ca-service's route requires both the service key and
+// the gateway's assertion. A bare fetch (as before) got 401, so every user read as not enrolled and
+// the SDK's eager onboarding offered enrolment again (found 2026-09-26 with the hasPasskey bug above).
+async function onboardingFor(uid, tenantKey) {
   const pk = await hasPasskey(uid);
-  const ob = await fetch(`${CA_URL}/v1/users/${uid}/onboarding`).then((r) => r.json()).catch(() => ({}));
+  let ob = {};
+  try {
+    const r = await fwd(`${CA_URL}/v1/users/${uid}/onboarding`, "GET", undefined, mintAssertion(tenantKey, uid, "ca-service"));
+    if (r.status === 200) ob = JSON.parse(r.text);
+    else console.error(`[gateway] onboarding lookup for user ${uid} failed: HTTP ${r.status}`);
+  } catch (e) { console.error(`[gateway] onboarding lookup for user ${uid} failed: ${e.message}`); }
   return { passkey: pk, keystroke: !!ob.trained, mouse: !!ob.mouseEnrolled };
 }
 
@@ -380,7 +395,7 @@ app.post("/v1/sdk/session", async (req, res) => {
       externalId = String(req.body.externalId || "anon-" + crypto.randomUUID());
     }
     const u = userFor(siteKey, externalId);
-    res.json({ token: signSession(u, siteKey, externalId), userId: u.userId, username: u.username, externalId, verified, onboarding: await onboardingFor(u.userId), onboardingMode: ONBOARDING_MODE });
+    res.json({ token: signSession(u, siteKey, externalId), userId: u.userId, username: u.username, externalId, verified, onboarding: await onboardingFor(u.userId, siteKey), onboardingMode: ONBOARDING_MODE });
   } catch (e) { console.error("session:", e); res.status(500).json({ error: e.message }); }
 });
 
@@ -432,7 +447,7 @@ function auth(req, res, next) {
   req.uid = pl.sub; req.uname = pl.uname; req.tenant = tenant; req.tenantKey = pl.sk; req.esub = extSubject(pl.ext); next();
 }
 
-app.get("/v1/sdk/onboarding", auth, async (req, res) => res.json(await onboardingFor(req.uid)));
+app.get("/v1/sdk/onboarding", auth, async (req, res) => res.json(await onboardingFor(req.uid, req.tenantKey)));
 
 // keystroke
 app.get("/v1/sdk/keystroke/config", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/config`, "GET", undefined, caAssert(req))));
