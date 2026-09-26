@@ -248,6 +248,7 @@
   function setKb(c, h) { if (kbEl) { kbEl.className = "st " + c; kbEl.innerHTML = "keystroke: " + h; } }
   function setMouseRow(c, h) { if (mouseEl) { mouseEl.className = "st " + c; mouseEl.innerHTML = "mouse: " + h; } }
   var stepUpOnSuccess = null; // optional callback for external step-up requests
+  var stepUpOnFail = null;    // optional callback for a failed attempt (requireStepUp's onFail)
   var onProbation = false;    // after a step-up: any suspicious verdict re-challenges (no grace) until a genuine one clears it
   // Show the single passkey step-up modal, with the REASON (which modality flagged it).
   function showModal(modality) {
@@ -341,8 +342,12 @@
       lastCheckedWindowCount = 0; checkInFlight = false; ksMissedWindow = false;
       if (mouseTracker) mouseTracker.reset(); lastMouseEvents = 0;
       locked = false; onProbation = true; hideModal(); setKb("ok", "verified ✓"); if (mouseOn) setMouseRow("ok", "watching");
+      stepUpOnFail = null;
       if (stepUpOnSuccess) { var cb = stepUpOnSuccess; stepUpOnSuccess = null; try { cb(); } catch (e2) {} }
-    } catch (e) { modalErrEl.textContent = e.message || "Verification failed"; modalErrEl.style.display = "block"; }
+    } catch (e) {
+      modalErrEl.textContent = e.message || "Verification failed"; modalErrEl.style.display = "block";
+      if (stepUpOnFail) { try { stepUpOnFail(e.message || "Verification failed"); } catch (e3) {} }
+    }
     finally { modalBtnEl.disabled = false; modalBtnEl.textContent = "Verify with passkey"; }
   }
 
@@ -1064,7 +1069,9 @@
       // Trigger the ONE passkey step-up modal from anywhere (e.g. a page that runs
       // its own keystroke check). modality ("keystroke"|"mouse") sets the reason;
       // onSuccess fires after a verified passkey. Keeps all passkey UI inside the SDK.
-      requireStepUp: function (modality, onSuccess) { if (locked) return; locked = true; stepUpOnSuccess = onSuccess || null; showModal(modality || "keystroke"); },
+      // onFail (optional) fires on each failed verification attempt, with the error message; the
+      // modal stays open for another try (the user-study page reports these as `failed`).
+      requireStepUp: function (modality, onSuccess, onFail) { if (locked) return; locked = true; stepUpOnSuccess = onSuccess || null; stepUpOnFail = onFail || null; showModal(modality || "keystroke"); },
       // Contribute the current clean typing as an adaptive training sample — the
       // same thing the floating "Contribute" prompt does, callable from a consumer's
       // own Save action so "save" and "keep learning my rhythm" are one gesture.

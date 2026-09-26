@@ -584,6 +584,15 @@ app.post("/v1/keystroke/retrain", requireIdentity, async (req, res) => {
   } catch (err) { return sendError(res, "retrain", err); }
 });
 
+// ---- user study: bind this user to a participant pseudonym at setup, BEFORE enrolment, so the
+// enrolment trainings are recorded with their threshold-source scores (lib/studyLog.js) ----
+app.post("/v1/study/register", requireIdentity, (req, res) => {
+  const ctx = studyLog.participantContext(req.body.participant);
+  if (!ctx) return res.status(400).json({ ok: false, error: "invalid participant (or STUDY_LOGGING is off)" });
+  const ok = studyLog.register(uid(req), ctx);
+  res.status(ok ? 200 : 409).json({ ok, userId: uid(req) });
+});
+
 // ---- user study: passkey prompt events as the study client saw them (lib/studyLog.js) ----
 app.post("/v1/study/prompt", requireIdentity, (req, res) => {
   const ctx = studyLog.parseContext(req.body.study);

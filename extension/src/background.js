@@ -84,6 +84,101 @@ var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: n
 var scores = [];       // rolling last N keystroke window scores
 var mouseScores = [];  // rolling mouse window scores (up to MOUSE_SUSTAIN_WINDOW)
 
+// ================= USER STUDY MODE (recovery plan T4.3) =================
+// Set by the experimenter on the options page. In study mode the extension is a CLIENT of the
+// deployed server system, like the SDK: the content script sends the raw key-event tail and its
+// mouse windows, ca-service scores them with the server models (mouse S1, keystroke on the Aalto
+// negatives) and logs every score (services/ca-service/lib/studyLog.js). On-device scoring is off,
+// so there is one system under test. Enrolment and the passkey step-up run on the gateway's
+// /study.html (passkeys are bound to that origin) under the same identity, externalId
+// "study:<pseudonym>". `condition` is "genuine" or "impostor:<pseudonym of the person typing>".
+var study = { on: false, gateway: "", siteKey: "", participant: "", condition: "genuine" };
+var studySession = null;       // { token, userId } from the gateway's /v1/sdk/session
+var studyProbation = false;    // after a step-up: re-challenge on any scored suspicious verdict (as the SDK)
+var studyPrompt = null;        // the open step-up: { channel, decisionId, sessionId, tabId }
+var studyError = null;
+function studyOn() { return !!(study && study.on && study.gateway && study.siteKey && study.participant); }
+function studyInfo() { return studyOn() ? { participant: study.participant, condition: study.condition } : null; }
+function loadStudy(v) {
+  v = v || {};
+  study = {
+    on: v.on === true, gateway: String(v.gateway || "").replace(/\/+$/, ""), siteKey: String(v.siteKey || ""),
+    participant: String(v.participant || ""), condition: String(v.condition || "genuine"),
+  };
+  studySession = null; studyProbation = false; studyError = null;
+}
+async function studySessionToken(force) {
+  if (studySession && !force) return studySession.token;
+  var r = await fetch(study.gateway + "/v1/sdk/session", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ siteKey: study.siteKey, externalId: "study:" + study.participant }) });
+  var d = await r.json().catch(function () { return {}; });
+  if (!r.ok || !d.token) throw new Error(d.error || ("session HTTP " + r.status));
+  studySession = { token: d.token, userId: d.userId };
+  return d.token;
+}
+async function studyPost(path, body) {
+  for (var attempt = 0; attempt < 2; attempt++) {
+    var token = await studySessionToken(attempt > 0);
+    var r = await fetch(study.gateway + path, { method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body: JSON.stringify(body) });
+    if (r.status === 401 && attempt === 0) continue;   // session expired: mint a new one once
+    return { status: r.status, d: await r.json().catch(function () { return {}; }) };
+  }
+}
+function studyContext(sessionId, clientTs, extra) {
+  return Object.assign({ participant: study.participant, sessionId: sessionId, condition: study.condition, clientTs: clientTs }, extra || {});
+}
+function studyPromptEvent(event) {
+  var p = studyPrompt;
+  if (!p) return;
+  studyPost("/v1/sdk/study/prompt", { study: studyContext(p.sessionId, Date.now()), channel: p.channel, decisionId: p.decisionId, event: event })
+    .catch(function (e) { console.warn("[continuum-guard/study] prompt event not logged:", e && e.message); });
+}
+// A verdict from the server. Challenge as the SDK does (sdk/guard.js maybeChallenge): when the
+// server requires it, or during probation on a suspicious verdict backed by scored windows.
+function studyVerdict(channel, r, sessionId) {
+  var d = (r && r.d) || {};
+  if (r && r.status === 423 && !state.locked) { studyChallenge(channel, null, sessionId); return; }   // locked server-side
+  if (d.enrolled === false || (d.typingEvaluation && d.typingEvaluation.modelAvailable === false)) { studyError = "not enrolled (" + channel + ")"; return; }
+  if (!d.checked) return;
+  studyError = null;
+  if (channel === "keystroke") {
+    state.verdict = { status: d.warmup ? "analyzing" : (d.isSuspicious ? "suspicious" : "genuine"),
+      mean: Math.round((d.modelConfidence || 0) * 100), packet: Number(d.scoredWindowCount || 0), need: RECENT };
+  } else {
+    state.mouseVerdict = { status: d.warmup ? "analyzing" : (d.isSuspicious ? "suspicious" : "genuine"),
+      low: d.lowWindows, buffer: d.windowCount, bufferMax: d.bufferMax, lockAt: d.lockAt, riskPct: d.riskPct, rule: "vote",
+      mean: Math.round((d.meanScore || 0) * 100), packet: d.windowCount, need: d.bufferMax };
+  }
+  var scored = channel === "keystroke" ? Number(d.scoredWindowCount) > 0 : Number(d.windowCount) > 0;
+  var trigger = !!d.requiresPasskeyChallenge || (studyProbation && !!d.isSuspicious && scored);
+  if (trigger && !state.locked) { studyChallenge(channel, d.studyDecisionId || null, sessionId); return; }
+  if (!d.warmup && !d.isSuspicious) studyProbation = false;   // a clean verdict ends probation
+  updateBadge();
+  persistProgress();
+}
+function studyChallenge(channel, decisionId, sessionId) {
+  studyPrompt = { channel: channel, decisionId: decisionId, sessionId: sessionId, tabId: null };
+  engageLock(channel);
+  studyPromptEvent("shown");
+}
+function studyOpenPage(mode, reason) {
+  var url = study.gateway + "/study.html?mode=" + mode + "&p=" + encodeURIComponent(study.participant)
+    + "&k=" + encodeURIComponent(study.siteKey) + (reason ? "&reason=" + reason : "");
+  function track(tab) { if (mode === "verify" && studyPrompt && tab) studyPrompt.tabId = tab.id; }
+  if (mode === "verify" && api.windows && api.windows.create) {
+    try { api.windows.create({ url: url, type: "popup", width: 520, height: 680 }, function (w) { track(w && w.tabs && w.tabs[0]); }); return; } catch (e) {}
+  }
+  api.tabs.create({ url: url }, track);
+}
+function fromStudyPage(sender) { return studyOn() && sender && sender.url && sender.url.indexOf(study.gateway + "/study.html") === 0; }
+// Closing the step-up page while still locked = the prompt was dismissed.
+if (api.tabs && api.tabs.onRemoved) {
+  api.tabs.onRemoved.addListener(function (tabId) {
+    if (studyPrompt && studyPrompt.tabId === tabId && state.locked) { studyPromptEvent("dismissed"); studyPrompt.tabId = null; }
+  });
+}
+
 // Snapshot live progress to storage so it survives a service-worker restart. Throttled so
 // rapid keystrokes don't hammer storage (at most one write per ~1.2s); pass immediate=true
 // for state that must not be lost even briefly (lock/unlock).
@@ -117,8 +212,9 @@ function persistProgress(immediate) {
 // monitoringEnabled() gates the KEYSTROKE (enforcing) channel; anyTrained() gates whether
 // the extension does ANYTHING at all — content scripts only capture when at least one
 // modality is trained, so a profile with neither is genuinely disabled.
-function monitoringEnabled() { return !!state.accountId && !!state.modelPersonal; }
-function anyTrained() { return !!state.accountId && (!!state.modelPersonal || !!state.mouseReady); }
+// In study mode the server's models do the scoring, so capture runs regardless of on-device models.
+function monitoringEnabled() { return studyOn() || (!!state.accountId && !!state.modelPersonal); }
+function anyTrained() { return studyOn() || (!!state.accountId && (!!state.modelPersonal || !!state.mouseReady)); }
 
 // Stable NUMERIC id for the passkey-service, derived from this account's id (FNV-1a).
 function numericUid(pid) {
@@ -275,8 +371,9 @@ function finishAccountSwitch(cb) {
   if (cb) cb();
 }
 
-api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress", "cg_mouse_tracking", MOUSE_PCT_KEY, "cg_debug"], function (d) {
+api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress", "cg_mouse_tracking", MOUSE_PCT_KEY, "cg_debug", "cg_study"], function (d) {
   d = d || {};
+  loadStudy(d.cg_study);
   config.exclusions = d.cg_exclusions || [];
   debugLog = d.cg_debug === true;
   RP_BASE = (d.cg_rp_base || RP_BASE_DEFAULT).replace(/\/+$/, "");
@@ -333,6 +430,11 @@ if (api.storage.onChanged) {
   api.storage.onChanged.addListener(function (changes, area) {
     if (area === "local" && changes.cg_rp_base) {
       RP_BASE = (changes.cg_rp_base.newValue || RP_BASE_DEFAULT).replace(/\/+$/, "");
+    }
+    if (area === "local" && changes.cg_study) {
+      loadStudy(changes.cg_study.newValue);
+      broadcastConfig();   // capture follows study mode in every open tab
+      refreshAllBadges();
     }
     if (area === "local" && changes.cg_debug) {
       debugLog = changes.cg_debug.newValue === true;
@@ -422,6 +524,7 @@ function statusObj() {
     accountId: state.accountId || null, accountEmail: state.accountEmail || null, accountChecked: state.accountChecked,
     keySamples: state.keySamples, mouseSamples: state.mouseSamples, lockReason: state.lockReason,
     rpError: state.rpError || null, rpBase: RP_BASE,
+    study: studyInfo(), studyError: studyError,   // user-study mode (see USER STUDY MODE)
   };
 }
 
@@ -438,6 +541,7 @@ function pingOffscreen(cb) {
 // ---- capture → score (offscreen) → verdict ----
 var scoringBusy = false, pendingWin = null;
 async function onWindow(win) {
+  if (studyOn()) return;   // study mode: the server scores (see USER STUDY MODE)
   if (!monitoringEnabled()) return;
   state.totalWindows += 1;
   state.lastWindowAt = Date.now();
@@ -478,6 +582,7 @@ async function onWindow(win) {
 // windows (see the constants above). The display verdict uses the same per-user threshold.
 var mouseBusy = false, pendingMouseWin = null;
 async function onMouseWindow(win) {
+  if (studyOn()) return;   // study mode: the server scores (see USER STUDY MODE)
   if (!state.mouseReady || !state.mouseTracking) return;   // user can disable the mouse channel
   state.totalMouseWindows += 1;
   pendingMouseWin = win;
@@ -651,7 +756,7 @@ function broadcastAll(msg) {
 function engageLock(reason) {
   state.locked = true;
   state.lockReason = reason || "keystroke";   // which channel caught it (shown in the popup)
-  broadcastAll({ type: "cg:lock", hasPasskey: state.hasPasskey });
+  broadcastAll({ type: "cg:lock", hasPasskey: studyOn() || state.hasPasskey });   // study: the passkey was set up at enrolment
   refreshAllBadges();   // every monitored tab shows 🔒
   persistProgress(true);
 }
@@ -740,7 +845,7 @@ function broadcastConfig() {
       try {
         // enabled = anyTrained(): content scripts capture (keys AND mouse) whenever at least
         // one modality is trained; the worker then routes each window to the right channel.
-        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: anyTrained(), mouseTracking: state.mouseTracking, exclusions: config.exclusions, rpOrigin: rpOriginOf(), debug: debugLog }, function () { void api.runtime.lastError; });
+        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: anyTrained(), mouseTracking: state.mouseTracking, exclusions: config.exclusions, rpOrigin: studyOn() ? study.gateway : rpOriginOf(), debug: debugLog, study: studyInfo() }, function () { void api.runtime.lastError; });
       } catch (e) {}
     });
   });
@@ -845,15 +950,25 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       // content script, and capture must run whenever EITHER modality is trained. Using
       // monitoringEnabled() here (keystroke-only) meant a mouse-only profile captured
       // nothing on a fresh page load until some later broadcast happened to re-enable it.
-      reply({ enabled: anyTrained(), mouseTracking: state.mouseTracking, excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: state.hasPasskey, rpOrigin: rpOriginOf(), debug: debugLog });
+      reply({ enabled: anyTrained(), mouseTracking: state.mouseTracking, excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: studyOn() || state.hasPasskey, rpOrigin: studyOn() ? study.gateway : rpOriginOf(), debug: debugLog, study: studyInfo() });
       return true;
     case "cg:open-verify":
+      if (studyOn()) { studyOpenPage("verify", state.lockReason === "mouse" ? "mouse" : "keystroke"); return; }
       openRpPage("/ext/verify.html");
       return;
     case "cg:open-register":
       openRpPage("/ext/register.html");
       return;
     case "cg:verified":
+      if (fromStudyPage(sender)) {
+        // Study step-up passed: the gateway already cleared the server lock. Probation follows.
+        studyPromptEvent("passed");
+        studyPrompt = null;
+        studyProbation = true;
+        releaseLock();
+        closeRpTab(sender);
+        return;
+      }
       // Relayed by the content script on the RP page — trust ONLY that origin.
       if (sender && sender.url && sender.url.indexOf(RP_BASE) === 0) {
         releaseLock();
@@ -871,6 +986,24 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
     case "cg:activity":
       if (monitoringEnabled()) { state.steps = msg.steps || 0; state.needSteps = msg.need || 50; state.lastWindowAt = Date.now(); updateBadge(); persistProgress(); }
       return;
+    case "cg:verify-failed":
+      if (fromStudyPage(sender)) studyPromptEvent("failed");
+      return;
+    case "cg:study-open-enrol":
+      if (studyOn()) studyOpenPage("enrol");
+      return;
+    case "cg:study-check": {
+      // From a content script in study mode: { channel, sessionId, clientTs, body, windowKeys }.
+      if (!studyOn() || state.locked || !msg.body) { reply({ ok: false }); return true; }
+      var ch = msg.channel === "mouse" ? "mouse" : "keystroke";
+      var path = ch === "mouse" ? "/v1/sdk/mouse/check" : "/v1/sdk/keystroke/check";
+      var extra = ch === "mouse" ? { windowKeys: msg.windowKeys || [] } : null;
+      var body = Object.assign({}, msg.body, { study: studyContext(msg.sessionId, msg.clientTs, extra) });
+      studyPost(path, body)
+        .then(function (r) { studyVerdict(ch, r, msg.sessionId); reply({ ok: true, status: r.status }); })
+        .catch(function (e) { studyError = (e && e.message) || "gateway unreachable"; reply({ ok: false, error: studyError }); });
+      return true;
+    }
     case "cg:windows":
       if (msg.latest) onWindow(msg.latest);
       return;

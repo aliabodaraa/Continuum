@@ -37,6 +37,12 @@ function parseContext(raw) {
   return { participant, sessionId, condition, clientTs: Number.isFinite(clientTs) ? clientTs : null };
 }
 
+/** A context naming only the participant (study setup, before any session exists), or null. */
+function participantContext(participant) {
+  if (!ENABLED || !PSEUDONYM.test(String(participant || ""))) return null;
+  return { participant: String(participant) };
+}
+
 /**
  * Bind the Continuum user to the pseudonym of the account being used. In an impostor session the
  * account is still the participant's own (someone else is at the keyboard), so `participant` is the
@@ -174,4 +180,4 @@ function recordPrompt(userId, ctx, p) {
   }
 }
 
-module.exports = { ENABLED, parseContext, register, isParticipant, recordCheck, recordProfile, recordPrompt, modelSha256 };
+module.exports = { ENABLED, parseContext, participantContext, register, isParticipant, recordCheck, recordProfile, recordPrompt, modelSha256 };

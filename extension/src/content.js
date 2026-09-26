@@ -31,6 +31,55 @@
   var dead = false;
   var handlers = [], winHandlers = [];   // document-level and window-level listeners
 
+  // ---- user-study mode (background.js "USER STUDY MODE", recovery plan T4.3) ----
+  // Set by the worker from the options page. The deployed SERVER system then scores this page:
+  // the raw key-event tail (key codes and timings; password keys stay masked to 0) and the mouse
+  // windows go to the gateway through the worker, as the SDK sends them. The text itself is not
+  // sent: checks carry its length. One page visit is one study session.
+  var study = null;                       // { participant, condition } or null
+  var sessionId = (function () {
+    try { var b = new Uint8Array(8); crypto.getRandomValues(b); return "s" + Array.prototype.map.call(b, function (x) { return (x + 256).toString(16).slice(1); }).join(""); }
+    catch (e) { return "s" + Date.now().toString(16) + Math.random().toString(16).slice(2, 10); }
+  })();
+  var STUDY_MOUSE_N = 60, STUDY_MOUSE_MS = 1600, STUDY_KS_TAIL = 1400;   // as sdk/guard.js
+  var lastStudyWindowCount = 0, ksInFlight = false, ksMissed = false;
+  var studyMouse = [], mouseSeq = 0, lastStudyMouseKey = null, mouseInFlight = false, studyTimer = null;
+  function setStudy(v) {
+    study = v && v.participant ? v : null;
+    if (study && !studyTimer) studyTimer = setInterval(studyMouseTick, STUDY_MOUSE_MS);
+    if (!study && studyTimer) { clearInterval(studyTimer); studyTimer = null; }
+  }
+  // Printable keydowns in the tail stand in for the text length the server gates on (80 chars).
+  function isPrintable(kc) { return kc === 32 || (kc >= 48 && kc <= 57) || (kc >= 65 && kc <= 90) || (kc >= 96 && kc <= 111) || (kc >= 186 && kc <= 192) || (kc >= 219 && kc <= 222); }
+  // The study page (enrolment and step-up) is not participant data: no checks from it.
+  function onStudyPage() { return !!rpOrigin && origin === rpOrigin; }
+  function studyKsMaybe(windowCount) {
+    if (!study || onStudyPage() || windowCount <= lastStudyWindowCount) return;
+    if (ksInFlight) { ksMissed = true; return; }
+    lastStudyWindowCount = windowCount;
+    ksInFlight = true; ksMissed = false;
+    var tail = events.slice(-STUDY_KS_TAIL);
+    var typed = 0;
+    for (var i = 0; i < tail.length; i++) if (tail[i].type === "keydown" && isPrintable(tail[i].keyCode)) typed += 1;
+    safeSend({ type: "cg:study-check", channel: "keystroke", sessionId: sessionId, clientTs: performance.now() - t0,
+      body: { textLength: typed, keystrokeEvents: tail.map(function (e) {
+        return { keyCode: e.keyCode, eventType: e.type, timestampRelative: e.t, fieldName: e.field, fieldType: e.ftype || "unknown", pastedLength: e.pastedLength || 0 };
+      }) } }, function () {
+      ksInFlight = false;
+      if (ksMissed) { ksMissed = false; var F = globalThis.ContinuumFeatures; if (F) studyKsMaybe(F.stepsToWindows(F.eventSteps(events)).length); }
+    });
+  }
+  function studyMouseTick() {
+    if (!study || dead || lockEl || mouseInFlight || onStudyPage() || studyMouse.length < STUDY_MOUSE_N) return;
+    var last = studyMouse[studyMouse.length - 1].k;
+    if (last === lastStudyMouseKey) return;   // no new movement since the last check
+    lastStudyMouseKey = last;
+    mouseInFlight = true;
+    safeSend({ type: "cg:study-check", channel: "mouse", sessionId: sessionId, clientTs: performance.now() - t0,
+      body: { windows: studyMouse.map(function (x) { return x.w; }) }, windowKeys: studyMouse.map(function (x) { return x.k; }) },
+      function () { mouseInFlight = false; });
+  }
+
   // The extension context is invalid after a reload/update — accessing chrome.runtime.id
   // then throws. Check it before every chrome call so we never raise an uncaught error.
   function alive() {
@@ -48,6 +97,7 @@
     }
     winHandlers = [];
     try { api.runtime.onMessage.removeListener(onMsg); } catch (e) {}
+    if (studyTimer) { try { clearInterval(studyTimer); } catch (e) {} studyTimer = null; }
     // Don't leave a stuck lock overlay behind (e.g. after an extension reload invalidates
     // this script), and clear the injection guard so a fresh content script can take over.
     try { hideLock(); } catch (e) {}
@@ -123,7 +173,8 @@
   // content script running there relays it to the worker, which checks sender.url === RP.
   window.addEventListener("message", function (ev) {
     var d = ev && ev.data;
-    if (!d || d.type !== "continuum-ext-passkey" || !d.ok) return;
+    if (!d || d.type !== "continuum-ext-passkey") return;
+    if (!d.ok) { if (d.action === "verify") safeSend({ type: "cg:verify-failed" }); return; }
     safeSend({ type: d.action === "register" ? "cg:passkey-registered" : "cg:verified" });
   });
 
@@ -152,7 +203,7 @@
 
   function onMsg(msg) {
     if (dead) return;
-    if (msg && msg.type === "cg:config") { enabled = msg.enabled !== false; excluded = (msg.exclusions || []).indexOf(origin) >= 0; if (typeof msg.mouseTracking !== "undefined") mouseTracking = msg.mouseTracking !== false; if (msg.rpOrigin) rpOrigin = msg.rpOrigin; if (typeof msg.debug !== "undefined") debug = !!msg.debug; }
+    if (msg && msg.type === "cg:config") { if (typeof msg.study !== "undefined") setStudy(msg.study); enabled = msg.enabled !== false; excluded = (msg.exclusions || []).indexOf(origin) >= 0; if (typeof msg.mouseTracking !== "undefined") mouseTracking = msg.mouseTracking !== false; if (msg.rpOrigin) rpOrigin = msg.rpOrigin; if (typeof msg.debug !== "undefined") debug = !!msg.debug; }
     if (msg && msg.type === "cg:lock") showLock(!!msg.hasPasskey);
     if (msg && msg.type === "cg:unlock") hideLock();
     if (msg && msg.type === "cg:rp-unreachable") showRpError(msg.rpBase || "the configured address", msg.reason || "unreachable");
@@ -163,6 +214,7 @@
       lastWindowCount = 0;
       mouseEvents = [];
       lastMouseWindows = 0;
+      lastStudyWindowCount = 0; ksMissed = false; studyMouse = []; lastStudyMouseKey = null;
       safeSend({ type: "cg:activity", steps: 0, need: (globalThis.ContinuumFeatures || {}).WINDOW_SIZE || 50 });
     }
   }
@@ -174,6 +226,7 @@
       if (typeof res.mouseTracking !== "undefined") mouseTracking = res.mouseTracking !== false;
       debug = !!res.debug;
       if (res.rpOrigin) rpOrigin = res.rpOrigin;    // set before showLock so the RP guard applies
+      setStudy(res.study);
       if (res.locked) showLock(!!res.hasPasskey);   // navigated / reopened while locked
       // The ACTIVE log below prints before this reply lands, so it can only show the
       // optimistic defaults. This is the authoritative line: if capture is off, it says why.
@@ -201,13 +254,14 @@
       var tgt = e.target;
       if (isHidden(tgt)) return;
       var kc = isPassword(tgt) ? 0 : (e.keyCode || 0);   // mask the KEY on password fields
-      events.push({ keyCode: kc, type: type, t: performance.now() - t0, field: fieldOf(tgt) });
+      events.push({ keyCode: kc, type: type, t: performance.now() - t0, field: fieldOf(tgt), ftype: (tgt && (tgt.type || tgt.tagName)) || "unknown" });
       if (events.length > 2000) {
         // Same re-basing as the mouse buffer: trimming shrinks the window count, so
         // lastWindowCount must drop with it or new windows stop being emitted (verdict freeze).
         events = events.slice(-1400);
         var F0 = globalThis.ContinuumFeatures;
         lastWindowCount = F0 ? F0.stepsToWindows(F0.eventSteps(events)).length : 0;
+        lastStudyWindowCount = lastWindowCount;
       }
       emit();
     } catch (err) { teardown(); }
@@ -219,6 +273,7 @@
     if (!F) { if (!warnedNoF) { warnedNoF = true; console.warn("[continuum-guard] ContinuumFeatures NOT loaded — features.js didn't run; capture can't build windows"); } return; }
     var segments = F.eventSteps(events);           // array of pause-separated step runs
     var windows = F.stepsToWindows(segments);
+    studyKsMaybe(windows.length);   // study mode: a new window formed -> server check (as the SDK)
     // Progress toward the NEXT window only cares about the CURRENT run — a pause starts
     // a fresh one, so the counter resets after a real pause instead of counting through it.
     var curSteps = segments.length ? segments[segments.length - 1].length : 0;
@@ -245,6 +300,13 @@
   function on(type) { var fn = function (e) { rec(type, e); }; document.addEventListener(type, fn, true); handlers.push([type, fn]); }
   on("keydown");
   on("keyup");
+  // Study mode only: a paste event with its LENGTH (the server refuses pasted text as rhythm).
+  var onPaste = function (e) {
+    if (!study || dead || !enabled || excluded || isHidden(e.target)) return;
+    var n = 0; try { n = ((e.clipboardData && e.clipboardData.getData("text")) || "").length; } catch (x) {}
+    events.push({ keyCode: 0, type: "paste", t: performance.now() - t0, field: fieldOf(e.target), ftype: (e.target && (e.target.type || e.target.tagName)) || "unknown", pastedLength: n });
+  };
+  document.addEventListener("paste", onPaste, true); handlers.push(["paste", onPaste]);
 
   // ---- mouse capture (positions + timing only — same privacy story as keys) ----
   var mouseEvents = [], mouseDown = false, lastMouseWindows = 0;
@@ -270,6 +332,11 @@
     var windows = M.stepsToWindows(steps);
     if (debug && mouseEvents.length % 40 === 0) dlog("[continuum-guard] mouse events=" + mouseEvents.length + " steps=" + steps.length + " windows=" + windows.length + " (needs " + M.WINDOW_SIZE + " steps + path>=0.08 to qualify a window)");
     if (windows.length > lastMouseWindows) {
+      if (study) {
+        var fresh = windows.slice(lastMouseWindows);
+        for (var fi = 0; fi < fresh.length; fi++) studyMouse.push({ k: String(mouseSeq++), w: fresh[fi] });
+        if (studyMouse.length > STUDY_MOUSE_N) studyMouse = studyMouse.slice(-STUDY_MOUSE_N);
+      }
       lastMouseWindows = windows.length;
       var latest = windows[windows.length - 1];
       if (debug) try {

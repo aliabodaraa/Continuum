@@ -59,3 +59,7 @@ src/popup/               # status + on/off + per-site exclusion
 The model authenticates by **how** you type (timing), never **what** you type. Scoring is
 **on-device** (P2), so keystrokes/verdicts don't stream to a server; only enrollment (once) and
 the step-up passkey handshake use the network. See `../docs/EXTENSION.md` §6.
+
+**User-study mode is the exception** (options page, experimenter only): the extension then sends key
+codes, timings and mouse windows to the Continuum server, which scores and logs them for the study.
+The typed text itself is still not sent. See [`STUDY_MODE.md`](STUDY_MODE.md).

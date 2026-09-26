@@ -155,7 +155,12 @@ try {
   const offState = await evaluate(offS, "({ mouseReady, meta: ContinuumScoring.mouseMeta() })");
   check("offscreen document loads the profile", offState.mouseReady && Math.abs(offState.meta.threshold - meta.threshold) < 1e-12);
 
-  const swS = await attach(sw.targetId);
+  // The worker is an MV3 service worker: Chrome stops it after ~30 s idle, and the on-device build
+  // above takes about that long, so the target found at the start can be gone ("No target with given
+  // id found"). Wake it with a message from the enrolment page and attach to the current target.
+  await evaluate(page, "new Promise(r => { chrome.runtime.sendMessage({ type: 'cg:status' }, () => { void chrome.runtime.lastError; r(true); }); setTimeout(() => r(true), 3000); })");
+  const swNow = await target((t) => t.type === "service_worker" && t.url.startsWith(base));
+  const swS = await attach(swNow.targetId);
   const runVote = (wins) => evaluate(swS, `(async () => {
       state.accountId = ${JSON.stringify(ACCT)}; state.mouseReady = true; state.mouseTracking = true;
       state.locked = false; mouseScores = [];

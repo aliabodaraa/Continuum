@@ -47,6 +47,25 @@
     <p class="note" style="margin-top:6px">Off by default. When on, every scored keystroke and mouse window is logged to the service-worker console and to each page's console — useful when investigating scores, noisy otherwise.</p>
 
     <p class="note">Must be reachable from this browser and match the <code>RP_ID</code>/<code>ORIGIN</code> the passkey-service was started with. WebAuthn requires HTTPS for any real domain — <code>localhost</code> is the one exception.</p>
+
+    <h1 style="margin-top:34px">User study mode</h1>
+    <p class="sub">For the experimenter only. When on, this browser is scored by the Continuum <b>server</b> (the gateway below) instead of the on-device models, and every score is logged for the study under the participant's pseudonym. Key codes and timings are sent; the text itself is not.</p>
+    <label style="display:flex;align-items:center;gap:9px"><input id="studyOn" type="checkbox" style="width:auto;margin:0" /> Study mode on</label>
+    <label for="studyGateway" style="margin-top:12px">Gateway URL</label>
+    <input id="studyGateway" type="text" placeholder="http://localhost:8080" />
+    <label for="studyKey" style="margin-top:12px">Study site key</label>
+    <input id="studyKey" type="text" placeholder="pk_study_..." />
+    <label for="studyParticipant" style="margin-top:12px">Participant pseudonym (the account being used)</label>
+    <input id="studyParticipant" type="text" placeholder="P07" />
+    <label for="studyCondition" style="margin-top:12px">Who is typing</label>
+    <select id="studyCondition" style="width:100%;padding:10px 12px;border:1.5px solid var(--field-border);border-radius:10px;font:inherit;background:var(--field-bg);color:var(--text)">
+      <option value="genuine">The participant (genuine)</option>
+      <option value="impostor">Another participant (impostor session)</option>
+    </select>
+    <input id="studyImpostor" type="text" placeholder="pseudonym of the person typing, e.g. P12" style="margin-top:8px;display:none" />
+    <button id="studySave">Save study settings</button>
+    <button id="studyEnrol" style="background:none;border:1.5px solid var(--field-border);color:var(--text);margin-left:8px">Open enrolment page</button>
+    <div id="studyMsg" style="display:none;font-size:13px;font-weight:600;margin-top:10px"></div>
     <script src="options.js"></script>
   </body>
 </html>
