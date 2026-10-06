@@ -7,3 +7,14 @@ npm-debug.log
 gateway-verdict-key.pem
 tenants.json
 identity.json
+# Added 2026-10-06: these were missing, so an image built from a working tree (scripts/release.sh)
+# would have carried the identity-assertion signing key and the accounts, settings and activity log.
+gateway-identity-key.pem
+*.pem
+accounts.json
+settings.json
+audit.jsonl
+principals_seed.json
+gwmap.json
+*.json.tmp
+test/

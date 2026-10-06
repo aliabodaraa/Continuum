@@ -388,10 +388,17 @@ Implementation details:
 - **`scripts/release.sh`** — builds + pushes all five images to a registry, versioned
   (`REGISTRY=aliabodaraa TAG=0.1.0`). Published to Docker Hub `aliabodaraa/{model-api,
   ca-service, passkey-service, gateway, web-demo}`.
-- **`.github/workflows/publish.yml`** — on every push to `main` touching `services/**`,
-  `sdk/**`, or `apps/demo/**`, rebuilds + pushes the four Node images (`:latest` + `:<sha>`).
-  Needs repo secrets `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN`. `model-api` is manual
-  (its build needs the >100 MB dataset that isn't in git).
+- **`.github/workflows/ci.yml`** (since 2026-10-06) — every push and pull request: syntax of
+  every JS/Python/shell file, compose files valid, unit tests (`services/*/test/*.test.js`,
+  `scripts/test_*.py`), and per image: hadolint, build, no secret or runtime file inside
+  the image, Trivy scan (report only for now).
+- **`.github/workflows/publish.yml`** — only after CI succeeded on a push to `main` (never a
+  pull request or a fork), rebuilds the commit CI tested and pushes the four Node images
+  (`:latest` + `:<sha>`, plus an optional version tag when run by hand). Needs repo secrets
+  `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN`. `model-api` is manual (its production build
+  needs the >100 MB dataset that isn't in git).
+- **`.dockerignore`** in each service keeps keys, databases, registries and logs out of the
+  image (an image built from the working tree before 2026-10-06 could carry them).
 
 ## 13. Data & migration
 - **`scripts/data-export.sh`** backs up everything git does not hold, without stopping the
@@ -441,7 +448,7 @@ packages/{continuum-node,continuum-python}                # host middleware
 apps/{demo,acme}         # reference integrations
 artifacts/{ws50-gru,mouse-fcn-a5}                         # pretrained base models (only these tracked)
 scripts/                 # release.sh, data-export.sh, data-import.sh
-.github/workflows/publish.yml                             # CI image publishing
+.github/workflows/{ci,publish}.yml                        # tests on every push; publish after CI on main
 docker-compose{,.prod,.bundle}.yml + .env.example
 DEPLOY.md · PC2_SETUP.md · PUBLISHING.md · HANDOFF.md · ARCHITECTURE.md
 ```
