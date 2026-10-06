@@ -876,14 +876,6 @@
             </div>
           </div>
           <div class="btn-group">
-            <button
-              type="submit"
-              class="btn btn-primary"
-              id="submitBtn"
-              style="display: none"
-            >
-              Save Training Sample
-            </button>
             <div
               style="
                 font-size: 11px;
@@ -991,7 +983,6 @@
       // ── Page logic ───────────────────────────────────────────────
       const form = document.getElementById("opinionForm");
       const opinionInput = document.getElementById("opinionInput");
-      const submitBtn = document.getElementById("submitBtn");
       const tracker = window.continuumKeystrokes.createTracker(form);
 
       // Window config drives the keystroke-progress display and the client-side
@@ -1765,7 +1756,6 @@
               );
           } else if (data.requiresPasskeyChallenge || data.isSuspicious) {
             passkeyRequired = true;
-            submitBtn.disabled = true;
             setBadge("alert");
             const reason =
               (data.typingEvaluation && data.typingEvaluation.reason) ||
@@ -1871,75 +1861,8 @@
         }
       }
 
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const opinion = opinionInput.value.trim();
-        if (opinion.length < 80) {
-          showAlert("error", "Please write at least 80 characters.");
-          return;
-        }
-        if (passkeyRequired) {
-          showAlert(
-            "warning",
-            "Passkey verification required before submitting.",
-          );
-          if (window.Continuum) window.Continuum.requireStepUp("keystroke", clearForm);
-          return;
-        }
-        setLoading(submitBtn, true, "Submitting…");
-        const events = tracker.getEvents();
-        const timings = window.continuumKeystrokes.analyze(events);
-        const textContent = `[Opinion]\n\n${opinion}`;
-        try {
-          const res = await fetch("/api/text/submit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              textContent,
-              keystrokeEvents: events,
-              keystrokeTimings: timings,
-              passkeyVerifiedForAction: passkeyVerifiedForCurrentText,
-              sourcePath: "/lab.html",
-            }),
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            if (res.status === 423 && data.rhythmEnrollmentRequired) {
-              window.location.href = "/dashboard.html";
-              return;
-            }
-            if (res.status === 423 || data.continuousAuthLocked) {
-              window.location.href = "/dashboard.html";
-              return;
-            }
-            throw new Error(data.error || "Submission failed");
-          }
-          if (data.requiresPasskeyChallenge) {
-            passkeyRequired = true;
-            submitBtn.disabled = true;
-            logAI("passkey", "Rhythm changed at submission — passkey required");
-            showAlert(
-              "warning",
-              "Typing rhythm changed. Passkey required before submitting.",
-            );
-            setTimeout(function () { if (window.Continuum) window.Continuum.requireStepUp("keystroke", clearForm); }, 500);
-            return;
-          }
-          const scoreVal =
-            data.modelConfidence != null ? Number(data.modelConfidence) : null;
-          const scoreStr =
-            scoreVal != null
-              ? ` (${(scoreVal * 100).toFixed(0)}% confidence)`
-              : "";
-          logAI("genuine", `Opinion submitted — rhythm verified${scoreStr}`);
-          showAlert("success", "Submitted. Typing rhythm verified.");
-          clearForm();
-        } catch (err) {
-          showAlert("error", err.message);
-        } finally {
-          setLoading(submitBtn, false, "Save Training Sample");
-        }
-      });
+      // Nothing is sent when the form is submitted: Continuum checks the typing while it happens.
+      form.addEventListener("submit", (e) => e.preventDefault());
 
       function clearForm() {
         form.reset();
@@ -1957,7 +1880,6 @@
           const el = document.getElementById(id);
           if (el) el.style.display = "none";
         });
-        submitBtn.disabled = false;
         setBadge("monitoring");
         setScore(
           null,

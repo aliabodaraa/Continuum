@@ -1,15 +1,15 @@
-// popup.js — reads status from the background worker and drives the on/off + per-site
-// exclusion controls.
+// popup.js — who is signed in, the live verdict of each channel (unless hidden: the research study
+// never shows participants their scores), the pause, and the per-site exclusion.
 var api = globalThis.browser || globalThis.chrome;
 var curOrigin = "";
 var curUrl = "";
+var curTabId = null;
 var curRestricted = false;   // page where Chrome forbids content scripts entirely
 function q(id) { return document.getElementById(id); }
+function show(id, visible) { q(id).style.display = visible ? "" : "none"; }
 
-// Chrome refuses to inject content scripts into its own pages (chrome://, the New Tab
-// page, the Web Store, devtools, other extensions) no matter what the manifest asks for.
-// Without the content script NEITHER channel receives events, so the panel would sit at
-// "0/50 steps" and "watching…" forever and look broken — say so instead.
+// Chrome refuses to inject content scripts into its own pages (chrome://, the New Tab page, the Web
+// Store, devtools, other extensions). Nothing is captured there, so say so instead of looking stuck.
 function isRestrictedUrl(u) {
   if (!u) return true;
   if (/^(chrome|edge|brave|about|chrome-extension|moz-extension|devtools|view-source|file):/i.test(u)) return true;
@@ -17,267 +17,106 @@ function isRestrictedUrl(u) {
 }
 
 api.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-  var url = (tabs && tabs[0] && tabs[0].url) || "";
-  curUrl = url;
-  curRestricted = isRestrictedUrl(url);
-  try { curOrigin = new URL(url).origin; } catch (e) { curOrigin = ""; }
+  curUrl = (tabs && tabs[0] && tabs[0].url) || "";
+  curTabId = tabs && tabs[0] ? tabs[0].id : null;
+  curRestricted = isRestrictedUrl(curUrl);
+  try { curOrigin = new URL(curUrl).origin; } catch (e) { curOrigin = ""; }
   refresh();
 });
-// Poll so the model-ready state and live verdict update while the popup is open.
-setInterval(refresh, 1000);
+setInterval(refresh, 1000);   // live verdicts while the popup is open
 
-function show(id, visible) { q(id).style.display = visible ? "" : "none"; }
-
-// ---- collapsible per-modality sections ----
-// Open/closed is remembered across popup openings (the popup is torn down every time it
-// closes, so without this every open would reset to the default and undo the user's choice).
-// localStorage is synchronous, so the state is applied before first paint — no flash of the
-// wrong state, and no animation on load: the .anim class that enables the transition is
-// added only after the initial state is set.
-function initSection(sectId, headId, storeKey) {
-  var sect = q(sectId), head = q(headId);
-  var stored = null;
-  try { stored = localStorage.getItem(storeKey); } catch (e) {}   // never let storage break the panel
-  // Default COLLAPSED: both sections open is ~730px, past Chrome's ~600px popup cap (which
-  // forces Chrome's own scrollbar and flattens the panel's rounded corners). Collapsed the
-  // panel is ~420px, and the header summary still shows each channel's verdict at a glance.
-  var open = stored === "1";
-  sect.classList.toggle("open", open);
-  head.setAttribute("aria-expanded", String(open));
-  requestAnimationFrame(function () { sect.classList.add("anim"); });   // animate only from here on
-  head.addEventListener("click", function () {
-    var nowOpen = !sect.classList.contains("open");
-    sect.classList.toggle("open", nowOpen);
-    head.setAttribute("aria-expanded", String(nowOpen));
-    try { localStorage.setItem(storeKey, nowOpen ? "1" : "0"); } catch (e) {}
-  });
+// Before a verdict, this page's progress (the icon's left bar): the organisation's packet + 1 windows
+// decide (21 by default, at least 250 keystrokes).
+function keysText(v, bar) {
+  if (!v || v.status === "analyzing") return bar ? "first verdict: " + bar : (v ? "first verdict: " + v.packet + "/" + v.need + " windows" : "waiting for typing");
+  return (v.status === "suspicious" ? "⚠ suspicious " : "✓ genuine ") + v.mean + "%";
 }
-initSection("sectKeys", "headKeys", "cg_sect_keys");
-initSection("sectMouse", "headMouse", "cg_sect_mouse");
-
-function renderStudy(s) {
-  show("noAccount", false);
-  q("mainPanel").style.display = "none";
-  var st = s.study, paused = !!st.paused;
-  q("studyWho").textContent = st.participant + (st.condition && st.condition.indexOf("impostor:") === 0 ? " · impostor session" : "")
-    + (st.client === "lab" ? " · lab" : "");
-  q("studyRec").textContent = s.locked ? "🔒 Locked: verify with your passkey on the page"
-    : paused ? "⏸ Paused: nothing is recorded" : "● Recording";
-  q("studyRec").style.color = paused ? "var(--muted)" : "#dc2626";
-  q("studyPause").textContent = paused ? "Resume recording" : "Pause recording";
-  q("studyPause").style.background = paused ? "#16a34a" : "#dc2626";
-  q("dot").className = "dot" + (paused ? " off" : "");
-  show("studyErr", !!s.studyError);
-  if (s.studyError) q("studyErr").textContent = "Server: " + s.studyError;
+// Before a verdict, this page's progress (the icon's right bar): 60 windows decide, about 17 s of movement.
+function mouseText(v, bar) {
+  if (!v || v.status === "analyzing") return bar ? "collecting " + bar : (v ? "warming up " + (v.buffer || 0) + "/" + (v.bufferMax || 60) : "waiting for movement");
+  var low = v.low != null && v.bufferMax ? " · " + v.low + "/" + v.bufferMax + " low" : "";
+  return (v.status === "suspicious" ? "⚠ suspicious" : "✓ genuine") + low;
 }
-q("studyPause").addEventListener("click", function () {
-  api.storage.local.get(["cg_study_paused"], function (d) {
-    api.storage.local.set({ cg_study_paused: !(d && d.cg_study_paused === true) }, refresh);
-  });
-});
 
 function refresh() {
-  api.runtime.sendMessage({ type: "cg:status" }, function (s) {
-    // Reading lastError is what marks the failure handled. The popup polls once a second,
-    // so every moment the MV3 worker is asleep or restarting would otherwise log
-    // "Unchecked runtime.lastError: No SW". There is nothing to do about it — the next poll
-    // wakes the worker and succeeds — but it has to be read rather than ignored.
+  api.runtime.sendMessage({ type: "cg:status", tabId: curTabId }, function (s) {
+    // Reading lastError marks the failure handled: while the worker sleeps or restarts, the next poll wakes it.
     if (api.runtime.lastError || !s) return;
-    // User-study mode: the study panel replaces everything else (no scores are shown to participants).
-    show("studyPanel", !!s.study);
-    if (s.study) { renderStudy(s); return; }
-    // No Chrome/Google account signed in → the whole panel is inert (samples/models are
-    // keyed to that account, so there is nothing to show or train against).
-    var noAccount = s.accountChecked && !s.accountId;
-    show("noAccount", noAccount);
-    q("mainPanel").style.display = noAccount ? "none" : "";
-    if (noAccount) { q("dot").className = "dot off"; return; }
-    show("acctLine", !!s.accountEmail);
-    if (s.accountEmail) q("acctLine").textContent = s.accountEmail;
+    show("setupCard", !s.connected);
+    show("mainPanel", s.connected);
+    if (!s.connected) { q("dot").className = "dot off"; return; }
 
+    // Who: the study's participant, or the signed-in account.
+    if (s.study) {
+      q("acctLine").textContent = "Continuum study · " + s.study.participant
+        + (s.study.condition && s.study.condition.indexOf("impostor:") === 0 ? " · impostor session" : "")
+        + (s.study.client === "lab" ? " · lab" : "");
+    } else if (s.account) {
+      q("acctLine").textContent = (s.account.label || "Signed in") + " · " + (s.account.kind === "personal" ? "personal account" : s.account.tenantName);
+    }
     var excluded = (s.exclusions || []).indexOf(curOrigin) >= 0;
-    var ksOn = !!s.modelPersonal;       // keystroke personal model trained
-    var mouseOn = !!s.mouseReady;       // mouse personal model trained
-    var trained = ksOn || mouseOn;      // at least one modality has a personal model
-    // "live" = trained AND the on-device model is actually loaded in the offscreen doc.
-    // The service worker sleeps when idle and reloads on the next event; until its model
-    // is confirmed ready we say "starting…", never a false "monitoring".
-    var live = trained && !!s.modelReady && !s.modelError;
-    var active = trained;               // rows/verdict still keyed to what's trained
-
-    q("state").textContent = !trained ? "off — train below"
-      : s.modelError ? "error — reopen to retry"
-      : live ? "monitoring" : "starting…";
-    q("dot").className = "dot" + (live && !curRestricted ? "" : " off");
-
-    // Per-modality rows: only show a modality's rows once THAT modality is trained.
-    show("rowModel", ksOn);
-    show("rowSteps", ksOn);
-    show("rowWins", ksOn);
-    show("rowMouse", mouseOn);
-    show("rowMouseTrack", mouseOn);   // user on/off toggle, only once a mouse model exists
-    if (mouseOn) q("mouseTrackToggle").checked = s.mouseTracking !== false;
-    // Lock-sensitivity slider — only meaningful while the mouse channel is on.
-    // The slider sets how many of the last n windows must be low; it applies to a "vote" rule only.
-    show("rowMouseSens", mouseOn && s.mouseTracking !== false && (s.mouseRule || "vote") === "vote");
-    show("mouseSensHint", mouseOn && s.mouseTracking !== false);
-    if (mouseOn && (s.mouseRule || "vote") === "mean") {
-      q("mouseSensHint").textContent = "Asks for your passkey when the average score of your last "
-        + (s.mouseVoteN || 60) + " mouse windows (about 17 s of movement) falls below your personal threshold.";
-    }
-    mouseBuffer = s.mouseVoteN || 60;
-    mouseRule = s.mouseRule || "vote";
-    mouseDefaultPct = Math.round((100 * (s.mouseVoteK || 30)) / mouseBuffer);
-    if (mouseOn && document.activeElement !== q("mouseSensRange")) {   // don't fight a live drag
-      var pct = s.mouseSustainPct || mouseDefaultPct;
-      q("mouseSensRange").value = pct;
-      q("mouseSensVal").textContent = pct + "%";
-      setMouseHint(pct);
-    }
-    // Each modality reports its own sample count inside its own section.
-    show("rowKeySamples", ksOn);
-    show("rowMouseSamples", mouseOn);
-    if (ksOn) q("keySamples").textContent = (s.keySamples || 0) + " window" + ((s.keySamples || 0) === 1 ? "" : "s");
-    if (mouseOn) q("mouseSamples").textContent = (s.mouseSamples || 0) + " window" + ((s.mouseSamples || 0) === 1 ? "" : "s");
-    // Passkey (re)registration is only meaningful once a profile exists to protect.
-    show("passkeyLine", trained);
-    q("regPasskey").textContent = s.hasPasskey ? "🔑 Re-register passkey" : "🔑 Set up your passkey";
-
-    if (ksOn) {
-      q("model").textContent = s.modelReady ? "ready — personal" : (s.modelError ? "error" : "loading…");
-      q("wins").textContent = s.totalWindows;
-      var st = s.steps || 0, nd = s.needSteps || 50;
-      q("steps").textContent = st >= nd ? "ready ✓" : st + "/" + nd;
-    }
-    if (mouseOn) {
-      // What the user needs to see is how close the channel is to asking for the passkey —
-      // i.e. how much of the sustained buffer is low against their configured threshold.
-      // The old readout was the mean of the last 6 windows, which jumps on every movement
-      // and never reveals the distance to a lock.
-      var mv = s.mouseVerdict;
-      q("mouse").textContent = s.mouseTracking === false ? "off"
-        : !mv ? "watching…"
-        : mv.low == null ? (mv.status === "suspicious" ? "⚠ " + mv.mean + "%" : "✓ " + mv.mean + "%")
-        : mv.rule === "mean" ? "avg " + mv.bufferMean + "% · locks below " + mv.threshold + "% (" + mv.buffer + "/" + mv.bufferMax + ")"
-        : mv.low + " / " + mv.bufferMax + " low (" + mv.riskPct + "%)";
-    }
-
-    // Section headers carry a one-glance summary so a COLLAPSED section is still informative.
-    var kvs = s.verdict;   // NOT the `v` below — that is assigned later in this function
-    q("sumKeys").textContent = !ksOn ? "not trained"
-      : !kvs ? "idle"
-      : kvs.status === "analyzing" ? "analyzing " + kvs.packet + "/" + kvs.need
-      : kvs.status === "suspicious" ? "⚠ " + kvs.mean + "%"
-      : "✓ " + kvs.mean + "%";
-    var mvs = s.mouseVerdict;
-    // A profile trained for the retired mouse model: the saved movement is kept and converted,
-    // but the model has to be rebuilt once before the mouse channel works again.
-    q("enrollMouse").textContent = s.mouseStale && !mouseOn ? "🖱️ Rebuild mouse profile" : "🖱️ Train mouse";
-    q("sumMouse").textContent = s.mouseStale && !mouseOn ? "model updated — rebuild"
-      : !mouseOn ? "not trained"
-      : s.mouseTracking === false ? "off"
-      : !mvs ? "idle"
-      : mvs.low == null ? (mvs.status === "suspicious" ? "⚠ " + mvs.mean + "%" : "✓ " + mvs.mean + "%")
-      : mvs.rule === "mean" ? (mvs.bufferMean < mvs.threshold + 5 ? "⚠ " : "") + "avg " + mvs.bufferMean + "% / " + mvs.threshold + "%"
-      : (mvs.riskPct >= (s.mouseSustainPct || mouseDefaultPct) - 15 ? "⚠ " : "") + mvs.riskPct + "% of "
-        + (s.mouseSustainPct || mouseDefaultPct) + "%";
-
-    q("profile").textContent = active
-      ? [ksOn ? "typing ✓" : null, mouseOn ? "mouse ✓" : null].filter(Boolean).join(" · ")
-      : (s.enrolled ? "training…" : "not trained yet");
     q("site").textContent = curRestricted ? (curOrigin || "browser page") + " (not monitorable)"
       : curOrigin ? (excluded ? curOrigin + " (excluded)" : curOrigin) : "—";
+    q("dot").className = "dot" + (s.paused || s.locked || curRestricted || excluded ? " off" : "");
 
-    // Verdict banner — theme-aware colouring via CSS classes (v-ok / v-warn / neutral).
-    var vd = q("verdict"), v = s.verdict, cls = "", txt;
-    // Restricted page first: on chrome:// / the New Tab page / the Web Store, Chrome blocks
-    // the content script, so no typing or pointer events reach the worker at all. Without
-    // this the panel just shows 0/50 and "watching…" and reads as a broken model.
-    if (curRestricted) {
-      // Name the New Tab page explicitly: it shows the Google logo and a search box, so it
-      // is routinely mistaken for google.com — but it is a chrome:// page where no extension
-      // can run, and the resulting "nothing happens" reads as a broken model.
+    // What is missing on the server before anything can be scored.
+    var ob = (s.account && !s.study && s.account.onboarding) || null;
+    // Typing enrolment done, its model being built on the server (about a minute): nothing is missing.
+    var ksBuilding = !!(ob && ob.keystrokeTraining && !ob.keystroke);
+    var incomplete = (ob && !(ob.passkey && (ob.keystroke || ksBuilding) && ob.mouse)) || (!!s.notEnrolled && !(s.notEnrolled === "keystroke" && ksBuilding));
+    show("enrolBtn", incomplete);
+
+    // The banner.
+    var vd = q("verdict"), cls = "", txt;
+    if (s.locked) { txt = "🔒 Locked — verify with your passkey on the page (" + (s.lockReason === "mouse" ? "mouse movement" : "typing rhythm") + " didn't match)"; cls = "v-warn"; }
+    else if (s.paused) { txt = "⏸ Paused: nothing is recorded"; }
+    else if (curRestricted) {
       txt = /^chrome:\/\/(newtab|new-tab-page)/i.test(curUrl)
-        ? "⚠ This is Chrome's New Tab page (not google.com) — extensions can't run here. Type a site in the address bar to monitor."
-        : "⚠ Chrome blocks extensions on this page — open a normal website (http/https) to monitor";
+        ? "This is Chrome's New Tab page (not google.com): extensions can't run here."
+        : "Chrome blocks extensions on this page. Open a normal website.";
     }
-    else if (!active) { txt = "⚙️ Set up your profile below to start monitoring"; }
-    else if (!s.modelReady) { txt = s.modelError ? ("⚠ model error: " + s.modelError) : "⏳ loading model…"; }
-    // A failed step-up outranks every other message: while the verifier is unreachable the
-    // lock cannot be cleared at all, and saying "passkey required" without saying the passkey
-    // service is down is what makes this look like the extension itself is broken.
-    else if (s.rpError) {
-      txt = "⚠ Passkey service unreachable at " + (s.rpBase || "the configured address")
-        + " (" + s.rpError + ") — start it, or fix the address in Options"; cls = "v-warn";
+    else if (incomplete) { txt = "Finish enrolment to start: " + (s.notEnrolled ? "the server has no " + s.notEnrolled + " profile yet" : "passkey, typing and mouse"); }
+    else if (ksBuilding) { txt = "⏳ Your typing model is being built (about a minute). Typing protection starts by itself."; }
+    else if (!s.showVerdict) { txt = s.study ? "● Recording" : "✓ Protected"; cls = s.study ? "" : "v-ok"; }
+    else {
+      var v = s.verdict, mv = s.mouseVerdict;
+      if ((v && v.status === "suspicious") || (mv && mv.status === "suspicious")) { txt = "⚠ Suspicious — a step-up may follow"; cls = "v-warn"; }
+      else if ((v && v.status === "genuine") || (mv && mv.status === "genuine")) { txt = "✓ It's you"; cls = "v-ok"; }
+      else { txt = "Analyzing… type or move the mouse on any website"; }
     }
-    else if (s.locked) {
-      var by = s.lockReason === "mouse" ? "mouse movement" : "keystroke rhythm";
-      txt = "🔒 Locked — passkey required (" + by + " didn't match)"; cls = "v-warn";
-    }
-    else if (ksOn) {   // keystroke is the enforcing channel — it drives the banner when trained
-      if (!v) { txt = "Idle — type on any web page to begin"; }
-      else if (v.status === "analyzing") { txt = "Analyzing your typing… (" + v.packet + "/" + v.need + ")"; }
-      else if (v.status === "suspicious") { txt = "⚠ Suspicious — " + v.mean + "%"; cls = "v-warn"; }
-      else { txt = "✓ Verified — " + v.mean + "%"; cls = "v-ok"; }
-    } else {   // mouse trained only — now enforcing via the sustained vote
-      var mv2 = s.mouseVerdict;
-      if (mv2 && mv2.status === "suspicious") { txt = "🖱️ Suspicious mouse movement — " + mv2.mean + "%"; cls = "v-warn"; }
-      else if (mv2 && mv2.status !== "analyzing") { txt = "🖱️ Mouse ✓ " + mv2.mean + "%"; cls = "v-ok"; }
-      else { txt = "Monitoring your mouse movement"; }
-    }
+    if (s.study && !s.locked) q("verdict").style.color = s.paused ? "" : "#dc2626";
+    else q("verdict").style.color = "";
     vd.textContent = txt;
     vd.className = cls;
-    q("exclude").textContent = excluded ? "Include this site" : "Exclude this site";
 
-    // Once both modalities are trained the card alone has 8 rows — tall enough to risk
-    // Chrome's own popup-height cap (past which Chrome adds a native scrollbar AND flattens
-    // the panel's rounded corners, since it takes over the viewport). The onboarding note
-    // is only useful before that point, so drop it once things are actually live.
-    show("note", !(ksOn && mouseOn && live));
+    show("verdictCard", true);
+    show("rowKeys", s.showVerdict);
+    show("rowMouse", s.showVerdict);
+    if (s.showVerdict) {
+      var bars = s.bars || {}, off = s.disabled || {};
+      q("keys").textContent = off.keystroke ? "off (organisation setting)" : ksBuilding ? "building your model…" : keysText(s.verdict, bars.keystroke);
+      q("mouse").textContent = off.mouse ? "off (organisation setting)" : mouseText(s.mouseVerdict, bars.mouse);
+    }
+
+    q("pauseBtn").textContent = s.paused ? "Resume recording" : "Pause recording";
+    q("pauseBtn").style.background = s.paused ? "#16a34a" : "#dc2626";
+    show("errLine", !!s.error);
+    if (s.error) q("errLine").textContent = s.error;
+    q("exclude").textContent = excluded ? "Include this site" : "Exclude this site";
   });
 }
 
+q("pauseBtn").addEventListener("click", function () {
+  api.storage.local.get(["cg_paused"], function (d) { api.storage.local.set({ cg_paused: !(d && d.cg_paused === true) }, refresh); });
+});
 q("exclude").addEventListener("click", function () {
   if (!curOrigin) return;
   api.runtime.sendMessage({ type: "cg:toggleExclude", origin: curOrigin }, refresh);
 });
-
-q("enrollKeys").addEventListener("click", function () {
-  api.tabs.create({ url: api.runtime.getURL("src/enroll.html?mode=keystroke") });
-});
-q("enrollMouse").addEventListener("click", function () {
-  api.tabs.create({ url: api.runtime.getURL("src/enroll.html?mode=mouse") });
-});
-q("regPasskey").addEventListener("click", function (e) {
-  e.preventDefault();
-  api.runtime.sendMessage({ type: "cg:open-register" });
-});
-
-// User on/off toggle for the mouse channel (independent of keystroke).
-q("mouseTrackToggle").addEventListener("change", function () {
-  api.runtime.sendMessage({ type: "cg:set-mouse-tracking", on: this.checked }, refresh);
-});
-
-// Mouse lock-sensitivity slider: live label on drag, persist on release. The hint spells the
-// percentage out in windows — the number that actually decides when the passkey is demanded.
-// The vote length and the measured default (k of n) come from the trained model via status.
-var mouseBuffer = 60, mouseDefaultPct = 50, mouseRule = "vote";
-function setMouseHint(pct) {
-  var n = Math.max(1, Math.round((pct / 100) * mouseBuffer));
-  q("mouseSensHint").textContent = "Asks for your passkey after " + n + " of the last "
-    + mouseBuffer + " mouse windows fall below your personal threshold"
-    + (pct === mouseDefaultPct ? " (the measured default)." : ".");
-}
-q("mouseSensRange").addEventListener("input", function () {
-  q("mouseSensVal").textContent = this.value + "%";
-  setMouseHint(parseInt(this.value, 10));
-});
-q("mouseSensRange").addEventListener("change", function () {
-  api.runtime.sendMessage({ type: "cg:set-mouse-sustain", pct: parseInt(this.value, 10) }, refresh);
-});
-
-// Open the options page where the passkey-service (RP) URL is configured.
-q("openSettings").addEventListener("click", function () {
+q("enrolBtn").addEventListener("click", function () { api.runtime.sendMessage({ type: "cg:open-enrol" }, function () { void api.runtime.lastError; }); });
+function openSettings() {
   if (api.runtime.openOptionsPage) api.runtime.openOptionsPage();
   else api.tabs.create({ url: api.runtime.getURL("src/options.html") });
-});
+}
+q("openSettings").addEventListener("click", openSettings);
+q("setupBtn").addEventListener("click", openSettings);

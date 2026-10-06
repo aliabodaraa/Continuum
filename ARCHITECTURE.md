@@ -27,8 +27,8 @@ and extensible to a browser extension or desktop agent later.
 |---|---|---|---|
 | **model-api** | 5000 | Python / TensorFlow | Serves the keystroke + mouse models; fine-tunes per-user models. Owns model/data storage (`ARTIFACTS_DIR`, `DATA_DIR`), confines every path. Reachable **only** from ca-service (the `model` Docker network) and requires `MODEL_API_KEY` on every route but `/health`. |
 | **ca-service** | 4100 | Node | The continuous-auth engine. Turns raw events into signed **verdicts**. Identity comes only from the gateway's assertion, never the request body. Owns behavioral DB (`ca.db`) — samples, profiles, the decision log, **the durable escalation counters**, and **the training-job queue**. The only service that may address model-api. |
-| **passkey-service** | 4000 | Node | FIDO2/WebAuthn registration + assertion (step-up). Owns `passkey.db`. |
-| **gateway** | 8080 | Node | Multi-tenant front door: resolves identity, signs verdicts (RS256) + exposes JWKS, pushes CAEP events, serves the SDK. The only public entry for the product bundle. |
+| **passkey-service** | 4000 | Node | FIDO2/WebAuthn registration + assertion (step-up). Owns `passkey.db`. Not published to the host; `PASSKEY_API_KEY` on every route but `/health` (called only by the gateway and the demo). |
+| **gateway** | 8080 | Node | Multi-tenant front door: resolves identity, signs verdicts (RS256) + exposes JWKS, pushes CAEP events, serves the SDK. Also the tenant registry (developer console, operator approval), Continuum accounts, and the browser extension's sign-in and step-up pages. The only public entry for the product bundle. |
 | **apps/demo** | 3000 | Node | Reference integration app (login as `ali`/`aiham`, dashboard, "write opinion"). |
 | **apps/acme** | 4200 | Node | A *separate* consumer on its own origin — adopts Continuum through nothing but the SDK + middleware. |
 
@@ -106,9 +106,33 @@ option — a rise in these is either an outage or someone arranging one.
 ## 3b. Tenants, site keys & origin binding
 - Each consumer app is a **tenant**: a **site key** (public — goes in the SDK
   `data-site-key`) paired with a **signing secret** (private — the backend's
-  `CONTINUUM_SECRET`). Issued by `POST /v1/tenants` (admin-gated), which returns both.
-  The gateway auto-seeds a `pk_demo` tenant from `CA_SIGNING_SECRET` on first boot so the
-  bundled demo/acme work out of the box.
+  `CONTINUUM_SECRET`). Issued by `POST /v1/tenants` (operator, `X-Admin-Key`), which returns
+  both, or by the **developer console** (`/console.html`): an organisation signs in with a
+  Continuum account (email + passkey), registers its tenant, sees the secret once, and waits
+  for the operator's approval (`status` pending → active; revoked is final). The operator
+  approves and revokes on `/operator.html`, which with the admin API (`/v1/tenants`,
+  `/v1/admin/*`) answers only on the gateway's own host names (`GATEWAY_OPERATOR_HOSTS`, default
+  localhost; proxied requests are never local) and locks for 15 minutes after 10 wrong admin
+  keys. Every change to a tenant or an account is appended to an activity log (`audit.jsonl`):
+  the console shows an organisation its own entries, the operator all of them. Console webhooks
+  must be public `https://` names (the gateway calls them, so a private address would be SSRF);
+  the console can send a signed test event. Each organisation sets its apps' protection in the
+  console (panel, typing and mouse on/off, enrolment, adaptive retraining and its pause, ignored field
+  types); the operator page sets the defaults for all of them (precedence: organisation, operator,
+  `.env`, built-in; `services/gateway/settings.js`); the gateway signs the effective values into its
+  identity assertion (claim `cfg`), and ca-service enforces them. An owner may delete an organisation (its users are
+  erased with it); the operator can give any tenant to a console account
+  (`/v1/admin/tenants/:siteKey/owner`); the built-in demo can't be rotated, revoked or deleted from
+  the console, since its secret is `CA_SIGNING_SECRET`. A tenant is an
+  organisation or app, never a person. The gateway auto-seeds `pk_demo` from
+  `CA_SIGNING_SECRET` so the bundled demo/acme work out of the box, and `pk_personal`, whose
+  users are Continuum accounts (people with no organisation).
+- **Browser extension sign-in** (`/v1/link/*`): OAuth 2.0 authorization code + PKCE with the
+  gateway as authorization server. Personal users sign in with their Continuum account;
+  an organisation's users on its own sign-in page (`@continuum/node` serves `/continuum/link`,
+  which posts an identity token bound to that one sign-in). The extension keeps only a
+  refresh token (typed, never accepted as a session; revoked at sign-out). Unverified
+  `externalId`s in the `id:`/`acct:` namespaces are refused by `/v1/sdk/session`.
 - **Self-hosted config model:** since the consumer runs the whole stack, they don't
   "register with a provider" — they set their secret in `.env`; the site key is a stable
   public label. Security lives in the **secret**, never the site key.
@@ -153,6 +177,13 @@ option — a rise in these is either an outage or someone arranging one.
   genuine probability < `0.50`; the packet is **suspicious** when the low fraction ≥
   `PACKET_VOTE_FRACTION=0.50`, i.e. 10 of 20. Only a full packet gives a verdict (warm-up while
   `windowCount <= 20`), apart from the paste, un-verifiable and overwhelming-impostor fast paths.
+  **Per organisation (since 2026-10-05):** the packet may be 6 or 10 instead of 20 (console,
+  Protection; operator default; `KEYSTROKE_DECISION_WINDOWS`), always a simple majority, and only
+  these measured lengths (`DECISION_WINDOW_CHOICES`). It reaches ca-service in the signed claim
+  (`cfg.kw`); warm-up becomes `windowCount <= packet`, the study log records the rule as
+  `lu-050-3of6-warm8` etc. and `details.packetWindows`, and the replay uses it. Shorter = sooner
+  first verdict, more genuine flags (FRR at 0.50: 23.6% / 18.8% / 14.8%), same capture. The
+  paper's figures are for 20.
   A wider `ROLLING_WINDOW_COUNT=18` mean drives adaptive-learning eligibility only, and adaptive
   contributions are still judged on the last `CONTRIBUTE_WINDOW_COUNT=6` windows.
 - **Digraph hygiene:** drop event-batching artifacts (`dd < 15 ms` or `dwell < 10 ms`)
@@ -195,9 +226,10 @@ option — a rise in these is either an outage or someone arranging one.
   ca-service refuses retired 7-column windows.
 - Every client steps up on the **first** suspicious decision: gateway `MOUSE_STRIKES_TO_LOCK = 1`,
   demo 1, extension — the measured operating point counts one decision as one prompt.
-- **Extension:** trains only a head on the frozen FCN on the device (`extension/src/mouse-model.js`;
-  full fine-tuning on the CPU backend would take hours); its own operating point is the 2nd
-  percentile and the mean of the last 60 scores (Experiment I: 0.22 prompts/min, 87.3% caught).
+- **Extension:** since 2026-09-29 a server client like the SDK: it sends its windows to the gateway
+  and is judged by this same model and rule. Its earlier on-device version (git tag
+  `extension-on-device-v1`) trained only a head on the frozen FCN in the browser, with its own
+  operating point (2nd percentile, mean of the last 60; Experiment I: 0.22 prompts/min, 87.3% caught).
 
 ## 6. The continuous-auth decision pipeline (`ca-service`)
 Every keystroke `check` computes `passkeyTriggered = !isWarmup && isSuspicious && hasPasskey`,
@@ -263,10 +295,15 @@ same durability, dedupe and crash recovery with no new stateful service to deplo
 or fail — and inherit `ca.db`'s existing volume and export scripts. The *pattern* is worth
 borrowing; the infrastructure is not.
 
-Enrollment still trains synchronously, because the user is waiting and "trained" is the
-result they asked for. *Still open:* model-api runs single-threaded Flask, so a synchronous
-enrollment train still blocks concurrent inference on that process — the fix is gunicorn
-with separate inference and training workers (`TODO.md`).
+Typing enrolment trains from the queue too, since 2026-10-06. It used to train inside the 5th
+`/v1/keystroke/enroll` request, so the enrolment window held the user for the whole run (~45 s,
+up to ~2 min) and the demo blocked its pages meanwhile. Now `/enroll` enqueues once the samples
+suffice and returns at once; `/v1/keystroke/status` reports `training` / `trainingError` and
+`/v1/users/:id/onboarding` `keystrokeTraining`. The SDK, the demo's gate and the extension treat
+"being built" as enrolled and say so, and a page reload picks the state up from the server.
+*Still open:* model-api runs single-threaded Flask, so a training run still blocks concurrent
+inference on that process — the fix is gunicorn with separate inference and training workers
+(`TODO.md`).
 
 ## 7. Passkey step-up + shared lock
 - **Step-up:** on a suspicious verdict the SDK opens a WebAuthn assertion modal; a
@@ -291,15 +328,24 @@ with separate inference and training workers (`TODO.md`).
   *demo* (same-origin, talks to the app's own CA routes).
 - **Capture:** keystroke tracker on `document.documentElement`; mouse tracker; a
   Shadow-DOM guard panel that is **collapsible + draggable** (persisted in `localStorage`).
-- **Field policy (`MONITOR_EXCLUDE_TYPES`):** monitors all fields *including* `password`
-  — but **masks** the password value before it leaves the browser; excluded types
-  (default `hidden`) are ignored.
+- **Field policy ("fields never watched"):** inputs, textareas and rich-text editors
+  (`contenteditable`, as one field) are watched, *including* `password` (timing only,
+  key code 0). The organisation's excluded types (console, Protection; operator default;
+  `MONITOR_EXCLUDE_TYPES`; built-in `hidden`) leave no event at all, and ca-service drops
+  events of those types from `/check` and `/contribute` whatever a client sends.
+- **What a check sends:** the key-event tail and the typed **length** (`textLength`), never
+  the text (since 2026-10-05; before, `textContent` went with every check). Enrolment still
+  sends the passage typed in Continuum's own wizard.
 - **Onboarding modes:** `eager` (popup enrolls everything missing at load) vs `lazy`
   (passkey only; each modality enrolls when its panel toggle is turned on). Lazy is active.
-- **Adaptive contribution:** after a sustained clean run, a verified submission is offered
-  back as a training sample to keep the per-user model current.
+- **Adaptive retraining, popup only (since 2026-10-05):** after a sustained clean run the
+  popup offers the typing as a sample; three samples, then the retrain with the passkey. No other
+  path adds typing samples: the public `contribute()` and ca-service `/v1/keystroke/submit` are
+  gone, and `/v1/keystroke/enroll` answers 409 `already_enrolled` once the model exists (it used
+  to take samples and retrain at any time, with no passkey). The panel's "+ train" then offers
+  only the profile reset (passkey). Nothing is called at a page's submit or save.
 - Public API: `getRiskToken`, `riskHeader`, `isLocked`, `identify`, `onReady`,
-  `requireStepUp(modality, onSuccess)`, `contribute()`.
+  `requireStepUp(modality, onSuccess)`.
 
 ## 10. Server middleware
 - **`@continuum/node`** — one line: serves `/continuum/identity` (mints the HS256

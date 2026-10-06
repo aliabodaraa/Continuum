@@ -5,8 +5,9 @@ Operator guide for the Continuum user study (recovery plan T4.3; protocol and co
 
 ## What study mode does
 
-Normally the extension scores typing and mouse movement **on the device**. In study mode it is a client
-of the deployed **server** system instead, exactly like a site that embeds the SDK:
+The extension is always a client of the deployed **server** system, exactly like a site that embeds the SDK
+(it has had no on-device scoring since 2026-09-29; see `README.md`). Study mode makes this browser a
+participant's account and logs everything for the study:
 
 - every page visit is one study session; the content script sends the raw key-event tail (key codes and
   timings) and its numbered mouse windows through the service worker to the gateway
@@ -14,13 +15,16 @@ of the deployed **server** system instead, exactly like a site that embeds the S
 - ca-service scores them with the server models (keystroke: Lu et al.'s per-user network on the Aalto
   negatives, 10 of 20 at 0.50; mouse: F2, the frozen deployed network with a per-user logistic head,
   threshold at the 20th percentile of leave-one-sample-out scores, 33 of 60) and logs every score, decision, threshold source and
-  passkey prompt (`services/ca-service/lib/studyLog.js`); on-device scoring is off;
+  passkey prompt (`services/ca-service/lib/studyLog.js`);
 - a server verdict locks every tab; the passkey step-up runs on the gateway's `/study.html` and clears the
   server lock; after it, probation re-challenges any scored suspicious verdict (as the SDK does);
 - the typed **text** is never sent: checks carry only its length (printable keys in the tail). The order of
   key codes is sent, and text could be reconstructed from it; the consent form says so.
 
-Settings live on the options page (experimenter only). `condition` is `genuine`, or
+Settings live on the extension's settings page, in the "Research study (experimenter only)" section; while
+study mode is on it wins over any account signed in on the same page. Participants never see their scores:
+the popup and the badge show only that recording is on, unless the experimenter ticks "Show verdicts while
+testing" (never during a participant's session). `condition` is `genuine`, or
 `impostor:<pseudonym of the person typing>` during an impostor session; `client` ("Machine") is
 `extension-study` on the participant's own computer and `lab` on a lab machine.
 
@@ -36,16 +40,18 @@ never lifted automatically; tell participants to resume after typing something p
 1. **Logging on.** Start ca-service with `STUDY_LOGGING=1` (set it in `.env`, or
    `STUDY_LOGGING=1 docker compose up -d --no-deps ca-service`). Without it nothing is logged.
 2. **Study tenant.** Register one tenant whose origins are the gateway's own origin (the study page) and the
-   extension's origin, `chrome-extension://<extension id>` (shown on `chrome://extensions`; an unpacked
-   extension's id depends on its folder, so load it from the same folder on every study machine, or pack it):
+   extension's origin, `chrome-extension://<extension id>` (shown on `chrome://extensions` and on the
+   extension's settings page; an unpacked extension's id depends on its folder, so load it from the same
+   folder on every study machine, or pack it). As the operator, with the admin key from `continuum/.env`:
 
    ```
    curl -s -X POST http://localhost:8080/v1/tenants -H "Content-Type: application/json" \
+     -H "X-Admin-Key: <GATEWAY_ADMIN_KEY>" \
      -d '{"name":"continuum-study","origins":["http://localhost:8080","chrome-extension://<extension id>"]}'
    ```
 
-   Keep the returned `siteKey`; it goes into each participant's settings. (With `GATEWAY_ADMIN_KEY` set,
-   add `-H "X-Admin-Key: …"`.)
+   Keep the returned `siteKey`; it goes into each participant's settings. (Or register it in the developer
+   console, `http://localhost:8080/console.html`, and approve it on `http://localhost:8080/operator.html`.)
 3. **Checks** (LOGGING_SPEC §5), all on this machine's stack:
    - `node extension/scripts/e2e_headless_study.mjs`: a scripted genuine and impostor session end to end,
      including the lock, the passkey step-up, the pause and password-field checks, the export, the
@@ -56,7 +62,7 @@ never lifted automatically; tell participants to resume after typing something p
 ## Day 1: enrolment
 
 1. Install the extension in the participant's Chrome (the study origin must match the tenant).
-2. Options page, "User study mode": study mode on, gateway URL, the study site key, the participant's
+2. Settings page, "Research study (experimenter only)": study mode on, gateway URL, the study site key, the participant's
    pseudonym, condition "The participant (genuine)". Save.
 3. "Open enrolment page": the participant creates the passkey, types the five texts and does the eight mouse
    samples. Training runs on the server (a few minutes).

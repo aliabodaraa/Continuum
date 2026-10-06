@@ -38,6 +38,10 @@ const continuum = require("./lib/continuumNode")({
 // user), receives pushed risk-change events at /continuum/events (CAEP), and tags
 // each request with the user's current pushed risk — so continuum.protect blocks a
 // server-pushed "suspicious" verdict with no further code (see routes/guest.js).
+// It also serves /continuum/link, where the demo's users sign in to the Continuum Guard
+// extension (the demo tenant's "sign-in page for the extension"; the gateway's public
+// address comes from CONTINUUM_GATEWAY_URL). Mounted before the passkey gate below, so a
+// signed-in user without a passkey can still link and set one up in the extension.
 app.use(continuum);
 
 // Resolve the logged-in user's Continuum id (via the gateway) into req.caUid, so
@@ -127,7 +131,9 @@ async function passkeySetupGate(req, res, next) {
           .then((r) => r.data)
           .catch(() => ({ trained: true, mouseEnrolled: true }));
 
-    if (!onboarding.trained) {
+    // While the typing model is being built (about a minute, from ca-service's queue) the user moves
+    // freely: enrolment is done, and typing checks start by themselves once the model exists.
+    if (!onboarding.trained && !onboarding.keystrokeTraining) {
       if (req.path.startsWith("/api/")) {
         if (allowedApiPaths.has(req.path)) {
           return next();

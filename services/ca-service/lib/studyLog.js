@@ -14,7 +14,9 @@ const fs = require("fs");
 const path = require("path");
 const db = require("../db");
 
-const ENABLED = process.env.STUDY_LOGGING === "1";
+// The switch is STUDY_LOGGING in the environment, overridable at run time from the operator page
+// (lib/runtimeSettings.js), so it is read on every call rather than once at start.
+const enabled = () => require("./runtimeSettings").get("studyLogging");
 // model-api's paths as it reports them, and where ca-service sees the same store (read-only mount).
 const MODEL_STORE_REMOTE = process.env.MODEL_STORE_REMOTE || "/app/artifacts/users";
 const MODEL_STORE_DIR = process.env.MODEL_STORE_DIR || "/model-store";
@@ -26,7 +28,7 @@ const CLIENTS = new Set(["extension-study", "lab"]);
 
 /** The validated study context of a request body, or null (not a study request). */
 function parseContext(raw) {
-  if (!ENABLED || !raw || typeof raw !== "object") return null;
+  if (!enabled() || !raw || typeof raw !== "object") return null;
   const participant = String(raw.participant || "");
   const sessionId = String(raw.sessionId || "");
   const condition = String(raw.condition || "");
@@ -45,7 +47,7 @@ function parseContext(raw) {
 
 /** A context naming only the participant (study setup, before any session exists), or null. */
 function participantContext(participant) {
-  if (!ENABLED || !PSEUDONYM.test(String(participant || ""))) return null;
+  if (!enabled() || !PSEUDONYM.test(String(participant || ""))) return null;
   return { participant: String(participant) };
 }
 
@@ -76,7 +78,7 @@ function register(userId, ctx) {
 }
 
 function isParticipant(userId) {
-  if (!ENABLED) return false;
+  if (!enabled()) return false;
   try {
     return !!db.prepare("SELECT 1 FROM study_participants WHERE user_id = ?").get(userId);
   } catch (e) {
@@ -186,4 +188,5 @@ function recordPrompt(userId, ctx, p) {
   }
 }
 
-module.exports = { ENABLED, parseContext, participantContext, register, isParticipant, recordCheck, recordProfile, recordPrompt, modelSha256 };
+module.exports = { parseContext, participantContext, register, isParticipant, recordCheck, recordProfile, recordPrompt, modelSha256 };
+Object.defineProperty(module.exports, "ENABLED", { enumerable: true, get: enabled });

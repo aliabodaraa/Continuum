@@ -26,6 +26,9 @@
     externalId: (script && script.getAttribute("data-external-id")) || "",
     identity: (script && script.getAttribute("data-identity")) || "",
     identityUrl: (script && script.getAttribute("data-identity-url")) || "", // SDK auto-fetches the signed identity here (same-origin → the app's session cookie flows)
+    // A session minted elsewhere (the browser extension, which signed its user in): used as is,
+    // instead of asking /v1/sdk/session for one. Only the gateway's own pages set it.
+    session: (script && script.getAttribute("data-session")) || "",
     defer: (script && script.getAttribute("data-defer")) === "1", // wait for identify()
     keystroke: (script && script.getAttribute("data-keystroke")) || "on",
     mouse: (script && script.getAttribute("data-mouse")) || "optional",
@@ -33,12 +36,17 @@
     // (passkey only at load; a modality enrolls when its toggle is turned on).
     // Page attr wins; otherwise the server's deployment config (docker env) applies.
     onboarding: (script && script.getAttribute("data-onboarding")) || "",
+    panel: (script && script.getAttribute("data-panel")) || "",   // "show" | "hide"
     // The × in mandatory popups signs the user out via these (same-origin; a
     // consumer overrides with data-logout-url / data-login-url).
     logoutUrl: (script && script.getAttribute("data-logout-url")) || "/api/auth/logout",
     loginUrl: (script && script.getAttribute("data-login-url")) || "/login.html",
   };
   var MODE = cfg.siteKey ? "gateway" : "demo";
+  // Which of the managed settings this page chose itself. The organisation's console and the
+  // operator page override a page's choice; a deployment default does not (see loadConfig).
+  var PAGE_SET = { keystroke: !!(script && script.hasAttribute("data-keystroke")), mouse: !!(script && script.hasAttribute("data-mouse")),
+                   onboarding: !!cfg.onboarding, panel: !!cfg.panel };
   var LS_MOUSE = "continuumGuardMouse";
   var LS_KEYSTROKE = "continuumGuardKeystroke";
   var LS_EXT = "continuumExternalId";
@@ -66,14 +74,25 @@
   // checks — the SDK analogue of the demo's "3 clean packets" — offer to add the run
   // to the user's training set. The CA retrains every N contributions (val-gated).
   var ADAPT_CONFIDENCE_MIN = 0.9, ADAPT_CLEAN_RUN = 3, ADAPT_RETRAIN_EVERY = 3;
-  // Field types NOT monitored (deployment config MONITOR_EXCLUDE_TYPES). Everything
-  // else — including password — is monitored (see currentTypedText).
+  // The organisation can switch adaptive retraining off, and sets the minimum gap between two
+  // accepted samples (default 3 h). contribUntil: no offer before this time (null = not asked yet).
+  var ADAPT_ENABLED = true, ADAPT_GAP_H = 3, contribUntil = null, contribFetching = false;
+  // The cycle (owner's design, 2026-10-04): three samples, then the user retrains with a passkey, then a
+  // pause of ADAPT_GAP_H hours. A sample is only the typing since the previous one, after a gap of one
+  // window's keys, so no two samples share a keystroke (no window is learned twice).
+  var SAMPLE_GAP_KEYS = 50, SAMPLE_MIN_KEYS = 120, SAMPLE_MAX_EVENTS = 1400;
+  var contribEndIdx = 0, adaptPending = 0, adaptReady = false, learnMode = "", retrainDismissed = false;
+  // The floating panel: shown unless the page or the organisation hides it.
+  var PANEL = cfg.panel === "hide" ? "hide" : "show", panelEl = null, ksAddEl = null, msAddEl = null;
+  // Field types never watched: the organisation's setting (from /config), else the deployment's
+  // MONITOR_EXCLUDE_TYPES. Their keys leave no event and their text is not counted.
   var EXCLUDE_TYPES = ["hidden"];
 
   var sessionToken = null, userId = null, latestRiskToken = null, locked = false, ready = false;
   var identityToken = cfg.identity || null, started = false, ksInputHandler = null;
   var readyCbs = [];
   var ONBOARD_MODE = cfg.onboarding || "eager"; // may be overridden by server config
+  var ksBuilding = false, ksBuildTimer = null;   // typing model being built on the server's queue
   var obState = null;                            // {passkey, keystroke, mouse} for THIS user
 
   // ---------- transport ----------
@@ -92,11 +111,11 @@
     ksReset: "/v1/sdk/keystroke/reset", mouseReset: "/v1/sdk/mouse/reset",
     pkRegOpts: "/v1/sdk/passkey/register/options", pkRegDone: "/v1/sdk/passkey/register/complete",
     pkAuthOpts: "/v1/sdk/passkey/auth/options", pkAuthDone: "/v1/sdk/passkey/auth/complete",
-    lockStatus: "/v1/sdk/lock/status",
+    lockStatus: "/v1/sdk/lock/status", adaptiveRetrain: "/v1/sdk/keystroke/adaptive/retrain",
   } : {
     config: "/api/text/config", ksStatus: "/api/text/typing-status", ksEnroll: "/api/text/enroll", ksCheck: "/api/text/check", ksContribute: "/api/text/contribute",
     mouseEnroll: "/api/mouse/enroll", mouseCheck: "/api/mouse/check", mouseStatus: "/api/mouse/status",
-    ksReset: "/api/text/typing-reset", mouseReset: "/api/mouse/reset",
+    ksReset: "/api/text/typing-reset", mouseReset: "/api/mouse/reset", adaptiveRetrain: "/api/text/adaptive-retrain",
   };
 
   // ---------- dependency loader ----------
@@ -172,23 +191,22 @@
       ".learn .gh{background:transparent;color:#86efac;border:1px solid rgba(134,239,172,.4)}";
     shadow.appendChild(st);
 
-    var panel = el("div", "panel");
+    var panel = el("div", "panel"); panelEl = panel;
     var hd = el("div", "hd"); dotEl = el("span", "dot");
     hd.appendChild(dotEl); hd.appendChild(el("span", null, "Continuum")); hd.appendChild(el("span", "tag", "GUARD"));
     var cx = el("button", "cx", "–"); cx.title = "Collapse"; hd.appendChild(cx);
     panel.appendChild(hd);
     var pbody = el("div", "pbody");
     var kr = el("div", "row"); kr.appendChild(el("span", "ic", "⌨")); kbEl = el("span", "st mut", "keystroke: idle"); kr.appendChild(kbEl);
-    if (cfg.keystroke !== "off") {
-      var ksAdd = el("button", "tgl add", "+ train"); ksAdd.title = "Add typing samples"; ksAdd.addEventListener("click", reinforceKeystroke); kr.appendChild(ksAdd);
-      ksToggleEl = el("button", "tgl", "off"); ksToggleEl.addEventListener("click", toggleKeystrokeCtl); kr.appendChild(ksToggleEl);
-    }
+    var ksAdd = el("button", "tgl add", "+ train"); ksAdd.title = "Add typing samples"; ksAdd.addEventListener("click", reinforceKeystroke); kr.appendChild(ksAdd); ksAddEl = ksAdd;
+    ksToggleEl = el("button", "tgl", "off"); ksToggleEl.addEventListener("click", toggleKeystrokeCtl); kr.appendChild(ksToggleEl);
     pbody.appendChild(kr);
     var mr = el("div", "row"); mr.appendChild(el("span", "ic", "🖱")); mouseEl = el("span", "st mut", "mouse: off"); mr.appendChild(mouseEl);
-    var msAdd = el("button", "tgl add", "+ train"); msAdd.title = "Add mouse samples"; msAdd.addEventListener("click", reinforceMouse); mr.appendChild(msAdd);
-    if (cfg.mouse === "optional") { toggleEl = el("button", "tgl", "off"); toggleEl.addEventListener("click", toggleMouseCtl); mr.appendChild(toggleEl); }
+    var msAdd = el("button", "tgl add", "+ train"); msAdd.title = "Add mouse samples"; msAdd.addEventListener("click", reinforceMouse); mr.appendChild(msAdd); msAddEl = msAdd;
+    toggleEl = el("button", "tgl", "off"); toggleEl.addEventListener("click", toggleMouseCtl); mr.appendChild(toggleEl);
     pbody.appendChild(mr);
     panel.appendChild(pbody); shadow.appendChild(panel);
+    applyPanel();
 
     // ---- collapse / expand (persisted) ----
     var collapsed = false; try { collapsed = localStorage.getItem(LS_COLLAPSE) === "1"; } catch (e) {}
@@ -230,7 +248,7 @@
       '<div class="lm">Add this clean sample so your model keeps learning your rhythm.</div>' +
       '<div class="lp"><i></i></div>' +
       '<div class="lb"><button class="go">Contribute sample</button><button class="gh">Not now</button></div>';
-    learnEl.querySelector(".go").addEventListener("click", contributeSample);
+    learnEl.querySelector(".go").addEventListener("click", function () { if (learnMode === "retrain") retrainWithPasskey(); else contributeSample(); });
     learnEl.querySelector(".gh").addEventListener("click", function () { dismissLearn(); });
     shadow.appendChild(learnEl);
     // Keep the prompt glued to the field as the page scrolls/resizes.
@@ -339,6 +357,7 @@
       // (Resetting the tracker alone left lastCheckedWindowCount stale-high, which
       // silently froze keystroke checks until ~200 more keystrokes caught up.)
       if (ksTracker) ksTracker.reset();
+      contribEndIdx = 0;
       lastCheckedWindowCount = 0; checkInFlight = false; ksMissedWindow = false;
       if (mouseTracker) mouseTracker.reset(); lastMouseEvents = 0;
       locked = false; onProbation = true; hideModal(); setKb("ok", "verified ✓"); if (mouseOn) setMouseRow("ok", "watching");
@@ -373,28 +392,32 @@
 
   // ================= ONBOARDING WIZARD =================
   var KS_ENROLL_SAMPLES = 5;
-  // Same source as the demo's enroll.html: a random Wikipedia summary (varied text
-  // teaches the model more of the user's rhythm), with static fallbacks offline.
-  var ONBOARD_FALLBACKS = [
-    "Continuous authentication works best when the system observes ordinary writing over time. I am typing this paragraph naturally so Continuum can learn my own rhythm from keydown and keyup timing. Every pair of keys I press carries a small piece of my personal pattern, and together these quick measurements describe how my hands move across the keyboard.",
-    "My typing pattern is personal and quite hard to imitate. The time I hold each key down and the pause between two keys creates a behavioral signal that can support account protection after login. Just like a signature on paper, the speed and flow of my fingers form a private mark that follows me whenever I write a message or a longer document.",
-    "This enrollment sample helps the application build a private rhythm profile for my account. Later, unusual typing during protected actions can require passkey verification. The more natural text I provide now, the better the model will recognize me in the future, because varied words and different letter combinations teach it the full shape of my typing.",
-    "The model should learn from repeated samples collected from the real user. These samples are separate from the password and are used only after passkey setup. When somebody else types on my account, their holding times and the gaps between their keys will not match my profile, and the system can then ask for stronger proof of identity right away.",
+  // Enrolment passages: a fixed pool in A1 (beginner) English, the same as the browser extension's
+  // own enrolment had. Enrolment must capture the user's NATURAL rhythm, so the text must never make
+  // them stop to read, think or hunt for an unfamiliar word; fetched text (a random Wikipedia
+  // summary, used here until Oct 2026) still did, and it made every enrolling page call a third
+  // party. A local pool is simple every time, works offline, and sends nothing anywhere. The order
+  // is shuffled per page, so the five samples get five different passages ("new text" moves on).
+  // Each is long enough for the 100-keystroke gate below.
+  // Sharing passages between users is harmless: the model's negatives come from the Aalto dataset,
+  // not from other users (ca-service keystrokeSecurity.js), and duplicate-text refusal applies only
+  // to free-typing contributions, not to these samples.
+  var ENROL_PASSAGES = [
+    "I get up early every day. I make a cup of tea and open the window. The birds sing in the tree near my house. I like to sit and drink my tea in the morning. After that I walk to work. I say hello to my friends on the way. We talk about the day and the weather. At night I read a book and go to sleep.",
+    "My family is small but we are happy. My mum cooks good food for us. We eat dinner at the table every night. After we eat, we talk and we laugh. My dad likes to watch films. My sister plays with the dog in the garden. On the weekend we go to the park. We take some food and sit on the grass in the sun.",
+    "I like to cook easy food at home. Today I make rice and eggs for lunch. First I wash the rice and put it in a pot. Then I cook the eggs in a pan. I add some salt and a little oil. When the food is ready, I sit down to eat. I drink a glass of water with my meal. Cooking is easy and fun for me every day.",
+    "My friend and I like to walk in the park. We go there when the sun is out. We see many dogs and children play. The trees are tall and green. Some people sit on the grass and read. We walk near the lake and feed the birds. Then we buy ice cream from a small shop. We sit on a bench and talk for a long time.",
+    "I work in a small shop near my home. I open the shop at nine in the morning. People come in to buy bread, milk, and fruit. I help them find the things they need. I like to talk to the people who come in. At noon I stop and eat a sandwich for lunch. In the afternoon more people come to the shop to buy things.",
+    "The weather is nice today. The sun is out and the sky is blue. There are no clouds and there is no rain. I want to go for a walk in the park. I put on my shoes and a light coat. The air is warm and the wind is soft. I see many people out today. Some ride bikes and some walk their dogs on the long path.",
+    "I like to read books in my free time. I have many books at home on a shelf. Some are about animals and some are about far away places. In the evening I sit in my chair and read. I make a cup of tea and turn on the lamp. The house is quiet and calm at night. I read for one hour and then I go to sleep.",
+    "On Saturday I clean my house. First I open all the windows for fresh air. Then I wash the floor and the dishes. I put my clothes in the machine to wash. I make the bed and I clean the shelves. When the house is clean, I feel very good. After that I sit down and rest for a while and watch a film with my tea.",
+    "I have a small garden behind my house. I grow flowers and some green plants. Every morning I give them water. The flowers are red, yellow, and white. Bees and birds come to the garden too. I like to sit outside and look at my plants. In the summer the garden is full of colour. I pick some flowers for the table.",
+    "My town is small and quiet. There is one shop, one school, and a park. The people here are kind and friendly. In the morning I hear the birds and the wind. I walk to the shop to buy bread and milk. On the way I meet my neighbours and say hello. The streets are clean and there are many green trees on them.",
   ];
-  var fbIdx = 0;
-  async function fetchRandomText() {
-    for (var i = 0; i < 3; i++) {
-      try {
-        var res = await fetch("https://en.wikipedia.org/api/rest_v1/page/random/summary", { cache: "no-store" });
-        if (!res.ok) continue;
-        var data = await res.json();
-        var text = (data.extract || "").replace(/\n+/g, " ").trim();
-        if (text.length >= 150 && text.indexOf("<") < 0) return text.slice(0, 480);
-      } catch (e) { /* retry */ }
-    }
-    return null;
-  }
-  async function nextPassage() { return (await fetchRandomText()) || ONBOARD_FALLBACKS[fbIdx++ % ONBOARD_FALLBACKS.length]; }
+  var passageOrder = ENROL_PASSAGES.map(function (_, i) { return i; });
+  for (var pi = passageOrder.length - 1; pi > 0; pi--) { var pj = Math.floor(Math.random() * (pi + 1)), pt = passageOrder[pi]; passageOrder[pi] = passageOrder[pj]; passageOrder[pj] = pt; }
+  var passageAt = 0;
+  function nextPassage() { return ENROL_PASSAGES[passageOrder[passageAt++ % passageOrder.length]]; }
 
   function wizStepBar(active, total, doneN) {
     var s = '<div class="steps">';
@@ -456,17 +479,17 @@
     });
   }
 
-  // Step 2 — keystroke enrollment (N samples). Random passage per sample (Wikipedia).
+  // Step 2 — keystroke enrollment (N samples). A different fixed passage per sample (ENROL_PASSAGES).
   // `optional`: lazy-mode standalone use — dismissable × (no logout), no step bar.
   function wizKeystroke(optional) {
     return new Promise(function (resolve) {
       var got = 0;               // seeded from samples already on file (below)
       async function render() {
-        openWiz((optional ? "" : wizStepBar(1, 3, 1)) + '<div class="t">Teach your typing rhythm</div><div class="d">Type the passage below naturally. Sample <b>' + (got + 1) + " / " + KS_ENROLL_SAMPLES + '</b>. <a href="#" id="cnew" style="color:#4f46e5;font-weight:700;text-decoration:none">new text</a></div><div class="passage" id="cpass">Fetching text…</div><textarea class="ta" id="cta" placeholder="Type it here…"></textarea><div class="bar"><i id="cbar"></i></div><div id="cdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">typed 0 · captured 0 keystrokes</div><button class="b" id="cs" disabled>Submit sample</button><div class="e"></div>', optional ? function () { closeWiz(); resolve(false); } : null);
+        openWiz((optional ? "" : wizStepBar(1, 3, 1)) + '<div class="t">Teach your typing rhythm</div><div class="d">Type the passage below naturally. Sample <b>' + (got + 1) + " / " + KS_ENROLL_SAMPLES + '</b>. <a href="#" id="cnew" style="color:#4f46e5;font-weight:700;text-decoration:none">new text</a></div><div class="passage" id="cpass"></div><textarea class="ta" id="cta" placeholder="Type it here…"></textarea><div class="bar"><i id="cbar"></i></div><div id="cdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">typed 0 · captured 0 keystrokes</div><button class="b" id="cs" disabled>Submit sample</button><div class="e"></div>', optional ? function () { closeWiz(); resolve(false); } : null);
         var ta = wizEl.querySelector("#cta"), bar = wizEl.querySelector("#cbar"), btn = wizEl.querySelector("#cs"), e = wizEl.querySelector(".e"), diag = wizEl.querySelector("#cdiag"), pass = wizEl.querySelector("#cpass"), newBtn = wizEl.querySelector("#cnew");
         var tracker = window.continuumKeystrokes.createTracker(ta);
         var NEED_KEYS = 100, NEED_CHARS = 120;
-        async function loadPassage() { pass.style.opacity = "0.4"; newBtn.style.pointerEvents = "none"; pass.textContent = await nextPassage(); pass.style.opacity = "1"; newBtn.style.pointerEvents = ""; }
+        function loadPassage() { pass.textContent = nextPassage(); }
         newBtn.addEventListener("click", function (ev) { ev.preventDefault(); loadPassage(); });
         function refresh() {
           var chars = ta.value.trim().length;
@@ -486,7 +509,8 @@
           console.debug("[continuum] keystroke enroll", r.status, r.d);
           if (!r.ok) { e.textContent = "(" + r.status + ") " + ((r.d && r.d.error) || "rejected"); e.style.display = "block"; btn.disabled = false; btn.textContent = "Submit sample"; return; }
           got += 1;
-          if ((r.d.typingStatus && r.d.typingStatus.trained) || got >= KS_ENROLL_SAMPLES) return resolve();
+          if (r.d.training) watchKsBuild();   // the model is built from the queue: no waiting here
+          if ((r.d.typingStatus && r.d.typingStatus.trained) || r.d.training || got >= KS_ENROLL_SAMPLES) return resolve();
           render();
         });
         await loadPassage();
@@ -494,7 +518,11 @@
       // Continue the count from samples already collected (so a user who did 3
       // resumes at 4/5 rather than restarting at 1/5). If already enough, finish.
       (async function () {
-        try { var st = await reqJson(EP.ksStatus); got = Math.min(Number((st.d && st.d.sampleCount) || 0), KS_ENROLL_SAMPLES); } catch (e) {}
+        try {
+          var st = await reqJson(EP.ksStatus); got = Math.min(Number((st.d && st.d.sampleCount) || 0), KS_ENROLL_SAMPLES);
+          if (st.d && st.d.training) { watchKsBuild(); return resolve(); }   // e.g. after a reload: already being built
+          if (st.d && st.d.trainingError) got = Math.min(got, KS_ENROLL_SAMPLES - 1);   // one more sample queues a new build
+        } catch (e) {}
         if (got >= KS_ENROLL_SAMPLES) return resolve();
         render();
       })();
@@ -674,7 +702,7 @@
   async function fetchOnboardingDemo() {
     var ob = { passkey: false, keystroke: false, mouse: false };
     try { var me = await req("/api/auth/me").then(function (r) { return r.ok ? r.json() : {}; }); ob.passkey = !!me.passkeysRegistered && !me.passkeySetupRequired; } catch (e) {}
-    try { var ts = await reqJson(EP.ksStatus); ob.keystroke = !!(ts.d && ts.d.trained); } catch (e) {}
+    try { var ts = await reqJson(EP.ksStatus); ob.keystroke = !!(ts.d && ts.d.trained); ob.keystrokeTraining = !!(ts.d && ts.d.training); } catch (e) {}
     try { var ms = await reqJson(EP.mouseStatus); ob.mouse = !!(ms.d && ms.d.enrolled); } catch (e) {}
     return ob;
   }
@@ -685,11 +713,14 @@
     // modality enrolls the moment its toggle is enabled. A keystroke-only
     // deployment therefore never asks the user for mouse samples.
     if (ONBOARD_MODE !== "lazy") {
-      if (cfg.keystroke !== "off" && !ob.keystroke) { await wizKeystroke(); ob.keystroke = true; }
+      if (cfg.keystroke !== "off" && ob.keystrokeTraining && !ob.keystroke) watchKsBuild();
+      else if (cfg.keystroke !== "off" && !ob.keystroke) { await wizKeystroke(); ob.keystroke = true; }
       if (cfg.mouse !== "off" && !ob.mouse) { await wizMouse(); ob.mouse = true; }
     }
     // brief "all set" then close
-    openWiz('<div class="t">You\'re verified ✓</div><div class="d">Continuum is now protecting this session — it will quietly confirm it\'s you as you use the app.</div><button class="b" id="cd">Continue</button>', closeWiz);
+    openWiz('<div class="t">You\'re verified ✓</div><div class="d">' + (ksBuilding
+      ? "Your typing model is being built (about a minute). Carry on: typing protection starts by itself once it is ready."
+      : "Continuum is now protecting this session — it will quietly confirm it\'s you as you use the app.") + '</div><button class="b" id="cd">Continue</button>', closeWiz);
     await new Promise(function (res) { wizEl.querySelector("#cd").addEventListener("click", res); });
     closeWiz();
   }
@@ -698,12 +729,30 @@
   function reinforceKeystroke() {
     if (!window.continuumKeystrokes) return;
     var added = 0, total = null;
+    // A trained model learns more only through the adaptive popup (the retrain asks for the passkey);
+    // the server refuses enrolment samples once the model exists. What is left here: reset and start over.
+    function renderTrained() {
+      openWiz('<div class="t">Your typing rhythm is trained</div><div class="d">Samples on file: <b>' + total + '</b>. '
+        + (ADAPT_ENABLED ? "It learns more only from the popup that offers clean stretches of your typing, and the retrain asks for your passkey."
+          : "Adaptive retraining is off for this organisation, so the model stays as it was trained.")
+        + '</div><div style="display:flex;gap:8px"><button class="b" id="cdone" style="flex:1">Close</button></div><div style="text-align:center;margin-top:10px"><a href="#" id="creset" style="color:#dc2626;font-size:12px;font-weight:700;text-decoration:none">🗑️ Reset my typing profile</a></div><div class="e"></div>', closeWiz);
+      var e = wizEl.querySelector(".e");
+      wizEl.querySelector("#cdone").addEventListener("click", closeWiz);
+      wizEl.querySelector("#creset").addEventListener("click", function (ev) {
+        ev.preventDefault();
+        resetProfile("keystroke", e, function () { setKb("mut", "not enrolled — add samples"); total = 0; added = 0; render(); });
+      });
+    }
+    function renderBuilding() {
+      openWiz('<div class="t">Your typing model is being built</div><div class="d">This takes about a minute. You can close this and carry on: typing protection starts by itself once the model is ready.</div><button class="b" id="cdone">Close</button>', closeWiz);
+      wizEl.querySelector("#cdone").addEventListener("click", closeWiz);
+    }
     function render() {
-      openWiz('<div class="wizload" id="cwl"><span class="wizspin"></span>Saving sample…</div><div class="t">Strengthen your typing rhythm</div><div class="d">Type the passage naturally, then save it as a training sample. <a href="#" id="cnew" style="color:#4f46e5;font-weight:700;text-decoration:none">new text</a></div><div class="samplecount">Samples on file: <b id="ctot">' + (total == null ? "…" : total) + '</b> · added now: <b>' + added + '</b></div><div class="passage" id="cpass">Fetching text…</div><textarea class="ta" id="cta" placeholder="Type it here…"></textarea><div class="bar"><i id="cbar"></i></div><div id="cdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">typed 0 · captured 0 keystrokes</div><div style="display:flex;gap:8px"><button class="b" id="cs" disabled style="flex:1">Save sample</button><button class="b" id="cdone" style="flex:0 0 96px;background:#475569">Done</button></div><div style="text-align:center;margin-top:10px"><a href="#" id="creset" style="color:#dc2626;font-size:12px;font-weight:700;text-decoration:none">🗑️ Reset my typing profile</a></div><div class="e"></div>', closeWiz);
+      openWiz('<div class="wizload" id="cwl"><span class="wizspin"></span>Saving sample…</div><div class="t">Strengthen your typing rhythm</div><div class="d">Type the passage naturally, then save it as a training sample. <a href="#" id="cnew" style="color:#4f46e5;font-weight:700;text-decoration:none">new text</a></div><div class="samplecount">Samples on file: <b id="ctot">' + (total == null ? "…" : total) + '</b> · added now: <b>' + added + '</b></div><div class="passage" id="cpass"></div><textarea class="ta" id="cta" placeholder="Type it here…"></textarea><div class="bar"><i id="cbar"></i></div><div id="cdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">typed 0 · captured 0 keystrokes</div><div style="display:flex;gap:8px"><button class="b" id="cs" disabled style="flex:1">Save sample</button><button class="b" id="cdone" style="flex:0 0 96px;background:#475569">Done</button></div><div style="text-align:center;margin-top:10px"><a href="#" id="creset" style="color:#dc2626;font-size:12px;font-weight:700;text-decoration:none">🗑️ Reset my typing profile</a></div><div class="e"></div>', closeWiz);
       var ta = wizEl.querySelector("#cta"), bar = wizEl.querySelector("#cbar"), btn = wizEl.querySelector("#cs"), done = wizEl.querySelector("#cdone"), e = wizEl.querySelector(".e"), diag = wizEl.querySelector("#cdiag"), pass = wizEl.querySelector("#cpass"), newBtn = wizEl.querySelector("#cnew"), load = wizEl.querySelector("#cwl");
       var tracker = window.continuumKeystrokes.createTracker(ta);
       var NEED_KEYS = 100, NEED_CHARS = 120;
-      async function loadPassage() { pass.style.opacity = "0.4"; pass.textContent = await nextPassage(); pass.style.opacity = "1"; }
+      function loadPassage() { pass.textContent = nextPassage(); }
       newBtn.addEventListener("click", function (ev) { ev.preventDefault(); loadPassage(); });
       done.addEventListener("click", closeWiz);
       wizEl.querySelector("#creset").addEventListener("click", function (ev2) {
@@ -719,13 +768,21 @@
         e.style.display = "none"; load.classList.add("on");
         var events = tracker.getEvents(), r = await reqJson(EP.ksEnroll, "POST", { textContent: ta.value.trim(), keystrokeEvents: events, keystrokeTimings: window.continuumKeystrokes.analyze(events), sourcePath: "reinforce" });
         load.classList.remove("on");
+        if (r.status === 409 && r.d && r.d.error === "already_enrolled") { renderTrained(); return; }
         if (!r.ok) { e.textContent = "(" + r.status + ") " + ((r.d && r.d.error) || "rejected"); e.style.display = "block"; return; }
-        added += 1; if (total != null) total += 1; render();
+        added += 1; if (total != null) total += 1;
+        if (r.d && r.d.typingStatus && r.d.typingStatus.trained) { renderTrained(); return; }
+        if (r.d && r.d.training) { watchKsBuild(); renderBuilding(); return; }
+        render();
       });
       loadPassage();
     }
     // Load the current sample count first so the popup shows how many are on file.
-    (async function () { try { var st = await reqJson(EP.ksStatus); total = Number((st.d && st.d.sampleCount) || 0); } catch (e) { total = 0; } render(); })();
+    (async function () {
+      var trained = false, building = false;
+      try { var st = await reqJson(EP.ksStatus); total = Number((st.d && st.d.sampleCount) || 0); trained = !!(st.d && st.d.trained); building = !!(st.d && st.d.training); } catch (e) { total = 0; }
+      if (trained) renderTrained(); else if (building) { watchKsBuild(); renderBuilding(); } else render();
+    })();
   }
   function reinforceMouse() {
     if (!window.mouseFeatures) return;
@@ -744,16 +801,25 @@
   // ================= GUARD LOOPS =================
   var ksTracker = null, ksOn = false, lastCheckedWindowCount = 0, checkInFlight = false, ksMissedWindow = false;
   var cleanRun = 0, lastContributeKeys = -1e9, activeField = null, contributing = false, learnVisible = false;
-  // Which field types are monitored is deployment config (MONITOR_EXCLUDE_TYPES).
-  // Password fields ARE monitored (their timing is captured, keyCode masked to 0 by
-  // the tracker) but their VALUE is never sent — we substitute equal-length 'x' so
-  // the server's coverage check works without ever seeing the secret.
-  function fieldExcluded(n) { return EXCLUDE_TYPES.indexOf((n.type || "text").toLowerCase()) >= 0; }
+  // Password fields ARE watched unless excluded: their timing is captured with keyCode 0 (the
+  // tracker), and only their length counts toward the typed length.
+  // A field's type for "fields never watched": an input's type, "textarea", or "contenteditable".
+  function fieldTypeOf(n) { return n && n.tagName && (n.tagName === "INPUT" || n.tagName === "TEXTAREA") ? (n.type || "text").toLowerCase() : "contenteditable"; }
+  function fieldExcluded(n) { return EXCLUDE_TYPES.indexOf(fieldTypeOf(n)) >= 0; }
+  // The typed text, read ONLY to measure its length on this page: it is never sent (the server gets the
+  // length). Rich-text editors count by their visible text (the outermost editable element).
   function currentTypedText() {
     var t = "", ns = document.querySelectorAll("input, textarea");
     for (var i = 0; i < ns.length; i++) {
       var n = ns[i]; if (fieldExcluded(n) || typeof n.value !== "string") continue;
       t += (n.type === "password" ? new Array(n.value.length + 1).join("x") : n.value) + " ";
+    }
+    if (EXCLUDE_TYPES.indexOf("contenteditable") < 0) {
+      var eds = document.querySelectorAll("[contenteditable]");
+      for (var j = 0; j < eds.length; j++) {
+        var e = eds[j]; if (!e.isContentEditable || (e.parentElement && e.parentElement.isContentEditable)) continue;
+        t += (e.innerText || "") + " ";
+      }
     }
     return t.trim();
   }
@@ -768,6 +834,7 @@
   function onKsInput(e) {
     // Remember which field is being typed in — the adaptive prompt floats above it.
     if (e && e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") && e.target.type !== "password" && e.target.type !== "hidden") activeField = e.target;
+    else if (e && e.target && e.target.isContentEditable) { var ed = e.target; while (ed.parentElement && ed.parentElement.isContentEditable) ed = ed.parentElement; activeField = ed; }
     if (locked || !ksOn || !ksTracker) return;
     var text = currentTypedText();
     if (text.length < KS_MIN_CHARS) { setKb("mut", "type " + text.length + "/" + KS_MIN_CHARS + " chars to start"); return; }
@@ -785,12 +852,15 @@
     checkInFlight = true; ksMissedWindow = false; pulse(); setKb("mut", withLast("checking…", lastKsPct));
     try {
       var timings = window.continuumKeystrokes.analyze(events);
-      var r = await reqJson(EP.ksCheck, "POST", { textContent: text, keystrokeEvents: events.slice(-1400), keystrokeTimings: timings, sourcePath: location.pathname });
+      // The text's LENGTH only: what the user typed never leaves the page.
+      var r = await reqJson(EP.ksCheck, "POST", { textLength: text.length, keystrokeEvents: events.slice(-1400), keystrokeTimings: timings, sourcePath: location.pathname });
       var d = r.d; if (d && d.riskToken) latestRiskToken = d.riskToken;
       lastCheckedWindowCount = ksWindowCount(ksKeyCount(events));
       var ev = d.typingEvaluation || {};
       var wc = ev.windowCount || 0, pct = d.modelConfidence != null ? Math.round(d.modelConfidence * 100) : null;
       if (pct != null) lastKsPct = pct;   // survives into the next transient state
+      // demo mode: its own gate answers 423 until the model exists; that is not a lock
+      if (d.rhythmEnrollmentRequired) { setKb("mut", ksBuilding ? "building your model…" : "not enrolled — add samples"); cleanRun = 0; return; }
       if (r.status === 423) { setKb("bad", "<b>locked</b> — verify"); maybeChallenge(d, "keystroke", onProbation); return; }
       // During post-step-up probation, ANY suspicious verdict re-challenges — even a
       // warmup one — so passing step-up grants no grace window to a persisting impostor.
@@ -798,7 +868,7 @@
       if (d.checked === false) { setKb("mut", withLast("gathering…", lastKsPct)); return; }
       // No trained model for THIS identity yet → not "warming", it needs enrollment.
       // (Otherwise the row sat forever at "warming 0/7 · 0%".)
-      if (ev.modelAvailable === false) { setKb("mut", "not enrolled — add samples"); cleanRun = 0; return; }
+      if (ev.modelAvailable === false) { setKb("mut", ksBuilding ? "building your model…" : "not enrolled — add samples"); cleanRun = 0; return; }
       if (d.warmup) { setKb("warn", "warming " + wc + "/" + (RECENT_WINDOW_COUNT + 1) + " windows" + (pct != null ? " · <b>" + pct + "%</b>" : "")); cleanRun = 0; }
       else if (d.isSuspicious) { setKb("bad", "suspicious <b>" + pct + "%</b>"); cleanRun = 0; }
       else { setKb("ok", "verified <b>" + pct + "%</b>"); onProbation = false; cleanRun = (d.modelConfidence == null || d.modelConfidence >= ADAPT_CONFIDENCE_MIN) ? cleanRun + 1 : 0; }
@@ -811,10 +881,50 @@
   // Eligible after a clean run of high-confidence checks + a keystroke cooldown;
   // the prompt floats directly above the field the user is typing in.
   function evalAdaptive() {
-    if (!ksOn || locked || contributing) { hideLearn(); return; }
-    var cooldownOk = currentKeys() - lastContributeKeys >= CONTRIBUTE_WINDOW_COUNT * WINDOW_STRIDE;
-    if (cleanRun >= ADAPT_CLEAN_RUN && cooldownOk && activeField && currentTypedText().length >= KS_MIN_CHARS) showLearn();
+    if (!ADAPT_ENABLED || !ksOn || locked || contributing) { hideLearn(); return; }
+    // Ask the server once where this user is in the cycle, then follow it quietly.
+    if (contribUntil === null) { fetchContribWindow(); hideLearn(); return; }
+    if (Date.now() < contribUntil) { hideLearn(); return; }
+    if (adaptReady) { if (!retrainDismissed && activeField) { setLearnMode("retrain"); showLearn(); } else hideLearn(); return; }
+    if (cleanRun >= ADAPT_CLEAN_RUN && activeField && sampleSegment().keys >= SAMPLE_MIN_KEYS) { setLearnMode("contribute"); showLearn(); }
     else hideLearn();
+  }
+  // The typing since the previous sample, after a gap of SAMPLE_GAP_KEYS key presses.
+  function sampleSegment() {
+    var all = ksTracker ? ksTracker.getEvents() : [], start = contribEndIdx;
+    if (contribEndIdx > 0) { var seen = 0; while (start < all.length && seen < SAMPLE_GAP_KEYS) { if (all[start].eventType === "keydown") seen++; start++; } }
+    var seg = all.slice(start); if (seg.length > SAMPLE_MAX_EVENTS) seg = seg.slice(-SAMPLE_MAX_EVENTS);
+    var keys = 0;
+    for (var i = 0; i < seg.length; i++) { var k = seg[i].keyCode; if (seg[i].eventType === "keydown" && (k === 32 || (k >= 48 && k <= 90) || (k >= 96 && k <= 111) || (k >= 186 && k <= 222))) keys++; }
+    return { events: seg, end: all.length, keys: keys };
+  }
+  function setLearnMode(mode) {
+    if (!learnEl || learnMode === mode) return;
+    learnMode = mode;
+    var t = learnEl.querySelector(".lt span:last-child"), m = learnEl.querySelector(".lm"), go = learnEl.querySelector(".go"), bar = learnEl.querySelector(".lp > i");
+    if (mode === "retrain") {
+      if (t) t.textContent = "Ready to update your model";
+      if (m) m.textContent = "You added " + ADAPT_RETRAIN_EVERY + " samples. Retrain your model now; your passkey confirms it's you.";
+      if (go) go.textContent = "Retrain with passkey";
+      if (bar) bar.style.width = "100%";
+    } else {
+      if (t) t.textContent = "Your typing looks like you";
+      if (m) m.textContent = "Add this clean sample so your model keeps learning your rhythm (" + adaptPending + " of " + ADAPT_RETRAIN_EVERY + " so far).";
+      if (go) go.textContent = "Contribute sample";
+      if (bar) bar.style.width = Math.min(100, (adaptPending / ADAPT_RETRAIN_EVERY) * 100) + "%";
+    }
+  }
+  async function fetchContribWindow() {
+    if (contribFetching) return;
+    contribFetching = true;
+    try {
+      var r = await reqJson(EP.ksStatus);
+      if (r.ok && r.d && r.d.adaptiveEnabled === false) ADAPT_ENABLED = false;
+      if (r.ok && r.d) { adaptPending = Number(r.d.adaptivePending || 0); adaptReady = !!r.d.adaptiveReady; }
+      var t = r.ok && r.d && r.d.nextContributionAt ? Date.parse(r.d.nextContributionAt) : 0;
+      contribUntil = isFinite(t) ? t : 0;
+    } catch (e) { contribUntil = 0; }
+    finally { contribFetching = false; }
   }
   function positionLearn() {
     if (!learnEl || !learnVisible || !activeField) return;
@@ -833,25 +943,71 @@
     positionLearn();
   }
   function hideLearn() { if (learnEl && learnVisible) { learnEl.style.display = "none"; learnVisible = false; } }
-  function dismissLearn() { hideLearn(); lastContributeKeys = currentKeys(); cleanRun = 0; } // start the cooldown
+  function dismissLearn() { hideLearn(); lastContributeKeys = currentKeys(); cleanRun = 0; if (learnMode === "retrain") retrainDismissed = true; }
   async function contributeSample() {
     if (contributing || !ksTracker) return;
     contributing = true;
     var go = learnEl.querySelector(".go"), msg = learnEl.querySelector(".lm"), bar = learnEl.querySelector(".lp > i");
     if (go) { go.disabled = true; go.textContent = "Adding…"; }
+    var seg = sampleSegment();
     try {
-      var r = await reqJson(EP.ksContribute, "POST", { textContent: currentTypedText(), keystrokeEvents: ksTracker.getEvents().slice(-1400) });
+      // the segment and how many characters it typed; never the field's text
+      var r = await reqJson(EP.ksContribute, "POST", { keystrokeEvents: seg.events, textLength: seg.keys });
       if (r.ok && r.d && r.d.ok !== false) {
-        var done = r.d.adaptiveSamplesSinceRetrain || 0, need = r.d.adaptiveRetrainEvery || ADAPT_RETRAIN_EVERY;
-        if (bar) bar.style.width = Math.min(100, (done / Math.max(need, 1)) * 100) + "%";
-        if (msg) msg.textContent = done >= need ? "Added — your model is retraining now." : "Added! " + done + "/" + need + " to the next update.";
+        contribEndIdx = seg.end;                      // the next sample starts after this one (plus the gap)
+        adaptPending = Number(r.d.pending || adaptPending + 1); adaptReady = !!r.d.ready;
+        if (bar) bar.style.width = Math.min(100, (adaptPending / ADAPT_RETRAIN_EVERY) * 100) + "%";
+        if (msg) msg.textContent = adaptReady ? "Added — " + ADAPT_RETRAIN_EVERY + " of " + ADAPT_RETRAIN_EVERY + ". Your model is ready to retrain." : "Added! " + adaptPending + " of " + ADAPT_RETRAIN_EVERY + ".";
         setKb("ok", "learning ✓");
         lastContributeKeys = currentKeys(); cleanRun = 0;
-        setTimeout(hideLearn, 2600);
-      } else if (msg) { msg.textContent = (r.d && r.d.error) || "Couldn't add this sample."; }
+        setTimeout(function () { hideLearn(); if (adaptReady) { learnMode = ""; } }, 2600);
+      } else if (r.status === 429 && r.d) {
+        var until = Date.parse(r.d.nextContributionAt);
+        contribUntil = isFinite(until) ? until : Date.now() + ADAPT_GAP_H * 3600000;
+        if (msg) msg.textContent = r.d.message || "Please add samples again later.";
+        lastContributeKeys = currentKeys(); cleanRun = 0;
+        setTimeout(hideLearn, 4000);
+      } else if (r.status === 409 && r.d && r.d.error === "ready_to_retrain") {
+        adaptReady = true; adaptPending = Number(r.d.pending || ADAPT_RETRAIN_EVERY); learnMode = ""; setLearnMode("retrain");
+      } else if (r.status === 409 && r.d && r.d.error === "adaptive_disabled") {
+        ADAPT_ENABLED = false; hideLearn();
+      } else if (msg) { msg.textContent = (r.d && (r.d.message || r.d.error)) || "Couldn't add this sample."; }
     } catch (e) { if (msg) msg.textContent = "Offline — try again."; }
-    finally { contributing = false; if (go) { go.disabled = false; go.textContent = "Contribute sample"; } }
+    finally { contributing = false; if (go) { go.disabled = false; go.textContent = learnMode === "retrain" ? "Retrain with passkey" : "Contribute sample"; } }
   }
+  // Retrain with the samples collected: the passkey first, in the same request as the retrain.
+  async function retrainWithPasskey() {
+    if (contributing) return;
+    contributing = true;
+    var go = learnEl.querySelector(".go"), msg = learnEl.querySelector(".lm");
+    if (go) { go.disabled = true; go.textContent = "Waiting for passkey…"; }
+    try {
+      var W = webauthn(), r;
+      if (MODE === "gateway") {
+        var opt = await reqJson(EP.pkAuthOpts, "POST", {}); if (!opt.ok) throw new Error(opt.d.error || "Could not start verification");
+        var a = await W.startAuthentication(opt.d);
+        r = await reqJson(EP.adaptiveRetrain, "POST", { challengeId: opt.d.challengeId, assertion: a });
+      } else {
+        var me = await req("/api/auth/me").then(function (x) { return x.json(); });
+        var o2 = await reqJson("/api/webauthn/auth/options", "POST", { userId: me.userId }); if (!o2.ok) throw new Error(o2.d.error || "Could not start verification");
+        var a2 = await W.startAuthentication(o2.d);
+        var v = await reqJson("/api/webauthn/auth/complete", "POST", { userId: me.userId, challengeId: o2.d.challengeId, assertion: a2 });
+        if (!v.ok) throw new Error(v.d.error || "Verification failed");
+        r = await reqJson(EP.adaptiveRetrain, "POST", {});
+      }
+      if (!r.ok || (r.d && r.d.ok === false)) throw new Error((r.d && (r.d.message || r.d.error)) || "Retrain failed");
+      adaptPending = 0; adaptReady = false; retrainDismissed = false;
+      var until = Date.parse(r.d.nextContributionAt);
+      contribUntil = isFinite(until) ? until : Date.now() + ADAPT_GAP_H * 3600000;
+      if (msg) msg.textContent = "Retraining your model now. New samples can be added again in " + ADAPT_GAP_H + " h.";
+      setKb("ok", "retraining ✓");
+      setTimeout(function () { hideLearn(); learnMode = ""; }, 3500);
+    } catch (e) {
+      var name = e && e.name;
+      if (msg) msg.textContent = name === "NotAllowedError" ? "The passkey prompt was closed. Try again when you're ready." : ((e && e.message) || "Retrain failed.");
+    } finally { contributing = false; if (go) { go.disabled = false; go.textContent = "Retrain with passkey"; } }
+  }
+
 
   // Enable/disable keystroke monitoring at runtime (panel toggle + persisted),
   // mirroring the mouse toggle. When on, a single delegated input listener covers
@@ -865,9 +1021,25 @@
   }
   function startKeystroke() {
     if (!window.continuumKeystrokes) return;
-    if (!ksTracker) ksTracker = window.continuumKeystrokes.createTracker(document.documentElement);
+    if (!ksTracker) ksTracker = window.continuumKeystrokes.createTracker(document.documentElement, { skip: fieldExcluded });
     if (!ksInputHandler) { ksInputHandler = onKsInput; document.addEventListener("input", ksInputHandler, true); }
-    setKb("mut", "type " + KS_MIN_CHARS + " chars to start");
+    setKb("mut", ksBuilding ? "building your model…" : "type " + KS_MIN_CHARS + " chars to start");
+  }
+  // Typing enrolment trains on the server's queue (about a minute; since 2026-10-06). Meanwhile the user
+  // carries on and the typing row says so; a reload picks the state up again from the server
+  // (onboarding.keystrokeTraining / status.training). Checks start by themselves once the model exists.
+  function watchKsBuild() {
+    ksBuilding = true;
+    setKb("mut", "building your model…");
+    if (ksBuildTimer) return;
+    ksBuildTimer = setInterval(async function () {
+      var st = null;
+      try { st = (await reqJson(EP.ksStatus)).d; } catch (e) {}
+      if (!st || st.training) return;
+      clearInterval(ksBuildTimer); ksBuildTimer = null; ksBuilding = false;
+      if (st.trained) { if (obState) obState.keystroke = true; setKb("mut", ksOn ? "ready — type " + KS_MIN_CHARS + " chars to start" : "off"); }
+      else setKb("bad", st.trainingError ? "model not built — add one more sample" : "not enrolled — add samples");
+    }, 8000);
   }
   function stopKeystroke() {
     if (ksInputHandler) { document.removeEventListener("input", ksInputHandler, true); ksInputHandler = null; }
@@ -950,9 +1122,34 @@
       if (c.recentWindowCount) RECENT_WINDOW_COUNT = c.recentWindowCount; if (c.contributeWindowCount) CONTRIBUTE_WINDOW_COUNT = c.contributeWindowCount; if (c.checkMinTextChars) KS_MIN_CHARS = c.checkMinTextChars;
       if (c.adaptiveConfidenceMin != null) ADAPT_CONFIDENCE_MIN = c.adaptiveConfidenceMin;
       if (c.adaptiveRetrainEvery != null) ADAPT_RETRAIN_EVERY = c.adaptiveRetrainEvery;
-      if (!cfg.onboarding && c.onboardingMode) ONBOARD_MODE = c.onboardingMode; // docker-level strategy
       if (Array.isArray(c.excludeFieldTypes)) EXCLUDE_TYPES = c.excludeFieldTypes.map(function (x) { return String(x).toLowerCase(); });
+      // A setting chosen in the organisation's console or on the operator page ("managed") overrides
+      // the page's own attribute; a deployment default only fills in what the page left unset.
+      var managed = Array.isArray(c.managed) ? c.managed : [];
+      var wins = function (k) { return managed.indexOf(k) >= 0 || !PAGE_SET[k]; };
+      if ((c.panel === "show" || c.panel === "hide") && wins("panel")) PANEL = c.panel;
+      if ((c.keystroke === "on" || c.keystroke === "off") && wins("keystroke")) cfg.keystroke = c.keystroke;
+      if ((c.mouse === "on" || c.mouse === "off") && wins("mouse")) cfg.mouse = c.mouse === "off" ? "off" : "optional";
+      if (PANEL === "hide" && cfg.mouse === "optional") cfg.mouse = "on";   // no panel, no switch: on means on
+      if (c.onboardingMode && wins("onboarding")) ONBOARD_MODE = c.onboardingMode;
+      if (PANEL === "hide" && ONBOARD_MODE === "lazy") ONBOARD_MODE = "eager"; // "enrol when you switch it on" needs the switch
+      if (c.adaptiveEnabled != null) ADAPT_ENABLED = !!c.adaptiveEnabled;
+      if (c.adaptiveMinGapHours != null && isFinite(Number(c.adaptiveMinGapHours))) ADAPT_GAP_H = Number(c.adaptiveMinGapHours);
+      applyPanel();
     } catch (e) {}
+  }
+
+  // Show the panel and its controls as the settings allow.
+  function applyPanel() {
+    if (!panelEl) return;
+    panelEl.style.display = PANEL === "hide" ? "none" : "";
+    var ksOff = cfg.keystroke === "off", msOff = cfg.mouse === "off";
+    if (ksAddEl) ksAddEl.style.display = ksOff ? "none" : "";
+    if (ksToggleEl) ksToggleEl.style.display = ksOff ? "none" : "";
+    if (msAddEl) msAddEl.style.display = msOff ? "none" : "";
+    if (toggleEl) toggleEl.style.display = cfg.mouse === "optional" ? "" : "none";
+    if (ksOff) setKb("mut", "off for this site");
+    if (msOff) setMouseRow("mut", "off for this site");
   }
 
   function startGuard() {
@@ -963,7 +1160,8 @@
       } else {
         // Default ON; respect the user's persisted toggle choice across reloads.
         var ksPref = null; try { ksPref = localStorage.getItem(LS_KEYSTROKE); } catch (e) {}
-        setKeystroke(ksPref === null ? true : ksPref === "1");
+        // Without the panel the user has no switch, so an earlier "off" no longer applies.
+        setKeystroke(PANEL === "hide" || ksPref === null ? true : ksPref === "1");
       }
     }
     if (cfg.mouse !== "off" && window.mouseFeatures) {
@@ -982,19 +1180,26 @@
   function stopGuard() {
     stopKeystroke();
     stopMouse();
-    if (ksTracker) ksTracker.reset(); if (mouseTracker) mouseTracker.reset();
+    if (ksTracker) ksTracker.reset(); contribEndIdx = 0; if (mouseTracker) mouseTracker.reset();
     checkInFlight = false; locked = false; ready = false;
   }
 
   // ---------- bootstrap (gateway mode) ----------
   async function bootstrapGateway() {
+    if (cfg.session) {
+      sessionToken = cfg.session;
+      try { userId = JSON.parse(atob(sessionToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).sub; } catch (e) {}
+      var o = await reqJson(EP.onboarding);
+      if (!o.ok) throw new Error(o.d.error || "session failed");
+      return o.d;
+    }
     var body = { siteKey: cfg.siteKey };
     if (identityToken) body.identityToken = identityToken; // backend-vouched, account-bound
     else { var ext = cfg.externalId; if (!ext) { try { ext = localStorage.getItem(LS_EXT); } catch (e) {} } body.externalId = ext || ""; }
     var r = await reqJson("/v1/sdk/session", "POST", body);
     if (!r.ok) throw new Error(r.d.error || "session failed");
     sessionToken = r.d.token; userId = r.d.userId;
-    if (!cfg.onboarding && r.d.onboardingMode) ONBOARD_MODE = r.d.onboardingMode; // set before the onboarding decision
+    if (!cfg.onboarding && r.d.onboardingMode) ONBOARD_MODE = r.d.onboardingMode; // set before the onboarding decision (loadConfig refines it)
     if (!identityToken) { try { localStorage.setItem(LS_EXT, r.d.externalId); } catch (e) {} } // persist only the anon id
     return r.d.onboarding;
   }
@@ -1002,7 +1207,7 @@
   function needOnboarding(ob) {
     if (!ob.passkey) return true;
     if (ONBOARD_MODE === "lazy") return false; // modalities enroll on toggle
-    return (cfg.keystroke !== "off" && !ob.keystroke) || (cfg.mouse !== "off" && !ob.mouse);
+    return (cfg.keystroke !== "off" && !ob.keystroke && !ob.keystrokeTraining) || (cfg.mouse !== "off" && !ob.mouse);
   }
 
   // A misused site key — unknown to this gateway, or loaded from a domain it isn't
@@ -1034,6 +1239,7 @@
       if (ls.ok && ls.d && ls.d.locked) { doLogout(); return; }
       await loadConfig(); // now authed
       obState = ob;
+      if (ob && ob.keystrokeTraining && !ob.keystroke) watchKsBuild();
       if (needOnboarding(ob)) await runOnboarding(ob);
     } catch (e) {
       var reason = e && e.message;
@@ -1072,10 +1278,8 @@
       // onFail (optional) fires on each failed verification attempt, with the error message; the
       // modal stays open for another try (the user-study page reports these as `failed`).
       requireStepUp: function (modality, onSuccess, onFail) { if (locked) return; locked = true; stepUpOnSuccess = onSuccess || null; stepUpOnFail = onFail || null; showModal(modality || "keystroke"); },
-      // Contribute the current clean typing as an adaptive training sample — the
-      // same thing the floating "Contribute" prompt does, callable from a consumer's
-      // own Save action so "save" and "keep learning my rhythm" are one gesture.
-      contribute: function () { return reqJson(EP.ksContribute, "POST", { textContent: currentTypedText(), keystrokeEvents: ksTracker ? ksTracker.getEvents().slice(-1400) : [] }); },
+      // No contribute(): adaptive samples come only from the popup the user answers (removed 2026-10-05;
+      // it let a page's own Save add samples silently).
     };
     // Show the fixed "Continuum GUARD" panel on every page the SDK is on (bottom-right).
     buildUI();
@@ -1098,6 +1302,7 @@
     try {
       var ob = await fetchOnboardingDemo();
       obState = ob;
+      if (ob.keystrokeTraining && !ob.keystroke) watchKsBuild();
       if (needOnboarding(ob)) await runOnboarding(ob);
     } catch (e) { console.warn("[continuum] onboarding:", e.message); }
     startGuard();

@@ -1,203 +1,355 @@
-// background.js — MV3 service worker. TensorFlow.js can't run HERE (a service worker has
-// no DOM), so inference is delegated to an OFFSCREEN document (src/offscreen.html) that
-// hosts TF.js. This worker keeps the rolling packet + verdict + config and serves the
-// popup; it loads only the PURE decision logic from scoring.js (no tf) to apply the
-// Lu et al. packet vote. Windows arrive from every tab; the typed text never leaves the page.
+// background.js — the MV3 service worker of Continuum Guard.
+//
+// The extension is a CLIENT of the Continuum server, exactly like a site that embeds the SDK. Content
+// scripts capture key timings and mouse windows on every page; this worker sends them to the gateway
+// (/v1/sdk/keystroke/check, /v1/sdk/mouse/check) under the signed-in user's session, and the server
+// scores them with its models. When the server asks for a step-up, every tab locks until the user
+// verifies with their passkey on the gateway's page. Nothing is scored in the browser any more: the
+// on-device version (TensorFlow.js, Google-account binding) is git tag extension-on-device-v1.
+//
+// Who the user is, one of three:
+//   personal     — a Continuum account (email + passkey) on the built-in personal tenant;
+//   organisation — an account at an organisation that uses Continuum ("Sign in with <organisation>");
+//   study        — the research study (recovery plan T4.3): a pseudonym on the study tenant, set by the
+//                  experimenter on the options page. While it is on it wins over any sign-in.
+// Personal and organisation users sign in through the gateway (/v1/link/*: the OAuth 2.0 code flow with
+// PKCE, the gateway's server.js "EXTENSION SIGN-IN") and the extension keeps only a refresh token.
 var api = globalThis.browser || globalThis.chrome;
-var RECENT = 20;                                       // keystroke packet size (mirrors ca-service RECENT_WINDOW_COUNT)
-// Short recent group the mouse diagnostic status reports (the popup's "analyzing n/need" and the
-// recent-window mean). Display only: mouse enforcement is the sustained vote below.
-var MOUSE_DIAG_RECENT = 6;
-var WINDOW_THRESHOLD = 0.5, PACKET_VOTE_FRACTION = 0.5;
-
-// Mouse enforcement uses a SUSTAINED vote, not the keystroke packet: mouse windows
-// arrive every ~0.3 s of movement, so a short packet re-evaluated that often turns rare genuine
-// low windows into a steady trickle of false locks. A window is "low" when its score falls below
-// the user's OWN threshold (a percentile of their enrolment scores, stored with the model), and
-// the page locks when the MEAN of the last n window scores falls below that threshold (rule
-// "mean"; a k-of-n "vote" rule is also supported). The rule, n and the percentile were chosen by
-// replaying the live loop on held-out users (Experiment I, artifacts/repr_arch_study: 0.22 false
-// prompts per minute of movement, 87.3% of impostor runs caught) and travel in the model's
-// metadata; the values below are only defaults for before the first score.
-// ---- action-based mouse (Antal & Egyed-Zsigmond, IET Biometrics 2019) ----
-// The published method scores mouse ACTIONS, not fixed windows, and decides on
-// the MEAN probability over a set of k actions. The paper finds 10-20 actions
-// are needed; 20 is its reporting point and the size at which we measured
-// median EER 11.48% / AUC 0.947 over 20 held-out SapiMouse subjects.
-// These must match services/ca-service/lib/mouseActions.js or the extension and
-// the SDK reach different verdicts from identical motion.
-var MOUSE_ACTION_SET_SIZE = 20;
-var MOUSE_ACTION_THRESHOLD = 0.5;
-var mouseActionScores = [];      // rolling per-action probabilities
-
-// Mean of the last k action scores — the paper's P(A) = (1/k) * sum(p_i).
-function mouseActionVerdict(scores) {
-  if (scores.length < MOUSE_ACTION_SET_SIZE) {
-    return { warmup: true, suspicious: false, setScore: null };
-  }
-  var recent = scores.slice(-MOUSE_ACTION_SET_SIZE);
-  var sum = 0;
-  for (var i = 0; i < recent.length; i++) sum += recent[i];
-  var setScore = sum / recent.length;
-  return { warmup: false, suspicious: setScore < MOUSE_ACTION_THRESHOLD, setScore: setScore };
-}
-
-var MOUSE_SUSTAIN_WINDOW = 60;   // n: length of the mouse enforcement buffer (model metadata wins)
-var MOUSE_SUSTAIN_LOW = 30;      // k: for a "vote" rule only (model metadata wins); the popup
-                                // slider can move it -> state.mouseSustainPct
-var MOUSE_SUSTAIN_PCT_DEFAULT = Math.round((MOUSE_SUSTAIN_LOW / MOUSE_SUSTAIN_WINDOW) * 100);
-// The slider's stored value. A new key: values saved under the old one were set against the
-// retired 7-feature model and its fixed 0.5 boundary, and mean something else now.
-var MOUSE_PCT_KEY = "cg_mouse_vote_pct";
-
-// Pure Lu et al. packet vote, INLINED — the service worker needs no importScripts (MV3 SW
-// importScripts of a packaged file was failing and cascading into "No SW"). The offscreen
-// document still uses scoring.js for the actual TF.js inference.
-function decide(scores) {
-  var low = 0, sum = 0;
-  for (var i = 0; i < scores.length; i++) { if (scores[i] < WINDOW_THRESHOLD) low += 1; sum += scores[i]; }
-  var frac = scores.length ? low / scores.length : 0;
-  return { suspicious: frac >= PACKET_VOTE_FRACTION, mean: scores.length ? sum / scores.length : 0, lowFraction: frac };
-}
-
-// The FIXED Continuum relying party: passkeys live on this origin (site passkeys are
-// origin-bound, so the extension keeps its own RP — served by the passkey-service).
-// Configurable via the options page (src/options.html) so a real deployment doesn't
-// need to edit source/repackage — defaults to localhost for local dev/demo use.
-var RP_BASE_DEFAULT = "http://localhost:4000";
-var RP_BASE = RP_BASE_DEFAULT;
-function rpOriginOf() { try { return new URL(RP_BASE).origin; } catch (e) { return ""; } }
+// The typing decision's packet: the signed-in organisation's choice (6, 10 or 20; /v1/sdk/keystroke/config
+// recentWindowCount), kept in storage like the excluded field types. The first verdict needs one window
+// more than this (the server treats a count up to the packet as warm-up), shown as "analyzing n/21".
+var RECENT = 20;
+var DEFAULT_GATEWAY = "http://localhost:8080";
 
 var config = { exclusions: [] };
-// Verbose per-window diagnostics. These printed unconditionally — one line per scored
-// keystroke window and one per MOUSE window, and mouse windows arrive several times a
-// second while the pointer moves — which flooded the worker console and every page console
-// so heavily that real errors were unfindable. Opt-in via the options page; warnings and
-// errors are never gated.
+// Verbose per-check diagnostics, opt-in on the options page; warnings and errors are never gated.
 var debugLog = false;
 function dlog() { if (!debugLog) return; try { console.log.apply(console, arguments); } catch (e) {} }
-// accountId starts undefined (distinct from the resolved "signed out" value, null) so the
-// FIRST resolution always differs and fires onAccountChanged exactly once, even if it
-// resolves to signed-out. Falsy either way, so every gate below defaults safely to
-// "inactive" until a real resolution comes back.
-var state = { totalWindows: 0, lastWindowAt: 0, modelReady: false, modelError: null, verdict: null, steps: 0, needSteps: 50, enrolled: false, modelPersonal: false, locked: false, lockReason: null, hasPasskey: false, profileNum: 0, mouseReady: false, mouseVerdict: null, totalMouseWindows: 0, mouseTracking: true, mouseSustainPct: MOUSE_SUSTAIN_PCT_DEFAULT, mouseThreshold: null, mouseVoteN: MOUSE_SUSTAIN_WINDOW, mouseVoteK: MOUSE_SUSTAIN_LOW, mouseRule: "mean", mouseStale: false, mouseProfile: null, mousePctUserSet: false, accountId: undefined, accountEmail: null, accountChecked: false, keySamples: 0, mouseSamples: 0, rpError: null };
-var scores = [];       // rolling last N keystroke window scores
-var mouseScores = [];  // rolling mouse window scores (up to MOUSE_SUSTAIN_WINDOW)
 
-// ================= USER STUDY MODE (recovery plan T4.3) =================
-// Set by the experimenter on the options page. In study mode the extension is a CLIENT of the
-// deployed server system, like the SDK: the content script sends the raw key-event tail and its
-// mouse windows, ca-service scores them with the server models (mouse S1, keystroke on the Aalto
-// negatives) and logs every score (services/ca-service/lib/studyLog.js). On-device scoring is off,
-// so there is one system under test. Enrolment and the passkey step-up run on the gateway's
-// /study.html (passkeys are bound to that origin) under the same identity, externalId
-// "study:<pseudonym>". `condition` is "genuine" or "impostor:<pseudonym of the person typing>".
-var study = { on: false, gateway: "", siteKey: "", participant: "", condition: "genuine", client: "extension-study" };
-// E4: the participant's pause. While it is on, no page captures anything on either channel and no
-// check is sent. Set from the popup or the keyboard shortcut; persisted, and never lifted automatically.
-var studyPaused = false;
-var studySession = null;       // { token, userId } from the gateway's /v1/sdk/session
-var studyProbation = false;    // after a step-up: re-challenge on any scored suspicious verdict (as the SDK)
-var studyPrompt = null;        // the open step-up: { channel, decisionId, sessionId, tabId }
-var studyError = null;
+// The signed-in account (storage.local "cg_account"):
+//   { gateway, siteKey, kind: "personal"|"organisation", tenantName, label, userId, refreshToken, onboarding, linkedAt }
+var account = null;
+// The research study (storage.local "cg_study", options page): { on, gateway, siteKey, participant, condition, client, showVerdict }.
+// `condition` is "genuine" or "impostor:<pseudonym of the person typing>"; `client` "extension-study" or "lab".
+var study = { on: false, gateway: "", siteKey: "", participant: "", condition: "genuine", client: "extension-study", showVerdict: false };
+// Show the live verdict in the popup and on the badge. Participants of the study never see it unless the
+// experimenter ticks the study's own "show verdicts while testing".
+var showVerdictPref = true;
+// The pause (popup button or Alt+Shift+P): while on, no page captures anything on either channel and no
+// check is sent. Persisted, and never lifted automatically.
+var paused = false;
+
+// MV3: this worker is stopped after ~30 s idle and restarted from scratch, so everything that gates
+// behaviour is persisted (the lock in cg_progress, the settings, the account) and read back at start.
+var state = { locked: false, lockReason: null, verdict: null, mouseVerdict: null, error: null, notEnrolled: null, lastCheckAt: 0,
+  disabled: {} };   // channel -> when the server last said the organisation turned it off
+var session = null;     // { token, userId, key } from /v1/sdk/session; re-minted on a 401 or a change of user
+var probation = false;  // after a step-up: re-challenge on any scored suspicious verdict (as the SDK)
+var openPrompt = null;      // the open step-up: { channel, decisionId, sessionId, tabId } (study logging)
+
 function studyOn() { return !!(study && study.on && study.gateway && study.siteKey && study.participant); }
-function studyInfo() { return studyOn() ? { participant: study.participant, condition: study.condition, client: study.client, paused: studyPaused } : null; }
+// The active connection, or null when nobody is signed in.
+function conn() {
+  if (studyOn()) return { kind: "study", gateway: study.gateway, siteKey: study.siteKey };
+  if (account && account.gateway && account.siteKey && account.refreshToken) return { kind: account.kind, gateway: account.gateway, siteKey: account.siteKey };
+  return null;
+}
+function connKey() {
+  var c = conn();
+  return c ? [c.kind, c.gateway, c.siteKey, c.kind === "study" ? study.participant : (account.userId || "")].join("|") : "";
+}
+function showVerdict() { return studyOn() ? !!study.showVerdict : showVerdictPref; }
+function studyInfo() { return studyOn() ? { participant: study.participant, condition: study.condition, client: study.client } : null; }
+// What the content scripts need: capture on or off, and whether it is the study (no password-field events).
+function captureInfo() { var c = conn(); return c ? { kind: c.kind, paused: paused } : null; }
+// The signed-in organisation's settings (its console, or the operator's default): which channels are on,
+// the "fields never watched" and the typing packet. The field types and the packet are kept in storage
+// because the worker loses its variables when idle. The server enforces all of them anyway.
+var excludeTypes = ["hidden"];
+var orgConfigAt = 0;
+function refreshOrgConfig() {
+  if (!conn()) return;
+  orgConfigAt = Date.now();
+  gw("/v1/sdk/keystroke/config", null, "GET").then(function (r) {
+    if (!r || r.status !== 200) return;
+    // A channel switched back on is used again at once (it used to wait up to 10 minutes for a retry).
+    ["keystroke", "mouse"].forEach(function (ch) {
+      if (r.d[ch] === "off") { if (!state.disabled[ch]) state.disabled[ch] = Date.now(); }
+      else if (r.d[ch] === "on") delete state.disabled[ch];
+    });
+    refreshAllBadges();
+    if (Array.isArray(r.d.excludeFieldTypes)) {
+      excludeTypes = r.d.excludeFieldTypes.map(function (x) { return String(x).toLowerCase(); });
+      api.storage.local.set({ cg_exclude_types: excludeTypes });
+    }
+    if (Number(r.d.recentWindowCount) > 0) {
+      RECENT = Number(r.d.recentWindowCount);
+      api.storage.local.set({ cg_ks_packet: RECENT });
+      refreshAllBadges();
+    }
+  }).catch(function () {});
+}
+// At most once per `minMs`: while the popup is open (it polls the status every second) and while a
+// channel is off, so a change in the console shows within seconds.
+function maybeRefreshOrgConfig(minMs) { if (Date.now() - orgConfigAt >= minMs) refreshOrgConfig(); }
+function gatewayOrigin() { var c = conn(); try { return c ? new URL(c.gateway).origin : ""; } catch (e) { return ""; } }
+
 function loadStudy(v) {
   v = v || {};
   study = {
     on: v.on === true, gateway: String(v.gateway || "").replace(/\/+$/, ""), siteKey: String(v.siteKey || ""),
     participant: String(v.participant || ""), condition: String(v.condition || "genuine"),
-    client: v.client === "lab" ? "lab" : "extension-study",
+    client: v.client === "lab" ? "lab" : "extension-study", showVerdict: v.showVerdict === true,
   };
-  studySession = null; studyProbation = false; studyError = null;
 }
-async function studySessionToken(force) {
-  if (studySession && !force) return studySession.token;
-  var r = await fetch(study.gateway + "/v1/sdk/session", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ siteKey: study.siteKey, externalId: "study:" + study.participant }) });
+function loadAccount(v) {
+  account = v && v.gateway && v.siteKey && v.refreshToken ? v : null;
+}
+// Any change of user: drop what belonged to the previous one.
+function resetUser() {
+  session = null; probation = false; openPrompt = null;
+  state.verdict = null; state.mouseVerdict = null; state.error = null; state.notEnrolled = null;
+}
+
+// ---- talking to the gateway ----
+async function sessionToken(force) {
+  var c = conn();
+  if (!c) throw new Error("not signed in");
+  var key = connKey();
+  if (session && session.key === key && !force) return session.token;
+  var body = c.kind === "study" ? { siteKey: c.siteKey, externalId: "study:" + study.participant } : { siteKey: c.siteKey, refreshToken: account.refreshToken };
+  var r = await fetch(c.gateway + "/v1/sdk/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   var d = await r.json().catch(function () { return {}; });
-  if (!r.ok || !d.token) throw new Error(d.error || ("session HTTP " + r.status));
-  studySession = { token: d.token, userId: d.userId };
+  if (!r.ok || !d.token) {
+    // The refresh token was revoked or has expired, or the organisation was: sign in again.
+    if (c.kind !== "study" && /refresh_token|tenant_revoked|invalid_site_key/.test(d.error || "")) state.error = "Your sign-in has expired. Sign in again in the settings.";
+    throw new Error(d.error || ("session HTTP " + r.status));
+  }
+  session = { token: d.token, userId: d.userId, key: key };
+  if (d.onboarding) setOnboarding(d.onboarding);
   return d.token;
 }
-async function studyPost(path, body) {
+async function gw(path, body, method) {
+  var c = conn();
+  if (!c) throw new Error("not signed in");
   for (var attempt = 0; attempt < 2; attempt++) {
-    var token = await studySessionToken(attempt > 0);
-    var r = await fetch(study.gateway + path, { method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body: JSON.stringify(body) });
+    var token = await sessionToken(attempt > 0);
+    var r = await fetch(c.gateway + path, { method: method || "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: method === "GET" ? undefined : JSON.stringify(body || {}) });
     if (r.status === 401 && attempt === 0) continue;   // session expired: mint a new one once
     return { status: r.status, d: await r.json().catch(function () { return {}; }) };
   }
 }
+// What the user has enrolled on the server: { passkey, keystroke, mouse }.
+function setOnboarding(ob) {
+  if (!ob) return;
+  if (account && !studyOn()) {
+    var same = account.onboarding && account.onboarding.passkey === !!ob.passkey && account.onboarding.keystroke === !!ob.keystroke && account.onboarding.mouse === !!ob.mouse
+      && account.onboarding.keystrokeTraining === !!ob.keystrokeTraining;
+    // keystrokeTraining: typing enrolment is done and its model is being built on the server's queue.
+    account.onboarding = { passkey: !!ob.passkey, keystroke: !!ob.keystroke, keystrokeTraining: !!ob.keystrokeTraining, mouse: !!ob.mouse };
+    if (!same) api.storage.local.set({ cg_account: account });
+  }
+  if (ob.keystroke && ob.mouse) state.notEnrolled = null;
+}
+var onboardingAt = 0;
+// While the typing model is being built (about a minute) the popup re-reads the onboarding state, so it
+// says "ready" without a reload.
+function maybeRefreshOnboarding(minMs) { if (Date.now() - onboardingAt >= minMs) refreshOnboarding(); }
+function refreshOnboarding() {
+  if (!conn()) return;
+  onboardingAt = Date.now();
+  refreshOrgConfig();
+  gw("/v1/sdk/onboarding", null, "GET").then(function (r) { if (r && r.status === 200) setOnboarding(r.d); refreshAllBadges(); }).catch(function () {});
+}
+
+// ---- study logging (ca-service lib/studyLog.js): only the study sends a study context ----
 function studyContext(sessionId, clientTs, extra) {
   return Object.assign({ participant: study.participant, sessionId: sessionId, condition: study.condition, client: study.client, clientTs: clientTs }, extra || {});
 }
-function studyPromptEvent(event) {
-  var p = studyPrompt;
-  if (!p) return;
-  studyPost("/v1/sdk/study/prompt", { study: studyContext(p.sessionId, Date.now()), channel: p.channel, decisionId: p.decisionId, event: event })
-    .catch(function (e) { console.warn("[continuum-guard/study] prompt event not logged:", e && e.message); });
+function promptEvent(event) {
+  var p = openPrompt;
+  if (!p || !studyOn()) return;
+  gw("/v1/sdk/study/prompt", { study: studyContext(p.sessionId, Date.now()), channel: p.channel, decisionId: p.decisionId, event: event })
+    .catch(function (e) { console.warn("[continuum-guard] prompt event not logged:", e && e.message); });
 }
-// A verdict from the server. Challenge as the SDK does (sdk/guard.js maybeChallenge): when the
-// server requires it, or during probation on a suspicious verdict backed by scored windows.
-function studyVerdict(channel, r, sessionId) {
+
+// ---- verdicts ----
+// A verdict from the server. Challenge as the SDK does (sdk/guard.js maybeChallenge): when the server
+// requires it, or during probation on a suspicious verdict backed by scored windows.
+function onVerdict(channel, r, sessionId) {
   var d = (r && r.d) || {};
-  if (r && r.status === 423 && !state.locked) { studyChallenge(channel, null, sessionId); return; }   // locked server-side
-  if (d.enrolled === false || (d.typingEvaluation && d.typingEvaluation.modelAvailable === false)) { studyError = "not enrolled (" + channel + ")"; return; }
+  state.lastCheckAt = Date.now();
+  // The organisation turned this channel off (its console or the operator page): stop sending it.
+  if (r && r.status === 409 && /_disabled$/.test(String(d.error || ""))) { state.disabled[channel] = Date.now(); refreshAllBadges(); return; }
+  if (d.checked) delete state.disabled[channel];
+  if (r && r.status === 423 && !state.locked) { challenge(channel, null, sessionId); return; }   // locked server-side
+  if (d.enrolled === false || (d.typingEvaluation && d.typingEvaluation.modelAvailable === false)) {
+    state.notEnrolled = channel; state.error = null; refreshAllBadges(); return;
+  }
+  if (state.notEnrolled === channel) state.notEnrolled = null;   // its model is there now
   if (!d.checked) return;
-  studyError = null;
+  state.error = null;
   if (channel === "keystroke") {
+    // The organisation's packet, as the server just applied it: the counter follows a change at once.
+    if (Number(d.packetWindows) > 0 && Number(d.packetWindows) !== RECENT) {
+      RECENT = Number(d.packetWindows);
+      api.storage.local.set({ cg_ks_packet: RECENT });
+    }
     state.verdict = { status: d.warmup ? "analyzing" : (d.isSuspicious ? "suspicious" : "genuine"),
-      mean: Math.round((d.modelConfidence || 0) * 100), packet: Number(d.scoredWindowCount || 0), need: RECENT };
+      mean: Math.round((d.modelConfidence || 0) * 100), packet: Number(d.scoredWindowCount || 0), need: RECENT + 1 };
   } else {
     state.mouseVerdict = { status: d.warmup ? "analyzing" : (d.isSuspicious ? "suspicious" : "genuine"),
-      low: d.lowWindows, buffer: d.windowCount, bufferMax: d.bufferMax, lockAt: d.lockAt, riskPct: d.riskPct, rule: "vote",
-      mean: Math.round((d.meanScore || 0) * 100), packet: d.windowCount, need: d.bufferMax };
+      low: d.lowWindows, buffer: d.windowCount, bufferMax: d.bufferMax, lockAt: d.lockAt,
+      mean: Math.round((d.meanScore || 0) * 100) };
   }
+  dlog("[continuum-guard] " + channel + " verdict", JSON.stringify(channel === "keystroke" ? state.verdict : state.mouseVerdict));
   var scored = channel === "keystroke" ? Number(d.scoredWindowCount) > 0 : Number(d.windowCount) > 0;
-  var trigger = !!d.requiresPasskeyChallenge || (studyProbation && !!d.isSuspicious && scored);
-  if (trigger && !state.locked) { studyChallenge(channel, d.studyDecisionId || null, sessionId); return; }
-  if (!d.warmup && !d.isSuspicious) studyProbation = false;   // a clean verdict ends probation
+  var trigger = !!d.requiresPasskeyChallenge || (probation && !!d.isSuspicious && scored);
+  if (trigger && !state.locked) { challenge(channel, d.studyDecisionId || null, sessionId); return; }
+  if (!d.warmup && !d.isSuspicious) probation = false;   // a clean verdict ends probation
   updateBadge();
   persistProgress();
 }
-function studyChallenge(channel, decisionId, sessionId) {
-  studyPrompt = { channel: channel, decisionId: decisionId, sessionId: sessionId, tabId: null };
+function challenge(channel, decisionId, sessionId) {
+  openPrompt = { channel: channel, decisionId: decisionId, sessionId: sessionId, tabId: null };
   engageLock(channel);
-  studyPromptEvent("shown");
+  promptEvent("shown");
 }
-function studyOpenPage(mode, reason) {
-  var url = study.gateway + "/study.html?mode=" + mode + "&p=" + encodeURIComponent(study.participant)
-    + "&k=" + encodeURIComponent(study.siteKey) + (reason ? "&reason=" + reason : "");
-  function track(tab) { if (mode === "verify" && studyPrompt && tab) studyPrompt.tabId = tab.id; }
-  if (mode === "verify" && api.windows && api.windows.create) {
-    try { api.windows.create({ url: url, type: "popup", width: 520, height: 680 }, function (w) { track(w && w.tabs && w.tabs[0]); }); return; } catch (e) {}
+
+// ---- the gateway's pages: step-up, enrolment, sign-in ----
+// The study keeps its own page (/study.html, identity "study:<pseudonym>"); a signed-in user's page gets
+// the session in the URL fragment (/connect.html), which never reaches a server and is removed at once.
+async function pageUrl(mode, reason) {
+  var c = conn();
+  if (!c) return null;
+  if (c.kind === "study") {
+    return c.gateway + "/study.html?mode=" + mode + "&p=" + encodeURIComponent(study.participant)
+      + "&k=" + encodeURIComponent(study.siteKey) + (reason ? "&reason=" + reason : "");
   }
-  api.tabs.create({ url: url }, track);
+  var token = await sessionToken();
+  return c.gateway + "/connect.html?mode=" + mode + (reason ? "&reason=" + reason : "") + "#s=" + encodeURIComponent(token);
 }
-function setStudyPaused(v) { try { api.storage.local.set({ cg_study_paused: !!v }); } catch (e) {} }
-// The pause shortcut (manifest "commands"): quicker than opening the popup before typing something private.
-if (api.commands && api.commands.onCommand) {
-  api.commands.onCommand.addListener(function (cmd) { if (cmd === "toggle-study-pause" && studyOn()) setStudyPaused(!studyPaused); });
+function openPage(url, asPopup, onTab) {
+  if (asPopup && api.windows && api.windows.create) {
+    try { api.windows.create({ url: url, type: "popup", width: 520, height: 700 }, function (w) { if (onTab) onTab(w && w.tabs && w.tabs[0]); }); return; } catch (e) {}
+  }
+  api.tabs.create({ url: url }, function (t) { if (onTab) onTab(t); });
 }
-function fromStudyPage(sender) { return studyOn() && sender && sender.url && sender.url.indexOf(study.gateway + "/study.html") === 0; }
-// Closing the step-up page while still locked = the prompt was dismissed.
+function openVerify() {
+  pageUrl("verify", state.lockReason === "mouse" ? "mouse" : "keystroke").then(function (url) {
+    if (!url) return;
+    openPage(url, true, function (tab) { if (openPrompt && tab) openPrompt.tabId = tab.id; });
+  }).catch(function (e) { gatewayDown(e); });
+}
+function openEnrol() {
+  pageUrl("enrol").then(function (url) { if (url) openPage(url, false); }).catch(function (e) { gatewayDown(e); });
+}
+// The step-up is the only way to clear a lock, so an unreachable gateway must be said out loud, in the
+// overlay too; otherwise the click seems to do nothing and the user looks locked out for good.
+function gatewayDown(e) {
+  state.error = "Can't reach Continuum at " + ((conn() || {}).gateway || "the gateway") + " (" + ((e && e.message) || "unreachable") + ")";
+  broadcastAll({ type: "cg:gateway-unreachable", message: state.error });
+  refreshAllBadges();
+}
+// A page of the active gateway. Its messages (the step-up's result, the sign-in's code) are trusted only
+// from there: Chrome sets sender.url, a page cannot fake it.
+function fromGatewayPage(sender, page) {
+  var c = conn(), g = c ? c.gateway : "";
+  if (page === "/connect.html" && pendingGateway) g = pendingGateway;
+  return !!g && !!sender && !!sender.url && sender.url.indexOf(g + page) === 0;
+}
+function closeSenderTab(sender) {
+  if (sender && sender.tab && sender.tab.id != null) { try { api.tabs.remove(sender.tab.id, function () { void api.runtime.lastError; }); } catch (e) {} }
+}
+// Closing the step-up page while still locked = the prompt was dismissed (study logging).
 if (api.tabs && api.tabs.onRemoved) {
   api.tabs.onRemoved.addListener(function (tabId) {
-    if (studyPrompt && studyPrompt.tabId === tabId && state.locked) { studyPromptEvent("dismissed"); studyPrompt.tabId = null; }
+    if (openPrompt && openPrompt.tabId === tabId && state.locked) { promptEvent("dismissed"); openPrompt.tabId = null; }
   });
 }
 
-// Snapshot live progress to storage so it survives a service-worker restart. Throttled so
-// rapid keystrokes don't hammer storage (at most one write per ~1.2s); pass immediate=true
-// for state that must not be lost even briefly (lock/unlock).
+// ---- signing in (personal account or organisation) ----
+// OAuth 2.0 code flow with PKCE: a random verifier stays in this worker (storage.session: in memory,
+// survives the worker's restarts, gone when the browser closes); the page gets only its S256 challenge.
+var pendingGateway = "";   // gateway of the sign-in in progress, so its /connect.html is trusted before the account exists
+function b64url(bytes) {
+  var s = ""; for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function startSignIn(gateway, siteKey) {
+  gateway = String(gateway || DEFAULT_GATEWAY).trim().replace(/\/+$/, "");
+  siteKey = String(siteKey || "").trim();
+  var verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  var challengeS256 = b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
+  await api.storage.session.set({ cg_link_pending: { gateway: gateway, siteKey: siteKey, verifier: verifier, at: Date.now() } });
+  pendingGateway = gateway;
+  openPage(gateway + "/connect.html?mode=link&k=" + encodeURIComponent(siteKey) + "&cc=" + challengeS256, true);
+}
+async function finishSignIn(msg, sender) {
+  var p = (await api.storage.session.get("cg_link_pending")).cg_link_pending;
+  if (!p || Date.now() - p.at > 15 * 60000) throw new Error("no sign-in in progress");
+  var r = await fetch(p.gateway + "/v1/link/token", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ linkId: String(msg.link || ""), code: String(msg.code || ""), codeVerifier: p.verifier }) });
+  var d = await r.json().catch(function () { return {}; });
+  await api.storage.session.remove("cg_link_pending");
+  pendingGateway = "";
+  if (!r.ok || !d.refreshToken) throw new Error(d.error || ("sign-in HTTP " + r.status));
+  if (account && account.refreshToken) revoke(account);   // signing in as someone else replaces the old sign-in
+  resetUser();
+  account = { gateway: p.gateway, siteKey: d.siteKey, kind: d.kind, tenantName: d.tenantName, label: d.label, userId: d.userId,
+    refreshToken: d.refreshToken, onboarding: d.onboarding || null, linkedAt: new Date().toISOString() };
+  await api.storage.local.set({ cg_account: account });
+  if (!studyOn()) session = { token: d.token, userId: d.userId, key: connKey() };
+  closeSenderTab(sender);
+  broadcastConfig();
+  refreshAllBadges();
+  var ob = d.onboarding || {};
+  if (!studyOn() && !(ob.passkey && ob.keystroke && ob.mouse)) openEnrol();   // nothing to score before enrolment
+}
+function revoke(acc) {
+  try {
+    fetch(acc.gateway + "/v1/link/revoke", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refreshToken: acc.refreshToken }) })
+      .catch(function () {});
+  } catch (e) {}
+}
+
+// ---- restore at worker start ----
+api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "cg_account", "cg_paused", "cg_show_verdict", "cg_study_paused", "cg_exclude_types", "cg_ks_packet"], function (d) {
+  d = d || {};
+  if (Array.isArray(d.cg_exclude_types)) excludeTypes = d.cg_exclude_types;
+  if (Number(d.cg_ks_packet) > 0) RECENT = Number(d.cg_ks_packet);
+  loadStudy(d.cg_study);
+  loadAccount(d.cg_account);
+  paused = d.cg_paused === true;
+  // The pause was the study's alone (cg_study_paused) before it became everyone's: a participant paused
+  // at the update must stay paused, never resume recording by surprise.
+  if (d.cg_study_paused !== undefined) {
+    if (d.cg_paused === undefined && d.cg_study_paused === true) { paused = true; api.storage.local.set({ cg_paused: true }); }
+    api.storage.local.remove("cg_study_paused");
+  }
+  showVerdictPref = d.cg_show_verdict !== false;
+  config.exclusions = d.cg_exclusions || [];
+  debugLog = d.cg_debug === true;
+  // Restore the lock (and the last verdicts) so a worker restart never silently drops a lock.
+  var p = d.cg_progress;
+  if (p && p.user === connKey()) {
+    state.locked = !!p.locked;
+    state.lockReason = p.lockReason || null;
+    if (Date.now() - (p.at || 0) < 10 * 60 * 1000) { state.verdict = p.verdict || null; state.mouseVerdict = p.mouseVerdict || null; }
+  }
+  broadcastConfig();
+  refreshAllBadges();
+});
+if (api.storage.session && api.storage.session.get) {
+  api.storage.session.get("cg_link_pending", function (d) { var p = d && d.cg_link_pending; if (p) pendingGateway = p.gateway; });
+}
+
+// Snapshot the lock and the verdicts so they survive a worker restart. Throttled (at most one write per
+// ~1.2 s); immediate for the lock itself.
 var _persistTimer = null;
 function progressSnapshot() {
-  return {
-    steps: state.steps, needSteps: state.needSteps, totalWindows: state.totalWindows, verdict: state.verdict,
-    scores: scores, mouseScores: mouseScores, mouseVerdict: state.mouseVerdict,
-    totalMouseWindows: state.totalMouseWindows, locked: state.locked, lockReason: state.lockReason, at: Date.now(),
-  };
+  return { user: connKey(), verdict: state.verdict, mouseVerdict: state.mouseVerdict, locked: state.locked, lockReason: state.lockReason, at: Date.now() };
 }
 function persistProgress(immediate) {
   if (immediate) {
@@ -212,883 +364,318 @@ function persistProgress(immediate) {
   }, 1200);
 }
 
-// Monitoring is NOT a manual toggle anymore: it stays off until the user has trained a
-// personal model (the wizard), then turns on by itself. A base-model verdict on a
-// stranger's rhythm isn't meaningful, so there is nothing useful to "turn on" before that.
-// Both gates ALSO require a signed-in Chrome/Google account — samples and trained models
-// are keyed to that account (see refreshAccount below), so with nobody signed in there is
-// no profile to monitor against at all.
-// monitoringEnabled() gates the KEYSTROKE (enforcing) channel; anyTrained() gates whether
-// the extension does ANYTHING at all — content scripts only capture when at least one
-// modality is trained, so a profile with neither is genuinely disabled.
-// In study mode the server's models do the scoring, so capture runs regardless of on-device models.
-function monitoringEnabled() { return studyOn() || (!!state.accountId && !!state.modelPersonal); }
-function anyTrained() { return studyOn() || (!!state.accountId && (!!state.modelPersonal || !!state.mouseReady)); }
-
-// Stable NUMERIC id for the passkey-service, derived from this account's id (FNV-1a).
-function numericUid(pid) {
-  var h = 2166136261;
-  for (var i = 0; i < pid.length; i++) { h ^= pid.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return (h >>> 0) + 1;   // +1: never 0 (service treats 0 as missing)
-}
-
-// ---- browser account binding ----
-// Samples, trained heads, and the passkey link are keyed to WHICHEVER Google account THIS
-// CHROME PROFILE is tied to (chrome.identity.getProfileUserInfo), not to any website login.
-//
-// TESTED LIMIT (verified against a real Sign-out click, both accountStatus modes): Chrome
-// does NOT expose a live "currently signed in vs. just signed out" signal to extensions.
-// getProfileUserInfo reports whichever account this profile is nominally associated with,
-// and keeps reporting it through "Sign out" / "Sync is paused" — Chrome only clears it if
-// the account is removed from the profile outright. So this gates on "has this Chrome
-// PROFILE ever been signed into a Google account", not "is it live right now" — a same-
-// profile sign-out click will NOT deactivate the guard, by platform limitation, not a bug.
-// What DOES give real isolation: separate Chrome PROFILES (Settings -> "Other Chrome
-// profiles"), since chrome.storage/IndexedDB are already fully siloed per profile — that's
-// the actual mechanism for "a different person is using this browser now", not sign-out.
-var _lastAccountCheck = 0;
-function refreshAccount(cb) {
-  if (!api.identity || !api.identity.getProfileUserInfo) { state.accountChecked = true; if (cb) cb(); return; }
-  try {
-    // "ANY": also catch a profile that's signed in with sync deliberately turned off — the
-    // gate here is "ever associated with an account", not "currently syncing" (see above).
-    api.identity.getProfileUserInfo({ accountStatus: "ANY" }, function (info) {
-      void api.runtime.lastError;
-      var id = info && info.id ? ("g_" + info.id) : null;
-      var email = (info && info.email) || null;
-      state.accountChecked = true;
-      state.accountEmail = email;
-      if (id !== state.accountId) { state.accountId = id; onAccountChanged(cb); }
-      else if (cb) cb();
-    });
-  } catch (e) { state.accountChecked = true; if (cb) cb(); }
-}
-if (api.identity && api.identity.onSignInChanged) {
-  api.identity.onSignInChanged.addListener(function () { refreshAccount(); });
-}
-
-// The account just changed (including first resolution at startup, or going to/from
-// signed-out) — drop whatever live packet/verdict/lock belonged to the PREVIOUS account
-// and load this account's own trained flags + model before anything scores again.
-function onAccountChanged(cb) {
-  scores = []; mouseScores = [];
-  state.verdict = null; state.mouseVerdict = null;
-  state.steps = 0; state.totalWindows = 0; state.totalMouseWindows = 0;
-  if (state.locked) { state.locked = false; broadcastAll({ type: "cg:unlock" }); }
-  var id = state.accountId;
-  if (!id) {
-    state.profileNum = 0;
-    state.modelPersonal = false; state.mouseReady = false; state.hasPasskey = false; state.enrolled = false;
-    state.keySamples = 0; state.mouseSamples = 0;
-    finishAccountSwitch(cb);
-    return;
-  }
-  migrateLegacyProfile(id, function () {
-    resolveProfileNum(id, function (num) {
-      state.profileNum = num;
-      api.storage.local.get(["cg_model_personal_" + id, "cg_mouse_ready_" + id, "cg_passkey_" + id, "cg_enrolled_at_" + id, "cg_enroll_" + id, "cg_enroll_mouse_" + id], function (d) {
-        d = d || {};
-        state.modelPersonal = !!d["cg_model_personal_" + id];
-        state.mouseReady = !!d["cg_mouse_ready_" + id];
-        state.hasPasskey = !!d["cg_passkey_" + id];
-        state.enrolled = !!d["cg_enrolled_at_" + id];
-        state.keySamples = ((d["cg_enroll_" + id]) || []).length;
-        state.mouseSamples = ((d["cg_enroll_mouse_" + id]) || []).length;
-        finishAccountSwitch(cb);
-      });
-    });
-  });
-}
-
-// The numeric uid sent to the passkey-service (its DB keys credentials by this NUMBER,
-// not by account id) must stay FIXED for an account forever once established — recomputing
-// it from a hash of the account id (as this used to do) silently orphans any already-
-// registered passkey the moment the hashed input changes, because the service then looks
-// up a uid with zero credentials and errors before ever invoking the native WebAuthn
-// prompt. Persisted once per account; if a legacy (pre-account-binding) profile id exists,
-// reuse the uid computed the OLD way so it still matches what's already in that DB.
-function resolveProfileNum(id, cb) {
-  api.storage.local.get(["cg_profile_num_" + id, "cg_profile_id"], function (d) {
-    d = d || {};
-    var existing = d["cg_profile_num_" + id];
-    if (existing) { cb(existing); return; }
-    var num = d.cg_profile_id ? numericUid(d.cg_profile_id) : numericUid(id);
-    var rec = {}; rec["cg_profile_num_" + id] = num;
-    api.storage.local.set(rec, function () { cb(num); });
-  });
-}
-
-// ONE-TIME migration: before account binding existed, everything lived under an unkeyed
-// (or random-per-install-id) namespace. Without this, anyone who trained before that
-// change would silently see "needs training" on their real account — the samples are
-// still there, just under the old names. Runs once (cg_legacy_migrated guards re-entry),
-// copies chrome.storage.local values across, and asks the offscreen doc to move the
-// IndexedDB model(s), which only tf (loaded there, not in this service worker) can do.
-function migrateLegacyProfile(id, cb) {
-  api.storage.local.get(["cg_profile_id", "cg_legacy_migrated"], function (d) {
-    d = d || {};
-    var oldId = d.cg_profile_id;
-    if (!oldId || d.cg_legacy_migrated) { cb(); return; }
-    var oldKeys = ["cg_model_personal", "cg_mouse_ready", "cg_passkey", "cg_enrolled_at",
-      "cg_enroll_" + oldId, "cg_enroll_mouse_" + oldId, "cg_enroll_sessions_" + oldId, "cg_enroll_mouse_sessions_" + oldId];
-    api.storage.local.get(oldKeys, function (old) {
-      old = old || {};
-      var hasLegacy = !!(old.cg_model_personal || old.cg_mouse_ready
-        || (old["cg_enroll_" + oldId] || []).length || (old["cg_enroll_mouse_" + oldId] || []).length);
-      if (!hasLegacy) { api.storage.local.set({ cg_legacy_migrated: true }); cb(); return; }
-      var rec = { cg_legacy_migrated: true };
-      if (old.cg_model_personal) rec["cg_model_personal_" + id] = true;
-      if (old.cg_mouse_ready) rec["cg_mouse_ready_" + id] = true;
-      if (old.cg_passkey) rec["cg_passkey_" + id] = true;
-      if (old.cg_enrolled_at) rec["cg_enrolled_at_" + id] = old.cg_enrolled_at;
-      if (old["cg_enroll_" + oldId]) rec["cg_enroll_" + id] = old["cg_enroll_" + oldId];
-      if (old["cg_enroll_mouse_" + oldId]) rec["cg_enroll_mouse_" + id] = old["cg_enroll_mouse_" + oldId];
-      if (old["cg_enroll_sessions_" + oldId]) rec["cg_enroll_sessions_" + id] = old["cg_enroll_sessions_" + oldId];
-      if (old["cg_enroll_mouse_sessions_" + oldId]) rec["cg_enroll_mouse_sessions_" + id] = old["cg_enroll_mouse_sessions_" + oldId];
-      console.log("[continuum-guard] migrating legacy profile " + oldId + " -> " + id);
-      api.storage.local.set(rec, function () {
-        ensureOffscreen().then(function () {
-          try {
-            api.runtime.sendMessage({ target: "offscreen", type: "cg:migrate-model", accountId: id }, function () { void api.runtime.lastError; cb(); });
-          } catch (e) { cb(); }
-        });
-      });
-    });
-  });
-}
-
-// Re-read just the sample-count arrays for the CURRENT account — called after a training
-// session so the popup's "Trained on" count updates immediately, without a full account
-// re-resolution (which would also reset the live packet/verdict).
-function refreshSampleCounts() {
-  var id = state.accountId;
-  if (!id) return;
-  api.storage.local.get(["cg_enroll_" + id, "cg_enroll_mouse_" + id], function (d) {
-    d = d || {};
-    state.keySamples = ((d["cg_enroll_" + id]) || []).length;
-    state.mouseSamples = ((d["cg_enroll_mouse_" + id]) || []).length;
-  });
-}
-function finishAccountSwitch(cb) {
-  state.modelReady = false; state.modelError = null;   // offscreen must (re)load THIS account's model
-  broadcastConfig();
-  refreshAllBadges();
-  persistProgress(true);
-  ensureOffscreen().then(function () {
-    try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model", accountId: state.accountId }, function () { void api.runtime.lastError; }); } catch (e) {}
-  });
-  if (cb) cb();
-}
-
-api.storage.local.get(["cg_exclusions", "cg_rp_base", "cg_progress", "cg_mouse_tracking", MOUSE_PCT_KEY, "cg_debug", "cg_study", "cg_study_paused"], function (d) {
-  d = d || {};
-  loadStudy(d.cg_study);
-  studyPaused = d.cg_study_paused === true;
-  config.exclusions = d.cg_exclusions || [];
-  debugLog = d.cg_debug === true;
-  RP_BASE = (d.cg_rp_base || RP_BASE_DEFAULT).replace(/\/+$/, "");
-  // User toggle for the mouse channel (default ON). Persisted so a SW restart keeps it.
-  state.mouseTracking = d.cg_mouse_tracking !== false;
-  // User-tuned mouse lock sensitivity (percent of the vote buffer that must be low).
-  var pct = parseInt(d[MOUSE_PCT_KEY], 10);
-  state.mousePctUserSet = pct >= 30 && pct <= 100;
-  state.mouseSustainPct = state.mousePctUserSet ? pct : MOUSE_SUSTAIN_PCT_DEFAULT;
-  // Restore the LIVE session progress too — the rolling packet, step counter, verdict and
-  // lock state — so a service-worker restart (e.g. opening/closing the popup, or an idle
-  // gap while typing) doesn't wipe the in-progress packet and reset the counter to 0.
-  var p = d.cg_progress;
-  if (p && (Date.now() - (p.at || 0) < 10 * 60 * 1000)) {   // ignore stale (>10 min) snapshots
-    state.steps = p.steps || 0;
-    state.needSteps = p.needSteps || 50;
-    state.totalWindows = p.totalWindows || 0;
-    state.verdict = p.verdict || null;
-    state.mouseVerdict = p.mouseVerdict || null;
-    state.totalMouseWindows = p.totalMouseWindows || 0;
-    state.locked = !!p.locked;   // a lock must survive a restart, or it'd silently drop
-    state.lockReason = p.lockReason || null;
-    scores = Array.isArray(p.scores) ? p.scores : [];
-    mouseScores = Array.isArray(p.mouseScores) ? p.mouseScores : [];
-  }
-  // MV3 service workers are terminated after ~30s idle and re-run from scratch on the next
-  // event — every in-memory var above resets. Resolve the signed-in account (and this
-  // account's trained flags) right away; onAccountChanged fires unconditionally on this
-  // first resolution and loads everything properly, so no separate restore path is needed
-  // for modelPersonal/mouseReady/hasPasskey here.
-  refreshAccount();
-});
-
-// Inject the capture scripts into tabs that were ALREADY open when the extension was
-// (re)loaded — otherwise monitoring only starts after the user manually refreshes each tab.
+// Inject the capture scripts into tabs that were ALREADY open when the extension was (re)loaded;
+// otherwise capture only starts after each tab is refreshed by hand.
 function injectAll() {
   if (!api.scripting || !api.tabs) return;
   api.tabs.query({ url: ["http://*/*", "https://*/*"] }, function (tabs) {
     (tabs || []).forEach(function (t) {
       try {
-        api.scripting.executeScript(
-          { target: { tabId: t.id }, files: ["src/features.js", "src/features-mouse.js", "src/features-mouse-actions.js", "src/content.js"] },
-          function () { void api.runtime.lastError; }   // chrome:// & store tabs refuse — fine
-        );
+        api.scripting.executeScript({ target: { tabId: t.id }, files: ["src/features.js", "src/features-mouse.js", "src/content.js"] },
+          function () { void api.runtime.lastError; });   // chrome:// & store tabs refuse — fine
       } catch (e) {}
     });
   });
 }
-if (api.runtime.onInstalled) api.runtime.onInstalled.addListener(injectAll);
+if (api.runtime.onInstalled) {
+  api.runtime.onInstalled.addListener(function (details) {
+    injectAll();
+    // First install: the settings page is where one signs in; nothing is captured before that.
+    if (details && details.reason === "install" && api.runtime.openOptionsPage) api.runtime.openOptionsPage();
+  });
+}
 if (api.runtime.onStartup) api.runtime.onStartup.addListener(injectAll);
 
-// Pick up an RP_BASE change from the options page without needing a full reload.
+// The pause shortcut (manifest "commands"): quicker than opening the popup before typing something private.
+function setPaused(v) { try { api.storage.local.set({ cg_paused: !!v }); } catch (e) {} }
+if (api.commands && api.commands.onCommand) {
+  api.commands.onCommand.addListener(function (cmd) { if (cmd === "toggle-pause" && conn()) setPaused(!paused); });
+}
+
+// Settings changed on the options page or the popup: follow them without a reload.
 if (api.storage.onChanged) {
   api.storage.onChanged.addListener(function (changes, area) {
-    if (area === "local" && changes.cg_rp_base) {
-      RP_BASE = (changes.cg_rp_base.newValue || RP_BASE_DEFAULT).replace(/\/+$/, "");
+    if (area !== "local") return;
+    var who = connKey();
+    if (changes.cg_study) loadStudy(changes.cg_study.newValue);
+    if (changes.cg_account) loadAccount(changes.cg_account.newValue);
+    if (changes.cg_paused) paused = changes.cg_paused.newValue === true;
+    if (changes.cg_show_verdict) showVerdictPref = changes.cg_show_verdict.newValue !== false;
+    if (changes.cg_debug) debugLog = changes.cg_debug.newValue === true;
+    if (connKey() !== who) {
+      // Another user (or nobody): the old lock and verdicts belonged to the previous one.
+      resetUser();
+      if (state.locked) { state.locked = false; state.lockReason = null; broadcastAll({ type: "cg:unlock" }); }
+      persistProgress(true);
     }
-    if (area === "local" && changes.cg_study_paused) {
-      studyPaused = changes.cg_study_paused.newValue === true;
-      broadcastConfig();   // every page stops (or resumes) capturing at once
-      refreshAllBadges();
-    }
-    if (area === "local" && changes.cg_study) {
-      loadStudy(changes.cg_study.newValue);
-      broadcastConfig();   // capture follows study mode in every open tab
-      refreshAllBadges();
-    }
-    if (area === "local" && changes.cg_debug) {
-      debugLog = changes.cg_debug.newValue === true;
-      broadcastConfig();   // content scripts follow the same flag
-    }
+    if (changes.cg_study || changes.cg_account || changes.cg_paused || changes.cg_debug) broadcastConfig();
+    refreshAllBadges();
   });
 }
 
-// ---- offscreen document that hosts TF.js (Chromium; Firefox has no offscreen API) ----
-async function ensureOffscreen() {
-  if (!api.offscreen) { if (!state.modelError) state.modelError = "offscreen_api_unavailable"; return; }
-  try {
-    if (api.offscreen.hasDocument && (await api.offscreen.hasDocument())) return;
-    await api.offscreen.createDocument({
-      url: "src/offscreen.html",
-      reasons: ["WORKERS"],
-      justification: "Run the on-device keystroke model (TensorFlow.js requires a DOM).",
-    });
-  } catch (e) {
-    var m = (e && e.message) || "";
-    if (!/single offscreen|already/i.test(m)) { state.modelError = "offscreen_create: " + m; console.error("[continuum-guard]", state.modelError); }
-  }
-}
-ensureOffscreen();
-
-function scoreViaOffscreen(win, msgType) {
-  return new Promise(function (resolve) {
-    // Guarantee the promise ALWAYS settles: a dropped/never-answered offscreen message would
-    // otherwise hang the caller's `await`, leaving scoringBusy/mouseBusy stuck true forever
-    // and silently freezing all further verdicts (esp. mouse, which fires constantly).
-    var done = false;
-    function finish(v) { if (!done) { done = true; resolve(v); } }
-    var timer = setTimeout(function () { finish(null); }, 3000);
-    try {
-      api.runtime.sendMessage({ target: "offscreen", type: msgType || "cg:score", win: win }, function (res) {
-        clearTimeout(timer);
-        if (api.runtime.lastError || !res || res.error != null) finish(null);
-        else finish(res.score);
-      });
-    } catch (e) { clearTimeout(timer); finish(null); }
-  });
-}
-
-// Mouse variant of scoreViaOffscreen: resolves the whole reply ({score, threshold, voteN, voteK}),
-// because a mouse score is only meaningful against the threshold of the model that produced it.
-function scoreMouseViaOffscreen(win) {
-  return new Promise(function (resolve) {
-    var done = false;
-    function finish(v) { if (!done) { done = true; resolve(v); } }
-    var timer = setTimeout(function () { finish(null); }, 3000);
-    try {
-      api.runtime.sendMessage({ target: "offscreen", type: "cg:score-mouse", win: win }, function (res) {
-        clearTimeout(timer);
-        if (api.runtime.lastError || !res || res.error != null || !(res.threshold > 0)) finish(null);
-        else finish(res);
-      });
-    } catch (e) { clearTimeout(timer); finish(null); }
-  });
-}
-
-// The loaded mouse model's metadata (threshold, vote, profile size) and whether an old-model
-// profile is waiting to be rebuilt. mouseStale is a positive finding (the retired model's head is
-// on disk and the current model is not), so unlike a failed load it is safe to persist.
-function applyMouseMeta(meta, stale) {
-  if (meta && meta.threshold > 0) {
-    state.mouseThreshold = meta.threshold;
-    state.mouseVoteN = meta.voteN || MOUSE_SUSTAIN_WINDOW;
-    state.mouseVoteK = meta.voteK || MOUSE_SUSTAIN_LOW;
-    state.mouseRule = meta.voteRule || "vote";
-    // Until the user moves the slider, the lock rule is the model's own measured k of n.
-    if (!state.mousePctUserSet) state.mouseSustainPct = Math.round((100 * state.mouseVoteK) / state.mouseVoteN);
-    state.mouseProfile = { windows: meta.windows || 0, thresholdQ: meta.thresholdQ, trainedAt: meta.trainedAt };
-  }
-  state.mouseStale = !!stale;
-  if (stale) setMouseReady(false, true);
-}
-
-function statusObj() {
+function statusObj(tabId) {
+  var c = conn();
   return {
-    enabled: monitoringEnabled(), totalWindows: state.totalWindows, lastWindowAt: state.lastWindowAt,
-    exclusions: config.exclusions, modelReady: state.modelReady, modelError: state.modelError, verdict: state.verdict,
-    steps: state.steps, needSteps: state.needSteps, enrolled: state.enrolled, modelPersonal: state.modelPersonal,
-    locked: state.locked, hasPasskey: state.hasPasskey,
-    mouseReady: state.mouseReady, mouseVerdict: state.mouseVerdict, totalMouseWindows: state.totalMouseWindows, mouseTracking: state.mouseTracking, mouseSustainPct: state.mouseSustainPct,
-    mouseVoteN: state.mouseVoteN, mouseVoteK: state.mouseVoteK, mouseRule: state.mouseRule, mouseThreshold: state.mouseThreshold,
-    mouseStale: state.mouseStale, mouseProfile: state.mouseProfile,
-    accountId: state.accountId || null, accountEmail: state.accountEmail || null, accountChecked: state.accountChecked,
-    keySamples: state.keySamples, mouseSamples: state.mouseSamples, lockReason: state.lockReason,
-    rpError: state.rpError || null, rpBase: RP_BASE,
-    study: studyInfo(), studyError: studyError, studyPaused: studyPaused,   // user-study mode (see USER STUDY MODE)
+    connected: !!c, kind: c ? c.kind : null, gateway: c ? c.gateway : null,
+    account: account ? { kind: account.kind, tenantName: account.tenantName, label: account.label, gateway: account.gateway, siteKey: account.siteKey, onboarding: account.onboarding } : null,
+    study: studyInfo(), paused: paused, showVerdict: showVerdict(),
+    locked: state.locked, lockReason: state.lockReason, verdict: state.verdict, mouseVerdict: state.mouseVerdict,
+    error: state.error, notEnrolled: state.notEnrolled, lastCheckAt: state.lastCheckAt, exclusions: config.exclusions,
+    disabled: { keystroke: !!state.disabled.keystroke, mouse: !!state.disabled.mouse },
+    bars: tabId != null ? { keystroke: barState("keystroke", tabId).text, mouse: barState("mouse", tabId).text } : null,
   };
 }
 
-// Ask the offscreen doc whether the model is ready (survives worker restarts, where the
-// in-memory modelReady flag is lost but the offscreen doc is still alive).
-function pingOffscreen(cb) {
-  try {
-    api.runtime.sendMessage({ target: "offscreen", type: "cg:ping" }, function (r) {
-      cb(api.runtime.lastError ? null : r);
-    });
-  } catch (e) { cb(null); }
-}
-
-// ---- capture → score (offscreen) → verdict ----
-var scoringBusy = false, pendingWin = null;
-async function onWindow(win) {
-  if (studyOn()) return;   // study mode: the server scores (see USER STUDY MODE)
-  if (!monitoringEnabled()) return;
-  state.totalWindows += 1;
-  state.lastWindowAt = Date.now();
-  if (!state.modelReady) { await ensureOffscreen(); return; }
-
-  pendingWin = win;                 // coalesce bursts — always score the newest
-  if (scoringBusy) return;
-  scoringBusy = true;
-  try {
-    while (pendingWin) {
-      var w = pendingWin; pendingWin = null;
-      var s = await scoreViaOffscreen(w);
-      if (s == null) continue;
-      scores.push(s);
-      if (scores.length > RECENT) scores.shift();
-      var v = decide(scores);
-      dlog("[continuum-guard/diag] window score=" + s.toFixed(3) + " packet=" + JSON.stringify(scores.map(function (x) { return Number(x.toFixed(3)); })) + " mean=" + v.mean.toFixed(3));
-      // Verdict only on a FULL packet (20 windows: >= 240 digraph steps, ~400 keys of real
-      // typing), as on the server (10 of 20 at 0.50 since 2026-09-23) — early provisional
-      // verdicts were tried and reverted: they surface "!" on thin evidence without
-      // making the decision meaningfully faster.
-      state.verdict = {
-        status: scores.length < RECENT ? "analyzing" : (v.suspicious ? "suspicious" : "genuine"),
-        mean: Math.round(v.mean * 100),
-        packet: scores.length,
-        need: RECENT,
-      };
-      if (state.verdict.status === "suspicious" && !state.locked) engageLock("keystroke");
-      updateBadge();
-      persistProgress();   // survive a SW restart mid-packet
-    }
-  } catch (e) { console.error("[continuum-guard] scoring error:", e && e.message); }
-  finally { scoringBusy = false; }
-}
-
-// Mouse windows: separate stream, gated on its own readiness. A window is low when its score is
-// below the user's own threshold; ENFORCEMENT is the sustained k-of-n vote over the last n
-// windows (see the constants above). The display verdict uses the same per-user threshold.
-var mouseBusy = false, pendingMouseWin = null;
-async function onMouseWindow(win) {
-  if (studyOn()) return;   // study mode: the server scores (see USER STUDY MODE)
-  if (!state.mouseReady || !state.mouseTracking) return;   // user can disable the mouse channel
-  state.totalMouseWindows += 1;
-  pendingMouseWin = win;
-  if (mouseBusy) return;
-  mouseBusy = true;
-  try {
-    while (pendingMouseWin) {
-      var w = pendingMouseWin; pendingMouseWin = null;
-      var r = await scoreMouseViaOffscreen(w);
-      if (r == null) { ensureOffscreen(); continue; }   // recreate a torn-down offscreen doc
-      var s = r.score, thr = r.threshold;
-      var N = r.voteN || MOUSE_SUSTAIN_WINDOW;
-      state.mouseThreshold = thr;
-      var rule = r.rule || "vote";
-      state.mouseVoteN = N; state.mouseVoteK = r.voteK || MOUSE_SUSTAIN_LOW; state.mouseRule = rule;
-      if (!state.mousePctUserSet && rule === "vote") state.mouseSustainPct = Math.round((100 * state.mouseVoteK) / N);
-      mouseScores.push(s);
-      while (mouseScores.length > N) mouseScores.shift();
-      var recent = mouseScores.slice(-MOUSE_DIAG_RECENT);
-      var recentLow = 0, recentSum = 0;
-      for (var ri = 0; ri < recent.length; ri++) { if (recent[ri] < thr) recentLow += 1; recentSum += recent[ri]; }
-      var low = 0, bufSum = 0;
-      for (var i = 0; i < mouseScores.length; i++) { if (mouseScores[i] < thr) low += 1; bufSum += mouseScores[i]; }
-      var bufMean = mouseScores.length ? bufSum / mouseScores.length : 1;
-      // The popup slider sets the share of the buffer that must be low; its default is the
-      // model's own k of n. Clamped to >= 1 so it can never be zero.
-      var lockAt = Math.max(1, Math.round((state.mouseSustainPct / 100) * N));
-      // Describe the window as well as its score: path = distance covered (screen widths) and the
-      // mean step in pixels, the two properties that separate browsing from directed movement.
-      var wPath = 0, wStep = 0;
-      for (var wi = 0; wi < w.length; wi++) { var st = Math.hypot(w[wi][0], w[wi][1]); wStep += st; wPath += st / 1920; }
-      dlog("[continuum-guard/diag] mouse score=" + s.toFixed(3) + " (threshold " + thr.toFixed(3) + ")"
-        + " path=" + wPath.toFixed(3) + " step=" + (wStep / w.length).toFixed(1) + "px"
-        + " recentLow=" + recentLow + "/" + recent.length + " sustainedLow=" + low + "/" + mouseScores.length
-        + " bufferMean=" + bufMean.toFixed(3)
-        + (rule === "mean" ? " (locks when the mean of " + N + " < threshold)" : " (lock at " + lockAt + "/" + N + " = " + state.mouseSustainPct + "%)"));
-      // Report the SUSTAINED buffer, which is what decides a passkey request, and the mean score
-      // over the group the decision is made on (lockAt windows) for the badge.
-      var groupN = Math.min(lockAt, mouseScores.length);
-      var groupSum = 0;
-      for (var gi = mouseScores.length - groupN; gi < mouseScores.length; gi++) groupSum += mouseScores[gi];
-      var groupMean = groupN ? groupSum / groupN : 0;
-      state.mouseVerdict = {
-        status: recent.length < MOUSE_DIAG_RECENT ? "analyzing" : (recentLow / recent.length >= PACKET_VOTE_FRACTION ? "suspicious" : "genuine"),
-        low: low, buffer: mouseScores.length, bufferMax: N,
-        lockAt: rule === "vote" ? lockAt : null, riskPct: Math.round((100 * low) / N), rule: rule,
-        bufferMean: Math.round(bufMean * 100), threshold: Math.round(thr * 100),
-        groupN: groupN, groupMean: Math.round(groupMean * 100),
-        mean: Math.round((recent.length ? recentSum / recent.length : 0) * 100),
-        packet: recent.length,
-        need: MOUSE_DIAG_RECENT,
-      };
-      // ENFORCE on sustained suspicion over a full buffer: its mean below the user's threshold
-      // ("mean" rule), or at least lockAt low windows ("vote" rule).
-      var fire = mouseScores.length >= N && (rule === "mean" ? bufMean < thr : low >= lockAt);
-      if (!state.locked && fire) {
-        dlog("[continuum-guard] mouse sustained-suspicion lock (" + (rule === "mean" ? "mean " + bufMean.toFixed(3) + " < " + thr.toFixed(3) : low + "/" + mouseScores.length + " low") + ")");
-        mouseScores = [];   // the next decision needs a fresh buffer, as in the evaluation's replay
-        engageLock("mouse");
-      }
-      updateBadge();
-      persistProgress();
-    }
-  } catch (e) { console.error("[continuum-guard] mouse scoring error:", e && e.message); }
-  finally { mouseBusy = false; }
-}
-
-// Toolbar-icon assets: full-colour when active, greyed when the site is excluded.
+// ---- toolbar badge ----
 var ICON_ON = { 16: "icons/icon16.png", 32: "icons/icon32.png", 48: "icons/icon48.png", 128: "icons/icon128.png" };
 var ICON_OFF = { 16: "icons/icon-off16.png", 32: "icons/icon-off32.png", 48: "icons/icon-off48.png", 128: "icons/icon-off128.png" };
-
-// The badge value for the CURRENT verdict. The KEYSTROKE channel (the enforcing one) owns
-// the badge whenever it's trained — any %/!/🔒 shown is keystroke, so there's no ambiguity.
-// Mouse (info-only) only appears on the badge when it is the SOLE trained modality, and then
-// in a distinct CYAN so it's never mistaken for the green/red keystroke signal.
-function badgeForState() {
-  if (!anyTrained()) return { text: "⚙️", color: "#475569" };          // nothing trained → needs setup
-  if (state.locked) return { text: "🔒", color: "#dc2626" };
-  // Study mode: the recording indicator (E4). No scores are shown to participants.
-  if (studyOn()) return studyPaused ? { text: "II", color: "#64748b" } : { text: "REC", color: "#dc2626" };
-  if (state.verdict && state.verdict.status === "suspicious") return { text: "!", color: "#dc2626" };
-  if (state.verdict && state.verdict.status === "genuine") return { text: state.verdict.mean + "%", color: "#16a34a" };
-  if (monitoringEnabled()) return { text: state.steps > 0 ? String(Math.min(state.steps, 99)) : "", color: "#4f46e5" };
-  if (state.mouseReady && state.mouseVerdict && state.mouseVerdict.status !== "analyzing") {
-    // groupMean averages the decision group (lockAt windows), not the 6-window packet, so the
-    // badge reflects the evidence the lock is actually weighed against instead of twitching
-    // on each movement. Falls back to the packet mean for a verdict saved before this field.
-    var mvB = state.mouseVerdict;
-    var pctB = mvB.groupMean != null ? mvB.groupMean : mvB.mean;
-    return { text: pctB + "%", color: "#0891b2" };    // cyan = mouse (info) channel
+// ---- the two bars: typing (left) and mouse (right) ----
+// Chrome gives an extension one badge, so with the live verdict shown the ICON itself becomes two bars. Each
+// fills as the page collects evidence (typing: the packet + 1 windows, 21 by default, at least 250 keystrokes; mouse: 60 windows,
+// about 17 s of movement), then turns green when the server says it's the user, red when suspicious.
+// Progress is per tab (content.js "cg:progress"); verdicts are the user's (the last server reply).
+var MOUSE_NEED = 60;
+var COL_TRACK = "rgba(100,116,139,0.38)", COL_FILL = "#6366f1", COL_OK = "#16a34a", COL_BAD = "#dc2626";
+var tabProgress = {};   // tabId -> { ks, mouse }
+var iconDrawn = {};     // tabId -> key of the last image set, so an unchanged picture is not redrawn
+if (api.tabs && api.tabs.onRemoved) api.tabs.onRemoved.addListener(function (tabId) { delete tabProgress[tabId]; delete iconDrawn[tabId]; });
+// One bar's state: { frac 0..1, color, text } from the verdict if there is one, else the tab's progress.
+function barState(channel, tabId) {
+  var p = tabProgress[tabId] || { ks: 0, mouse: 0 };
+  if (channel === "keystroke") {
+    var v = state.verdict;
+    if (v && v.status === "genuine") return { frac: 1, color: COL_OK, text: "it's you (" + v.mean + "%)" };
+    if (v && v.status === "suspicious") return { frac: 1, color: COL_BAD, text: "suspicious" };
+    // The server's own count once it has answered (it windows the same way, but only it decides).
+    var need = RECENT + 1;
+    var n = v && v.status === "analyzing" ? Math.max(v.packet || 0, Math.min(p.ks, need - 1)) : Math.min(p.ks, need);
+    return { frac: n / need, color: COL_FILL, text: Math.min(n, need) + "/" + need + " windows" };
   }
-  return { text: "", color: "#4f46e5" };
+  var mv = state.mouseVerdict;
+  if (mv && mv.status === "genuine") return { frac: 1, color: COL_OK, text: "it's you" };
+  if (mv && mv.status === "suspicious") return { frac: 1, color: COL_BAD, text: "suspicious" };
+  var m = Math.min(p.mouse, MOUSE_NEED);
+  return { frac: m / MOUSE_NEED, color: COL_FILL, text: m + "/" + MOUSE_NEED + " windows" };
 }
+function barsImage(size, ks, ms) {
+  var c = new OffscreenCanvas(size, size), g = c.getContext("2d");
+  var pad = Math.max(1, Math.round(size * 0.06)), gap = Math.max(2, Math.round(size * 0.12));
+  var w = Math.floor((size - 2 * pad - gap) / 2), h = size - 2 * pad, r = Math.max(1, Math.round(w * 0.3));
+  [[ks, pad], [ms, size - pad - w]].forEach(function (b) {
+    var bar = b[0], x = b[1];
+    g.fillStyle = COL_TRACK; g.beginPath(); g.roundRect(x, pad, w, h, r); g.fill();
+    // a sliver as soon as anything is collected, so "recording" is visible from the first window
+    var fh = bar.frac > 0 ? Math.max(Math.round(h * 0.15), Math.round(h * bar.frac)) : 0;
+    if (fh > 0) { g.fillStyle = bar.color; g.beginPath(); g.roundRect(x, pad + h - fh, w, fh, r); g.fill(); }
+  });
+  return g.getImageData(0, 0, size, size);
+}
+function drawBars(tabId) {
+  var ks = barState("keystroke", tabId), ms = barState("mouse", tabId);
+  var title = "Continuum Guard — typing: " + ks.text + " · mouse: " + ms.text;
+  var key = [Math.round(ks.frac * 16), ks.color, Math.round(ms.frac * 16), ms.color].join("|");
+  if (iconDrawn[tabId] !== key) {
+    iconDrawn[tabId] = key;
+    try { actionSafe(api.action.setIcon, { tabId: tabId, imageData: { 16: barsImage(16, ks, ms), 32: barsImage(32, ks, ms) } }); }
+    catch (e) { iconDrawn[tabId] = null; actionSafe(api.action.setIcon, { tabId: tabId, path: ICON_ON }); }
+  }
+  actionSafe(api.action.setBadgeText, { tabId: tabId, text: "" });
+  actionSafe(api.action.setTitle, { tabId: tabId, title: title });
+}
+function setLogo(tabId, path) { iconDrawn[tabId] = null; actionSafe(api.action.setIcon, { tabId: tabId, path: path }); }
 
-// Called WITHOUT a callback, the action.* APIs return a promise that REJECTS with
-// "No tab with id: N" when the tab closed between being enumerated and having its badge
-// painted — a routine race, since refreshAllBadges walks every tab and the user can close
-// one at any moment. A surrounding try/catch cannot catch that: the rejection is async, so
-// it surfaces as an "Uncaught (in promise)" error on the extensions page. Passing a callback
-// switches these back to callback style, where the failure arrives as runtime.lastError and
-// is absorbed here — the tab is gone, so there is nothing to paint and nothing to report.
+// RECORDING ("•"): signed in and capturing, but no verdict yet (the mouse needs about 17 s of movement, typing
+// about a paragraph). An empty badge here looked exactly like a broken extension. applyBadgeToTab blanks it on
+// pages where no content script can run, so the dot also says "this page is being watched".
+var RECORDING = { text: "•", color: "#4f46e5" };
+function badgeForState() {
+  if (!conn()) return { text: "", color: "#64748b" };
+  if (state.locked) return { text: "🔒", color: "#dc2626" };
+  if (paused) return { text: "II", color: "#64748b" };
+  if (!showVerdict()) return studyOn() ? { text: "REC", color: "#dc2626" } : RECORDING;
+  var v = state.verdict, mv = state.mouseVerdict;
+  if ((v && v.status === "suspicious") || (mv && mv.status === "suspicious")) return { text: "!", color: "#dc2626" };
+  if (v && v.status === "genuine") return { text: v.mean + "%", color: "#16a34a" };
+  if (mv && mv.status === "genuine") return { text: "✓", color: "#0891b2" };
+  return RECORDING;
+}
+// Called WITHOUT a callback, the action.* APIs return a promise that rejects with "No tab with id" when a
+// tab closed between being listed and being painted, an uncatchable "Uncaught (in promise)". A callback
+// turns that into runtime.lastError, absorbed here.
 function actionSafe(fn, arg) {
   if (typeof fn !== "function") return;
   try { fn.call(api.action, arg, function () { void api.runtime.lastError; }); } catch (e) {}
 }
-
-// Apply badge + icon for ONE tab, keyed to whether that tab's site is excluded OR nobody
-// is signed into Chrome (a browser-wide "off", not per-site — takes priority).
 function applyBadgeToTab(tabId, url) {
   if (!api.action || tabId == null) return;
   var origin = "";
   try { if (url) origin = new URL(url).origin; } catch (e) {}
-  var noAccount = state.accountChecked && !state.accountId;
-  var excluded = !noAccount && origin && config.exclusions.indexOf(origin) >= 0;
-  if (noAccount) {
+  var excluded = origin && config.exclusions.indexOf(origin) >= 0;
+  if (!conn()) {
     actionSafe(api.action.setBadgeText, { tabId: tabId, text: "" });
-    actionSafe(api.action.setBadgeBackgroundColor, { tabId: tabId, color: "#64748b" });
-    actionSafe(api.action.setTitle, { tabId: tabId, title: "Continuum Guard — sign in to Chrome with a Google account to activate" });
-    actionSafe(api.action.setIcon, { tabId: tabId, path: ICON_OFF });
+    actionSafe(api.action.setTitle, { tabId: tabId, title: "Continuum Guard — sign in to start" });
+    setLogo(tabId, ICON_OFF);
   } else if (excluded) {
     actionSafe(api.action.setBadgeText, { tabId: tabId, text: "off" });
     actionSafe(api.action.setBadgeBackgroundColor, { tabId: tabId, color: "#64748b" });
     actionSafe(api.action.setTitle, { tabId: tabId, title: "Continuum Guard — off on this site" });
-    actionSafe(api.action.setIcon, { tabId: tabId, path: ICON_OFF });
+    setLogo(tabId, ICON_OFF);
   } else {
-    var b = badgeForState();
+    // No content script runs on Chrome's own pages, the extension's pages, the Web Store or the gateway's
+    // pages (content.js onGatewayPage), so nothing is recorded there: no dot, no bars.
+    var capturable = /^https?:/i.test(url || "") && origin !== gatewayOrigin()
+      && !/^https?:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)/i.test(url || "");
+    // The two bars whenever the live verdict is shown on a page that records; the lock and the pause keep
+    // the logo with their badge.
+    if (capturable && showVerdict() && !state.locked && !paused) { drawBars(tabId); return; }
+    var b = badgeForState(), title = "Continuum Guard";
+    if (b === RECORDING) {
+      if (capturable) title = "Continuum Guard — recording; the verdict comes after about 17 s of mouse movement or a paragraph of typing";
+      else { b = { text: "", color: b.color }; title = "Continuum Guard — this page can't be recorded"; }
+    }
     actionSafe(api.action.setBadgeText, { tabId: tabId, text: b.text });
     actionSafe(api.action.setBadgeBackgroundColor, { tabId: tabId, color: b.color });
-    actionSafe(api.action.setTitle, { tabId: tabId, title: "Continuum Guard" });
-    actionSafe(api.action.setIcon, { tabId: tabId, path: ICON_ON });
+    actionSafe(api.action.setTitle, { tabId: tabId, title: title });
+    setLogo(tabId, ICON_ON);
   }
 }
-
-// Verdict changed → refresh the tab the user is actually looking at.
 function updateBadge() {
   if (!api.tabs) return;
-  api.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-    if (tabs && tabs[0]) applyBadgeToTab(tabs[0].id, tabs[0].url);
-  });
+  api.tabs.query({ active: true, currentWindow: true }, function (tabs) { if (tabs && tabs[0]) applyBadgeToTab(tabs[0].id, tabs[0].url); });
 }
-
-// GLOBAL state changed (lock/unlock, training on/off) → refresh EVERY tab, not just the
-// active one. Unlock happens while the passkey popup is focused, so the tab that showed 🔒
-// isn't the active tab — without this its lock icon would linger until its next event.
+// Global changes (lock, sign-in) repaint EVERY tab: the unlock happens while the passkey window has focus.
 function refreshAllBadges() {
   if (!api.tabs) return;
-  api.tabs.query({}, function (tabs) {
-    (tabs || []).forEach(function (t) { applyBadgeToTab(t.id, t.url); });
-  });
+  api.tabs.query({}, function (tabs) { (tabs || []).forEach(function (t) { applyBadgeToTab(t.id, t.url); }); });
 }
-
-// Keep each tab's badge/icon correct as the user switches/navigates.
 if (api.tabs && api.tabs.onActivated) {
   api.tabs.onActivated.addListener(function (info) {
     api.tabs.get(info.tabId, function (t) { if (!api.runtime.lastError && t) applyBadgeToTab(t.id, t.url); });
   });
 }
 if (api.tabs && api.tabs.onUpdated) {
-  api.tabs.onUpdated.addListener(function (tabId, ch, t) {
-    if (ch.url || ch.status === "complete") applyBadgeToTab(tabId, t && t.url);
-  });
+  api.tabs.onUpdated.addListener(function (tabId, ch, t) { if (ch.url || ch.status === "complete") applyBadgeToTab(tabId, t && t.url); });
 }
 
-// ---- lock / passkey step-up (fixed Continuum RP) ----
+// ---- lock ----
 function broadcastAll(msg) {
   if (!api.tabs) return;
   api.tabs.query({}, function (tabs) {
-    (tabs || []).forEach(function (t) {
-      try { api.tabs.sendMessage(t.id, msg, function () { void api.runtime.lastError; }); } catch (e) {}
-    });
+    (tabs || []).forEach(function (t) { try { api.tabs.sendMessage(t.id, msg, function () { void api.runtime.lastError; }); } catch (e) {} });
   });
 }
 function engageLock(reason) {
   state.locked = true;
-  state.lockReason = reason || "keystroke";   // which channel caught it (shown in the popup)
-  broadcastAll({ type: "cg:lock", hasPasskey: studyOn() || state.hasPasskey });   // study: the passkey was set up at enrolment
-  refreshAllBadges();   // every monitored tab shows 🔒
+  state.lockReason = reason || "keystroke";
+  broadcastAll({ type: "cg:lock" });
+  refreshAllBadges();
   persistProgress(true);
 }
 function releaseLock() {
   state.locked = false;
-  state.rpError = null;
   state.lockReason = null;
-  scores = [];              // fresh packets after a verified step-up (probation-style reset)
-  mouseScores = [];
+  state.error = null;
   state.verdict = null;
   state.mouseVerdict = null;
-  state.steps = 0;          // and a fresh step counter — otherwise the badge sticks at 99
   broadcastAll({ type: "cg:unlock" });
-  broadcastAll({ type: "cg:reset" });   // content scripts drop their event buffers too
-  refreshAllBadges();   // clear 🔒 on every tab now, not just when the next event fires
+  broadcastAll({ type: "cg:reset" });   // content scripts drop their buffers: fresh evidence after a step-up
+  refreshAllBadges();
   persistProgress(true);
 }
-
-// After a successful ceremony, close the RP window — Chrome hands focus straight back
-// to the window/tab the user was on. Short delay so the ✓ message is visible.
-// Close the ceremony window IMMEDIATELY. This used to wait 1200ms so the page's "✓" was
-// visible, but a setTimeout in an MV3 service worker is not guaranteed to run: the worker
-// can be terminated before the timer fires, and the pending callback dies with it. That is
-// why the window only *sometimes* closed after Windows Hello succeeded. The unlock itself is
-// the user-visible confirmation, so nothing is lost by closing at once.
-function closeRpTab(sender) {
-  if (!api.tabs) return;
-  function remove(id) { try { api.tabs.remove(id, function () { void api.runtime.lastError; }); } catch (e) {} }
-  if (sender && sender.tab && sender.tab.id != null) { remove(sender.tab.id); return; }
-  // No sender tab (message not relayed from a tab context) — fall back to closing whatever
-  // RP page is open, so the ceremony window never gets orphaned.
-  try {
-    api.tabs.query({}, function (tabs) {
-      void api.runtime.lastError;
-      (tabs || []).forEach(function (t) { if (t.url && t.url.indexOf(RP_BASE) === 0) remove(t.id); });
-    });
-  } catch (e) {}
-}
-
-// Is the passkey RP actually up? /health is deliberately un-keyed on the service, so this
-// needs no credentials. Always settles: a hung connect resolves false on the timer.
-function rpReachable(cb) {
-  var done = false;
-  function finish(ok, why) { if (!done) { done = true; cb(ok, why); } }
-  var t = setTimeout(function () { finish(false, "timed out"); }, 2500);
-  try {
-    fetch(RP_BASE + "/health", { method: "GET", cache: "no-store" })
-      .then(function (r) { clearTimeout(t); finish(!!r.ok, r.ok ? "" : "HTTP " + r.status); })
-      .catch(function (e) { clearTimeout(t); finish(false, (e && e.message) || "connection refused"); });
-  } catch (e) { clearTimeout(t); finish(false, "connection refused"); }
-}
-
-// Open the RP ceremony as a small dialog-style popup window (falls back to a tab).
-//
-// The RP is PROBED first. When the passkey service is not running — or RP_BASE points at
-// the wrong host — the old behaviour opened a window that simply failed to connect: the
-// user got Chrome's "site can't be reached", closed it, and stayed locked on every page
-// with keyboard input blocked, no explanation, and no way forward. The lock then cleared
-// only by accident, when the persisted progress snapshot aged past 10 minutes and a worker
-// restart dropped it. Now the overlay is told, so the failure is legible and retryable
-// instead of looking like the extension itself had broken.
-function openRpPage(path) {
-  var url = RP_BASE + path + "#uid=" + state.profileNum;
-  rpReachable(function (ok, why) {
-    if (!ok) {
-      state.rpError = why || "unreachable";
-      broadcastAll({ type: "cg:rp-unreachable", rpBase: RP_BASE, reason: state.rpError });
-      refreshAllBadges();
-      console.warn("[continuum-guard] passkey service unreachable at " + RP_BASE + " (" + state.rpError + ") — step-up cannot run");
-      return;
-    }
-    state.rpError = null;
-    if (api.windows && api.windows.create) {
-      try { api.windows.create({ url: url, type: "popup", width: 480, height: 620 }); return; } catch (e) {}
-    }
-    api.tabs.create({ url: url });
-  });
-}
-
 function broadcastConfig() {
   if (!api.tabs) return;
   api.tabs.query({}, function (tabs) {
     (tabs || []).forEach(function (t) {
-      // Callback reads lastError so tabs without a content script (chrome:// pages, the
-      // web store) don't produce an unhandled "receiving end does not exist" rejection.
       try {
-        // enabled = anyTrained(): content scripts capture (keys AND mouse) whenever at least
-        // one modality is trained; the worker then routes each window to the right channel.
-        api.tabs.sendMessage(t.id, { type: "cg:config", enabled: anyTrained(), mouseTracking: state.mouseTracking, exclusions: config.exclusions, rpOrigin: studyOn() ? study.gateway : rpOriginOf(), debug: debugLog, study: studyInfo() }, function () { void api.runtime.lastError; });
+        api.tabs.sendMessage(t.id, { type: "cg:config", capture: captureInfo(), exclusions: config.exclusions, gatewayOrigin: gatewayOrigin(), debug: debugLog, excludeTypes: excludeTypes },
+          function () { void api.runtime.lastError; });
       } catch (e) {}
     });
   });
 }
 
-// Flip monitoring on the instant training completes — broadcasts to every open tab so
-// capture starts without a page refresh (mirrors the earlier auto-inject fix). Persisted
-// PER ACCOUNT — a flag set while account A is active must never leak into account B.
-// persist: whether this value should be written to storage as a DURABLE fact.
-//
-// These flags record "this account has enrolled and trained a model" — something only the
-// wizard establishes and only a reset revokes. They must never be derived from whether the
-// offscreen document happened to load the model successfully just now. It used to be: on
-// every extension reload the offscreen doc is recreated and runs loadBestModel BEFORE the
-// background has resolved the account (chrome.identity is async), so it reported
-// personal:false / mouse:false, and those transient falses were written straight to storage.
-// The result looked exactly like losing your training data — capture switched off, the panel
-// showed "not trained" — while the windows and the IndexedDB heads were still sitting there
-// untouched. Only a successful load (v === true) is proof, so only that is persisted.
-function setModelPersonal(v, persist) {
-  v = !!v;
-  if (v === state.modelPersonal) return;
-  state.modelPersonal = v;
-  if (persist !== false && state.accountId) { var rec = {}; rec["cg_model_personal_" + state.accountId] = v; api.storage.local.set(rec); }
-  broadcastConfig();
-  refreshAllBadges();
-}
-
-// See setModelPersonal: only a successful load is proof, so only that is persisted.
-function setMouseReady(v, persist) {
-  v = !!v;
-  if (v === state.mouseReady) return;
-  state.mouseReady = v;
-  if (persist !== false && state.accountId) { var rec = {}; rec["cg_mouse_ready_" + state.accountId] = v; api.storage.local.set(rec); }
-  broadcastConfig();   // enabling mouse (even without keystroke) must turn capture on in open tabs
-  refreshAllBadges();
-}
-
 api.runtime.onMessage.addListener(function (msg, sender, reply) {
   if (!msg) return;
   switch (msg.type) {
-    case "cg:get-account":
-      if (!state.accountChecked) {
-        refreshAccount(function () { reply({ id: state.accountId || null, email: state.accountEmail || null }); });
-        return true;
-      }
-      reply({ id: state.accountId || null, email: state.accountEmail || null });
-      return true;
-    case "cg:enrolled":
-      state.enrolled = true;
-      refreshSampleCounts();   // the wizard just accumulated new windows — update the popup's count
-      // The wizard just trained a personal model into IndexedDB — hot-swap it in.
-      ensureOffscreen().then(function () {
-        try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model", accountId: state.accountId }, function () { void api.runtime.lastError; }); } catch (e) {}
-      });
-      // BOTH rolling buffers must be dropped: every score in them was produced by the model
-      // that was just replaced. Only the keystroke packet used to be cleared, so after mouse
-      // retraining the 20-window mouse buffer still held the OLD model's low scores and could
-      // trigger a lock immediately — before the newly trained head had scored a single window.
-      scores = [];
-      mouseScores = [];
-      state.verdict = null;
-      state.mouseVerdict = null;
-      persistProgress(true);
-      return;
-    case "cg:profile-reset": {
-      // The wizard just deleted the stored windows + trained heads (IndexedDB) — mirror
-      // that here: drop back to untrained (monitoring off) until the user retrains.
-      state.enrolled = false;
-      state.keySamples = 0;
-      state.mouseSamples = 0;
-      setMouseReady(false);
-      state.mouseVerdict = null;
-      scores = [];
-      mouseScores = [];
-      state.verdict = null;
-      var wasLocked = state.locked;
-      state.locked = false;
-      setModelPersonal(false);                          // broadcasts cg:config (enabled:false)
-      if (wasLocked) broadcastAll({ type: "cg:unlock" });
-      broadcastAll({ type: "cg:reset" });                // tabs drop buffered timings too
-      ensureOffscreen().then(function () {
-        try { api.runtime.sendMessage({ target: "offscreen", type: "cg:reload-model", accountId: state.accountId }, function () { void api.runtime.lastError; }); } catch (e) {}
-      });
-      updateBadge();
-      persistProgress(true);
-      return;
-    }
-    case "cg:model-ready":
-      // A load RESULT, not an enrollment fact: persist only the positive case. A false here
-      // means "could not load right now" — the account was not resolved yet, or the offscreen
-      // document was just recreated — and must never overwrite the stored record that this
-      // account has a trained model.
-      state.modelReady = true; state.modelError = null;
-      setModelPersonal(msg.personal, msg.personal === true);
-      setMouseReady(msg.mouse, msg.mouse === true);
-      applyMouseMeta(msg.mouseMeta, msg.mouseStale);
-      return;
-    case "cg:model-error": state.modelReady = false; state.modelError = msg.error || "load_failed"; return;
     case "cg:hello":
-      // enabled = anyTrained(), matching broadcastConfig: this flag gates CAPTURE in the
-      // content script, and capture must run whenever EITHER modality is trained. Using
-      // monitoringEnabled() here (keystroke-only) meant a mouse-only profile captured
-      // nothing on a fresh page load until some later broadcast happened to re-enable it.
-      reply({ enabled: anyTrained(), mouseTracking: state.mouseTracking, excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, hasPasskey: studyOn() || state.hasPasskey, rpOrigin: studyOn() ? study.gateway : rpOriginOf(), debug: debugLog, study: studyInfo() });
+      reply({ capture: captureInfo(), excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, gatewayOrigin: gatewayOrigin(), debug: debugLog, excludeTypes: excludeTypes });
       return true;
+    case "cg:check": {
+      // From a content script: { channel, sessionId, clientTs, body, windowKeys }.
+      var c = conn();
+      if (!c || paused || state.locked || !msg.body) { reply({ ok: false, paused: paused }); return true; }
+      var ch = msg.channel === "mouse" ? "mouse" : "keystroke";
+      // Turned off by the organisation: nothing is sent; its settings are read again every 30 s while the
+      // user is active, so switching the channel back on takes effect without waiting.
+      if (state.disabled[ch]) { maybeRefreshOrgConfig(30000); reply({ ok: false, disabled: true }); return true; }
+      var path = ch === "mouse" ? "/v1/sdk/mouse/check" : "/v1/sdk/keystroke/check";
+      var body = msg.body;
+      if (c.kind === "study") body = Object.assign({}, msg.body, { study: studyContext(msg.sessionId, msg.clientTs, ch === "mouse" ? { windowKeys: msg.windowKeys || [] } : null) });
+      gw(path, body)
+        .then(function (r) { onVerdict(ch, r, msg.sessionId); reply({ ok: true, status: r.status }); })
+        .catch(function (e) { state.error = (e && e.message) || "gateway unreachable"; refreshAllBadges(); reply({ ok: false, error: state.error }); });
+      return true;
+    }
     case "cg:open-verify":
-      if (studyOn()) { studyOpenPage("verify", state.lockReason === "mouse" ? "mouse" : "keystroke"); return; }
-      openRpPage("/ext/verify.html");
-      return;
-    case "cg:open-register":
-      openRpPage("/ext/register.html");
+      openVerify();
       return;
     case "cg:verified":
-      if (fromStudyPage(sender)) {
-        // Study step-up passed: the gateway already cleared the server lock. Probation follows.
-        studyPromptEvent("passed");
-        studyPrompt = null;
-        studyProbation = true;
+      // The step-up passed on the gateway's page; the gateway already cleared the server lock.
+      if (fromGatewayPage(sender, "/study.html") || fromGatewayPage(sender, "/connect.html")) {
+        promptEvent("passed");
+        openPrompt = null;
+        probation = true;
         releaseLock();
-        closeRpTab(sender);
-        return;
+        closeSenderTab(sender);
       }
-      // Relayed by the content script on the RP page — trust ONLY that origin.
-      if (sender && sender.url && sender.url.indexOf(RP_BASE) === 0) {
-        releaseLock();
-        closeRpTab(sender);   // return the user to where they were
-      }
-      return;
-    case "cg:passkey-registered":
-      if (sender && sender.url && sender.url.indexOf(RP_BASE) === 0) {
-        state.hasPasskey = true;
-        if (state.accountId) { var pkRec = {}; pkRec["cg_passkey_" + state.accountId] = 1; api.storage.local.set(pkRec); }
-        if (state.locked) broadcastAll({ type: "cg:lock", hasPasskey: true });  // refresh overlay button
-        closeRpTab(sender);
-      }
-      return;
-    case "cg:activity":
-      if (monitoringEnabled()) { state.steps = msg.steps || 0; state.needSteps = msg.need || 50; state.lastWindowAt = Date.now(); updateBadge(); persistProgress(); }
       return;
     case "cg:verify-failed":
-      if (fromStudyPage(sender)) studyPromptEvent("failed");
+      if (fromGatewayPage(sender, "/study.html") || fromGatewayPage(sender, "/connect.html")) promptEvent("failed");
       return;
-    case "cg:study-open-enrol":
-      if (studyOn()) studyOpenPage("enrol");
+    case "cg:enrolled":
+      if (fromGatewayPage(sender, "/connect.html") || fromGatewayPage(sender, "/study.html")) { state.notEnrolled = null; refreshOnboarding(); }
       return;
-    case "cg:study-check": {
-      // From a content script in study mode: { channel, sessionId, clientTs, body, windowKeys }.
-      if (!studyOn() || studyPaused || state.locked || !msg.body) { reply({ ok: false, paused: studyPaused }); return true; }
-      var ch = msg.channel === "mouse" ? "mouse" : "keystroke";
-      var path = ch === "mouse" ? "/v1/sdk/mouse/check" : "/v1/sdk/keystroke/check";
-      var extra = ch === "mouse" ? { windowKeys: msg.windowKeys || [] } : null;
-      var body = Object.assign({}, msg.body, { study: studyContext(msg.sessionId, msg.clientTs, extra) });
-      studyPost(path, body)
-        .then(function (r) { studyVerdict(ch, r, msg.sessionId); reply({ ok: true, status: r.status }); })
-        .catch(function (e) { studyError = (e && e.message) || "gateway unreachable"; reply({ ok: false, error: studyError }); });
+    case "cg:link-code":
+      if (!fromGatewayPage(sender, "/connect.html")) return;
+      finishSignIn(msg, sender).catch(function (e) {
+        state.error = "Sign-in failed: " + ((e && e.message) || e);
+        console.warn("[continuum-guard] " + state.error);
+        refreshAllBadges();
+      });
+      return;
+    // ---- from the options page and the popup ----
+    case "cg:sign-in":
+      startSignIn(msg.gateway, msg.siteKey).then(function () { reply({ ok: true }); }).catch(function (e) { reply({ ok: false, error: (e && e.message) || String(e) }); });
       return true;
-    }
-    case "cg:windows":
-      if (msg.latest) onWindow(msg.latest);
-      return;
-    case "cg:windows-mouse":
-      if (msg.latest) onMouseWindow(msg.latest);
+    case "cg:sign-out":
+      // Locked: verify first. Signing out would otherwise be a way round the lock.
+      if (state.locked) { reply({ ok: false, error: "locked" }); return true; }
+      if (account) revoke(account);
+      api.storage.local.remove("cg_account", function () { reply({ ok: true }); });
+      return true;
+    case "cg:open-enrol":
+      openEnrol();
       return;
     case "cg:status":
-      // Fallback safety net for chrome.identity.onSignInChanged, which isn't reliable on
-      // every platform: the popup polls every 1s, so a cheap throttled re-check here still
-      // catches an account switch within a few seconds even if the event never fires.
-      if (Date.now() - _lastAccountCheck > 4000) { _lastAccountCheck = Date.now(); refreshAccount(); }
-      if (!state.modelReady) {
-        // Make sure the offscreen doc exists, then ask it directly whether the model loaded.
-        ensureOffscreen().then(function () {
-          pingOffscreen(function (r) {
-            // Same rule as cg:model-ready — this is a load result, so persist only a success.
-            // The popup polls this once a second, so persisting a false here would rewrite the
-            // "trained" record every second the offscreen doc had not loaded the head yet.
-            if (r && r.ready) {
-              state.modelReady = true; state.modelError = null;
-              setModelPersonal(r.personal, r.personal === true);
-              setMouseReady(r.mouse, r.mouse === true);
-              applyMouseMeta(r.mouseMeta, r.mouseStale);
-            }
-            else if (r && r.error) { state.modelError = r.error; }
-            reply(statusObj());
-          });
-        });
-        return true; // async reply
-      }
-      reply(statusObj());
+      maybeRefreshOrgConfig(5000);
+      if (account && account.onboarding && account.onboarding.keystrokeTraining && !account.onboarding.keystroke) maybeRefreshOnboarding(8000);
+      reply(statusObj(msg.tabId));
       return true;
+    case "cg:progress":
+      // From a content script: how far this page is toward a first verdict (the icon's two bars).
+      if (sender && sender.tab && sender.tab.id != null) {
+        tabProgress[sender.tab.id] = { ks: Number(msg.ks) || 0, mouse: Number(msg.mouse) || 0 };
+        applyBadgeToTab(sender.tab.id, sender.tab.url);
+      }
+      return;
     case "cg:toggleExclude": {
       var i = config.exclusions.indexOf(msg.origin);
       if (i >= 0) config.exclusions.splice(i, 1);
       else if (msg.origin) config.exclusions.push(msg.origin);
       api.storage.local.set({ cg_exclusions: config.exclusions });
       broadcastConfig();
-      // Immediately grey/restore the toolbar icon on every tab of this site.
-      if (api.tabs && msg.origin) {
-        api.tabs.query({}, function (tabs) {
-          (tabs || []).forEach(function (t) {
-            try { if (t.url && new URL(t.url).origin === msg.origin) applyBadgeToTab(t.id, t.url); } catch (e) {}
-          });
-        });
-      }
+      refreshAllBadges();
       reply({ exclusions: config.exclusions });
-      return true;
-    }
-    case "cg:set-mouse-tracking": {
-      state.mouseTracking = msg.on !== false;
-      api.storage.local.set({ cg_mouse_tracking: state.mouseTracking });
-      if (!state.mouseTracking) {
-        mouseScores = [];                 // drop the rolling vote so it can't lock after being turned off
-        state.mouseVerdict = null;
-      }
-      broadcastConfig();                  // tell content scripts to stop/resume capturing mouse
-      updateBadge();
-      reply({ mouseTracking: state.mouseTracking });
-      return true;
-    }
-    case "cg:set-mouse-sustain": {
-      var pct = parseInt(msg.pct, 10);
-      if (!(pct >= 30 && pct <= 100)) { reply({ mouseSustainPct: state.mouseSustainPct }); return true; }
-      state.mouseSustainPct = pct;
-      state.mousePctUserSet = true;
-      var pr = {}; pr[MOUSE_PCT_KEY] = pct; api.storage.local.set(pr);
-      reply({ mouseSustainPct: state.mouseSustainPct });
       return true;
     }
   }

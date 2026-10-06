@@ -1,0 +1,140 @@
+2026-10-03 09:44:48.444634: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-10-03 09:44:48.476134: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[AR] 10 targets, 200 Aalto negative typists, 40 impostors
+    0 p001: days 5, test 124 win | B accepted 1 (0 retrains) | C accepted 0 (0) | 89 s
+    1 p002: days 7, test 135 win | B accepted 0 (0 retrains) | C accepted 0 (0) | 96 s
+    2 p003: days 6, test 128 win | B accepted 1 (0 retrains) | C accepted 0 (0) | 88 s
+    3: not eligible
+    4 p005: days 8, test 159 win | B accepted 0 (0 retrains) | C accepted 4 (1) | 115 s
+    5 p006: days 7, test 131 win | B accepted 4 (1 retrains) | C accepted 0 (0) | 106 s
+    6 p007: days 6, test 130 win | B accepted 1 (0 retrains) | C accepted 0 (0) | 92 s
+    7 p008: days 6, test 129 win | B accepted 3 (1 retrains) | C accepted 0 (0) | 113 s
+    8 p009: days 6, test 131 win | B accepted 0 (0 retrains) | C accepted 3 (1) | 111 s
+    9 p010: days 4, test 116 win | B accepted 4 (1 retrains) | C accepted 0 (0) | 104 s
+2026-10-03 10:00:19.594501: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-10-03 10:00:19.629377: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[AR] 10 targets, 200 Aalto negative typists, 40 impostors
+   10 p011: days 7, test 139 win | B accepted 0 (0 retrains) | C accepted 4 (1) | 107 s
+   11 p012: days 8, test 157 win | B accepted 1 (0 retrains) | C accepted 2 (0) | 72 s
+   12 p013: days 7, test 141 win | B accepted 0 (0 retrains) | C accepted 4 (1) | 101 s
+   13 p014: days 6, test 132 win | B accepted 2 (0 retrains) | C accepted 0 (0) | 89 s
+   14 p015: days 7, test 143 win | B accepted 0 (0 retrains) | C accepted 2 (0) | 88 s
+   15 p016: days 5, test 126 win | B accepted 2 (0 retrains) | C accepted 0 (0) | 92 s
+   16 p017: days 7, test 122 win | B accepted 0 (0 retrains) | C accepted 4 (1) | 113 s
+   17 p018: days 5, test 123 win | B accepted 3 (1 retrains) | C accepted 0 (0) | 103 s
+   18 p019: days 6, test 132 win | B accepted 2 (0 retrains) | C accepted 1 (0) | 95 s
+   19 p020: days 7, test 134 win | B accepted 0 (0 retrains) | C accepted 2 (0) | 83 s
+2026-10-03 10:16:21.739477: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-10-03 10:16:21.776512: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[AR] 10 targets, 200 Aalto negative typists, 40 impostors
+   20 p021: days 7, test 146 win | B accepted 0 (0 retrains) | C accepted 2 (0) | 94 s
+   21 p022: days 6, test 135 win | B accepted 0 (0 retrains) | C accepted 3 (1) | 84 s
+   22 p023: days 5, test 121 win | B accepted 2 (0 retrains) | C accepted 1 (0) | 82 s
+   23 p024: days 6, test 127 win | B accepted 0 (0 retrains) | C accepted 1 (0) | 94 s
+   24 p025: days 5, test 127 win | B accepted 1 (0 retrains) | C accepted 1 (0) | 80 s
+   25 p026: days 7, test 132 win | B accepted 0 (0 retrains) | C accepted 1 (0) | 75 s
+   26 p027: days 6, test 128 win | B accepted 2 (0 retrains) | C accepted 0 (0) | 94 s
+   27 p028: days 5, test 127 win | B accepted 0 (0 retrains) | C accepted 2 (0) | 74 s
+   28 p029: days 5, test 126 win | B accepted 3 (1 retrains) | C accepted 0 (0) | 102 s
+   29 p030: days 7, test 134 win | B accepted 3 (1 retrains) | C accepted 0 (0) | 96 s
+2026-10-03 10:31:14.622302: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-10-03 10:31:14.659877: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[AR] 10 targets, 200 Aalto negative typists, 40 impostors
+   30 p031: days 5, test 115 win | B accepted 0 (0 retrains) | C accepted 3 (1) | 90 s
+   31 p032: days 4, test 118 win | B accepted 3 (1 retrains) | C accepted 0 (0) | 104 s
+   32 p033: days 7, test 147 win | B accepted 1 (0 retrains) | C accepted 0 (0) | 91 s
+   33 p034: days 7, test 138 win | B accepted 0 (0 retrains) | C accepted 0 (0) | 93 s
+   34 p035: days 7, test 128 win | B accepted 4 (1 retrains) | C accepted 0 (0) | 113 s
+   35 p036: days 5, test 127 win | B accepted 0 (0 retrains) | C accepted 2 (0) | 93 s
+   36 p037: days 6, test 133 win | B accepted 2 (0 retrains) | C accepted 0 (0) | 96 s
+   37 p038: days 7, test 142 win | B accepted 1 (0 retrains) | C accepted 0 (0) | 94 s
+   38 p039: days 7, test 139 win | B accepted 0 (0 retrains) | C accepted 0 (0) | 94 s
+   39 p040: days 6, test 131 win | B accepted 0 (0 retrains) | C accepted 2 (0) | 79 s
+2026-10-03 10:47:19.853073: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-10-03 10:47:19.888999: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[AR] 10 targets, 200 Aalto negative typists, 40 impostors
+   40 p041: days 5, test 116 win | B accepted 4 (1 retrains) | C accepted 0 (0) | 100 s
+   41 p042: days 7, test 137 win | B accepted 1 (0 retrains) | C accepted 0 (0) | 75 s
+   42 p043: days 7, test 135 win | B accepted 2 (0 retrains) | C accepted 0 (0) | 79 s
+   43 p044: days 6, test 128 win | B accepted 0 (0 retrains) | C accepted 3 (1) | 79 s
+   44 p045: days 8, test 159 win | B accepted 1 (0 retrains) | C accepted 0 (0) | 92 s
+   45 p046: days 7, test 136 win | B accepted 2 (0 retrains) | C accepted 0 (0) | 96 s
+   46 p047: days 7, test 145 win | B accepted 2 (0 retrains) | C accepted 0 (0) | 95 s
+   47 p048: days 7, test 147 win | B accepted 0 (0 retrains) | C accepted 3 (1) | 99 s
+   48 p049: days 8, test 160 win | B accepted 0 (0 retrains) | C accepted 2 (0) | 98 s
+   49 p050: days 7, test 134 win | B accepted 0 (0 retrains) | C accepted 3 (1) | 112 s
+2026-10-03 11:03:04.833782: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-10-03 11:03:04.885296: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[AR] 10 targets, 200 Aalto negative typists, 40 impostors
+   50 p051: days 7, test 141 win | B accepted 0 (0 retrains) | C accepted 0 (0) | 88 s
+   51 p052: days 7, test 133 win | B accepted 0 (0 retrains) | C accepted 1 (0) | 94 s
+   52 p053: days 5, test 108 win | B accepted 1 (0 retrains) | C accepted 1 (0) | 87 s
+   53 p054: days 8, test 140 win | B accepted 3 (1 retrains) | C accepted 0 (0) | 106 s
+   54 p055: days 6, test 131 win | B accepted 0 (0 retrains) | C accepted 0 (0) | 94 s
+   55 p056: days 7, test 139 win | B accepted 3 (1 retrains) | C accepted 0 (0) | 103 s
+   56 p057: days 6, test 133 win | B accepted 2 (0 retrains) | C accepted 0 (0) | 74 s
+   57 p058: days 7, test 130 win | B accepted 1 (0 retrains) | C accepted 3 (1) | 111 s
+   58 p059: days 7, test 146 win | B accepted 0 (0 retrains) | C accepted 6 (2) | 133 s
+   59 p060: days 7, test 132 win | B accepted 6 (2 retrains) | C accepted 0 (0) | 123 s
+2026-10-03 11:20:19.391281: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-10-03 11:20:19.432675: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[AR] 10 targets, 200 Aalto negative typists, 40 impostors
+   60 p061: days 6, test 127 win | B accepted 1 (0 retrains) | C accepted 0 (0) | 91 s
+   61 p062: days 7, test 136 win | B accepted 2 (0 retrains) | C accepted 0 (0) | 93 s
+   62 p063: days 5, test 123 win | B accepted 4 (1 retrains) | C accepted 0 (0) | 106 s
+   63 p064: days 6, test 131 win | B accepted 6 (2 retrains) | C accepted 0 (0) | 115 s
+   64 p065: days 8, test 162 win | B accepted 3 (1 retrains) | C accepted 1 (0) | 114 s
+   65 p066: days 7, test 140 win | B accepted 1 (0 retrains) | C accepted 0 (0) | 95 s
+   66 p067: days 7, test 132 win | B accepted 1 (0 retrains) | C accepted 2 (0) | 87 s
+   67 p068: days 7, test 137 win | B accepted 2 (0 retrains) | C accepted 1 (0) | 80 s
+   68 p069: days 6, test 135 win | B accepted 0 (0 retrains) | C accepted 3 (1) | 103 s
+   69 p070: days 7, test 130 win | B accepted 0 (0 retrains) | C accepted 2 (0) | 96 s
+2026-10-03 11:36:57.292731: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-10-03 11:36:57.326067: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[AR] 10 targets, 200 Aalto negative typists, 40 impostors
+   70 p071: days 7, test 148 win | B accepted 3 (1 retrains) | C accepted 0 (0) | 102 s
+   71 p072: days 5, test 121 win | B accepted 1 (0 retrains) | C accepted 3 (1) | 107 s
+   72 p073: days 7, test 141 win | B accepted 0 (0 retrains) | C accepted 3 (1) | 114 s
+   73 p074: days 7, test 151 win | B accepted 0 (0 retrains) | C accepted 1 (0) | 102 s
+   74 p075: days 5, test 124 win | B accepted 3 (1 retrains) | C accepted 1 (0) | 106 s
+   75 p076: days 5, test 127 win | B accepted 0 (0 retrains) | C accepted 3 (1) | 108 s
+   76 p077: days 7, test 141 win | B accepted 0 (0 retrains) | C accepted 0 (0) | 95 s
+   77 p078: days 7, test 141 win | B accepted 2 (0 retrains) | C accepted 0 (0) | 94 s
+   78 p079: days 6, test 129 win | B accepted 6 (2 retrains) | C accepted 0 (0) | 130 s
+   79 p080: days 6, test 128 win | B accepted 2 (0 retrains) | C accepted 0 (0) | 89 s
+2026-10-03 11:54:42.954731: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-10-03 11:54:42.987995: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[AR] 10 targets, 200 Aalto negative typists, 40 impostors
+   80 p081: days 7, test 138 win | B accepted 3 (1 retrains) | C accepted 0 (0) | 106 s
+   81 p082: days 4, test 152 win | B accepted 0 (0 retrains) | C accepted 4 (1) | 80 s
+   82 p083: days 4, test 136 win | B accepted 0 (0 retrains) | C accepted 3 (1) | 100 s
+   83 p084: days 5, test 125 win | B accepted 3 (1 retrains) | C accepted 0 (0) | 108 s
+   84 p085: days 7, test 135 win | B accepted 3 (1 retrains) | C accepted 0 (0) | 111 s
+   85 p086: days 5, test 122 win | B accepted 3 (1 retrains) | C accepted 0 (0) | 107 s
+   86 p087: days 6, test 137 win | B accepted 2 (0 retrains) | C accepted 1 (0) | 92 s
+   87 p088: days 5, test 116 win | B accepted 4 (1 retrains) | C accepted 0 (0) | 91 s
+   88 p089: days 7, test 137 win | B accepted 3 (1 retrains) | C accepted 0 (0) | 110 s
+   89 p090: days 7, test 130 win | B accepted 1 (0 retrains) | C accepted 0 (0) | 97 s
+2026-10-03 12:11:42.537883: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-10-03 12:11:42.617042: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[AR] 9 targets, 200 Aalto negative typists, 40 impostors
+   90 p091: days 6, test 129 win | B accepted 1 (0 retrains) | C accepted 0 (0) | 67 s
+   91 p092: days 6, test 153 win | B accepted 2 (0 retrains) | C accepted 0 (0) | 88 s
+   92 p093: days 5, test 123 win | B accepted 1 (0 retrains) | C accepted 0 (0) | 91 s
+   93 p094: days 5, test 119 win | B accepted 0 (0 retrains) | C accepted 0 (0) | 92 s
+   94 p095: days 4, test 120 win | B accepted 2 (0 retrains) | C accepted 0 (0) | 86 s
+   95 p097: days 4, test 117 win | B accepted 0 (0 retrains) | C accepted 0 (0) | 86 s
+   96 p098: days 6, test 133 win | B accepted 0 (0 retrains) | C accepted 2 (0) | 80 s
+   97 p099: days 6, test 139 win | B accepted 0 (0 retrains) | C accepted 1 (0) | 96 s
+   98 p100: days 8, test 143 win | B accepted 0 (0 retrains) | C accepted 1 (0) | 108 s
+[AR] ALL BATCHES DONE 2026-10-03T12:25:11Z

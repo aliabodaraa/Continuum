@@ -1,65 +1,83 @@
 # Continuum Guard — browser extension
 
-Browser-wide continuous authentication (see `../docs/EXTENSION.md` for the full design).
-Cross-browser via the standard WebExtensions API (`browser`/`chrome`). This folder is the
-**P0 skeleton**: it proves on-device capture works across every site.
+Continuous authentication on every website: the extension records how you type and move the mouse,
+and your **Continuum server** decides whether it is still you. When the server asks for a step-up,
+every tab locks until you verify with your passkey.
 
-## What P0 does
-- Injects a content script on **every page** that captures keystroke **timing** and builds
-  digraph feature windows `[id1, id2, dwell1, dwell2, dd, ud]` **on-device**, in the exact
-  format the Continuum model scores (`src/features.js` mirrors the server).
-- Forwards only finished **windows** (timing numbers) to the background worker — the typed
-  **characters never leave the page**. Password fields are key-masked; hidden fields ignored.
-- A **popup** shows live status, a windows-captured counter, an **on/off** toggle, and a
-  per-site **exclude** control (all persisted).
+The extension is a client of the server, exactly like a website that embeds the SDK (`sdk/guard.js`).
+It scores nothing itself. The earlier on-device version (TensorFlow.js models in the browser,
+samples tied to the Chrome Google account) is kept as git tag `extension-on-device-v1`; the thesis's
+on-device experiments (G, I) were run with it.
 
-Nothing is sent to any server yet — this phase is pure local capture.
+## Who uses it, and how they sign in
+
+A **tenant** is an organisation or an app, never a person. People sign in to a tenant:
+
+| | Who | How they sign in |
+|---|---|---|
+| **Personal** | someone with no organisation | a Continuum account (email + passkey), on the gateway's built-in `pk_personal` tenant |
+| **Organisation** | a user of an app or company that runs Continuum (e.g. the demo) | "Sign in with my organisation": the organisation code (its site key), then **its own** sign-in page |
+| **Research study** | a study participant | set by the experimenter on the settings page: see [`STUDY_MODE.md`](STUDY_MODE.md) |
+
+Sign-in is OAuth 2.0's authorization-code flow with PKCE, the gateway being the authorization server
+(`services/gateway/server.js`, "EXTENSION SIGN-IN"). The extension never sees a password or a tenant
+secret: it keeps only a refresh token, revoked at sign-out. An organisation's user who already enrolled
+in the organisation's app is the **same** Continuum user in the extension, so their samples are reused.
+A passkey, though, belongs to the website it was made on: step-ups run on the gateway's pages, so such a
+user adds one passkey there, once, at the first enrolment.
+
+Organisations register themselves in the **developer console** (`<gateway>/console.html`): they get a
+site key and a secret, list their websites, may allow the extension (giving the address of their
+sign-in page for it: `/continuum/link` with `@continuum/node`), and wait for the operator's approval.
+The operator (whoever runs the gateway) approves or revokes them on `<gateway>/operator.html`, which
+opens only on the gateway's own machine and signs in with `GATEWAY_ADMIN_KEY`.
+
+## What leaves the browser
+
+- **Typing:** the tail of key events (key codes and timings, up to 1,400) at each new window, and the
+  typed length. The text is not sent as text, but the order of key codes is, and it could be rebuilt.
+- **Mouse:** numbered windows of movement features, every 1.6 s while the pointer moves.
+- **Never:** anything from a password field (no event at all), hidden fields, excluded sites, or
+  anything while recording is paused (popup, or Alt+Shift+P).
 
 ## Load it (unpacked)
-**Chrome / Edge / Brave:**
-1. Go to `chrome://extensions` → enable **Developer mode**.
-2. **Load unpacked** → select this `extension/` folder.
-3. Open any site, type a few sentences, click the toolbar icon → watch **Windows captured** climb.
 
-**Firefox:**
-1. Go to `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on**.
-2. Select `extension/manifest.json`.
-3. Same test.
+1. `chrome://extensions` → **Developer mode** → **Load unpacked** → this `extension/` folder.
+2. The settings page opens. Check the server address (`http://localhost:8080` for the local stack),
+   then choose **Personal** or **My organisation**.
+3. Enrolment opens by itself (passkey, five typing samples, eight mouse samples) and trains on the server.
+4. The popup then shows the live verdict of each channel (it can be hidden in the settings).
 
-Verify: typing raises the counter; toggling **off** stops it; **Exclude this site** stops
-capture on that origin only.
+The toolbar icon (Chrome allows one badge, so with the live verdict shown the icon itself becomes **two bars**):
+**left = typing, right = mouse**. Each fills while the page collects evidence (typing: 20 windows, about 240
+keystrokes; mouse: 60 windows, about 17 s of movement), then turns **green** when the server says it is you or
+**red** when suspicious; hovering shows both counts. The logo comes back with a badge for **🔒** locked, **II**
+paused, **REC** the research study, **•** recording with the live verdict hidden, and on pages that cannot be
+recorded (Chrome's own pages, the extension's pages, the gateway).
+
+An unpacked extension's id depends on its folder. The gateway must know it (`CONTINUUM_EXTENSION_ID` in
+`continuum/.env`) for the personal and demo tenants to admit the extension; the settings page shows it.
 
 ## Layout
+
 ```
-manifest.json            # MV3, <all_urls>, cross-browser (browser_specific_settings for Firefox)
-src/features.js          # on-device digraph windowing (mirrors ca-service/lib/keystrokeSecurity.js)
-src/content.js           # capture on every page; mask passwords; exclusions; emit windows only
-src/background.js        # aggregate windows, hold config, serve the popup (scoring plugs in at P2)
-src/popup/               # status + on/off + per-site exclusion
+manifest.json          MV3; storage, tabs, scripting; <all_urls>
+src/features.js        keystroke windowing (same windows as ca-service), to know when a new window formed
+src/features-mouse.js  mouse windows (same features as the SDK and ca-service)
+src/content.js         capture on every page; the lock overlay; relays the gateway pages' results
+src/background.js      the session with the gateway, checks, verdicts, lock, sign-in (PKCE), badge
+src/options.*          settings: sign in / out, display, research study
+src/popup/             account, live verdict, pause, per-site exclusion
+scripts/e2e_headless_connect.mjs   sign-in, console and security checks (headless Chrome)
+scripts/e2e_headless_study.mjs     the research study end to end (headless Chrome)
 ```
 
-## Roadmap (from docs/EXTENSION.md)
-- **P0 (this):** skeleton + on-device capture. ✅
-- **P1:** per-profile identity + onboarding (collect samples → train the user's model server-side).
-- **P2 (on-device scoring): built.** TF.js can't run in a service worker (no DOM), so the
-  model runs in an **offscreen document** (`src/offscreen.html` + `offscreen.js`) that hosts
-  `vendor/tf.min.js` + the graph model (`model/ws50-gru/`). The service worker keeps the
-  rolling packet + verdict + config, delegates single-window scoring to the offscreen doc, and
-  applies the Lu et al. packet vote (`src/scoring.js`) → live verdict in the popup. Verified in
-  Node: model runs via `executeAsync` (GRU has a dynamic loop op), valid softmax, ~80 ms/window
-  on the CPU backend; decision logic unit-tested.
-  - *Chromium-first:* the offscreen API is Chrome/Edge/Brave only. Capture works on Firefox;
-    Firefox scoring needs a different TF.js host (later — e.g. a hidden tab).
-  - **Next (P1):** swap the base model for the user's personalised one after enrollment — same
-    loop, just a different `ContinuumScoring.load()` in the offscreen doc.
-- **P3:** step-up — Windows Hello / Touch ID via a fixed Continuum relying-party page (Option B).
-- **P4:** consent screen, richer exclusions, store-listing polish.
+## Tests
 
-## Privacy
-The model authenticates by **how** you type (timing), never **what** you type. Scoring is
-**on-device** (P2), so keystrokes/verdicts don't stream to a server; only enrollment (once) and
-the step-up passkey handshake use the network. See `../docs/EXTENSION.md` §6.
+Both run against the local stack in a throwaway headless Chrome profile and clean up after themselves:
 
-**User-study mode is the exception** (options page, experimenter only): the extension then sends key
-codes, timings and mouse windows to the Continuum server, which scores and logs them for the study.
-The typed text itself is still not sent. See [`STUDY_MODE.md`](STUDY_MODE.md).
+```
+node extension/scripts/e2e_headless_connect.mjs
+STUDY_LOGGING=1 docker compose up -d --no-deps ca-service   # once, for the study test
+node extension/scripts/e2e_headless_study.mjs
+```

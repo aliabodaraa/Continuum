@@ -50,7 +50,8 @@ for (const f of fs.readdirSync(IN).filter((n) => n.endsWith(".jsonl")).sort()) {
     }
     const overwhelming = s.length >= ks.WARMUP_FAST_MIN_WINDOWS && low >= Math.ceil(s.length * ks.WARMUP_FAST_FRACTION);
     if (overwhelming !== !!x.overwhelmingImpostor) fail(f, d, `overwhelming ${overwhelming} vs logged ${x.overwhelmingImpostor}`);
-    const warmup = x.windowTotal <= ks.RECENT_WINDOW_COUNT && !overwhelming && !x.unverifiable && !x.pastePolicy && !x.degenerateInput;
+    // the organisation's packet, logged with each decision since 2026-10-05 (20 before)
+    const warmup = x.windowTotal <= (x.packetWindows || ks.RECENT_WINDOW_COUNT) && !overwhelming && !x.unverifiable && !x.pastePolicy && !x.degenerateInput;
     const effective = (!warmup && !!x.packetSuspicious) || !!x.degenerateInput;
     const strong = overwhelming || !!x.unverifiable || !!x.pastePolicy || !!x.degenerateInput;
     const challenge = !!x.hasPasskey && effective && (strong || x.recentSuspicious >= x.suspiciousMin);

@@ -71,6 +71,16 @@ services:
       # REQUIRED — no shared fallback, or every deployment would sign with the
       # same key (verdicts forgeable across tenants). Generate: openssl rand -hex 32
       CA_SIGNING_SECRET: ${CA_SIGNING_SECRET:?Set CA_SIGNING_SECRET in .env (openssl rand -hex 32)}
+      # Defaults for every organisation's protection (the operator page and each organisation's console
+      # override them; services/gateway/settings.js). Keep the same values on the gateway.
+      ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
+      MONITOR_EXCLUDE_TYPES: ${MONITOR_EXCLUDE_TYPES:-hidden}
+      CONTINUUM_PANEL: ${CONTINUUM_PANEL:-show}
+      CONTINUUM_KEYSTROKE: ${CONTINUUM_KEYSTROKE:-on}
+      CONTINUUM_MOUSE: ${CONTINUUM_MOUSE:-on}
+      ADAPTIVE_RETRAINING: ${ADAPTIVE_RETRAINING:-on}
+      ADAPTIVE_MIN_GAP_HOURS: ${ADAPTIVE_MIN_GAP_HOURS:-3}
+      KEYSTROKE_DECISION_WINDOWS: ${KEYSTROKE_DECISION_WINDOWS:-20}
     expose: ["4100"]
     # The only service on both networks — the sole path to the model.
     networks: [internal, model]
@@ -137,6 +147,26 @@ services:
       # Gates tenant registration (X-Admin-Key). REQUIRED: unset, registration would be open
       # to anyone who can reach the gateway. Generate: openssl rand -hex 32
       GATEWAY_ADMIN_KEY: ${GATEWAY_ADMIN_KEY:?Set GATEWAY_ADMIN_KEY in .env (openssl rand -hex 32)}
+      # Where the operator page and admin API answer at all (default: this machine only;
+      # see DEPLOY.md), whether console webhooks may be private addresses (testing only),
+      # and whether console sign-ups skip the operator's approval.
+      GATEWAY_OPERATOR_HOSTS: ${GATEWAY_OPERATOR_HOSTS:-}
+      # Defaults for every organisation's protection (the operator page and each organisation's console
+      # override them; services/gateway/settings.js). Keep the same values on ca-service.
+      ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
+      MONITOR_EXCLUDE_TYPES: ${MONITOR_EXCLUDE_TYPES:-hidden}
+      CONTINUUM_PANEL: ${CONTINUUM_PANEL:-show}
+      CONTINUUM_KEYSTROKE: ${CONTINUUM_KEYSTROKE:-on}
+      CONTINUUM_MOUSE: ${CONTINUUM_MOUSE:-on}
+      ADAPTIVE_RETRAINING: ${ADAPTIVE_RETRAINING:-on}
+      ADAPTIVE_MIN_GAP_HOURS: ${ADAPTIVE_MIN_GAP_HOURS:-3}
+      KEYSTROKE_DECISION_WINDOWS: ${KEYSTROKE_DECISION_WINDOWS:-20}
+      # Where browsers reach the gateway (its console, operator and extension pages, and the
+      # passkeys made on them), and the Continuum Guard extension's id.
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
+      CONTINUUM_EXTENSION_ID: ${CONTINUUM_EXTENSION_ID:-}
+      GATEWAY_ALLOW_PRIVATE_WEBHOOKS: ${GATEWAY_ALLOW_PRIVATE_WEBHOOKS:-0}
+      GATEWAY_AUTO_APPROVE_TENANTS: ${GATEWAY_AUTO_APPROVE_TENANTS:-0}
       # Comma-separated tenant API keys (blank = open, for local dev only).
       GATEWAY_API_KEYS: ${GATEWAY_API_KEYS:-}
     ports:

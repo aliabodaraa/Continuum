@@ -65,13 +65,14 @@ services:
       PORT: 4000
       RP_ID: localhost
       ORIGIN: http://localhost:3000
-      # Guards the MANAGEMENT endpoints (/v1/users/*) only. The WebAuthn ceremony
-      # (/v1/register/*, /v1/auth/*) stays open because the browser-served /ext/*
-      # pages call it and cannot hold a server key; WebAuthn binds those to a
-      # server-issued challenge and the caller's origin instead.
+      # Every route but /health needs it. Only the gateway and the demo call this service,
+      # both server-side; no browser does since the extension's step-up moved to the
+      # gateway's own pages.
       PASSKEY_API_KEY: ${PASSKEY_API_KEY:-dev-passkey-service-key}
-    ports:
-      - "4000:4000"   # browser-facing: the extension's fixed-RP step-up pages (/ext/*)
+    # NOT published to the host (it was, on :4000, for the extension's old /ext/* pages).
+    # Reachable only on `internal`, from the gateway and the demo.
+    expose:
+      - "4000"
     networks: [internal]
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
@@ -119,6 +120,15 @@ services:
       # When on, requests that carry a study context are logged in the study_* tables, and model
       # folders are hashed through the read-only /model-store mount below.
       STUDY_LOGGING: ${STUDY_LOGGING:-0}
+      # Defaults for every organisation's protection (each one can change them in its console, and the
+      # operator on the operator page; see services/gateway/settings.js). panel: show|hide;
+      # keystroke / mouse / adaptive retraining: on|off; the minimum hours between two accepted samples.
+      CONTINUUM_PANEL: ${CONTINUUM_PANEL:-show}
+      CONTINUUM_KEYSTROKE: ${CONTINUUM_KEYSTROKE:-on}
+      CONTINUUM_MOUSE: ${CONTINUUM_MOUSE:-on}
+      ADAPTIVE_RETRAINING: ${ADAPTIVE_RETRAINING:-on}
+      ADAPTIVE_MIN_GAP_HOURS: ${ADAPTIVE_MIN_GAP_HOURS:-3}
+      KEYSTROKE_DECISION_WINDOWS: ${KEYSTROKE_DECISION_WINDOWS:-20}
     # The ONLY service attached to both `internal` and `model` — it is the sole path in.
     networks: [internal, model]
     healthcheck:
@@ -160,10 +170,35 @@ services:
       GATEWAY_SESSION_SECRET: ${GATEWAY_SESSION_SECRET:-dev-gateway-session-secret}
       CA_API_URL: http://ca-service:4100
       PASSKEY_API_URL: http://passkey-service:4000
-      # Onboarding strategy handed to gateway-mode SDKs at session bootstrap.
+      # Defaults for every organisation's protection; the operator page and each organisation's console
+      # override them (services/gateway/settings.js), and the gateway signs the result into its assertions.
       ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
+      MONITOR_EXCLUDE_TYPES: ${MONITOR_EXCLUDE_TYPES:-hidden}
+      CONTINUUM_PANEL: ${CONTINUUM_PANEL:-show}
+      CONTINUUM_KEYSTROKE: ${CONTINUUM_KEYSTROKE:-on}
+      CONTINUUM_MOUSE: ${CONTINUUM_MOUSE:-on}
+      ADAPTIVE_RETRAINING: ${ADAPTIVE_RETRAINING:-on}
+      ADAPTIVE_MIN_GAP_HOURS: ${ADAPTIVE_MIN_GAP_HOURS:-3}
+      KEYSTROKE_DECISION_WINDOWS: ${KEYSTROKE_DECISION_WINDOWS:-20}
       # CAEP: push signed risk-change events to the demo tenant's receiver.
       DEMO_WEBHOOK_URL: http://web:3000/continuum/events
+      # Where browsers reach the gateway: its pages (console, extension sign-in, study) and
+      # every passkey made there belong to this origin.
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
+      # Tenant registration by the operator, and approval of console sign-ups (X-Admin-Key).
+      # Empty = open, with a warning in the log; set it in .env.
+      GATEWAY_ADMIN_KEY: ${GATEWAY_ADMIN_KEY:-}
+      # Where the operator page and admin API answer at all (default: this machine only;
+      # see DEPLOY.md), whether console webhooks may be private addresses (testing only),
+      # and whether console sign-ups skip the operator's approval.
+      GATEWAY_OPERATOR_HOSTS: ${GATEWAY_OPERATOR_HOSTS:-}
+      GATEWAY_ALLOW_PRIVATE_WEBHOOKS: ${GATEWAY_ALLOW_PRIVATE_WEBHOOKS:-0}
+      GATEWAY_AUTO_APPROVE_TENANTS: ${GATEWAY_AUTO_APPROVE_TENANTS:-0}
+      # The Continuum Guard extension's id (chrome://extensions): the personal and demo
+      # tenants admit it, and the console offers it to organisations.
+      CONTINUUM_EXTENSION_ID: ${CONTINUUM_EXTENSION_ID:-}
+      # The demo's sign-in page for the extension (@continuum/node's /continuum/link).
+      DEMO_SIGNIN_URL: http://localhost:3000/continuum/link
       # The gateway relays to both downstream services, so it must present both keys —
       # otherwise activating them 401s every SDK call it forwards.
       CA_API_KEY: ${CA_API_KEY:-dev-ca-service-key}
@@ -213,6 +248,9 @@ services:
       CONTINUUM_JWKS_URI: http://gateway:8080/.well-known/jwks.json
       # Resolve the unified Continuum id for the app's own CA calls (identity unification).
       GATEWAY_URL: http://gateway:8080
+      # The gateway as BROWSERS reach it: /continuum/link sends the user back there after
+      # signing in to the extension.
+      CONTINUUM_GATEWAY_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
       # caClient.js / passkeyClient.js already send these as X-Api-Key when set.
       CA_API_KEY: ${CA_API_KEY:-dev-ca-service-key}
       PASSKEY_API_KEY: ${PASSKEY_API_KEY:-dev-passkey-service-key}

@@ -42,3 +42,10 @@ services/model-api/api.py -text
 services/model-api/loso.py -text
 # Amendment L-2 hashes the deployed mouse scaler and hold-out list.
 artifacts/mouse-fcn-a5/*.json -text
+# Experiment AR (phase 4): frozen pre-registration, the code it hashes, and its results.
+artifacts/phase4/PREREGISTRATION_AR.md -text
+artifacts/phase4/PREREGISTRATION_AR.sha256 -text
+services/model-api/analysis/phase4/*.py -text
+artifacts/phase4/*.json -text
+artifacts/phase4/parts/*.json -text
+artifacts/phase4/smoke/*.json -text

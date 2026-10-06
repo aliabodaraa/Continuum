@@ -79,9 +79,7 @@
           });
           var d = await r.json();
           if (r.ok) {
-            // A verified submit is also a clean sample — keep learning the rhythm.
-            if (window.Continuum && window.Continuum.contribute) window.Continuum.contribute().catch(function () {});
-            show(true, "✓ Submitted (risk: " + (d.verdict && d.verdict.risk) + ") — sample added to your model");
+            show(true, "✓ Submitted (risk: " + (d.verdict && d.verdict.risk) + ")");
           }
           else if (r.status === 403) show(false, "⛔ Blocked — behavior looks suspicious. Verify with your passkey.");
           else if (r.status === 401) show(false, "🔒 No verdict yet — type a few more lines first.");

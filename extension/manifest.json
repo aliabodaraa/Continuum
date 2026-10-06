@@ -1,15 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Continuum Guard",
-  "version": "0.1.0",
-  "description": "Continuous authentication by keystroke & mouse rhythm \u2014 on-device, privacy-first.",
+  "version": "0.2.0",
+  "description": "Continuous authentication by keystroke and mouse rhythm, scored by your Continuum server.",
   "permissions": [
     "storage",
     "tabs",
-    "offscreen",
-    "scripting",
-    "identity",
-    "identity.email"
+    "scripting"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -31,7 +28,6 @@
       "js": [
         "src/features.js",
         "src/features-mouse.js",
-        "src/features-mouse-actions.js",
         "src/content.js"
       ],
       "run_at": "document_start",
@@ -56,11 +52,11 @@
     }
   },
   "commands": {
-    "toggle-study-pause": {
+    "toggle-pause": {
       "suggested_key": {
         "default": "Alt+Shift+P"
       },
-      "description": "Continuum study: pause or resume recording"
+      "description": "Pause or resume recording"
     }
   }
 }

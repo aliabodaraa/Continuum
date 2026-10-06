@@ -205,79 +205,37 @@
         <div class="title">Continuum Guard</div>
         <div class="sub-title">continuous authentication</div>
       </div>
-      <span class="dot" id="dot"></span>
+      <span class="dot off" id="dot"></span>
     </header>
 
-    <!-- User-study mode (E4): who is recorded, whether it is recording, and the participant's pause. -->
-    <div id="studyPanel" class="card" style="display:none">
-      <div class="row"><span>Continuum study</span><span class="val" id="studyWho">…</span></div>
-      <div id="studyRec" style="padding:12px 0 6px;font-weight:800;font-size:15px">…</div>
-      <button id="studyPause" style="width:100%;margin:6px 0 4px;padding:11px;border:0;border-radius:10px;font:700 14px system-ui;cursor:pointer;color:#fff;background:#dc2626">Pause recording</button>
-      <div id="studyHint" style="color:var(--muted);font-size:12px;line-height:1.5;padding:4px 0 10px">Pause before you type anything private. While paused, nothing you type or do with the mouse is recorded, on any site. Shortcut: Alt+Shift+P.</div>
-      <div id="studyErr" style="display:none;color:#dc2626;font-size:12px;padding-bottom:8px"></div>
-    </div>
-
-    <div id="noAccount" class="card" style="display:none">
-      <div style="padding:12px 0 4px;font-weight:700">🔒 Sign in to Chrome to activate</div>
+    <!-- nobody signed in: nothing is captured -->
+    <div id="setupCard" class="card" style="display:none">
+      <div style="padding:12px 0 4px;font-weight:700">Sign in to start</div>
       <div style="padding-bottom:12px;color:var(--muted);font-size:12px;line-height:1.5">
-        Continuum Guard links your samples to whichever Google account this browser is signed
-        into. Sign in via <b>chrome://settings/people</b>, then reopen this popup.
+        Continuum Guard checks your typing and mouse rhythm on every website. Sign in with a personal
+        Continuum account or your organisation&#39;s account first.
       </div>
+      <button id="setupBtn" class="btn-keys" style="margin-bottom:12px">Open settings</button>
     </div>
 
-    <div id="mainPanel">
-      <div id="acctLine" class="sub-title" style="display:none;margin:-8px 0 12px">…</div>
+    <div id="mainPanel" style="display:none">
+      <div id="acctLine" class="sub-title" style="margin:-4px 0 10px">…</div>
       <div id="verdict">…</div>
 
-      <div class="card">
-        <div class="row"><span>Status</span><span class="val" id="state">…</span></div>
+      <div class="card" id="verdictCard">
+        <div class="row" id="rowKeys"><span>⌨️ Typing</span><span class="val" id="keys">…</span></div>
+        <div class="row" id="rowMouse"><span>🖱️ Mouse</span><span class="val" id="mouse">…</span></div>
         <div class="row"><span>This site</span><span class="val" id="site">…</span></div>
-        <div class="row"><span>Your profile</span><span class="val" id="profile">…</span></div>
       </div>
 
-      <div class="sect" id="sectKeys">
-        <button class="sect-head" id="headKeys" aria-expanded="true" aria-controls="bodyKeys">
-          <span class="chev">▶</span><span>⌨️ Typing</span><span class="sect-sum" id="sumKeys">…</span>
-        </button>
-        <div class="sect-body" id="bodyKeys">
-          <div class="sect-inner">
-            <div class="sect-pad">
-              <div class="row" id="rowModel"><span>Model</span><span class="val" id="model">…</span></div>
-              <div class="row" id="rowSteps"><span>Steps → 1st window</span><span class="val" id="steps">0/50</span></div>
-              <div class="row" id="rowWins"><span>Windows scored</span><span class="val" id="wins">0</span></div>
-              <div class="row" id="rowKeySamples" style="display:none"><span>Trained on</span><span class="val" id="keySamples">…</span></div>
-              <button id="enrollKeys" class="btn-keys">⌨️ Train typing</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="sect" id="sectMouse">
-        <button class="sect-head" id="headMouse" aria-expanded="true" aria-controls="bodyMouse">
-          <span class="chev">▶</span><span>🖱️ Mouse</span><span class="sect-sum" id="sumMouse">…</span>
-        </button>
-        <div class="sect-body" id="bodyMouse">
-          <div class="sect-inner">
-            <div class="sect-pad">
-              <div class="row" id="rowMouse"><span>Verdict</span><span class="val" id="mouse">…</span></div>
-              <div class="row" id="rowMouseTrack" style="display:none"><span>Mouse tracking</span><label class="switch"><input type="checkbox" id="mouseTrackToggle" /><span class="slider"></span></label></div>
-              <div class="row" id="rowMouseSens" style="display:none"><span>Lock threshold</span><span class="ctrl"><input type="range" id="mouseSensRange" min="30" max="100" step="5" title="For a k-of-n vote profile: percent of recent mouse windows that must fall below your personal threshold before the page locks. Lower = locks more easily; higher = stricter. Hidden for the current average-of-60 rule." style="width:104px" /><span class="val" id="mouseSensVal" style="min-width:32px">50%</span></span></div>
-              <div class="hint" id="mouseSensHint" style="display:none">…</div>
-              <div class="row" id="rowMouseSamples" style="display:none"><span>Trained on</span><span class="val" id="mouseSamples">…</span></div>
-              <button id="enrollMouse" class="btn-mouse">🖱️ Train mouse</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
+      <button id="enrolBtn" class="btn-keys" style="display:none;margin-bottom:9px">Finish enrolment</button>
+      <button id="pauseBtn" style="background:#dc2626">Pause recording</button>
+      <div class="hint" style="padding-top:6px">Pause before you type anything private: nothing is recorded, on any site, until you resume. Shortcut: Alt+Shift+P.</div>
+      <div id="errLine" style="display:none;color:var(--warn-text);font-size:11.5px;padding:2px 0 6px"></div>
+      <div class="gap"></div>
       <button id="exclude" class="btn-ghost">…</button>
       <div class="gap"></div>
-      <button id="openSettings" class="btn-ghost">⚙️ Passkey service URL…</button>
-      <div id="passkeyLine" style="text-align:center;margin-top:8px;display:none">
-        <a href="#" id="regPasskey" class="pk-link">🔑 Set up / re-register passkey</a>
-      </div>
-
-      <div class="note" id="note">Monitoring turns on automatically once you're trained. Keystroke &amp; mouse timing is processed <b>on-device</b> — nothing you type or click leaves your browser.</div>
+      <button id="openSettings" class="btn-ghost">Settings</button>
     </div>
     <script src="popup.js"></script>
   </body>

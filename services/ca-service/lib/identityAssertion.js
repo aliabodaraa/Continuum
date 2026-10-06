@@ -59,7 +59,7 @@ function verifyRS256(token, jwk) {
 }
 
 /**
- * Returns { tenantId, principalId } for a valid assertion, or throws.
+ * Returns { tenantId, principalId, settings } for a valid assertion, or throws.
  * Never falls back to anything the caller supplied.
  */
 async function verifyIdentityAssertion(token) {
@@ -89,7 +89,9 @@ async function verifyIdentityAssertion(token) {
   if (payload.iat && now - payload.iat > MAX_AGE_SEC) throw new Error("too old");
   if (!payload.tenant_id || payload.sub == null) throw new Error("incomplete claims");
 
-  return { tenantId: String(payload.tenant_id), principalId: Number(payload.sub) };
+  // `cfg`: the organisation's effective app settings, signed by the gateway (lib/appSettings.js).
+  return { tenantId: String(payload.tenant_id), principalId: Number(payload.sub),
+           settings: payload.cfg && typeof payload.cfg === "object" ? payload.cfg : null };
 }
 
 /**

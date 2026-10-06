@@ -45,6 +45,26 @@ Responses from `requireTrusted`:
 const v = guard.verify(token); // { ok, userId, risk, modality, issuedAt, expiresAt }
 ```
 
+### Sign-in for the Continuum Guard browser extension
+
+The one-line form (`app.use(require("@continuum/node")({ secret }))`) also serves
+`GET /continuum/link`. It lets your users sign in to the Continuum Guard
+extension with their account on **your** site, so the extension uses the same
+Continuum user (and the same enrolled samples) as your app:
+
+1. In the Continuum console (`<gateway>/console.html`), allow the extension for
+   your organisation and give `https://your-app.com/continuum/link` as its sign-in
+   page.
+2. Set `CONTINUUM_GATEWAY_URL` (or the `gatewayUrl` option) to the gateway's
+   public address.
+
+A user who is not signed in is sent to your login page first (`loginUrl`,
+default `/login.html`, with `?next=/continuum/link?...`: return there after
+login). A signed-in user is sent back to the gateway with an identity token
+bound to that one sign-in and valid for 2 minutes. The extension never sees
+the password or your secret. Options: `gatewayUrl`, `loginUrl`, `userName`
+(`req => display name`; default: `req.user.email`/`name`, `req.session.username`).
+
 ## Why signed tokens
 An attacker can simply not run the client SDK. Enforcement must therefore live
 on the server and rest on a signature the client cannot forge. The token is

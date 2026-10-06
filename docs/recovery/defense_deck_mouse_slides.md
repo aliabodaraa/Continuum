@@ -1,5 +1,7 @@
 # Defense deck: corrected mouse slides (35, 46, 47, 48)
 
+> **Status 26 Sep 2026: applied, and partly superseded.** These corrections are in the v2 decks. Since 26 Sep the live mouse method is **F2** (frozen network + per-user logistic head, 20deb53), with the same rule (20th percentile of leave-one-sample-out scores, 33 of 60). The S1 numbers below stay correct as the rule deployed 23–26 Sep on lockbox 1; the decks label them that way. The F2 numbers are on the new slide 48a (short deck: 17a): SapiMouse per-user AUC 0.964, EER 9.1%, 96.1% of impostor runs caught at 0.48 prompts/min (19 held-out users, stage D); Bogazici 0.743, 32.9%, 72.4% at 0.98/min (stage C). Sources: `RESULTS_L_stageD.md`, `RESULTS_L_stageC.md`.
+
 **What changes, and why**
 
 - **The 0.25 cutoff goes.** Slide 48 marks 0.25 as "adopted" and says it "cannot be accused of being tuned to flatter the result". 0.25 was picked after seeing the results, so that claim can't stay.

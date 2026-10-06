@@ -83,6 +83,9 @@ services/gateway/gateway-verdict-key.pem
 services/gateway/gateway-identity-key.pem
 services/gateway/tenants.json
 services/gateway/identity.json
+services/gateway/accounts.json
+services/gateway/audit.jsonl
+services/gateway/settings.json
 services/gateway/*.json.tmp
 
 # ─── Data migration snapshots (biometric — never push to a remote) ───
@@ -132,3 +135,6 @@ artifacts/phase3/smoke/
 # Protocol L stage C: per-user models and smoke-test outputs (results are committed).
 artifacts/phase2/L/stageC/models/
 artifacts/phase2/L/stageC/smoke/
+
+# Local compose settings: secrets (GATEWAY_ADMIN_KEY, ...). Template: .env.example
+.env

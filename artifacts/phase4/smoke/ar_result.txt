@@ -1,0 +1,26 @@
+EXPERIMENT AR (adaptive retraining, KeyRecs two sessions)  [SMOKE TEST - NOT A RESULT]
+3 targets (not eligible 0); decisions = 20-window packets; score = packet mean
+
+PRIMARY  B - A, per-user AUC of 20-window decisions on session-2 test: +0.0000 [+0.0000, +0.0000] p 1.000, b better for 0/3
+         -> NO DETECTABLE DIFFERENCE; SE 0.0000, MDE80 0.0000
+  C-A: +0.0186 [+0.0000, +0.0558] p 0.601, b better for 1/3
+  D-A: +0.0644 [+0.0300, +0.1017] p 0.000, b better for 3/3
+  C-B: +0.0186 [+0.0000, +0.0558] p 0.601, b better for 1/3
+  D-B: +0.0644 [+0.0300, +0.1017] p 0.000, b better for 3/3
+  R-A: -0.0039 [-0.0083, +0.0008] p 0.067, b better for 1/3
+
+  A  per-user AUC 0.8564 | live rule FRR 20.0% FAR 20.0% (per-user means) | genuine locks per 100 test windows 1.52 | pooled EER 20.0% | window EER mean 25.5%
+  B  per-user AUC 0.8564 | live rule FRR 20.0% FAR 20.0% (per-user means) | genuine locks per 100 test windows 1.52 | pooled EER 20.0% | window EER mean 25.5%
+  C  per-user AUC 0.8750 | live rule FRR 20.0% FAR 18.3% (per-user means) | genuine locks per 100 test windows 1.76 | pooled EER 20.0% | window EER mean 24.7%
+  D  per-user AUC 0.9208 | live rule FRR 33.3% FAR 8.5% (per-user means) | genuine locks per 100 test windows 1.79 | pooled EER 13.3% | window EER mean 20.3%
+  R  per-user AUC 0.8525 | live rule FRR 20.0% FAR 19.6% (per-user means) | genuine locks per 100 test windows 1.75 | pooled EER 20.0% | window EER mean 25.9%
+  frr diffs (lower is better): B-A +0.0 pts [+0.0, +0.0] higher for 0/3; C-A +0.0 pts [+0.0, +0.0] higher for 0/3; D-A +13.3 pts [+0.0, +40.0] higher for 1/3; R-A +0.0 pts [+0.0, +0.0] higher for 0/3
+  far diffs (lower is better): B-A +0.0 pts [+0.0, +0.0] higher for 0/3; C-A -1.7 pts [-5.0, +0.0] higher for 0/3; D-A -11.5 pts [-16.2, -6.7] higher for 0/3; R-A -0.4 pts [-3.3, +5.0] higher for 1/3
+  locksPer100 diffs (lower is better): B-A +0.000 [+0.000, +0.000] higher for 0/3; C-A +0.247 [+0.000, +0.741] higher for 1/3; D-A +0.277 [-0.781, +1.613] higher for 1/3; R-A +0.233 [-0.781, +1.481] higher for 1/3
+
+  B adaptation: 0/18 days accepted (0%), per user mean 0.0; users with a retrain 0/3; first retrain after day None (median); reasons {'rolling': 18}
+  C adaptation: 7/18 days accepted (39%), per user mean 2.3; users with a retrain 1/3; first retrain after day 4.0 (median); reasons {'no-lock': 11, 'lock': 7}
+  days per user (median) 6.0; training time median 6.7 s
+
+S1 gates on the enrolment model: genuine days pass 0.0% of 18; impostor chunks pass 0.00% (0/120), targets with any 0; impostor reasons {'rolling': 118, 'floor': 2}
+S2 forced poisoning (3 targets): attacker decisions accepted 100.0% -> 85.7% (-14.3 pts [-28.6, +0.0] higher for 0/3); genuine FRR 20.0% -> 33.3%; poison chunks that would have passed the gates: 22.2%

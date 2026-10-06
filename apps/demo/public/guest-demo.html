@@ -85,10 +85,7 @@
         });
         var d = await r.json();
         if (r.ok) {
-          // Common functionality: a successful save also contributes the clean
-          // typing as an adaptive training sample, so the model keeps learning.
-          if (window.Continuum && window.Continuum.contribute) window.Continuum.contribute().catch(function () {});
-          showResult(true, "✓ " + (d.message || "Saved") + " (risk: " + (d.verdict && d.verdict.risk) + ") — sample added to your model");
+          showResult(true, "✓ " + (d.message || "Saved") + " (risk: " + (d.verdict && d.verdict.risk) + ")");
         }
         else if (r.status === 403) showResult(false, "⛔ Blocked — behavior looks suspicious. Passkey step-up required before saving.");
         else if (r.status === 401) showResult(false, "🔒 No valid behavioral verdict yet — type a few lines first so the guard can evaluate you.");

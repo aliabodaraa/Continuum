@@ -122,7 +122,7 @@ per-user logistic head.
 - **F2 adopted.** Section 8 of the pre-registration leaves adoption to the owner, who delegated such calls
   on 25 Sep ("do what improves the solution"). F2 is adopted as the server-side mouse personalisation,
   keeping the tested rule (20th percentile of leave-one-sample-out scores, 33 of 60). Implementation is
-  task T3.4 on the board. S1 stays in the record as the rule deployed from 23 to 25 Sep.
+  task T3.4 on the board. S1 stays in the record as the rule deployed from 23 to 26 Sep (F2 went live in 20deb53).
 - **Disclosed with the adoption:** in the wild, at that rule, F2 prompts more than S1 (mean +0.14/min,
   median +0.43/min) while catching more impostor runs (+19 points mean).
 

@@ -19,10 +19,13 @@ const SITE_KEY = process.env.CONTINUUM_SITE_KEY || "pk_demo";
 const TENANT_SECRET = process.env.CONTINUUM_SECRET || "dev-continuum-risk-secret";
 
 // Two caches with deliberately different lifetimes.
-//   assertions — signed and time-bound, so refreshed shortly before they expire.
+//   assertions — signed and time-bound. They also carry the demo organisation's settings (claim
+//   cfg: panel, channels, adaptive retraining), so an entry is reused for at most a minute, and the
+//   page's config call always takes a fresh one: a change in the console shows on the next page load.
 // Keyed by `${SITE_KEY}:${appUserId}` so an entry can never be served across tenants.
 const assertionCache = new Map();
 const REFRESH_MARGIN_MS = 15_000;
+const ASSERTION_REUSE_MS = 60_000;
 
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 
@@ -40,10 +43,10 @@ function mintIdentityToken(appUserId) {
  * FAILS CLOSED. If the gateway cannot be reached or refuses, this throws. It must never fall
  * back to sending a locally-chosen id — that fallback is precisely the defect being removed.
  */
-async function assertionFor(appUserId) {
+async function assertionFor(appUserId, fresh = false) {
   const key = `${SITE_KEY}:${appUserId}`;
   const hit = assertionCache.get(key);
-  if (hit && Date.now() < hit.expiresAt - REFRESH_MARGIN_MS) return hit.assertion;
+  if (!fresh && hit && Date.now() < hit.expiresAt - REFRESH_MARGIN_MS && Date.now() < hit.reuseUntil) return hit.assertion;
 
   const res = await fetch(`${GATEWAY_URL}/v1/assert`, {
     method: "POST",
@@ -55,7 +58,7 @@ async function assertionFor(appUserId) {
     throw new Error(`identity assertion refused (${res.status}): ${d.error || "unknown"}`);
   }
   const d = await res.json();
-  assertionCache.set(key, { assertion: d.assertion, expiresAt: Date.now() + d.expiresIn * 1000 });
+  assertionCache.set(key, { assertion: d.assertion, expiresAt: Date.now() + d.expiresIn * 1000, reuseUntil: Date.now() + ASSERTION_REUSE_MS });
   return d.assertion;
 }
 
@@ -63,10 +66,10 @@ async function assertionFor(appUserId) {
  * `appUserId` is the demo's OWN user id. It is used only to obtain an assertion — it is never
  * sent to ca-service, which would ignore it anyway.
  */
-async function call(method, path, appUserId, body) {
+async function call(method, path, appUserId, body, fresh = false) {
   const headers = { "Content-Type": "application/json" };
   if (API_KEY) headers["X-Api-Key"] = API_KEY;
-  if (appUserId != null) headers["X-Continuum-Identity"] = await assertionFor(appUserId);
+  if (appUserId != null) headers["X-Continuum-Identity"] = await assertionFor(appUserId, fresh);
   const res = await fetch(`${CA_API_URL}${path}`, {
     method,
     headers,
@@ -84,8 +87,9 @@ module.exports = {
   // The path segments that still contain a user id are there because the routes are declared
   // as /:userId; ca-service ignores them for identity purposes.
 
-  // config is the one unauthenticated read (no user, no tenant)
-  config: () => call("GET", "/v1/keystroke/config"),
+  // config: with a user, the demo organisation's settings (console / operator page) apply;
+  // without one, the deployment defaults
+  config: (userId) => call("GET", "/v1/keystroke/config", userId, undefined, true),
 
   onboarding: (userId) => call("GET", `/v1/users/${Number(userId)}/onboarding`, userId),
   keystrokeStatus: (userId) => call("GET", `/v1/keystroke/status/${Number(userId)}`, userId),
@@ -93,8 +97,9 @@ module.exports = {
   // keystroke operations
   keystrokeEnroll: (userId, body) => call("POST", "/v1/keystroke/enroll", userId, body),
   keystrokeCheck: (userId, body) => call("POST", "/v1/keystroke/check", userId, body),
-  keystrokeSubmit: (userId, body) => call("POST", "/v1/keystroke/submit", userId, body),
   keystrokeContribute: (userId, body) => call("POST", "/v1/keystroke/contribute", userId, body),
+  // only after the user's passkey (routes/auth/text.js checks it): pending adaptive samples -> retrain
+  keystrokeAdaptiveConfirm: (userId) => call("POST", "/v1/keystroke/adaptive/confirm", userId, {}),
   keystrokeReset: (userId) => call("POST", "/v1/keystroke/reset", userId, {}),
   keystrokeRetrain: (userId) => call("POST", "/v1/keystroke/retrain", userId, {}),
   maybeRetrainImpostors: (userId) => call("POST", "/v1/keystroke/maybe-retrain-impostors", userId, {}),

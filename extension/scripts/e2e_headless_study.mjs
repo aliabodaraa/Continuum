@@ -53,8 +53,12 @@ if (execFileSync("docker", ["exec", CA, "node", "-e", "console.log(process.env.S
 
 // ---------- gateway client (Origin = the study page's origin, which the tenant admits) ----------
 let siteKey = null, token = null, userId = null;
+// The operator key for /v1/tenants: the environment, else the repository's git-ignored .env (none = dev, open).
+const ADMIN_KEY = process.env.GATEWAY_ADMIN_KEY
+  || ((() => { try { return fs.readFileSync(path.join(ROOT, ".env"), "utf8"); } catch { return ""; } })().match(/^GATEWAY_ADMIN_KEY=(.*?)\s*$/m) || [])[1] || "";
 async function gw(p, body, method = "POST") {
-  const r = await fetch(GW + p, { method, headers: { "Content-Type": "application/json", Origin: GW, ...(token ? { Authorization: "Bearer " + token } : {}) },
+  const r = await fetch(GW + p, { method, headers: { "Content-Type": "application/json", Origin: GW, ...(token ? { Authorization: "Bearer " + token } : {}),
+    ...(p.startsWith("/v1/tenants") && ADMIN_KEY ? { "X-Admin-Key": ADMIN_KEY } : {}) },
     body: method === "GET" ? undefined : JSON.stringify(body || {}) });
   return { status: r.status, d: await r.json().catch(() => ({})) };
 }
@@ -73,7 +77,7 @@ const pageServer = http.createServer((req, res) => { res.writeHead(200, { "Conte
 await new Promise((r) => pageServer.listen(0, "127.0.0.1", r));
 const PAGE = `http://127.0.0.1:${pageServer.address().port}/`;
 
-// ---------- Chrome + a minimal CDP client (as e2e_headless_mouse.mjs) ----------
+// ---------- Chrome + a minimal CDP client ----------
 const chrome = spawn(CHROME, ["--headless=new", `--remote-debugging-port=${PORT}`, `--user-data-dir=${profileDir}`,
   `--load-extension=${EXT}`, `--disable-extensions-except=${EXT}`, "--window-size=1920,1080",
   "--no-first-run", "--no-default-browser-check", "about:blank"], { stdio: "ignore" });
@@ -98,6 +102,16 @@ async function evaluate(sessionId, expression) {
 }
 async function target(pred, tries = 80) { for (let i = 0; i < tries; i++) { const { targetInfos } = await send("Target.getTargets"); const t = targetInfos.find(pred); if (t) return t; await sleep(250); } throw new Error("target not found"); }
 async function waitFor(sessionId, expression, ms = 60000) { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await evaluate(sessionId, expression)) return true; } catch {} await sleep(400); } return false; }
+// A page is ready when its document is the one navigated to. Target.createTarget and Page.reload return before
+// the navigation commits, and until then the initial about:blank (or the old document) already reports
+// readyState "complete": waiting on readyState alone let the test act on the wrong document (a script load that
+// failed with a bare Event, or a promise that never settled).
+const loadedAt = (url) => `location.href.startsWith(${JSON.stringify(url)}) && document.readyState === 'complete'`;
+async function reloadPage(sessionId, url) {
+  await evaluate(sessionId, "window.__cgE2eOld = true").catch(() => {});
+  await send("Page.reload", {}, sessionId);
+  return waitFor(sessionId, "!window.__cgE2eOld && " + loadedAt(url));
+}
 const SR = "document.getElementById('continuum-guard-host') && document.getElementById('continuum-guard-host').shadowRoot";
 const visibleButton = (sel) => `(() => { const sr = ${SR}; if (!sr) return false; const b = [...sr.querySelectorAll('${sel}')].find(x => x.offsetParent !== null && !x.disabled); if (!b) return false; b.click(); return true; })()`;
 
@@ -157,6 +171,7 @@ try {
   const reg = await gw("/v1/sdk/study/register", { participant: P });
   check("the participant is registered before enrolment", reg.status === 200 && reg.d.ok === true, `user ${userId}`);
 
+  let lastEvents = [];
   for (let i = 0; i < 5; i++) {
     const a = genuineTexts[2 * i], b = genuineTexts[2 * i + 1];
     const off = a[a.length - 1].t + 3000;
@@ -166,11 +181,16 @@ try {
     const text = (`e2e sample ${i} ${Date.now()} ` + "lorem ipsum dolor sit amet ".repeat(40)).slice(0, Math.max(n, 120));
     const r = await gw("/v1/sdk/keystroke/enroll", { textContent: text, keystrokeEvents: events });
     if (r.status >= 300) { check(`keystroke enrolment sample ${i + 1}`, false, JSON.stringify(r.d).slice(0, 200)); break; }
+    lastEvents = events;
   }
+  // The last sample returns at once; the model is built from the queue (2026-10-06).
+  const ksNow = (await gw("/v1/sdk/keystroke/status", null, "GET")).d;
+  check("typing enrolment returns at once and the model is built from the queue", ksNow.training === true || ksNow.trained === true,
+    `training ${ksNow.training}, trained ${ksNow.trained}`);
 
   const { targetId: gid } = await send("Target.createTarget", { url: GW + "/study.html" });
   const gpage = await attach(gid);
-  await waitFor(gpage, "document.readyState === 'complete'");
+  await waitFor(gpage, loadedAt(GW + "/study.html"));
   const win = await evaluate(gpage, `new Promise((res, rej) => { const s = document.createElement('script'); s.src = '/js/mouse-features.js';
     s.onload = () => { const ev = ${JSON.stringify(sapi("user1", "session_2020_05_14_3min.csv"))};
       res(window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(ev)).slice(0, 440)); }; s.onerror = rej; document.head.appendChild(s); })`);
@@ -190,6 +210,10 @@ try {
     await sleep(5000);
   }
   check("both server models train (keystroke on the Aalto negatives, mouse on the live rule)", !!(ks && ks.trained && ms && ms.enrolled), `${((Date.now() - tTrain) / 1000).toFixed(0)} s`);
+  // Once the typing model exists only the adaptive popup adds samples (2026-10-05): enrolment is closed.
+  const more = await gw("/v1/sdk/keystroke/enroll", { textContent: (`e2e extra ${Date.now()} ` + "lorem ipsum dolor sit amet ".repeat(40)).slice(0, 400), keystrokeEvents: lastEvents });
+  check("a trained typing model takes no more enrolment samples (only the popup adds any)", more.status === 409 && more.d.error === "already_enrolled",
+    `6th sample → ${more.status} ${more.d.error}`);
   // regression: the gateway's onboarding lookup once lacked the service key and assertion, so every
   // user read as not enrolled and the SDK offered enrolment again
   const ob = await gw("/v1/sdk/onboarding", null, "GET");
@@ -214,13 +238,13 @@ try {
   // ---- 2. genuine session ----
   const setStudy = (condition, client = "extension-study") => evaluate(sw, `new Promise(r => chrome.storage.local.set({ cg_study: { on: true, gateway: ${JSON.stringify(GW)},
     siteKey: ${JSON.stringify(siteKey)}, participant: ${JSON.stringify(P)}, condition: ${JSON.stringify(condition)}, client: ${JSON.stringify(client)} } }, () => r(true)))`);
-  const setPaused = (v) => evaluate(sw, `new Promise(r => chrome.storage.local.set({ cg_study_paused: ${v ? "true" : "false"} }, () => r(true)))`);
+  const setPaused = (v) => evaluate(sw, `new Promise(r => chrome.storage.local.set({ cg_paused: ${v ? "true" : "false"} }, () => r(true)))`);
   await setPaused(false);
   await setStudy("genuine");
   await sleep(800);
   const { targetId: pid } = await send("Target.createTarget", { url: PAGE });
   const page = await attach(pid);
-  await waitFor(page, "document.readyState === 'complete'");
+  await waitFor(page, loadedAt(PAGE));
   await sleep(1500);   // the content script's handshake brings the study settings
   await evaluate(page, "document.getElementById('t').focus(); true");
   const locked = () => evaluate(sw, "state.locked");
@@ -252,8 +276,7 @@ try {
   if (genLocked) { console.log("    note: the genuine session was locked (a false lock); clearing it through the step-up"); await stepUp(); }
   await setStudy("impostor:" + TYPIST, "lab");
   await sleep(800);
-  await send("Page.reload", {}, page);   // a new page visit = a new study session
-  await waitFor(page, "document.readyState === 'complete'");
+  await reloadPage(page, PAGE);   // a new page visit = a new study session
   await sleep(1500);
   await evaluate(page, "document.getElementById('t').focus(); true");
   const ti = Date.now();
@@ -275,8 +298,7 @@ try {
   await setStudy("genuine");
   await setPaused(true);
   await sleep(800);
-  await send("Page.reload", {}, page);
-  await waitFor(page, "document.readyState === 'complete'");
+  await reloadPage(page, PAGE);
   await sleep(1500);
   await evaluate(page, "document.getElementById('t').focus(); true");
   check("the recording indicator shows the pause", (await evaluate(sw, "badgeForState().text")) === "II");
@@ -297,8 +319,7 @@ try {
   check("after resume, checks resume, and every scored window starts after the resume", after.length > 0 && earliest >= resumedAt - 1500,
     `${after.length} window(s), earliest start ${earliest.toFixed(0)} ms vs resume at ${resumedAt.toFixed(0)} ms (page clock)`);
   if (await locked()) { console.log("    note: probation re-challenged after resume; clearing it"); await stepUp(); }
-  await send("Page.reload", {}, page);
-  await waitFor(page, "document.readyState === 'complete'");
+  await reloadPage(page, PAGE);
   await sleep(1500);
   await evaluate(page, "document.getElementById('pw').focus(); true");
   const p0 = decisionCount();

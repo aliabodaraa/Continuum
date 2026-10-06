@@ -29,6 +29,15 @@ const PROFILE_VERSION = 3;
 // verdict needs 21 windows (>= 250 digraph steps) instead of 7 (>= 110); on
 // stored real sessions 20 windows took about 400 keydowns.
 const RECENT_WINDOW_COUNT = 20;
+// The packets an organisation may choose instead (console, Protection; the operator's default;
+// KEYSTROKE_DECISION_WINDOWS), always with the simple-majority vote. Only lengths measured on the
+// same 99-user scores are offered (manuscript tables 9-b and 11; artifacts/xai/decision_sweep.json,
+// decision_paired.json): a shorter packet gives its first verdict sooner (about 18 s of steady
+// typing at 6 against 42 s at 20) but flags the genuine user more often (FRR at 0.50: 23.6% at 6,
+// 18.8% at 10, 14.8% at 20); impostor capture is about the same. 20 stays the default, and every
+// figure in the paper is for it.
+const DECISION_WINDOW_CHOICES = [6, 10, 20];
+function decisionWindows(n) { return DECISION_WINDOW_CHOICES.includes(Number(n)) ? Number(n) : RECENT_WINDOW_COUNT; }
 // Warm-up fast path (server.js): before the first full packet, a check whose scored windows number
 // k >= WARMUP_FAST_MIN_WINDOWS with at least ceil(WARMUP_FAST_FRACTION * k) below 0.50 challenges at
 // once. It was 4 windows; the OWNER chose 8 on 2026-09-26, before the user study, on exploratory
@@ -49,7 +58,7 @@ const ROLLING_WINDOW_COUNT = 18;
 // separate from RECENT_WINDOW_COUNT so the packet change leaves adaptive learning
 // exactly as it was.
 const CONTRIBUTE_WINDOW_COUNT = 6;
-// Windows scored per check: enough for both the packet and the rolling mean.
+// Windows scored per check: enough for both the packet (at most 20) and the rolling mean.
 const SCORED_WINDOW_COUNT = Math.max(RECENT_WINDOW_COUNT, ROLLING_WINDOW_COUNT);
 // Fraction of recent windows scoring below the user threshold that flags the
 // session. Lu et al. (2020): flag when ≥ p of packet windows score < 50%.
@@ -582,9 +591,13 @@ function isServedProfile(profile) {
 const { postModelApi } = require("./modelClient");
 const studyLog = require("./studyLog");
 // The live keystroke decision rule, as the user-study log records it: fixed 0.50 window boundary,
-// packet vote over the last RECENT_WINDOW_COUNT windows, and the warm-up fast path's minimum.
-const RULE_VERSION =
-  `lu-050-${Math.ceil(RECENT_WINDOW_COUNT * PACKET_VOTE_FRACTION)}of${RECENT_WINDOW_COUNT}-warm${WARMUP_FAST_MIN_WINDOWS}`;
+// packet vote over the last `packet` windows (the organisation's choice, 20 by default), and the
+// warm-up fast path's minimum.
+function ruleVersion(packet) {
+  const n = decisionWindows(packet);
+  return `lu-050-${Math.ceil(n * PACKET_VOTE_FRACTION)}of${n}-warm${WARMUP_FAST_MIN_WINDOWS}`;
+}
+const RULE_VERSION = ruleVersion(RECENT_WINDOW_COUNT);
 
 function saveProfile(userId, db, profile) {
   db.prepare(
@@ -812,7 +825,9 @@ function getUserTypingBaseline(userId, db) {
   };
 }
 
-async function evaluateKeystrokes({ events, timings, userId, db }) {
+// packetWindows: the organisation's packet (DECISION_WINDOW_CHOICES); anything else means the default.
+async function evaluateKeystrokes({ events, timings, userId, db, packetWindows }) {
+  const packet = decisionWindows(packetWindows);
   const normalized = normalizeEvents(events);
   const metrics = {
     ...analyzeKeystrokeTiming(normalized),
@@ -890,9 +905,9 @@ async function evaluateKeystrokes({ events, timings, userId, db }) {
       ? result.prediction.map((p) => Number(p[1]))
       : [];
     const rollingScores = scoredScores.slice(-ROLLING_WINDOW_COUNT);
-    // The packet = the most recent RECENT_WINDOW_COUNT windows; the live vote
+    // The packet = the most recent `packet` windows; the live vote
     // and the on-screen tiles use only these.
-    const perWindowScores = scoredScores.slice(-RECENT_WINDOW_COUNT);
+    const perWindowScores = scoredScores.slice(-packet);
     const lowWindows = perWindowScores.filter((s) => s < LU_WINDOW_THRESHOLD).length;
     const voteFraction = perWindowScores.length > 0 ? lowWindows / perWindowScores.length : 0;
     // Live verdict = pure Lu et al. (2020) packet vote at the fixed 0.50 boundary.
@@ -1040,6 +1055,9 @@ module.exports = {
   trainUserTypingProfile,
   featureWindowsWithKeys,
   RULE_VERSION,
+  ruleVersion,
+  DECISION_WINDOW_CHOICES,
+  decisionWindows,
   WARMUP_FAST_MIN_WINDOWS,
   WARMUP_FAST_FRACTION,
 };

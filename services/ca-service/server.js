@@ -12,6 +12,9 @@ const lock = require("./lib/lock");
 const decisionState = require("./lib/decisionState");
 const trainingQueue = require("./lib/trainingQueue");
 const studyLog = require("./lib/studyLog");
+const appSettings = require("./lib/appSettings");
+const runtimeSettings = require("./lib/runtimeSettings");
+const adaptive = require("./lib/adaptive");
 const { ModelUnavailableError } = require("./lib/modelClient");
 
 const PORT = Number(process.env.PORT || 4100);
@@ -45,9 +48,12 @@ const ADAPTIVE_RETRAIN_EVERY = 3;
 // A high MEAN can hide one weak window; every window in a contributed packet must
 // clear this floor too, or a borderline moment could quietly enter the training set.
 const ADAPTIVE_WINDOW_FLOOR = 0.8;
-// At most one adaptive contribution accepted per calendar day, so the training pool
-// reflects typing across different sessions/times rather than one unusually clean sitting.
-const ADAPTIVE_MAX_PER_DAY = 1;
+// Adaptive retraining runs in cycles (lib/adaptive.js, the owner's design of 2026-10-04): three clean,
+// non-overlapping samples are collected (pending, used by nothing), the user retrains with a passkey,
+// then the feature pauses for the organisation's gap (default 3 hours, lib/appSettings.js). It replaced
+// "at most one sample per calendar day, automatic retrain after three". Experiment AR measured that
+// earlier rule; its samples were already non-overlapping and retrained after three, so the cycle
+// changes the pace and adds the passkey, not which samples pass.
 const PASTE_POLICY_MAX_CHARS = 80;
 // Debounce keystroke CHALLENGES (not scoring): challenge when >= KS_SUSPICIOUS_MIN of the
 // last KS_SUSPICIOUS_WINDOW checks are suspicious (a SLIDING window, not strictly
@@ -100,7 +106,8 @@ function hasDuplicateTrainingText(userId, hash) {
   return (
     db
       .prepare(
-        `SELECT 1 FROM keystroke_texts WHERE user_id = ? AND is_training = 1 AND text_hash = ? LIMIT 1`,
+        `SELECT 1 FROM keystroke_texts WHERE user_id = ? AND (is_training = 1 OR sample_purpose = 'adaptive-pending')
+           AND text_hash = ? LIMIT 1`,
       )
       .get(userId, hash) != null
   );
@@ -122,28 +129,29 @@ function getTrainingEventsForUser(userId) {
       .all(id),
   );
 }
-// Caps adaptive contributions to ADAPTIVE_MAX_PER_DAY per calendar day (UTC), so the
-// training pool is built from typing spread across sessions rather than one sitting.
-function contributionsToday(userId) {
-  const row = db
-    .prepare(
-      `SELECT COUNT(*) as count FROM keystroke_texts
-       WHERE user_id = ? AND is_training = 1 AND sample_purpose = 'adaptive'
-         AND date(submitted_at) = date('now')`,
-    )
-    .get(userId);
-  return row ? row.count : 0;
+// The pause after a retrain: no sample before this time (null = now).
+function nextContributionAt(userId, settings) {
+  const wait = appSettings.contributionWaitMs(adaptive.lastRetrainAt(userId), Date.now(), settings.adaptiveGapHours);
+  return wait > 0 ? new Date(Date.now() + wait).toISOString() : null;
 }
+// Events typed in a field type the organisation excludes never reach scoring or storage. Not applied to
+// enrolment: its samples are typed in Continuum's own wizard, not in the organisation's fields.
+const excludeFields = (req, res, next) => {
+  if (req.body && Array.isArray(req.body.keystrokeEvents)) {
+    req.body.keystrokeEvents = appSettings.withoutExcludedFields(req.body.keystrokeEvents, appSettings.forRequest(req).excludeFieldTypes);
+  }
+  next();
+};
+// A channel the organisation turned off is refused outright, so a modified client cannot keep
+// sending that data (the SDK and the extension stop asking once the settings say "off").
+const channelOn = (channel) => (req, res, next) =>
+  appSettings.forRequest(req)[channel] === "off"
+    ? res.status(409).json({ ok: false, checked: false, error: `${channel}_disabled`, note: `${channel} protection is turned off for this organisation` })
+    : next();
 // Records that a retrain is owed and returns immediately. Previously a fire-and-forget
 // `setImmediate` guarded by an in-memory Set — a restart lost the run AND the guard, and
 // nothing anywhere recorded that the work had been owed, so the user's model quietly
 // stopped keeping up with them. The queue row is that record; see lib/trainingQueue.js.
-function maybeRetrainAdaptively(userId) {
-  const profile = ks.getUserTypingProfile(userId, db);
-  if (!profile || !profile.trainedAt) return null;
-  if (countTrainingSamplesSince(userId, profile.trainedAt) < ADAPTIVE_RETRAIN_EVERY) return null;
-  return trainingQueue.enqueue(userId, "keystroke", "adaptive");
-}
 
 // Salted so the hashes are not a rainbow-table of common phrases. The salt is per
 // deployment and stable, which is all equality comparison needs.
@@ -152,7 +160,12 @@ function textHash(t) {
   return require("crypto").createHmac("sha256", TEXT_HASH_SALT).update(String(t || "")).digest("hex");
 }
 
-function storeTextSample({ userId, textContent, keystrokeEvents, metrics, evaluation, samplePurpose, sourcePath, isTraining }) {
+// One transaction per sample: the sample and its key events are written together or not at all, and
+// committed once. Each event used to be its own commit; on the Docker bind mount every commit is a
+// slow sync, so a ~280-event sample took about 8 s to store (measured 2026-10-06).
+function storeTextSample(args) { return storeTextSampleTx(args); }
+const storeTextSampleTx = db.transaction(storeTextSampleRows);
+function storeTextSampleRows({ userId, textContent, keystrokeEvents, metrics, evaluation, samplePurpose, sourcePath, isTraining, hash, charCount }) {
   const result = db
     .prepare(
       `INSERT INTO keystroke_texts
@@ -161,8 +174,8 @@ function storeTextSample({ userId, textContent, keystrokeEvents, metrics, evalua
     )
     .run(
       userId,
-      textHash(textContent),
-      String(textContent || "").length,
+      hash || textHash(textContent),
+      charCount != null ? charCount : String(textContent || "").length,
       JSON.stringify(metrics || {}),
       evaluation ? evaluation.modelConfidence : null,
       evaluation && evaluation.isSuspicious ? 1 : 0,
@@ -238,7 +251,7 @@ app.use((req, res, next) => {
 // requireIdentity() verifies an RS256 assertion signed by the gateway (the only identity
 // authority) and sets req.identity. uid() reads THAT and nothing else; a request without a
 // valid assertion never reaches a handler.
-const { requireIdentity } = require("./lib/identityAssertion");
+const { requireIdentity, verifyIdentityAssertion } = require("./lib/identityAssertion");
 const uid = (req) => {
   if (!req.identity) throw new Error("uid() called without a verified identity assertion");
   return Number(req.identity.principalId);
@@ -251,11 +264,19 @@ const tenantOf = (req) => {
 app.get("/health", (req, res) => res.json({ ok: true, service: "ca" }));
 
 // ---- config + onboarding status (used by the demo gate) ----
-app.get("/v1/keystroke/config", (req, res) => {
+app.get("/v1/keystroke/config", async (req, res) => {
+  // With an identity assertion (the gateway's relay, or the demo backend for a signed-in user) the
+  // caller's organisation settings apply; without one, the deployment defaults.
+  if (req.get("X-Continuum-Identity")) {
+    try { req.identity = await verifyIdentityAssertion(req.get("X-Continuum-Identity")); } catch (e) { req.identity = null; }
+  }
+  const st = appSettings.forRequest(req);
   res.json({
     windowSize: ks.WINDOW_SIZE,
     windowStride: ks.WINDOW_STRIDE,
-    recentWindowCount: ks.RECENT_WINDOW_COUNT,
+    // The organisation's packet (6, 10 or 20 windows; 20 by default): the first verdict comes once
+    // there are more windows than this.
+    recentWindowCount: ks.decisionWindows(st.keystrokeDecisionWindows),
     rollingWindowCount: ks.ROLLING_WINDOW_COUNT,
     contributeWindowCount: ks.CONTRIBUTE_WINDOW_COUNT,
     packetVoteFraction: ks.PACKET_VOTE_FRACTION,
@@ -267,29 +288,82 @@ app.get("/v1/keystroke/config", (req, res) => {
     //   eager — popup enrolls everything missing at load (default)
     //   lazy  — passkey only at load; keystroke/mouse enroll when the user
     //           enables that toggle (keystroke-only deployments never ask for mouse)
-    onboardingMode: process.env.ONBOARDING_MODE === "lazy" ? "lazy" : "eager",
-    // Field types the SDK must NOT monitor (deployment config). Everything else —
-    // including password (value masked, timing kept) — is monitored.
-    excludeFieldTypes: (process.env.MONITOR_EXCLUDE_TYPES || "hidden")
-      .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
+    onboardingMode: st.onboarding,
+    // Field types the SDK must NOT monitor. Everything else — including password (value
+    // masked, timing kept) — is monitored.
+    excludeFieldTypes: st.excludeFieldTypes,
+    // The organisation's choices (or the operator's defaults). `managed` lists the ones set
+    // explicitly in the console or on the operator page: those override the page's own
+    // data-* attributes; the rest are defaults a page may still override.
+    panel: st.panel,
+    keystroke: st.keystroke,
+    mouse: st.mouse,
+    adaptiveEnabled: st.adaptive === "on",
+    adaptiveMinGapHours: st.adaptiveGapHours,
+    managed: st.managed,
   });
 });
 
+// ---- operator settings (called by the gateway's operator page; the API key protects every route) ----
+const SECRET_ENV = new Set(["CA_SIGNING_SECRET", "GATEWAY_SESSION_SECRET", "CA_API_KEY", "MODEL_API_KEY", "TEXT_HASH_SALT"]);
+const SERVICE_ENV = ["PORT", "DB_PATH", "MODEL_API_URL", "MODEL_STORE_REMOTE", "MODEL_STORE_DIR", "MODEL_TRAIN_TIMEOUT_MS",
+  "MODEL_INFER_TIMEOUT_MS", "TRAINING_POLL_MS", "TRAINING_MAX_ATTEMPTS", "KEYSTROKE_NEGATIVES_PATH", "GATEWAY_JWKS_URI",
+  "IDENTITY_MAX_AGE_SEC", "CA_RISK_TTL_SEC", "STUDY_LOGGING", "ONBOARDING_MODE", "MONITOR_EXCLUDE_TYPES", "CONTINUUM_PANEL",
+  "CONTINUUM_KEYSTROKE", "CONTINUUM_MOUSE", "ADAPTIVE_RETRAINING", "ADAPTIVE_MIN_GAP_HOURS", "KEYSTROKE_DECISION_WINDOWS", ...SECRET_ENV];
+app.get("/v1/admin/settings", (req, res) => {
+  res.json({
+    settings: runtimeSettings.describe(),
+    environment: SERVICE_ENV.map((name) => ({
+      name, set: process.env[name] != null && process.env[name] !== "",
+      value: SECRET_ENV.has(name) ? null : (process.env[name] ?? null), secret: SECRET_ENV.has(name),
+    })),
+  });
+});
+app.put("/v1/admin/settings", (req, res) => {
+  try { res.json({ settings: runtimeSettings.update(req.body || {}) }); }
+  catch (e) { res.status(400).json({ error: e.code || "bad_setting", note: e.message }); }
+});
+
+// Typing enrolment trains from the queue (since 2026-10-06), as /status reports it: `training` while
+// the job is queued or running, `trainingError` when the last job failed and left no model although
+// the samples were enough (one more enrolment sample queues a new job).
+function keystrokeTraining(userId, status) {
+  if (status.trained) return { training: false, trainingError: null };
+  const { pending, jobs } = trainingQueue.statusFor(userId, "keystroke");
+  const enough = status.remainingSamples === 0 && status.remainingPositiveWindows === 0;
+  const failed = enough && !pending && jobs.length && jobs[0].state === "failed" ? jobs[0].last_error || "training failed" : null;
+  return { training: !!pending, trainingError: failed };
+}
+
 app.get("/v1/keystroke/status/:userId", requireIdentity, (req, res) => {
-  const status = ks.getUserTypingStatus(uid(req), db);
+  const status = { ...ks.getUserTypingStatus(uid(req), db) };
+  Object.assign(status, keystrokeTraining(uid(req), status));
   const adaptiveSamplesSinceRetrain = status.trainedAt ? countTrainingSamplesSince(uid(req), status.trainedAt) : 0;
-  res.json({ ...status, adaptiveSamplesSinceRetrain, adaptiveRetrainEvery: ADAPTIVE_RETRAIN_EVERY });
+  const st = appSettings.forRequest(req);
+  res.json({ ...status, adaptiveSamplesSinceRetrain, adaptiveRetrainEvery: ADAPTIVE_RETRAIN_EVERY,
+    adaptiveEnabled: st.adaptive === "on", adaptiveMinGapHours: st.adaptiveGapHours,
+    adaptivePending: adaptive.pendingCount(uid(req)), adaptiveReady: adaptive.pendingCount(uid(req)) >= ADAPTIVE_RETRAIN_EVERY,
+    nextContributionAt: st.adaptive === "on" ? nextContributionAt(uid(req), st) : null });
 });
 
 app.get("/v1/users/:userId/onboarding", requireIdentity, (req, res) => {
   const status = ks.getUserTypingStatus(uid(req), db);
-  res.json({ trained: !!status.trained, mouseEnrolled: mouse.mouseEnrolled(uid(req)) });
+  // keystrokeTraining: the model is being built; clients treat typing enrolment as done meanwhile.
+  res.json({ trained: !!status.trained, keystrokeTraining: keystrokeTraining(uid(req), status).training, mouseEnrolled: mouse.mouseEnrolled(uid(req)) });
 });
 
 // ---- keystroke: enroll / check / submit / contribute / reset / retrain ----
-app.post("/v1/keystroke/enroll", requireIdentity, async (req, res) => {
+app.post("/v1/keystroke/enroll", requireIdentity, channelOn("keystroke"), async (req, res) => {
   try {
     const userId = uid(req);
+    // Once the typing model exists it learns more ONLY through the adaptive popup, whose retrain needs
+    // the passkey. Until 2026-10-05 this route took more samples at any time and retrained at once with
+    // no passkey, so anyone at an unlocked session could train the model on their own typing. Enrolling
+    // again needs a profile reset first, and the reset asks for the passkey.
+    if (ks.getUserTypingStatus(userId, db).trained) {
+      return res.status(409).json({ ok: false, error: "already_enrolled",
+        note: "The typing model is trained; it learns more only through the adaptive popup. Reset the profile (passkey) to enrol again." });
+    }
     studyLog.register(userId, studyLog.parseContext(req.body.study));   // so its training is logged
     const { textContent, keystrokeTimings, keystrokeEvents, sourcePath } = req.body;
     if (!textContent || String(textContent).trim().length < 120) {
@@ -310,23 +384,29 @@ app.post("/v1/keystroke/enroll", requireIdentity, async (req, res) => {
       evaluation: { modelConfidence: null, isSuspicious: false },
       samplePurpose: "enrollment", sourcePath: sourcePath || "/enroll.html", isTraining: true,
     });
-    let profile = null, trainingError = null;
-    try { profile = await ks.trainUserTypingProfile(userId, db); }
-    catch (err) { trainingError = err.message; console.error("training error:", err); }
-    const typingStatus = ks.getUserTypingStatus(userId, db);
+    // Training runs from the queue (since 2026-10-06), like mouse enrolment: the user is not held for the
+    // ~45 s it takes (up to ~2 min; it used to run inside this request), and a page reload or a restart
+    // loses nothing. Clients read `training` / `trainingError` from /status until `trained`.
+    const before = ks.getUserTypingStatus(userId, db);
+    const enough = before.remainingSamples === 0 && before.remainingPositiveWindows === 0;
+    if (enough) trainingQueue.enqueue(userId, "keystroke", "enrol");
+    const typingStatus = { ...before };
+    Object.assign(typingStatus, keystrokeTraining(userId, typingStatus));
     res.json({
       ok: true,
-      message: trainingError ? `Enrollment sample saved, but training failed: ${trainingError}`
-        : typingStatus.trained ? "CNN/LSTM typing rhythm model trained" : "Enrollment sample saved",
-      textId, trained: !!profile, trainingError, typingStatus, typingQuality: quality,
+      message: enough ? "Enrollment sample saved; your typing model is being built" : "Enrollment sample saved",
+      textId, trained: false, training: typingStatus.training, typingStatus, typingQuality: quality,
     });
   } catch (err) { return sendError(res, "enroll", err); }
 });
 
-app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
+app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), excludeFields, async (req, res) => {
   try {
     const userId = uid(req);
     const { textContent, textLength, keystrokeTimings, keystrokeEvents, hasPasskey } = req.body;
+    // The organisation's packet: the vote runs on its last this-many windows, and until there are
+    // more windows than this the check is warm-up.
+    const packetWindows = ks.decisionWindows(appSettings.forRequest(req).keystrokeDecisionWindows);
     // A client may send the trimmed text's LENGTH instead of the text (the study extension does).
     const typedLength = textContent != null ? String(textContent).trim().length : Number(textLength);
     if (!Number.isFinite(typedLength) || typedLength < ks.CHECK_MIN_TEXT_CHARS) {
@@ -354,7 +434,7 @@ app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
     const degenerateInput = lowDiversity || chaoticInput;
     const evaluation = pastePolicyViolation(checkQuality)
       ? pastePolicyEvaluation(checkQuality, keystrokeTimings)
-      : await ks.evaluateKeystrokes({ events: keystrokeEvents, timings: keystrokeTimings, userId, db });
+      : await ks.evaluateKeystrokes({ events: keystrokeEvents, timings: keystrokeTimings, userId, db, packetWindows });
 
     const warmupScores = Array.isArray(evaluation.recentWindowScores) ? evaluation.recentWindowScores.map(Number) : [];
     const warmupLows = warmupScores.filter((s) => s < ks.WINDOW_DECISION_THRESHOLD).length;
@@ -367,7 +447,7 @@ app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
     // carries no windowCount, so without this it would default to warmup.)
     const unverifiable = evaluation.unverifiable === true;
     const isPastePolicy = evaluation.modelType === "paste-policy";
-    const isWarmup = Number(evaluation.windowCount || 0) <= ks.RECENT_WINDOW_COUNT &&
+    const isWarmup = Number(evaluation.windowCount || 0) <= packetWindows &&
       !overwhelmingImpostor && !unverifiable && !isPastePolicy && !degenerateInput;
     // Debounce the CHALLENGE (not the scoring): normal packet-vote suspicion must persist
     // across KS_SUSPICIOUS_MIN of the last KS_SUSPICIOUS_WINDOW checks (sliding window);
@@ -386,7 +466,7 @@ app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
     // User study (lib/studyLog.js; a no-op outside it): the packet's full-precision scores and keys.
     const studyCtx = studyLog.parseContext(req.body.study);
     const studyDecisionId = studyCtx ? studyLog.recordCheck(userId, studyCtx, {
-      channel: "keystroke", ruleVersion: ks.RULE_VERSION, threshold: ks.WINDOW_DECISION_THRESHOLD,
+      channel: "keystroke", ruleVersion: ks.ruleVersion(packetWindows), threshold: ks.WINDOW_DECISION_THRESHOLD,
       scores: warmupScores, keys: evaluation.recentWindowKeys,
       lowWindows: warmupLows,
       verdict: passkeyTriggered ? "challenge" : isWarmup ? "warmup" : effectiveSuspicious ? "suspicious" : "ok",
@@ -395,7 +475,7 @@ app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
         packetSuspicious: evaluation.isSuspicious === true, windowTotal: Number(evaluation.windowCount || 0),
         overwhelmingImpostor, unverifiable, pastePolicy: isPastePolicy, degenerateInput,
         recentSuspicious, hasPasskey: !!hasPasskey, modelAvailable: evaluation.modelAvailable !== false,
-        suspiciousWindow: KS_SUSPICIOUS_WINDOW, suspiciousMin: KS_SUSPICIOUS_MIN,
+        suspiciousWindow: KS_SUSPICIOUS_WINDOW, suspiciousMin: KS_SUSPICIOUS_MIN, packetWindows,
       },
     }) : null;
 
@@ -409,6 +489,7 @@ app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
       // post-step-up probation re-challenges a scored impostor but never loops on
       // a genuine user who is merely rebuilding their first window.
       scoredWindowCount: warmupScores.length,
+      packetWindows,
       modelConfidence: evaluation.modelConfidence, isSuspicious: evaluation.isSuspicious,
       typingEvaluation: evaluation,
       riskToken: signRisk(userId, riskLevel(isWarmup, evaluation.isSuspicious), "keystroke"),
@@ -420,76 +501,43 @@ app.post("/v1/keystroke/check", requireIdentity, async (req, res) => {
   } catch (err) { return sendError(res, "check", err, { checked: false }); }
 });
 
-app.post("/v1/keystroke/submit", requireIdentity, async (req, res) => {
+// /v1/keystroke/submit (score and store the text at a form's submit) was removed on 2026-10-05:
+// Continuum checks typing and movement while they happen, never at a submit, and nothing but the
+// adaptive popup adds typing samples.
+
+app.post("/v1/keystroke/contribute", requireIdentity, channelOn("keystroke"), excludeFields, async (req, res) => {
   try {
     const userId = uid(req);
-    const { textContent, keystrokeTimings, keystrokeEvents, passkeyVerified, hasPasskey } = req.body;
-    if (!textContent) return res.status(400).json({ error: "textContent required" });
-
-    const submitQuality = ks.typingQuality(textContent, keystrokeEvents);
-    const evaluation = passkeyVerified
-      ? { modelConfidence: null, isSuspicious: false, reason: "Passkey verified this protected writing action",
-          modelAvailable: true, modelType: "passkey-step-up", metrics: keystrokeTimings || {} }
-      : pastePolicyViolation(submitQuality)
-        ? pastePolicyEvaluation(submitQuality, keystrokeTimings)
-        : await ks.evaluateKeystrokes({ events: keystrokeEvents, timings: keystrokeTimings, userId, db });
-
-    const adaptiveTrainingSample = !passkeyVerified && !evaluation.isSuspicious &&
-      Number(evaluation.modelConfidence) >= ADAPTIVE_CONFIDENCE_MIN && submitQuality.acceptableForEnrollment;
-
-    const textId = storeTextSample({
-      userId, textContent, keystrokeEvents,
-      metrics: evaluation.metrics || keystrokeTimings || {}, evaluation,
-      samplePurpose: adaptiveTrainingSample ? "adaptive" : "activity",
-      sourcePath: req.body.sourcePath || null, isTraining: adaptiveTrainingSample,
-    });
-    if (adaptiveTrainingSample) maybeRetrainAdaptively(userId);
-    // Opportunistic negatives-refresh check — piggybacks on regular activity rather than a
-    // scheduler (none exists in this system): a profile trained before the Aalto negatives
-    // (ks.NEGATIVES_SOURCE) is retrained once. Skip if this submission already queued an
-    // adaptive retrain, which moves the profile anyway (enqueue() is idempotent either way).
-    if (!adaptiveTrainingSample && ks.needsNegativesRefresh(userId, db)) {
-      trainingQueue.enqueue(userId, "keystroke", "negatives-refresh");
+    const st = appSettings.forRequest(req);
+    if (st.adaptive === "off") {
+      return res.status(409).json({ ok: false, error: "adaptive_disabled", note: "Adaptive retraining is turned off for this organisation." });
     }
-
-    const passkeyTriggered = !passkeyVerified && evaluation.isSuspicious && !!hasPasskey;
-    if (passkeyVerified) lock.clearLocked(userId);
-    else if (passkeyTriggered) lock.setLocked(userId);
-    ks.logAuthDecision(userId, db, {
-      source: "submit", evaluation, passkeyTriggered, passkeyOutcome: passkeyVerified ? "success" : null,
-    });
-
-    const profile = ks.getUserTypingProfile(userId, db);
-    const adaptiveSamplesSinceRetrain = profile ? countTrainingSamplesSince(userId, profile.trainedAt) : 0;
-    let adaptiveSkipReason = null;
-    if (!adaptiveTrainingSample && !passkeyVerified && !evaluation.isSuspicious) {
-      if (!submitQuality.acceptableForEnrollment) {
-        adaptiveSkipReason = submitQuality.pasteCount > 0 ? "pasted text detected — type naturally for adaptive learning" : "not enough typed keystrokes captured";
-      } else if (Number(evaluation.modelConfidence) < ADAPTIVE_CONFIDENCE_MIN) {
-        adaptiveSkipReason = `confidence ${(Number(evaluation.modelConfidence) * 100).toFixed(0)}% is below the 90% minimum for adaptive learning`;
-      }
+    const next = nextContributionAt(userId, st);
+    if (next) {
+      const mins = Math.ceil((Date.parse(next) - Date.now()) / 60000);
+      return res.status(429).json({
+        ok: false, error: "adaptive_paused", nextContributionAt: next, pauseHours: st.adaptiveGapHours,
+        message: `Your model was just retrained. New samples can be added again in ${mins >= 60 ? Math.ceil(mins / 60) + " h" : mins + " min"}.`,
+      });
     }
-    res.json({
-      ok: true, message: "Text and keystroke data submitted", textId,
-      modelConfidence: evaluation.modelConfidence, isSuspicious: evaluation.isSuspicious,
-      typingEvaluation: evaluation, adaptiveTrainingSample, adaptiveSamplesSinceRetrain,
-      adaptiveRetrainEvery: ADAPTIVE_RETRAIN_EVERY, adaptiveSkipReason,
-      requiresPasskeyChallenge: passkeyTriggered,
-      riskToken: signRisk(userId, riskLevel(false, evaluation.isSuspicious), "keystroke"),
-    });
-  } catch (err) { return sendError(res, "submit", err); }
-});
-
-app.post("/v1/keystroke/contribute", requireIdentity, async (req, res) => {
-  try {
-    const userId = uid(req);
+    const pending = adaptive.pendingCount(userId);
+    if (pending >= ADAPTIVE_RETRAIN_EVERY) {
+      return res.status(409).json({ ok: false, error: "ready_to_retrain", pending, retrainEvery: ADAPTIVE_RETRAIN_EVERY,
+        message: `${pending} samples are ready. Retrain your model (with your passkey) before adding more.` });
+    }
+    // A sample is the typing since the previous one (the SDK sends only that, and its length, not the
+    // field's whole text); a client that still sends the text is measured on the text.
     const { textContent, keystrokeEvents } = req.body;
-    const quality = ks.typingQuality(textContent, keystrokeEvents);
+    const quality = ks.typingQuality(textContent != null ? textContent : null, keystrokeEvents, req.body.textLength);
     if (!quality.acceptableForEnrollment) {
       return res.status(422).json({
         ok: false,
         error: quality.pasteCount > 0 ? "Pasted text cannot train your model. Type naturally." : "Not enough typed keystrokes in this sample to contribute.",
       });
+    }
+    if (adaptive.overlapShare(userId, keystrokeEvents) > adaptive.OVERLAP_LIMIT) {
+      return res.status(422).json({ ok: false, error: "sample_overlaps",
+        message: "This stretch repeats typing from your previous sample. Keep typing, then add the next one." });
     }
     const evaluation = await ks.evaluateKeystrokes({ events: keystrokeEvents, timings: null, userId, db });
     const rolling = Number(evaluation.rollingMean != null ? evaluation.rollingMean : evaluation.modelConfidence);
@@ -527,34 +575,47 @@ app.post("/v1/keystroke/contribute", requireIdentity, async (req, res) => {
         rollingMean: rolling,
       });
     }
-    const hash = textHash(textContent);
+    // "New text": the same phrase typed again (the same key sequence) teaches the model nothing new.
+    const hash = textContent != null ? textHash(textContent) : textHash("keys:" + adaptive.keySequence(keystrokeEvents));
     if (hasDuplicateTrainingText(userId, hash)) {
       return res.status(422).json({
         ok: false,
         error: "This text has already been contributed — a repeated sample teaches the model nothing new.",
       });
     }
-    if (contributionsToday(userId) >= ADAPTIVE_MAX_PER_DAY) {
-      return res.status(422).json({
-        ok: false,
-        error: "Already contributed today. Come back another day so your model learns from typing across different sessions, not one sitting.",
-      });
-    }
     storeTextSample({
       userId, textContent: textContent || "[adaptive-contribution]", keystrokeEvents,
-      metrics: evaluation.metrics, evaluation, samplePurpose: "adaptive",
-      sourcePath: "/opinion.html#contribute", isTraining: true,
+      metrics: evaluation.metrics, evaluation, samplePurpose: adaptive.PENDING,
+      sourcePath: "contribute", isTraining: false, hash, charCount: quality.textLength,
     });
-    maybeRetrainAdaptively(userId);
-    const profile = ks.getUserTypingProfile(userId, db);
-    const done = profile ? countTrainingSamplesSince(userId, profile.trainedAt) : 0;
-    res.json({ ok: true, message: "Clean sample added to your model's training set.", rollingMean: rolling, adaptiveSamplesSinceRetrain: done, adaptiveRetrainEvery: ADAPTIVE_RETRAIN_EVERY });
+    const now = adaptive.pendingCount(userId);
+    res.json({ ok: true, pending: now, retrainEvery: ADAPTIVE_RETRAIN_EVERY, ready: now >= ADAPTIVE_RETRAIN_EVERY, rollingMean: rolling,
+      message: now >= ADAPTIVE_RETRAIN_EVERY ? "Sample added. Your model is ready to retrain." : `Sample added: ${now} of ${ADAPTIVE_RETRAIN_EVERY}.` });
   } catch (err) { return sendError(res, "contribute", err); }
+});
+
+// The user retrains with the pending samples. Callers MUST have verified the user's passkey in the
+// same request (gateway /v1/sdk/keystroke/adaptive/retrain, demo /api/text/adaptive-retrain): that is
+// what keeps samples added at an unlocked session from ever reaching a model.
+app.post("/v1/keystroke/adaptive/confirm", requireIdentity, channelOn("keystroke"), (req, res) => {
+  try {
+    const userId = uid(req);
+    const st = appSettings.forRequest(req);
+    if (st.adaptive === "off") return res.status(409).json({ ok: false, error: "adaptive_disabled" });
+    const pending = adaptive.pendingCount(userId);
+    if (pending < ADAPTIVE_RETRAIN_EVERY) {
+      return res.status(409).json({ ok: false, error: "not_ready", pending, retrainEvery: ADAPTIVE_RETRAIN_EVERY });
+    }
+    const n = adaptive.confirm(userId);
+    trainingQueue.enqueue(userId, "keystroke", "adaptive");
+    res.json({ ok: true, retraining: true, samples: n, nextContributionAt: nextContributionAt(userId, st), pauseHours: st.adaptiveGapHours });
+  } catch (err) { return sendError(res, "adaptive-confirm", err); }
 });
 
 app.post("/v1/keystroke/reset", requireIdentity, (req, res) => {
   const userId = uid(req);
   ks.resetUserTypingProfile(userId, db);
+  adaptive.forget(userId);
   db.prepare("UPDATE keystroke_texts SET is_training = 0 WHERE user_id = ?").run(userId);
   // The debounce history is evidence against a model that no longer exists. Carrying it
   // into re-enrollment could step the user up on their first scored check afterwards.
@@ -676,11 +737,11 @@ app.get("/v1/keystroke/metrics", requireIdentity, (req, res) => {
 // ---- mouse ----
 // Action-based mouse — the published path (Antal & Egyed-Zsigmond 2019).
 // The window endpoints below are retained as the comparison arm.
-app.post("/v1/mouse/actions/enroll", requireIdentity, async (req, res) => {
+app.post("/v1/mouse/actions/enroll", requireIdentity, channelOn("mouse"), async (req, res) => {
   try { const r = await mouseActions.enrollMouseActions(uid(req), req.body.actions); res.status(r.status).json(r.body); }
   catch (err) { return sendError(res, "mouse-action-enroll", err); }
 });
-app.post("/v1/mouse/actions/check", requireIdentity, async (req, res) => {
+app.post("/v1/mouse/actions/check", requireIdentity, channelOn("mouse"), async (req, res) => {
   try {
     const r = await mouseActions.checkMouseActions(uid(req), req.body.actions);
     if (r.body && r.body.checked) {
@@ -697,14 +758,14 @@ app.post("/v1/mouse/actions/reset", requireIdentity, (req, res) => {
   res.status(r.status).json(r.body);
 });
 
-app.post("/v1/mouse/enroll", requireIdentity, async (req, res) => {
+app.post("/v1/mouse/enroll", requireIdentity, channelOn("mouse"), async (req, res) => {
   try {
     studyLog.register(uid(req), studyLog.parseContext(req.body.study));   // so its training is logged
     const r = await mouse.enrollMouse(uid(req), req.body.windows); res.status(r.status).json(r.body);
   }
   catch (err) { return sendError(res, "mouse-enroll", err); }
 });
-app.post("/v1/mouse/check", requireIdentity, async (req, res) => {
+app.post("/v1/mouse/check", requireIdentity, channelOn("mouse"), async (req, res) => {
   try {
     const r = await mouse.checkMouse(uid(req), req.body.windows, req.body.study);
     if (r.body && r.body.checked) {

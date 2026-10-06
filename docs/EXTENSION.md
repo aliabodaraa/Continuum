@@ -12,7 +12,11 @@ Firefox by using the standard `browser.*` WebExtensions API with the `webextensi
 Safari supports Web Extensions too but requires an Xcode app wrapper — a later target. We
 therefore avoid Chrome-only APIs (e.g. `chrome.identity`'s Google profile) — see §3.
 
-> Status: design. Nothing here is built yet; this is the spec + build plan.
+> Status (2026-09-29): this was the original design. What was built differs: the extension is now a
+> client of the Continuum server only (no on-device scoring, no browser-profile identity). People sign
+> in with a personal Continuum account or their organisation's account (OAuth code flow with PKCE via
+> the gateway), and the step-up runs on the gateway's own pages. The current design is in
+> [`extension/README.md`](../extension/README.md); the on-device version is git tag `extension-on-device-v1`.
 
 ## 1. What the backend reuses (and the one addition)
 Continuum already separates **capture/transport** (thin, per-surface) from

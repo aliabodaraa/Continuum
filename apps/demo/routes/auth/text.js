@@ -46,11 +46,17 @@ const requireTrainedRhythm = async (req, res, next) => {
 const passthrough = (res, r) => res.status(r.status).json(r.data);
 
 router.get("/config", requireAuth, async (req, res, next) => {
-  try { passthrough(res, await ca.config()); } catch (e) { next(e); }
+  try { passthrough(res, await ca.config(req.session.userId)); } catch (e) { next(e); }
 });
 
 router.get("/typing-status", requireAuth, async (req, res, next) => {
   try { passthrough(res, await ca.keystrokeStatus(req.session.userId)); } catch (e) { next(e); }
+});
+
+// Adaptive retraining: the user retrains with the samples collected so far. The passkey must have been
+// verified moments ago (requireFreshPasskey), so samples added at an unlocked session never reach a model.
+router.post("/adaptive-retrain", requireAuth, requireFreshPasskey, async (req, res, next) => {
+  try { passthrough(res, await ca.keystrokeAdaptiveConfirm(req.session.userId)); } catch (e) { next(e); }
 });
 
 // Destructive: drops the trained typing profile and unmarks its training texts. Now also
@@ -69,40 +75,11 @@ router.post("/enroll", requireAuth, requireUnlockedSession, async (req, res, nex
   try { passthrough(res, await ca.keystrokeEnroll(req.session.userId, req.body)); } catch (e) { next(e); }
 });
 
-router.post("/submit", requireAuth, requireUnlockedSession, requireTrainedRhythm, async (req, res, next) => {
-  try {
-    const passkeyVerified =
-      req.body.passkeyVerifiedForAction &&
-      Number(req.session.passkeyVerifiedUserId) === Number(req.session.userId);
-
-    const r = await ca.keystrokeSubmit(req.session.userId, {
-      textContent: req.body.textContent,
-      keystrokeTimings: req.body.keystrokeTimings,
-      keystrokeEvents: req.body.keystrokeEvents,
-      sourcePath: req.body.sourcePath,
-      passkeyVerified,
-      hasPasskey: !!req.session.hasPasskey,
-    });
-    const body = r.data;
-
-    // Session/policy (PEP): a passkey-verified submit clears the lock; a
-    // suspicious verdict raises it and asks for step-up.
-    if (passkeyVerified) {
-      delete req.session.passkeyVerifiedUserId;
-      delete req.session.continuousAuthLocked;
-    }
-    if (body && body.requiresPasskeyChallenge) {
-      req.session.continuousAuthLocked = true;
-      body.message = (body.message || "") + " - Suspicious behavior detected. Passkey verification required.";
-    }
-    res.status(r.status).json(body);
-  } catch (e) { next(e); }
-});
-
 router.post("/check", requireAuth, requireUnlockedSession, requireTrainedRhythm, async (req, res, next) => {
   try {
     const r = await ca.keystrokeCheck(req.session.userId, {
       textContent: req.body.textContent,
+      textLength: req.body.textLength,       // the SDK sends the length only, never the text
       keystrokeTimings: req.body.keystrokeTimings,
       keystrokeEvents: req.body.keystrokeEvents,
       hasPasskey: !!req.session.hasPasskey,

@@ -1,0 +1,272 @@
+<!doctype html>
+<!--
+  Continuum Guard (the browser extension) on the gateway. The extension opens this page; nobody
+  types its address. Passkeys made here belong to the gateway's origin, which is why sign-in,
+  enrolment and every step-up happen here and not on the site the user was on.
+
+    ?mode=link&k=<site key>&cc=<PKCE challenge>
+        Sign in. For the personal tenant: a Continuum account (email + passkey), made or used here.
+        For an organisation: its own sign-in page (tenant.signInUrl), which posts back to
+        /v1/link/callback and lands on mode=done.
+    ?mode=done&link=<id>&code=<one-time code>
+        Hands the code to the extension (its content script relays it; the service worker redeems it
+        with the verifier only it holds, see server.js "EXTENSION SIGN-IN").
+    ?mode=enrol#s=<session>                            passkey, typing and mouse enrolment (the SDK's own)
+    ?mode=verify&reason=keystroke|mouse#s=<session>    the passkey step-up after a lock
+    ?mode=error&why=<reason>   ?mode=closed
+
+  The session arrives in the fragment (never sent to a server) and is removed from the address at once.
+  The research study keeps its own page, /study.html. Look and wording come from /ui (as the console).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="robots" content="noindex" />
+  <title>Continuum Guard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" />
+  <link rel="stylesheet" href="/ui/continuum.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23635bff'/%3E%3Cpath d='M5 16h5l4-10 5 20 4-10h4' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <style>
+    .seg.full { display: flex; width: 100%; margin: 18px 0 18px; }
+    .seg.full button { flex: 1; }
+    .plan { list-style: none; padding: 0; margin: 18px 0 0; }
+    .plan li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--border); }
+    .plan li:first-child { border-top: 0; }
+    .plan .icon { color: var(--accent-text); margin-top: 2px; flex: none; }
+    .plan b { display: block; font-weight: 600; }
+    .plan span { color: var(--muted); font-size: 13px; }
+    #orgBtn { margin-top: 20px; }
+    #status:empty, #lead:empty { display: none; }
+    .status-line.busy { color: var(--muted); font-weight: 500; }
+  </style>
+</head>
+<body>
+  <main class="center">
+    <div class="solo">
+      <div class="solo-head" id="brand"></div>
+      <div class="card card-pad">
+        <div id="art"></div>
+        <h1 id="title">Continuum Guard</h1>
+        <p class="lead" id="lead"></p>
+
+        <div id="personal" class="hidden">
+          <div class="seg full" role="tablist">
+            <button id="tabNew" class="on" type="button" role="tab">Create account</button>
+            <button id="tabOld" type="button" role="tab">Sign in</button>
+          </div>
+          <form id="accountForm" novalidate>
+            <label class="field">
+              <span class="label">Email</span>
+              <input id="email" class="input" type="email" autocomplete="username webauthn" placeholder="you@example.com" required />
+            </label>
+            <p class="hint" id="accountHint"></p>
+            <button id="accountBtn" class="btn btn-primary btn-lg btn-block" type="submit" style="margin-top:16px">Create account with a passkey</button>
+          </form>
+          <div class="passkey-note" id="personalNote"></div>
+        </div>
+
+        <div id="org" class="hidden">
+          <button id="orgBtn" class="btn btn-primary btn-lg btn-block" type="button">Continue</button>
+          <div class="passkey-note" id="orgNote"></div>
+        </div>
+
+        <ul class="plan hidden" id="plan"></ul>
+
+        <p id="status" class="status-line" role="status" aria-live="polite"></p>
+      </div>
+      <p class="foot-note" id="foot">Continuum Guard · continuous authentication</p>
+    </div>
+  </main>
+  <script src="/vendor/simplewebauthn/index.umd.min.js"></script>
+  <script src="/ui/ui.js"></script>
+  <script>
+    (function () {
+      var C = window.CUI, el = C.el, icon = C.icon;
+      var q = new URLSearchParams(location.search);
+      var mode = q.get("mode") || "";
+      function $(id) { return document.getElementById(id); }
+      $("brand").appendChild(C.brand("Guard"));
+      $("personalNote").append(icon("fingerprint", "sm"), el("div", "Your passkey is your password: this device asks for your fingerprint, face or PIN. No password is stored anywhere."));
+      $("orgNote").append(icon("lock", "sm"), el("div", "You sign in on the organisation's own page, with your usual account there. Continuum Guard never sees your password."));
+
+      // status(text, "ok" | "bad" | "busy" | "")
+      function status(text, kind) {
+        var s = C.clear($("status"));
+        s.className = "status-line" + (kind ? " " + kind : "");
+        if (!text) return;
+        if (kind === "busy") s.append(el("span.spinner"), " ");
+        s.append(text);
+      }
+      function title(t, lead) { $("title").textContent = t; $("lead").textContent = lead || ""; }
+      function art(kind, name) { C.clear($("art")).appendChild(el("div.big-icon." + kind, icon(name))); }
+      function plan(items) {
+        var ul = C.clear($("plan"));
+        items.forEach(function (it) { ul.appendChild(el("li", [icon(it[0]), el("div", [el("b", it[1]), el("span", it[2])])])); });
+        ul.classList.remove("hidden");
+      }
+      // To the extension's content script in this window, which relays to the service worker.
+      function toExtension(msg) { try { window.postMessage(msg, location.origin); } catch (e) {} }
+
+      // Session from the fragment, then off the address bar and out of the history.
+      var session = "";
+      var m = /(?:^|[#&])s=([^&]+)/.exec(location.hash);
+      if (m) { session = decodeURIComponent(m[1]); history.replaceState(null, "", location.pathname + location.search); }
+      function sessionSiteKey() { try { return JSON.parse(atob(session.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).sk || ""; } catch (e) { return ""; } }
+      function loadGuard(on) {
+        var s = document.createElement("script");
+        s.src = "/guard.js";
+        s.setAttribute("data-site-key", sessionSiteKey());
+        s.setAttribute("data-session", session);
+        s.setAttribute("data-keystroke", on ? "on" : "off");
+        s.setAttribute("data-mouse", on ? "on" : "off");
+        s.setAttribute("data-onboarding", "eager");
+        s.setAttribute("data-login-url", "/connect.html?mode=closed");
+        document.body.appendChild(s);
+      }
+      function whenReady(cb) {
+        var t0 = Date.now();
+        (function wait() {
+          if (window.Continuum && window.Continuum.onReady) return window.Continuum.onReady(cb);
+          if (Date.now() - t0 > 20000) return status("Continuum couldn't load. Check that the Continuum server is running, then reopen this from the extension.", "bad");
+          setTimeout(wait, 100);
+        })();
+      }
+      function notFromExtension() {
+        art("info", "puzzle");
+        title("Continuum Guard", "This page belongs to the Continuum Guard browser extension. Open it from the extension's popup or settings.");
+      }
+
+      if (mode === "done") {
+        art("ok", "check");
+        title("Signed in", "Continuum Guard is finishing the sign-in. This tab closes by itself.");
+        status("Finishing…", "busy");
+        var link = q.get("link") || "", code = q.get("code") || "";
+        history.replaceState(null, "", location.pathname + "?mode=done");   // the code does not stay in the address
+        toExtension({ type: "continuum-ext-link", link: link, code: code });
+        setTimeout(function () { status("This tab should have closed by now. Open Continuum Guard's settings and sign in again.", ""); }, 8000);
+        return;
+      }
+      if (mode === "error") {
+        art("bad", "alert");
+        title("Sign-in didn't work", C.MESSAGES[q.get("why")] || "Something went wrong. Start again from the extension.");
+        return;
+      }
+      if (mode === "closed") {
+        art("info", "clock");
+        title("Set-up paused", "Nothing is lost. Open it again from Continuum Guard's popup when you're ready.");
+        return;
+      }
+
+      if (mode === "enrol" || mode === "verify") {
+        if (!session) { notFromExtension(); return; }
+        if (mode === "enrol") {
+          art("info", "shieldCheck");
+          title("Set up Continuum Guard", "Continuum learns how you type and move the mouse, so it can tell when someone else is using your session. It takes about 15 minutes, once.");
+          plan([
+            ["fingerprint", "A passkey", "If you have none yet. It is how you prove it's you if Continuum ever doubts it."],
+            ["keyboard", "Your typing", "Type a few short texts as they appear."],
+            ["mouse", "Your mouse", "Move and click as asked."],
+          ]);
+          status("Loading…", "busy");
+          loadGuard(true);
+          whenReady(function () {
+            art("ok", "check");
+            title("You're all set", "Continuum Guard now protects you on every website. You can close this tab.");
+            $("plan").classList.add("hidden");
+            status("");
+            toExtension({ type: "continuum-ext-enrolled" });
+          });
+        } else {
+          var reason = q.get("reason") === "mouse" ? "mouse" : "keystroke";
+          art("bad", "lock");
+          title("Verify it's you", (reason === "mouse" ? "The way the mouse was moving" : "The way someone was typing") +
+            " didn't look like you, so Continuum Guard locked your session. Use your passkey to unlock it.");
+          status("Loading…", "busy");
+          loadGuard(false);
+          // The SDK's own dialog runs the passkey and stays open after a failure with its own
+          // "Verify with passkey" button, so a retry needs nothing from this page.
+          whenReady(function () {
+            status("Waiting for your passkey…", "busy");
+            window.Continuum.requireStepUp(reason,
+              function () {
+                art("ok", "shieldCheck");
+                title("Verified", "Thanks, it's you. Your session is unlocked; you can close this tab.");
+                status("");
+                toExtension({ type: "continuum-ext-passkey", action: "verify", ok: true });
+              },
+              function (err) {
+                var why = /NotAllowed|not allowed|cancel|timed out/i.test(String(err)) ? C.MESSAGES.passkey_cancelled : String(err).replace(/[.!]?\s*$/, ".");
+                status("Not verified: " + why + " Press “Verify with passkey” to try again.", "bad");
+                toExtension({ type: "continuum-ext-passkey", action: "verify", ok: false, error: String(err).slice(0, 80) });
+              });
+          });
+        }
+        return;
+      }
+
+      if (mode !== "link") { notFromExtension(); return; }
+      var siteKey = q.get("k") || "", challenge = q.get("cc") || "";
+      art("info", "shield");
+      title("Sign in to Continuum Guard", "");
+      status("Looking up…", "busy");
+      C.api("/v1/link/start", { body: { siteKey: siteKey, codeChallenge: challenge } }).then(function (s) {
+        status("");
+        if (s.kind === "organisation") {
+          art("info", "building");
+          title("Sign in with " + s.tenantName, "Continuum Guard will protect you with " + s.tenantName + "'s account, the same one you use on its website.");
+          $("org").classList.remove("hidden");
+          $("orgBtn").textContent = "Continue to " + s.tenantName;
+          $("orgBtn").addEventListener("click", function () {
+            $("orgBtn").disabled = true;
+            status("Opening " + s.tenantName + "'s sign-in…", "busy");
+            location.href = s.signInUrl;
+          });
+          return;
+        }
+        personal(s.linkId);
+      }).catch(function (e) {
+        art("bad", "alert");
+        title("Can't sign in here", "");
+        status(C.explain(e), "bad");
+      });
+
+      // The personal tenant: a Continuum account, made or used right here.
+      function personal(linkId) {
+        art("info", "user");
+        title("Your Continuum account", "For personal use, on any website.");
+        $("personal").classList.remove("hidden");
+        var creating = true;
+        function tab(isNew) {
+          creating = isNew;
+          $("tabNew").className = isNew ? "on" : ""; $("tabOld").className = isNew ? "" : "on";
+          $("tabNew").setAttribute("aria-selected", String(isNew)); $("tabOld").setAttribute("aria-selected", String(!isNew));
+          $("accountBtn").textContent = isNew ? "Create account with a passkey" : "Sign in with your passkey";
+          $("accountHint").textContent = isNew ? "Your email is your account's name. It is not checked, so use one you'll remember." : "Use the email you created your account with.";
+          status("");
+        }
+        $("tabNew").addEventListener("click", function () { tab(true); });
+        $("tabOld").addEventListener("click", function () { tab(false); });
+        tab(true);
+        $("accountForm").addEventListener("submit", function (ev) {
+          ev.preventDefault();
+          var email = $("email").value.trim();
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { status(C.MESSAGES.bad_email, "bad"); $("email").focus(); return; }
+          $("accountBtn").disabled = true;
+          status(creating ? "Creating your passkey…" : "Waiting for your passkey…", "busy");
+          var extra = { purpose: "link", linkId: linkId };
+          (creating ? C.passkeyRegister(email, extra) : C.passkeyLogin(email, extra)).then(function (r) {
+            status("Signed in. Handing over to the extension…", "busy");
+            location.replace("/connect.html?mode=done&link=" + encodeURIComponent(r.linkId) + "&code=" + encodeURIComponent(r.code));
+          }).catch(function (e) {
+            status(C.explain(e), "bad");
+            $("accountBtn").disabled = false;
+          });
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
