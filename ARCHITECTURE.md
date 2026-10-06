@@ -394,10 +394,23 @@ Implementation details:
   (its build needs the >100 MB dataset that isn't in git).
 
 ## 13. Data & migration
-- **`scripts/data-export.sh` / `data-import.sh`** snapshot and restore the stateful data
-  (`ca.db`, `continuum.db`, per-user models) as a tarball moved out-of-band (biometric —
-  never committed). `passkey.db` is deliberately excluded: **passkeys are hardware-bound
-  (Windows Hello/TPM) and cannot migrate** — users re-register on a new machine.
+- **`scripts/data-export.sh`** backs up everything git does not hold, without stopping the
+  stack (since 2026-10-06): `ca.db`, `passkey.db`, the demo databases (each copied with SQLite's
+  backup API *inside* its own container, the writer's locking domain), the gateway's registry,
+  `identity.json` (pins every user's id to their data) and both signing keys, the per-user models,
+  `.env`, and `../paper` (manuscript, thesis and paper sources, in no git repository). A
+  `MANIFEST.json` (`scripts/backup_manifest.py`) records every file's SHA-256, each database's
+  `integrity_check` and per-table row counts, and the code commit. `BACKUP_PASSPHRASE` encrypts
+  the archive (AES-256, PBKDF2); biometric data and secrets leave the machine only that way.
+- **`scripts/data-import.sh <archive> --verify-only`** is the restore drill: unpack, check every
+  file, database, JSON file and key against the manifest, discard. Without it, a verified backup
+  is restored in place (stack stopped) or into `--target <dir>`, and each replaced file is moved
+  aside first, so a restore can be undone. Checked 2026-10-06: 1,594 files restored, databases
+  identical by content table for table, models and paper sources identical, an encrypted backup
+  verifies with its passphrase and is refused with a wrong one.
+- `passkey.db` is now included: the server keeps only public keys, which move with the server.
+  A passkey is bound to its domain (RP ID), so moving to a **new domain** still means users
+  register again; on the same domain they keep working.
 
 ## 14. Security model (summary)
 | Threat | Mitigation |
