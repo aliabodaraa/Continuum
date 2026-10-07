@@ -1,0 +1,58 @@
+{
+  "userId": 1,
+  "modelPath": "/app/artifacts/users/user-1/final_model",
+  "protocol": "subject-disjoint (impostors = unseen participants of KeyRecs free-text (Dias et al., Data in Brief 2023, CC-BY 4.0); genuine = user's is_training=0 samples)",
+  "impostorSource": "KeyRecs free-text (Dias et al., Data in Brief 2023, CC-BY 4.0)",
+  "impostorFile": "keyrecs_impostors.h5",
+  "nGenuineWindows": 196,
+  "nImpostorWindows": 4000,
+  "nImpostorSubjects": 99,
+  "genuineMean": 0.9516674231129642,
+  "impostorMean": 0.10629039637964971,
+  "auc": 0.9792002551020408,
+  "aucCI": [
+    0.9743757334183674,
+    0.9839949617346939
+  ],
+  "eer": 0.07071428571428572,
+  "eerCI": [
+    0.05593622448979592,
+    0.08816836734693878
+  ],
+  "eerThreshold": 0.7958422899246216,
+  "atLiveThreshold": {
+    "threshold": 0.5,
+    "far": 0.097,
+    "frr": 0.030612244897959183,
+    "tar": 0.9693877551020408,
+    "packetFalseLockRate": 0.000535182244879278,
+    "packetImpostorCatchRate": 0.9988698272311187
+  },
+  "tarAtFar": {
+    "1%": {
+      "tar": 0.5561224489795918,
+      "threshold": 0.9988061815500259,
+      "ci": [
+        0.48966836734693875,
+        0.6581632653061225
+      ]
+    },
+    "5%": {
+      "tar": 0.8775510204081632,
+      "threshold": 0.9301339954137801,
+      "ci": [
+        0.8213010204081632,
+        0.9285714285714286
+      ]
+    },
+    "10%": {
+      "tar": 0.9693877551020408,
+      "threshold": 0.4669772148132321,
+      "ci": [
+        0.9438775510204082,
+        0.9897959183673469
+      ]
+    }
+  },
+  "provenanceNote": "Corrected 2026-09-24: this file said Aalto because keystroke_user_sweep.py hard-coded that label. The impostors were the 99 KeyRecs participants (data/keyrecs_impostors.h5, 52,234 windows; commit 104344f). The numbers are unchanged."
+}

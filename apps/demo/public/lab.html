@@ -1,6 +1,8 @@
 ﻿<!doctype html>
 <html lang="en">
   <head>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Continuous Auth — Rhythm Lab</title>
@@ -837,7 +839,7 @@
           </div>
         </div>
 
-        <!-- Packet history: each card = one decision packet (6 windows),
+        <!-- Packet history: each card = one decision packet (20 windows),
              scrolls horizontally with the newest on the right. -->
         <div class="window-grid-wrap">
           <div class="window-grid-label">
@@ -874,14 +876,6 @@
             </div>
           </div>
           <div class="btn-group">
-            <button
-              type="submit"
-              class="btn btn-primary"
-              id="submitBtn"
-              style="display: none"
-            >
-              Save Training Sample
-            </button>
             <div
               style="
                 font-size: 11px;
@@ -989,7 +983,6 @@
       // ── Page logic ───────────────────────────────────────────────
       const form = document.getElementById("opinionForm");
       const opinionInput = document.getElementById("opinionInput");
-      const submitBtn = document.getElementById("submitBtn");
       const tracker = window.continuumKeystrokes.createTracker(form);
 
       // Window config drives the keystroke-progress display and the client-side
@@ -1009,6 +1002,7 @@
           // Fixed Lu et al. window boundary (0.50) — the live decision threshold.
           if (cfg.decisionThreshold != null) _userThreshold = cfg.decisionThreshold;
           if (cfg.rollingWindowCount) _rollingWindowCount = cfg.rollingWindowCount;
+          if (cfg.recentWindowCount) _recentWindowCount = cfg.recentWindowCount;
           const hint = document.getElementById("keystrokeHint");
           if (hint)
             hint.textContent = `0 / ${WINDOW_SIZE} keystrokes — evaluates after first window`;
@@ -1085,13 +1079,15 @@
       // Fixed Lu et al. window boundary (overwritten by /config decisionThreshold).
       let _userThreshold = 0.5;
       let _rollingWindowCount = 18;
+      let _recentWindowCount = 20; // packet size (overwritten by /config)
       // Each /check only sends the most recent events the decision uses. The
-      // verdict needs the last 18 windows (~220 keystrokes ≈ 440 events); we send
-      // a ~700-event (~350-keystroke) tail for safe buffer after dropped digraphs.
+      // verdict needs more than 20 windows (the packet; warmup lasts while
+      // windowCount <= 20), which took ~400 keydowns (~800 events) on stored real
+      // sessions; we send a 1400-event (~700-keystroke) tail, as /contribute does.
       // Resending the whole history every check bloated the payload and slowed
       // each check; capping it keeps the payload constant no matter how long the
       // session runs.
-      const CHECK_SEND_EVENTS = 700;
+      const CHECK_SEND_EVENTS = 1400;
       let _windowHistory = [];
       let _packetSize = 0;
       let _packetVerdict = null;
@@ -1315,11 +1311,11 @@
             _userThreshold,
           );
 
-        // Snapshot this packet (one per check result with a full 6-window packet).
-        // Early checks may produce only 4-5 windows; snapshotting them creates
+        // Snapshot this packet (one per check result with a full packet).
+        // Early checks may produce fewer windows; snapshotting them creates
         // artificial "4 new windows" overlap with the next packet because the
         // first snapshot spans fewer windows than RECENT_WINDOW_COUNT.
-        if (verdict && scores.length >= 6) {
+        if (verdict && scores.length >= _recentWindowCount) {
           // Snapshot the EXACT scores the server voted on (not _windowHistory's
           // tail, which can drift) so the packet tiles always match the verdict.
           const wins = scores.map((s) => ({
@@ -1760,7 +1756,6 @@
               );
           } else if (data.requiresPasskeyChallenge || data.isSuspicious) {
             passkeyRequired = true;
-            submitBtn.disabled = true;
             setBadge("alert");
             const reason =
               (data.typingEvaluation && data.typingEvaluation.reason) ||
@@ -1793,9 +1788,15 @@
               data.typingEvaluation &&
               data.typingEvaluation.recentWindowScores
             )
+              // The challenge can fire from accumulated suspicion across recent
+              // checks (or a degenerate-input override), not only from THIS
+              // packet's own vote — data.isSuspicious is what this specific
+              // packet's Lu vote actually decided, so the trace must follow
+              // that, not the (possibly debounce-driven) challenge decision,
+              // or the numbers shown can contradict the label next to them.
               setWindowScores(
                 data.typingEvaluation.recentWindowScores,
-                "suspicious",
+                data.isSuspicious ? "suspicious" : "genuine",
                 data.typingEvaluation.windowCount,
                 Number(data.modelConfidence),
               );
@@ -1860,75 +1861,8 @@
         }
       }
 
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const opinion = opinionInput.value.trim();
-        if (opinion.length < 80) {
-          showAlert("error", "Please write at least 80 characters.");
-          return;
-        }
-        if (passkeyRequired) {
-          showAlert(
-            "warning",
-            "Passkey verification required before submitting.",
-          );
-          if (window.Continuum) window.Continuum.requireStepUp("keystroke", clearForm);
-          return;
-        }
-        setLoading(submitBtn, true, "Submitting…");
-        const events = tracker.getEvents();
-        const timings = window.continuumKeystrokes.analyze(events);
-        const textContent = `[Opinion]\n\n${opinion}`;
-        try {
-          const res = await fetch("/api/text/submit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              textContent,
-              keystrokeEvents: events,
-              keystrokeTimings: timings,
-              passkeyVerifiedForAction: passkeyVerifiedForCurrentText,
-              sourcePath: "/lab.html",
-            }),
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            if (res.status === 423 && data.rhythmEnrollmentRequired) {
-              window.location.href = "/dashboard.html";
-              return;
-            }
-            if (res.status === 423 || data.continuousAuthLocked) {
-              window.location.href = "/dashboard.html";
-              return;
-            }
-            throw new Error(data.error || "Submission failed");
-          }
-          if (data.requiresPasskeyChallenge) {
-            passkeyRequired = true;
-            submitBtn.disabled = true;
-            logAI("passkey", "Rhythm changed at submission — passkey required");
-            showAlert(
-              "warning",
-              "Typing rhythm changed. Passkey required before submitting.",
-            );
-            setTimeout(function () { if (window.Continuum) window.Continuum.requireStepUp("keystroke", clearForm); }, 500);
-            return;
-          }
-          const scoreVal =
-            data.modelConfidence != null ? Number(data.modelConfidence) : null;
-          const scoreStr =
-            scoreVal != null
-              ? ` (${(scoreVal * 100).toFixed(0)}% confidence)`
-              : "";
-          logAI("genuine", `Opinion submitted — rhythm verified${scoreStr}`);
-          showAlert("success", "Submitted. Typing rhythm verified.");
-          clearForm();
-        } catch (err) {
-          showAlert("error", err.message);
-        } finally {
-          setLoading(submitBtn, false, "Save Training Sample");
-        }
-      });
+      // Nothing is sent when the form is submitted: Continuum checks the typing while it happens.
+      form.addEventListener("submit", (e) => e.preventDefault());
 
       function clearForm() {
         form.reset();
@@ -1946,7 +1880,6 @@
           const el = document.getElementById(id);
           if (el) el.style.display = "none";
         });
-        submitBtn.disabled = false;
         setBadge("monitoring");
         setScore(
           null,

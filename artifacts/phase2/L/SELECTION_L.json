@@ -1,0 +1,58 @@
+{
+ "preregistrationLSha256": "4264a6ebc36cf64cbbb79c92ac1fcafc5420448ce0f668f918401268034ea166",
+ "splitJSha256": "4df1abbeaf904e2be02623b6d04549a9c66719878b687d8f27d2f21287759192",
+ "splitLSha256": "c1c7fe33068e9cb4313854feda9ff4ffb3fbdabbb9d65ddb63bc43ec64a6e057",
+ "evalDecisionLevelSha256": "efa74dcea895955f0c70d30ced3230dacdf45d3606ae4bb105a749888dca55bb",
+ "makeSplitLSha256": "7a021651991610e2cf5fa52d5cdc4c2d4af69875f22ecc1f7c036da965944a7f",
+ "protocol": "L",
+ "stage": "final",
+ "smokeTest": false,
+ "writtenAtUtc": "2026-09-24T13:05:14+00:00",
+ "configuration": {
+  "objective": "supcon",
+  "param": 0.1,
+  "epochs": 7,
+  "selectionModel": "supcon-0.1-base-train-s101",
+  "selectionMeanPerUserAuc": 0.9529067460317461
+ },
+ "epochsRule": "the winner's best epoch in its selection run (early stopping on base-train, 80% of each 3-min session), applied to all 80 base users and their whole 3-min sessions; one epoch = ceil(windows / 256) class-balanced batches of 32 users x 8 windows, so a final epoch has more steps than a selection epoch",
+ "selectionScoresSha256": "3306e3351f52721b4a5a571764c6efe6195578b84a9027ee92871e326a7ff16d",
+ "models": [
+  {
+   "seed": 101,
+   "dir": "artifacts/phase2/L/models/supcon-0.1-base-80-s101-e7",
+   "weightsSha256": "28500d03e28710005c068d081c79ff41724b42bae0adc00438d25964866e8ca4",
+   "metaSha256": "23c1d7f1ac01cb24202d4572b4fa3a403c02c02d131fb8403fdc959f3af5ec82",
+   "minutes": 1.9,
+   "tensorflow": "2.15.0"
+  },
+  {
+   "seed": 102,
+   "dir": "artifacts/phase2/L/models/supcon-0.1-base-80-s102-e7",
+   "weightsSha256": "0e322de0814f0c02c56ff15779ccc5f5fada9dc3543511b9dc7f7c22c99dc357",
+   "metaSha256": "64b7ace3a4a37b96e447b405c7ca43809212111b5ade0806c52823a7df6f764b",
+   "minutes": 1.8,
+   "tensorflow": "2.15.0"
+  },
+  {
+   "seed": 103,
+   "dir": "artifacts/phase2/L/models/supcon-0.1-base-80-s103-e7",
+   "weightsSha256": "c455444dadb1a1f6d7a8cde9b69b1eb778e6b9c21e3110820b7d73d5e657388e",
+   "metaSha256": "650f5e23bd339aac093dd7456d8843460acf4173c99061b15a61db67fbae0472",
+   "minutes": 1.8,
+   "tensorflow": "2.15.0"
+  }
+ ],
+ "codeSha256": {
+  "services/model-api/analysis/phase2/l_common.py": "115458be7e37154aea9daf7ccf22b598dcab387a56fdb2adf49b0ee49837a2d3",
+  "services/model-api/analysis/phase2/train_embedding_l.py": "bc6b929beef8c6b6d1b1900bf2876bea13cd8e3ebe132bcb51bcec43c816ef2d",
+  "services/model-api/analysis/phase2/select_l.py": "0de9de2abb3274bfc5aed6138ded45138b3a815ecadb2719f0c1bdc1558c2619",
+  "services/model-api/analysis/phase2/finalize_l.py": "a9f4fb16adedfc9f46acff5828905aef931cb256cec14fc783306548aabefa92",
+  "services/model-api/analysis/phase2/score_l.py": "b193c6fbc844c935bd9bcf7e09632aaa58a3ffbb39d3e12c5b96ebf888b91331",
+  "services/model-api/analysis/phase2/analyze_l.py": "f4595dcd9eca5a2974744895e70d9a8c714274c2d76ca4e817c5cd1957a10d7a",
+  "services/model-api/analysis/phase1/p1lib.py": "86f1423aa2eb6f1e6ae9093a88ee57e719c56251939364e0e5e6d44a459373d7",
+  "module:repr_arch_study": "bf07cc1f1028e038369baedbb112de6244199f8f1f448ab34d8158bef252784c",
+  "module:preprocess_mouse": "f1a15262207647ab7f15a47ceebd53e2b6f8ab151eab2ce0bb56653889203957"
+ },
+ "note": "Written before any development user is scored (PREREGISTRATION_L.md section 4)."
+}

@@ -1,0 +1,242 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --radius-xl: 18px;
+        --radius-lg: 14px;
+        --radius-md: 11px;
+        --radius-pill: 999px;
+
+        /* ---- light theme (default) ---- */
+        --bg-1: #eef2f9;
+        --bg-2: #e4e9f3;
+        --surface: #ffffff;
+        --surface-2: #f7f9fc;
+        --border: #e5e9f1;
+        --border-strong: #d5dbe7;
+        --text: #0f172a;
+        --muted: #5c6a86;
+        --faint: #93a0b8;
+        --shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 8px 24px -6px rgba(15, 23, 42, .12);
+        --accent: #4f46e5;
+        --accent-2: #6366f1;
+        --teal: #0d9488;
+        --teal-2: #14b8a6;
+        --ok-bg: #ecfdf5; --ok-border: #a7f3d0; --ok-text: #047857;
+        --warn-bg: #fef2f2; --warn-border: #fecaca; --warn-text: #b91c1c;
+        --dot-on: #16a34a; --dot-off: #a3adc2;
+        --brand-1: #6366f1; --brand-2: #4338ca;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-1: #0d1424;
+          --bg-2: #080d18;
+          --surface: #141d31;
+          --surface-2: #18223a;
+          --border: #23304d;
+          --border-strong: #2c3a5c;
+          --text: #e8edf7;
+          --muted: #93a1bd;
+          --faint: #64748b;
+          --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 26px -6px rgba(0, 0, 0, .5);
+          --accent: #6366f1;
+          --accent-2: #818cf8;
+          --teal: #14b8a6;
+          --teal-2: #2dd4bf;
+          --ok-bg: rgba(16, 185, 129, .13); --ok-border: rgba(16, 185, 129, .38); --ok-text: #6ee7b7;
+          --warn-bg: rgba(239, 68, 68, .15); --warn-border: rgba(239, 68, 68, .4); --warn-text: #fca5a5;
+          --dot-on: #22c55e; --dot-off: #55648a;
+          --brand-1: #6366f1; --brand-2: #4338ca;
+        }
+      }
+
+      * { box-sizing: border-box; }
+      /* Turns out Chrome ALREADY draws its own rounded, shadowed frame around the popup
+         window natively, once content fits without forcing Chrome's own scrollbar (that
+         forced-scrollbar fallback is what made it look square earlier — nothing to do with
+         our CSS). The earlier margin+shadow trick was fighting that native frame and just
+         nested a second rounded box inside it. body now fills the window flush again;
+         border-radius/overflow stay only so OUR content's corners aren't visibly square
+         against Chrome's already-rounded native edge. */
+      html { overflow: hidden; background: transparent; }
+      body {
+        font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        width: 300px; margin: 0; padding: 15px;
+        background:
+          radial-gradient(130% 120% at 100% 0%, var(--bg-1) 0%, var(--bg-2) 60%);
+        color: var(--text);
+        -webkit-font-smoothing: antialiased;
+        overflow: hidden;          /* no scrollbar inside the panel */
+        border-radius: 16px;       /* match Chrome's own native popup rounding */
+      }
+
+      header { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
+      .logo {
+        width: 26px; height: 26px; flex: none; display: block;
+        filter: drop-shadow(0 3px 8px rgba(79, 70, 229, .45));
+      }
+      .title { font-size: 13.5px; font-weight: 800; letter-spacing: .15px; }
+      .sub-title { font-size: 10px; color: var(--faint); font-weight: 600; margin-top: 1px; }
+      .dot {
+        width: 9px; height: 9px; border-radius: 50%; margin-left: auto; flex: none;
+        background: var(--dot-on); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-on) 22%, transparent);
+      }
+      .dot.off { background: var(--dot-off); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-off) 22%, transparent); }
+
+      /* Chrome enforces its own hard cap on popup height; once content exceeds it, Chrome
+         takes over the viewport with its OWN native scrollbar (which also flattens our
+         border-radius on the way) — no page-level CSS can suppress that. The only real fix
+         is keeping actual content shorter than the cap, hence the tight paddings below
+         rather than relying on overflow:hidden alone. */
+      #verdict {
+        border-radius: var(--radius-lg);
+        padding: 9px 12px; margin-bottom: 9px;
+        font-weight: 700; font-size: 12.5px; line-height: 1.3;
+        background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
+        box-shadow: var(--shadow);
+        transition: background .22s ease, border-color .22s ease, color .22s ease;
+      }
+      #verdict.v-ok { background: var(--ok-bg); border-color: var(--ok-border); color: var(--ok-text); }
+      #verdict.v-warn { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn-text); }
+
+      .card {
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--radius-xl); padding: 1px 12px; margin-bottom: 10px;
+        box-shadow: var(--shadow);
+      }
+      .row {
+        display: flex; justify-content: space-between; align-items: center; gap: 10px;
+        padding: 6px 0; border-bottom: 1px solid var(--border);
+      }
+      .row:last-child { border-bottom: none; }
+      .row > span:first-child { color: var(--muted); font-weight: 500; white-space: nowrap; flex: none; }
+      /* Values (site origins, emails, long verdict text) must never push past the fixed
+         300px panel width — the panel hides overflow, so anything too long to wrap would
+         otherwise be silently clipped instead of visible on a second line. min-width: 0
+         lets the flex item actually shrink; overflow-wrap breaks even unbroken strings
+         (URLs, emails) that have no natural wrap point. */
+      .val { font-weight: 700; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+
+      #verdict, #acctLine, #noAccount { overflow-wrap: anywhere; }
+
+      button {
+        display: block; width: 100%; border: 0; cursor: pointer;
+        border-radius: var(--radius-md); padding: 9px 14px;
+        font: 700 12.5px/1.2 system-ui; color: #fff; text-align: center;
+        transition: transform .06s ease, filter .16s ease, background .16s ease;
+      }
+      button:hover { filter: brightness(1.07); }
+      button:active { transform: translateY(1px) scale(.99); }
+      .btn-keys { background: linear-gradient(135deg, var(--teal-2), var(--teal)); box-shadow: 0 4px 12px -2px color-mix(in srgb, var(--teal) 55%, transparent); }
+      .btn-mouse { background: linear-gradient(135deg, #a78bfa, #7c3aed); box-shadow: 0 4px 12px -2px color-mix(in srgb, #7c3aed 55%, transparent); }
+      .btn-ghost {
+        background: transparent; border: 1px solid var(--border-strong);
+        color: var(--muted); box-shadow: none; font-size: 12px; padding: 8px 14px;
+      }
+      .btn-ghost:hover { filter: none; background: var(--surface-2); color: var(--text); }
+
+      .pk-link { color: var(--accent-2); font-size: 11px; font-weight: 600; text-decoration: none; }
+      .pk-link:hover { text-decoration: underline; }
+
+      /* Compact on/off switch for the mouse-tracking row. */
+      .switch { position: relative; display: inline-block; width: 34px; height: 18px; flex: none; }
+      .switch input { opacity: 0; width: 0; height: 0; }
+      .slider { position: absolute; inset: 0; cursor: pointer; background: var(--dot-off); border-radius: var(--radius-pill); transition: background .18s; }
+      .slider::before { content: ""; position: absolute; width: 14px; height: 14px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: transform .18s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+      .switch input:checked + .slider { background: var(--dot-on); }
+      .switch input:checked + .slider::before { transform: translateX(16px); }
+      input[type=range] { accent-color: var(--accent); height: 16px; cursor: pointer; }
+      .ctrl { display: flex; align-items: center; gap: 8px; }
+      /* Sub-label under a control: spells out what the slider setting actually means in
+         windows, so "70%" is not left as an abstraction. */
+      .hint { color: var(--faint); font-size: 10.5px; line-height: 1.35; padding: 0 0 6px; margin-top: -2px; }
+      .gap { height: 7px; }
+
+      /* ---- collapsible per-modality sections ----
+         Each modality owns its own status rows, its settings and its train button, so the
+         panel stays short and each channel reads as a self-contained unit. The open/close
+         height animates via grid-template-rows 0fr -> 1fr, which eases to the content's
+         NATURAL height — no hard-coded max-height to guess wrong when rows are hidden. */
+      .sect {
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--radius-xl); box-shadow: var(--shadow);
+        margin-bottom: 9px; overflow: hidden;
+      }
+      .sect-head {
+        display: flex; align-items: center; gap: 8px; width: 100%;
+        padding: 9px 12px; background: transparent; border: 0; border-radius: 0;
+        color: var(--text); font: 700 12.5px/1.2 system-ui; text-align: left; cursor: pointer;
+        transition: background .16s ease;
+      }
+      .sect-head:hover { background: var(--surface-2); filter: none; }
+      .sect-head:active { transform: none; }
+      .chev { flex: none; font-size: 9px; color: var(--faint); }
+      .sect.open .chev { transform: rotate(90deg); }
+      .sect-sum { margin-left: auto; font-weight: 600; font-size: 11px; color: var(--muted); }
+      .sect-body { display: grid; grid-template-rows: 0fr; }
+      .sect.open .sect-body { grid-template-rows: 1fr; }
+      /* Transitions are enabled by .anim, which popup.js adds only AFTER the remembered
+         open/closed state is applied — otherwise a section restored as "open" would animate
+         itself open every time the popup is shown. */
+      .sect.anim .sect-body { transition: grid-template-rows .26s ease; }
+      .sect.anim .chev { transition: transform .26s ease; }
+      .sect-inner { min-height: 0; overflow: hidden; }
+      .sect-pad { padding: 0 12px 11px; border-top: 1px solid var(--border); }
+      .sect-pad .row:first-child { padding-top: 7px; }
+      .sect-pad button { margin-top: 9px; }
+      /* Respect the OS "reduce motion" setting — collapse still works, just instantly. */
+      @media (prefers-reduced-motion: reduce) {
+        .sect-body, .chev, .slider, .slider::before { transition: none; }
+      }
+      /* Onboarding tip — hidden once monitoring is actually live (popup.js), since the
+         panel is already tall with every row visible and this text isn't needed at that
+         point. Keeping it in the DOM (not deleted) so it still shows pre-training. */
+      .note { color: var(--faint); font-size: 10px; margin-top: 9px; line-height: 1.4; }
+      .note b { color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <img class="logo" src="../../icons/icon48.png" alt="" />
+      <div>
+        <div class="title">Continuum Guard</div>
+        <div class="sub-title">continuous authentication</div>
+      </div>
+      <span class="dot off" id="dot"></span>
+    </header>
+
+    <!-- nobody signed in: nothing is captured -->
+    <div id="setupCard" class="card" style="display:none">
+      <div style="padding:12px 0 4px;font-weight:700">Sign in to start</div>
+      <div style="padding-bottom:12px;color:var(--muted);font-size:12px;line-height:1.5">
+        Continuum Guard checks your typing and mouse rhythm on every website. Sign in with a personal
+        Continuum account or your organisation&#39;s account first.
+      </div>
+      <button id="setupBtn" class="btn-keys" style="margin-bottom:12px">Open settings</button>
+    </div>
+
+    <div id="mainPanel" style="display:none">
+      <div id="acctLine" class="sub-title" style="margin:-4px 0 10px">…</div>
+      <div id="verdict">…</div>
+
+      <div class="card" id="verdictCard">
+        <div class="row" id="rowKeys"><span>⌨️ Typing</span><span class="val" id="keys">…</span></div>
+        <div class="row" id="rowMouse"><span>🖱️ Mouse</span><span class="val" id="mouse">…</span></div>
+        <div class="row"><span>This site</span><span class="val" id="site">…</span></div>
+      </div>
+
+      <button id="enrolBtn" class="btn-keys" style="display:none;margin-bottom:9px">Finish enrolment</button>
+      <button id="pauseBtn" style="background:#dc2626">Pause recording</button>
+      <div class="hint" style="padding-top:6px">Pause before you type anything private: nothing is recorded, on any site, until you resume. Shortcut: Alt+Shift+P.</div>
+      <div id="errLine" style="display:none;color:var(--warn-text);font-size:11.5px;padding:2px 0 6px"></div>
+      <div class="gap"></div>
+      <button id="exclude" class="btn-ghost">…</button>
+      <div class="gap"></div>
+      <button id="openSettings" class="btn-ghost">Settings</button>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

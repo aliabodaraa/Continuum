@@ -1,29 +1,58 @@
 name: Publish images to Docker Hub
 
-# Rebuilds and pushes the frequently-changing service images on every push to
-# main (and on demand). model-api is intentionally NOT here: its build bakes a
-# 119 MB mouse dataset that is too large for git, and its Python/model code
-# rarely changes — publish it manually with scripts/release.sh (see PUBLISHING.md).
+# Pushes the frequently-changing service images, but only after the CI workflow (ci.yml) has
+# passed on a push to main: a commit whose tests fail is never published. It can also be run
+# by hand (Actions tab), optionally with a version tag such as 0.2.0.
+# model-api is intentionally NOT here: the production image bakes a 119 MB mouse dataset that
+# is too large for git, and its Python/model code rarely changes — publish it manually with
+# scripts/release.sh (see PUBLISHING.md).
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-    paths:
-      - "services/ca-service/**"
-      - "services/passkey-service/**"
-      - "services/gateway/**"
-      - "apps/demo/**"
-      - "sdk/**"
-      - ".github/workflows/publish.yml"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Extra version tag, e.g. 0.2.0 (optional)"
+        required: false
+        default: ""
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 env:
   REGISTRY: aliabodaraa   # your Docker Hub namespace
 
 jobs:
   publish:
+    # Only a CI run that succeeded, was started by a push (never a pull request) and ran in
+    # this repository — so code from a fork can never reach the Docker Hub credentials.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: ca-service,      context: services/ca-service }
+          - { name: passkey-service, context: services/passkey-service }
+          # gateway + web-demo bake the SDK from the top-level sdk/ named build context.
+          - { name: gateway,         context: services/gateway, sdk: true }
+          - { name: web-demo,        context: apps/demo,        sdk: true }
     steps:
+      # The exact commit CI tested, not whatever main points to by now.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -33,47 +62,25 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Short commit SHA
+      - name: Tags
         id: meta
-        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          img="${REGISTRY}/${{ matrix.name }}"
+          {
+            echo "tags<<EOF"
+            echo "${img}:latest"
+            echo "${img}:$(git rev-parse --short HEAD)"
+            if [ -n "$VERSION" ]; then echo "${img}:${VERSION}"; fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: ca-service
+      - name: ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
-          context: services/ca-service
+          context: ${{ matrix.context }}
+          build-contexts: ${{ matrix.sdk && 'sdk=./sdk' || '' }}
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/ca-service:latest
-            ${{ env.REGISTRY }}/ca-service:${{ steps.meta.outputs.sha }}
-
-      - name: passkey-service
-        uses: docker/build-push-action@v6
-        with:
-          context: services/passkey-service
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/passkey-service:latest
-            ${{ env.REGISTRY }}/passkey-service:${{ steps.meta.outputs.sha }}
-
-      # gateway + web-demo bake the SDK from the top-level sdk/ named build context.
-      - name: gateway
-        uses: docker/build-push-action@v6
-        with:
-          context: services/gateway
-          build-contexts: |
-            sdk=./sdk
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/gateway:latest
-            ${{ env.REGISTRY }}/gateway:${{ steps.meta.outputs.sha }}
-
-      - name: web-demo
-        uses: docker/build-push-action@v6
-        with:
-          context: apps/demo
-          build-contexts: |
-            sdk=./sdk
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/web-demo:latest
-            ${{ env.REGISTRY }}/web-demo:${{ steps.meta.outputs.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=${{ matrix.name }}

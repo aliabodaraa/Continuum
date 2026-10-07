@@ -1,0 +1,182 @@
+2026-09-12 22:45:03.498486: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-09-12 22:45:03.572373: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[C_B3_s0] representation A5 | architecture B3 = GRU32 + GRU32 (no CNN) | prereg C 60d6a45e5378
+Epoch 1/40
+430/430 - 20s - loss: 4.2139 - accuracy: 0.0455 - val_loss: 3.9002 - val_accuracy: 0.0682 - lr: 0.0010 - 20s/epoch - 46ms/step
+Epoch 2/40
+430/430 - 15s - loss: 3.8390 - accuracy: 0.0728 - val_loss: 3.7890 - val_accuracy: 0.0855 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 3/40
+430/430 - 15s - loss: 3.6680 - accuracy: 0.0951 - val_loss: 3.5201 - val_accuracy: 0.1210 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 4/40
+430/430 - 15s - loss: 3.4400 - accuracy: 0.1289 - val_loss: 3.4029 - val_accuracy: 0.1360 - lr: 0.0010 - 15s/epoch - 34ms/step
+Epoch 5/40
+430/430 - 15s - loss: 3.2460 - accuracy: 0.1593 - val_loss: 3.1576 - val_accuracy: 0.1750 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 6/40
+430/430 - 15s - loss: 3.1062 - accuracy: 0.1873 - val_loss: 3.0468 - val_accuracy: 0.1991 - lr: 0.0010 - 15s/epoch - 34ms/step
+Epoch 7/40
+430/430 - 15s - loss: 3.0037 - accuracy: 0.2085 - val_loss: 2.9789 - val_accuracy: 0.2162 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 8/40
+430/430 - 15s - loss: 2.9092 - accuracy: 0.2283 - val_loss: 2.8471 - val_accuracy: 0.2439 - lr: 0.0010 - 15s/epoch - 34ms/step
+Epoch 9/40
+430/430 - 15s - loss: 2.8310 - accuracy: 0.2434 - val_loss: 2.7838 - val_accuracy: 0.2622 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 10/40
+430/430 - 15s - loss: 2.7710 - accuracy: 0.2622 - val_loss: 2.7326 - val_accuracy: 0.2764 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 11/40
+430/430 - 15s - loss: 2.7219 - accuracy: 0.2701 - val_loss: 2.7750 - val_accuracy: 0.2652 - lr: 0.0010 - 15s/epoch - 34ms/step
+Epoch 12/40
+430/430 - 15s - loss: 2.6820 - accuracy: 0.2810 - val_loss: 2.6651 - val_accuracy: 0.2904 - lr: 0.0010 - 15s/epoch - 34ms/step
+Epoch 13/40
+430/430 - 15s - loss: 2.6407 - accuracy: 0.2885 - val_loss: 2.6102 - val_accuracy: 0.3029 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 14/40
+430/430 - 15s - loss: 2.6074 - accuracy: 0.2977 - val_loss: 2.5977 - val_accuracy: 0.3087 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 15/40
+430/430 - 15s - loss: 2.5725 - accuracy: 0.3064 - val_loss: 2.5977 - val_accuracy: 0.3038 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 16/40
+430/430 - 15s - loss: 2.5533 - accuracy: 0.3084 - val_loss: 2.5839 - val_accuracy: 0.3070 - lr: 0.0010 - 15s/epoch - 34ms/step
+Epoch 17/40
+430/430 - 15s - loss: 2.5231 - accuracy: 0.3177 - val_loss: 2.5279 - val_accuracy: 0.3193 - lr: 0.0010 - 15s/epoch - 34ms/step
+Epoch 18/40
+430/430 - 15s - loss: 2.4973 - accuracy: 0.3250 - val_loss: 2.4995 - val_accuracy: 0.3256 - lr: 0.0010 - 15s/epoch - 34ms/step
+Epoch 19/40
+430/430 - 15s - loss: 2.4726 - accuracy: 0.3296 - val_loss: 2.4957 - val_accuracy: 0.3280 - lr: 0.0010 - 15s/epoch - 34ms/step
+Epoch 20/40
+430/430 - 15s - loss: 2.4525 - accuracy: 0.3349 - val_loss: 2.5164 - val_accuracy: 0.3270 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 21/40
+430/430 - 15s - loss: 2.4294 - accuracy: 0.3403 - val_loss: 2.4727 - val_accuracy: 0.3400 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 22/40
+430/430 - 15s - loss: 2.4083 - accuracy: 0.3437 - val_loss: 2.5169 - val_accuracy: 0.3269 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 23/40
+430/430 - 15s - loss: 2.3905 - accuracy: 0.3487 - val_loss: 2.4603 - val_accuracy: 0.3404 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 24/40
+430/430 - 15s - loss: 2.3774 - accuracy: 0.3483 - val_loss: 2.4141 - val_accuracy: 0.3473 - lr: 0.0010 - 15s/epoch - 34ms/step
+Epoch 25/40
+430/430 - 14s - loss: 2.3588 - accuracy: 0.3556 - val_loss: 2.4096 - val_accuracy: 0.3521 - lr: 0.0010 - 14s/epoch - 34ms/step
+Epoch 26/40
+430/430 - 15s - loss: 2.3358 - accuracy: 0.3593 - val_loss: 2.4097 - val_accuracy: 0.3516 - lr: 0.0010 - 15s/epoch - 34ms/step
+Epoch 27/40
+430/430 - 15s - loss: 2.3244 - accuracy: 0.3639 - val_loss: 2.4054 - val_accuracy: 0.3518 - lr: 0.0010 - 15s/epoch - 34ms/step
+Epoch 28/40
+430/430 - 15s - loss: 2.3126 - accuracy: 0.3666 - val_loss: 2.3853 - val_accuracy: 0.3569 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 29/40
+430/430 - 15s - loss: 2.3014 - accuracy: 0.3651 - val_loss: 2.3793 - val_accuracy: 0.3551 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 30/40
+430/430 - 15s - loss: 2.2835 - accuracy: 0.3715 - val_loss: 2.3544 - val_accuracy: 0.3657 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 31/40
+430/430 - 15s - loss: 2.2684 - accuracy: 0.3770 - val_loss: 2.3704 - val_accuracy: 0.3619 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 32/40
+430/430 - 15s - loss: 2.2581 - accuracy: 0.3797 - val_loss: 2.3621 - val_accuracy: 0.3628 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 33/40
+430/430 - 15s - loss: 2.2491 - accuracy: 0.3818 - val_loss: 2.3729 - val_accuracy: 0.3602 - lr: 0.0010 - 15s/epoch - 35ms/step
+Epoch 34/40
+430/430 - 14s - loss: 2.2418 - accuracy: 0.3827 - val_loss: 2.3664 - val_accuracy: 0.3652 - lr: 0.0010 - 14s/epoch - 34ms/step
+Epoch 35/40
+430/430 - 15s - loss: 2.2277 - accuracy: 0.3859 - val_loss: 2.3625 - val_accuracy: 0.3619 - lr: 0.0010 - 15s/epoch - 34ms/step
+Epoch 36/40
+430/430 - 15s - loss: 2.1759 - accuracy: 0.3971 - val_loss: 2.3136 - val_accuracy: 0.3748 - lr: 5.0000e-04 - 15s/epoch - 34ms/step
+Epoch 37/40
+430/430 - 15s - loss: 2.1704 - accuracy: 0.3985 - val_loss: 2.3270 - val_accuracy: 0.3719 - lr: 5.0000e-04 - 15s/epoch - 34ms/step
+Epoch 38/40
+430/430 - 15s - loss: 2.1585 - accuracy: 0.4008 - val_loss: 2.3234 - val_accuracy: 0.3696 - lr: 5.0000e-04 - 15s/epoch - 34ms/step
+Epoch 39/40
+430/430 - 15s - loss: 2.1554 - accuracy: 0.3998 - val_loss: 2.3157 - val_accuracy: 0.3736 - lr: 5.0000e-04 - 15s/epoch - 34ms/step
+Epoch 40/40
+430/430 - 14s - loss: 2.1464 - accuracy: 0.4066 - val_loss: 2.3130 - val_accuracy: 0.3757 - lr: 5.0000e-04 - 14s/epoch - 33ms/step
+base trained 40 epochs in 10.0 min
+targets 19 of 20 (need >= 440 enrolment windows)
+     user1 b= 55  M1 AUC 0.820  M2 AUC 0.804
+     user1 b=110  M1 AUC 0.870  M2 AUC 0.833
+     user1 b=220  M1 AUC 0.858  M2 AUC 0.839
+     user1 b=330  M1 AUC 0.870  M2 AUC 0.842
+     user1 b=440  M1 AUC 0.870  M2 AUC 0.853
+     user8 b= 55  M1 AUC 0.454  M2 AUC 0.667
+     user8 b=110  M1 AUC 0.624  M2 AUC 0.769
+     user8 b=220  M1 AUC 0.750  M2 AUC 0.771
+     user8 b=330  M1 AUC 0.755  M2 AUC 0.767
+     user8 b=440  M1 AUC 0.739  M2 AUC 0.776
+     user9 b= 55  M1 AUC 0.918  M2 AUC 0.897
+     user9 b=110  M1 AUC 0.960  M2 AUC 0.936
+     user9 b=220  M1 AUC 0.972  M2 AUC 0.949
+     user9 b=330  M1 AUC 0.974  M2 AUC 0.952
+     user9 b=440  M1 AUC 0.968  M2 AUC 0.953
+    user16 b= 55  M1 AUC 0.671  M2 AUC 0.671
+    user16 b=110  M1 AUC 0.663  M2 AUC 0.701
+    user16 b=220  M1 AUC 0.787  M2 AUC 0.739
+    user16 b=330  M1 AUC 0.779  M2 AUC 0.740
+    user16 b=440  M1 AUC 0.773  M2 AUC 0.734
+    user19 b= 55  M1 AUC 0.977  M2 AUC 0.989
+    user19 b=110  M1 AUC 0.994  M2 AUC 0.994
+    user19 b=220  M1 AUC 0.995  M2 AUC 0.995
+    user19 b=330  M1 AUC 0.995  M2 AUC 0.994
+    user19 b=440  M1 AUC 0.995  M2 AUC 0.995
+    user29 b= 55  M1 AUC 0.582  M2 AUC 0.787
+    user29 b=110  M1 AUC 0.834  M2 AUC 0.818
+    user29 b=220  M1 AUC 0.828  M2 AUC 0.813
+    user29 b=330  M1 AUC 0.850  M2 AUC 0.830
+    user29 b=440  M1 AUC 0.864  M2 AUC 0.832
+    user69 b= 55  M1 AUC 0.791  M2 AUC 0.811
+    user69 b=110  M1 AUC 0.867  M2 AUC 0.818
+    user69 b=220  M1 AUC 0.877  M2 AUC 0.843
+    user69 b=330  M1 AUC 0.894  M2 AUC 0.855
+    user69 b=440  M1 AUC 0.903  M2 AUC 0.853
+    user70 b= 55  M1 AUC 0.536  M2 AUC 0.679
+    user70 b=110  M1 AUC 0.726  M2 AUC 0.713
+    user70 b=220  M1 AUC 0.779  M2 AUC 0.727
+    user70 b=330  M1 AUC 0.790  M2 AUC 0.750
+    user70 b=440  M1 AUC 0.801  M2 AUC 0.766
+    user85 b= 55  M1 AUC 0.772  M2 AUC 0.823
+    user85 b=110  M1 AUC 0.807  M2 AUC 0.845
+    user85 b=220  M1 AUC 0.850  M2 AUC 0.862
+    user85 b=330  M1 AUC 0.863  M2 AUC 0.868
+    user85 b=440  M1 AUC 0.873  M2 AUC 0.873
+    user86 b= 55  M1 AUC 0.784  M2 AUC 0.797
+    user86 b=110  M1 AUC 0.822  M2 AUC 0.794
+    user86 b=220  M1 AUC 0.824  M2 AUC 0.804
+    user86 b=330  M1 AUC 0.836  M2 AUC 0.811
+    user86 b=440  M1 AUC 0.840  M2 AUC 0.817
+    user89 b= 55  M1 AUC 0.998  M2 AUC 0.999
+    user89 b=110  M1 AUC 0.999  M2 AUC 0.999
+    user89 b=220  M1 AUC 0.999  M2 AUC 0.999
+    user89 b=330  M1 AUC 0.999  M2 AUC 0.999
+    user89 b=440  M1 AUC 0.999  M2 AUC 0.999
+    user91 b= 55  M1 AUC 0.515  M2 AUC 0.593
+    user91 b=110  M1 AUC 0.568  M2 AUC 0.632
+    user91 b=220  M1 AUC 0.657  M2 AUC 0.671
+    user91 b=330  M1 AUC 0.687  M2 AUC 0.677
+    user91 b=440  M1 AUC 0.694  M2 AUC 0.705
+   user101 b= 55  M1 AUC 0.679  M2 AUC 0.728
+   user101 b=110  M1 AUC 0.734  M2 AUC 0.745
+   user101 b=220  M1 AUC 0.726  M2 AUC 0.789
+   user101 b=330  M1 AUC 0.783  M2 AUC 0.793
+   user101 b=440  M1 AUC 0.790  M2 AUC 0.799
+   user104 b= 55  M1 AUC 0.693  M2 AUC 0.694
+   user104 b=110  M1 AUC 0.709  M2 AUC 0.682
+   user104 b=220  M1 AUC 0.688  M2 AUC 0.661
+   user104 b=330  M1 AUC 0.676  M2 AUC 0.625
+   user104 b=440  M1 AUC 0.681  M2 AUC 0.643
+   user107 b= 55  M1 AUC 0.956  M2 AUC 0.954
+   user107 b=110  M1 AUC 0.965  M2 AUC 0.957
+   user107 b=220  M1 AUC 0.977  M2 AUC 0.975
+   user107 b=330  M1 AUC 0.979  M2 AUC 0.977
+   user107 b=440  M1 AUC 0.985  M2 AUC 0.982
+   user108 b= 55  M1 AUC 0.580  M2 AUC 0.702
+   user108 b=110  M1 AUC 0.674  M2 AUC 0.713
+   user108 b=220  M1 AUC 0.773  M2 AUC 0.739
+   user108 b=330  M1 AUC 0.794  M2 AUC 0.738
+   user108 b=440  M1 AUC 0.785  M2 AUC 0.738
+   user111 b= 55  M1 AUC 0.725  M2 AUC 0.780
+   user111 b=110  M1 AUC 0.775  M2 AUC 0.806
+   user111 b=220  M1 AUC 0.819  M2 AUC 0.830
+   user111 b=330  M1 AUC 0.837  M2 AUC 0.833
+   user111 b=440  M1 AUC 0.847  M2 AUC 0.829
+   user115 b= 55  M1 AUC 0.707  M2 AUC 0.738
+   user115 b=110  M1 AUC 0.674  M2 AUC 0.672
+   user115 b=220  M1 AUC 0.702  M2 AUC 0.703
+   user115 b=330  M1 AUC 0.690  M2 AUC 0.698
+   user115 b=440  M1 AUC 0.706  M2 AUC 0.695
+   user119 b= 55  M1 AUC 0.818  M2 AUC 0.773
+   user119 b=110  M1 AUC 0.811  M2 AUC 0.763
+   user119 b=220  M1 AUC 0.777  M2 AUC 0.771
+   user119 b=330  M1 AUC 0.778  M2 AUC 0.763
+   user119 b=440  M1 AUC 0.777  M2 AUC 0.784
+wrote /app/artifacts/repr_arch_study/parts/C_B3_s0.json

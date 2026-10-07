@@ -1,0 +1,107 @@
+2026-09-12 12:30:32.830540: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-09-12 12:30:32.864515: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[B_B2_s1_A5] representation A5 = |dx|, |dy| | architecture B2 = Conv1D(32,k2) + LSTM32 + LSTM32 | prereg 24133da66cec
+base: train (54920, 50, 2) val (13494, 50, 2) test (21856, 50, 2) classes 100
+Epoch 1/40
+430/430 - 29s - loss: 3.9712 - accuracy: 0.0653 - val_loss: 3.7441 - val_accuracy: 0.0862 - lr: 0.0010 - 29s/epoch - 67ms/step
+Epoch 2/40
+430/430 - 24s - loss: 3.6002 - accuracy: 0.1090 - val_loss: 3.5268 - val_accuracy: 0.1226 - lr: 0.0010 - 24s/epoch - 56ms/step
+Epoch 3/40
+430/430 - 24s - loss: 3.4410 - accuracy: 0.1408 - val_loss: 3.4098 - val_accuracy: 0.1459 - lr: 0.0010 - 24s/epoch - 57ms/step
+Epoch 4/40
+430/430 - 25s - loss: 3.2925 - accuracy: 0.1663 - val_loss: 3.2500 - val_accuracy: 0.1797 - lr: 0.0010 - 25s/epoch - 58ms/step
+Epoch 5/40
+430/430 - 24s - loss: 3.1629 - accuracy: 0.1875 - val_loss: 3.1744 - val_accuracy: 0.1842 - lr: 0.0010 - 24s/epoch - 57ms/step
+Epoch 6/40
+430/430 - 24s - loss: 3.0540 - accuracy: 0.2072 - val_loss: 3.0291 - val_accuracy: 0.2147 - lr: 0.0010 - 24s/epoch - 57ms/step
+Epoch 7/40
+430/430 - 25s - loss: 2.9638 - accuracy: 0.2242 - val_loss: 2.9122 - val_accuracy: 0.2340 - lr: 0.0010 - 25s/epoch - 58ms/step
+Epoch 8/40
+430/430 - 25s - loss: 2.8804 - accuracy: 0.2391 - val_loss: 2.8979 - val_accuracy: 0.2442 - lr: 0.0010 - 25s/epoch - 57ms/step
+Epoch 9/40
+430/430 - 25s - loss: 2.8117 - accuracy: 0.2532 - val_loss: 2.8566 - val_accuracy: 0.2507 - lr: 0.0010 - 25s/epoch - 58ms/step
+Epoch 10/40
+430/430 - 25s - loss: 2.7349 - accuracy: 0.2711 - val_loss: 2.9116 - val_accuracy: 0.2399 - lr: 0.0010 - 25s/epoch - 57ms/step
+Epoch 11/40
+430/430 - 24s - loss: 2.6732 - accuracy: 0.2832 - val_loss: 2.8617 - val_accuracy: 0.2483 - lr: 0.0010 - 24s/epoch - 56ms/step
+Epoch 12/40
+430/430 - 24s - loss: 2.6186 - accuracy: 0.2940 - val_loss: 2.6787 - val_accuracy: 0.2866 - lr: 0.0010 - 24s/epoch - 56ms/step
+Epoch 13/40
+430/430 - 24s - loss: 2.5678 - accuracy: 0.3050 - val_loss: 2.5717 - val_accuracy: 0.3141 - lr: 0.0010 - 24s/epoch - 55ms/step
+Epoch 14/40
+430/430 - 24s - loss: 2.5152 - accuracy: 0.3166 - val_loss: 2.5971 - val_accuracy: 0.3114 - lr: 0.0010 - 24s/epoch - 55ms/step
+Epoch 15/40
+430/430 - 24s - loss: 2.4823 - accuracy: 0.3259 - val_loss: 2.5384 - val_accuracy: 0.3199 - lr: 0.0010 - 24s/epoch - 56ms/step
+Epoch 16/40
+430/430 - 24s - loss: 2.4361 - accuracy: 0.3342 - val_loss: 2.5309 - val_accuracy: 0.3206 - lr: 0.0010 - 24s/epoch - 55ms/step
+Epoch 17/40
+430/430 - 24s - loss: 2.4083 - accuracy: 0.3425 - val_loss: 2.4874 - val_accuracy: 0.3305 - lr: 0.0010 - 24s/epoch - 55ms/step
+Epoch 18/40
+430/430 - 24s - loss: 2.3709 - accuracy: 0.3491 - val_loss: 2.4639 - val_accuracy: 0.3396 - lr: 0.0010 - 24s/epoch - 55ms/step
+Epoch 19/40
+430/430 - 24s - loss: 2.3494 - accuracy: 0.3553 - val_loss: 2.4674 - val_accuracy: 0.3431 - lr: 0.0010 - 24s/epoch - 55ms/step
+Epoch 20/40
+430/430 - 24s - loss: 2.3226 - accuracy: 0.3599 - val_loss: 2.3811 - val_accuracy: 0.3559 - lr: 0.0010 - 24s/epoch - 56ms/step
+Epoch 21/40
+430/430 - 24s - loss: 2.2896 - accuracy: 0.3681 - val_loss: 2.4474 - val_accuracy: 0.3455 - lr: 0.0010 - 24s/epoch - 57ms/step
+Epoch 22/40
+430/430 - 25s - loss: 2.2648 - accuracy: 0.3758 - val_loss: 2.3587 - val_accuracy: 0.3609 - lr: 0.0010 - 25s/epoch - 58ms/step
+Epoch 23/40
+430/430 - 25s - loss: 2.2499 - accuracy: 0.3783 - val_loss: 2.3555 - val_accuracy: 0.3687 - lr: 0.0010 - 25s/epoch - 58ms/step
+Epoch 24/40
+430/430 - 25s - loss: 2.2324 - accuracy: 0.3808 - val_loss: 2.3728 - val_accuracy: 0.3680 - lr: 0.0010 - 25s/epoch - 59ms/step
+Epoch 25/40
+430/430 - 25s - loss: 2.2071 - accuracy: 0.3856 - val_loss: 2.3387 - val_accuracy: 0.3670 - lr: 0.0010 - 25s/epoch - 59ms/step
+Epoch 26/40
+430/430 - 24s - loss: 2.1902 - accuracy: 0.3911 - val_loss: 2.4392 - val_accuracy: 0.3421 - lr: 0.0010 - 24s/epoch - 57ms/step
+Epoch 27/40
+430/430 - 24s - loss: 2.1717 - accuracy: 0.3947 - val_loss: 2.3418 - val_accuracy: 0.3740 - lr: 0.0010 - 24s/epoch - 56ms/step
+Epoch 28/40
+430/430 - 24s - loss: 2.1533 - accuracy: 0.3989 - val_loss: 2.3500 - val_accuracy: 0.3631 - lr: 0.0010 - 24s/epoch - 56ms/step
+Epoch 29/40
+430/430 - 24s - loss: 2.1405 - accuracy: 0.4026 - val_loss: 2.2823 - val_accuracy: 0.3862 - lr: 0.0010 - 24s/epoch - 56ms/step
+Epoch 30/40
+430/430 - 24s - loss: 2.1259 - accuracy: 0.4056 - val_loss: 2.2824 - val_accuracy: 0.3842 - lr: 0.0010 - 24s/epoch - 57ms/step
+Epoch 31/40
+430/430 - 24s - loss: 2.1143 - accuracy: 0.4102 - val_loss: 2.3500 - val_accuracy: 0.3676 - lr: 0.0010 - 24s/epoch - 56ms/step
+Epoch 32/40
+430/430 - 24s - loss: 2.0970 - accuracy: 0.4142 - val_loss: 2.2235 - val_accuracy: 0.3993 - lr: 0.0010 - 24s/epoch - 56ms/step
+Epoch 33/40
+430/430 - 24s - loss: 2.0875 - accuracy: 0.4141 - val_loss: 2.2540 - val_accuracy: 0.3926 - lr: 0.0010 - 24s/epoch - 56ms/step
+Epoch 34/40
+430/430 - 24s - loss: 2.0706 - accuracy: 0.4180 - val_loss: 2.2587 - val_accuracy: 0.3931 - lr: 0.0010 - 24s/epoch - 55ms/step
+Epoch 35/40
+430/430 - 24s - loss: 2.0566 - accuracy: 0.4248 - val_loss: 2.2003 - val_accuracy: 0.4072 - lr: 0.0010 - 24s/epoch - 56ms/step
+Epoch 36/40
+430/430 - 24s - loss: 2.0407 - accuracy: 0.4298 - val_loss: 2.2790 - val_accuracy: 0.3782 - lr: 0.0010 - 24s/epoch - 56ms/step
+Epoch 37/40
+430/430 - 24s - loss: 2.0263 - accuracy: 0.4296 - val_loss: 2.2724 - val_accuracy: 0.3914 - lr: 0.0010 - 24s/epoch - 55ms/step
+Epoch 38/40
+430/430 - 23s - loss: 2.0256 - accuracy: 0.4310 - val_loss: 2.3018 - val_accuracy: 0.3786 - lr: 0.0010 - 23s/epoch - 54ms/step
+Epoch 39/40
+430/430 - 23s - loss: 2.0094 - accuracy: 0.4344 - val_loss: 2.2095 - val_accuracy: 0.4040 - lr: 0.0010 - 23s/epoch - 53ms/step
+Epoch 40/40
+430/430 - 23s - loss: 2.0028 - accuracy: 0.4370 - val_loss: 2.2707 - val_accuracy: 0.3877 - lr: 0.0010 - 23s/epoch - 53ms/step
+base trained 40 epochs in 16.2 min | identification top-1 on the base users' 1-min session 0.3375 (chance 0.0100)
+     user1  AUC 0.787  EER  27.3%  epochs 12  16s
+     user8  AUC 0.796  EER  29.5%  epochs 11  15s
+     user9  AUC 0.963  EER   9.3%  epochs 14  17s
+    user16  AUC 0.794  EER  28.3%  epochs 14  17s
+    user19  AUC 0.996  EER   2.6%  epochs  9  14s
+    user29  AUC 0.859  EER  21.9%  epochs 15  18s
+    user69  AUC 0.889  EER  18.7%  epochs 15  18s
+    user70  AUC 0.782  EER  29.1%  epochs 12  16s
+    user85  AUC 0.925  EER  15.4%  epochs 14  17s
+    user86  AUC 0.817  EER  26.6%  epochs 15  17s
+    user89  AUC 0.998  EER   1.9%  epochs 15  17s
+    user91  AUC 0.688  EER  36.5%  epochs 15  17s
+    user98  AUC 0.976  EER   7.2%  epochs 15  18s
+   user101  AUC 0.880  EER  20.9%  epochs 15  17s
+   user104  AUC 0.637  EER  41.4%  epochs 12  15s
+   user107  AUC 0.977  EER   8.0%  epochs 12  16s
+   user108  AUC 0.782  EER  28.1%  epochs 15  18s
+   user111  AUC 0.839  EER  24.9%  epochs 15  18s
+   user115  AUC 0.663  EER  38.0%  epochs 12  16s
+   user119  AUC 0.752  EER  33.0%  epochs 15  19s
+wrote /app/artifacts/repr_arch_study/parts/B_B2_s1_A5.json  (median AUC 0.828)

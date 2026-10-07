@@ -14,6 +14,12 @@
 # app's CONTINUUM_SECRET must equal CA_SIGNING_SECRET here. Image coordinates are
 # ${REGISTRY}/<svc>:${TAG} — REGISTRY defaults to a local-only name so an
 # unconfigured `build` still works for trying it out.
+#
+# NETWORK SEGMENTATION. Only the gateway is published, but publishing was the ONLY thing
+# separating the tiers — every container shared one default bridge, so any of them could
+# address model-api and score, train or roll back any user's biometric model. The `model`
+# network now contains ca-service and model-api and nothing else, so the scoring oracle is
+# reachable only from the service that holds a gateway-verified identity assertion.
 services:
   model-api:
     build:
@@ -26,7 +32,19 @@ services:
       MODEL_PORT: 5000
       MODEL_DEBUG: "0"
       MODEL_UNITS: ${MODEL_UNITS:-32}
+      # REQUIRED. Without it the scoring/training endpoints are unauthenticated and anything
+      # that can reach the container is a biometric oracle. Generate: openssl rand -hex 32
+      MODEL_API_KEY: ${MODEL_API_KEY:?Set MODEL_API_KEY in .env (openssl rand -hex 32)}
     expose: ["5000"]
+    networks: [model]
+    healthcheck:
+      # TensorFlow needs tens of seconds to load; dependants must wait for READY, not
+      # merely for the container to exist. /health is the one unauthenticated route.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/health',timeout=3).status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
     volumes:
       - continuum_user_models:/app/artifacts/users
 
@@ -36,17 +54,42 @@ services:
       dockerfile: Dockerfile
     image: ${REGISTRY:-continuum}/ca-service:${TAG:-latest}
     restart: unless-stopped
-    depends_on: [model-api]
+    depends_on:
+      model-api:
+        condition: service_healthy
     environment:
       PORT: 4100
       MODEL_API_URL: http://model-api:5000
+      # Must equal model-api's MODEL_API_KEY — this is the credential for that hop.
+      MODEL_API_KEY: ${MODEL_API_KEY:?Set MODEL_API_KEY in .env (openssl rand -hex 32)}
+      # Deadline on the model call: past it, no verdict is issued rather than hanging.
+      MODEL_INFER_TIMEOUT_MS: ${MODEL_INFER_TIMEOUT_MS:-5000}
+      MODEL_TRAIN_TIMEOUT_MS: ${MODEL_TRAIN_TIMEOUT_MS:-600000}
       DB_PATH: /app/data/ca.db
       CA_API_KEY: ${CA_API_KEY:-}
       # Signs the risk verdicts; the host's @continuum/node uses the SAME value.
       # REQUIRED — no shared fallback, or every deployment would sign with the
       # same key (verdicts forgeable across tenants). Generate: openssl rand -hex 32
       CA_SIGNING_SECRET: ${CA_SIGNING_SECRET:?Set CA_SIGNING_SECRET in .env (openssl rand -hex 32)}
+      # Defaults for every organisation's protection (the operator page and each organisation's console
+      # override them; services/gateway/settings.js). Keep the same values on the gateway.
+      ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
+      MONITOR_EXCLUDE_TYPES: ${MONITOR_EXCLUDE_TYPES:-hidden}
+      CONTINUUM_PANEL: ${CONTINUUM_PANEL:-show}
+      CONTINUUM_KEYSTROKE: ${CONTINUUM_KEYSTROKE:-on}
+      CONTINUUM_MOUSE: ${CONTINUUM_MOUSE:-on}
+      ADAPTIVE_RETRAINING: ${ADAPTIVE_RETRAINING:-on}
+      ADAPTIVE_MIN_GAP_HOURS: ${ADAPTIVE_MIN_GAP_HOURS:-3}
+      KEYSTROKE_DECISION_WINDOWS: ${KEYSTROKE_DECISION_WINDOWS:-20}
     expose: ["4100"]
+    # The only service on both networks — the sole path to the model.
+    networks: [internal, model]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     volumes:
       - continuum_ca_db:/app/data
 
@@ -63,6 +106,13 @@ services:
       DB_PATH: /app/data/passkey.db
       PASSKEY_API_KEY: ${PASSKEY_API_KEY:-}
     expose: ["4000"]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     volumes:
       - continuum_passkey_db:/app/data
 
@@ -75,7 +125,11 @@ services:
         sdk: ./sdk
     image: ${REGISTRY:-continuum}/gateway:${TAG:-latest}
     restart: unless-stopped
-    depends_on: [ca-service, passkey-service]
+    depends_on:
+      ca-service:
+        condition: service_healthy
+      passkey-service:
+        condition: service_healthy
     environment:
       PORT: 8080
       CA_API_URL: http://ca-service:4100
@@ -90,12 +144,48 @@ services:
       # and must be UNIQUE per deployment — a shared value makes session tokens forgeable
       # and user ids identical across installs. Generate: openssl rand -hex 32
       GATEWAY_SESSION_SECRET: ${GATEWAY_SESSION_SECRET:?Set GATEWAY_SESSION_SECRET in .env (openssl rand -hex 32)}
+      # Gates tenant registration (X-Admin-Key). REQUIRED: unset, registration would be open
+      # to anyone who can reach the gateway. Generate: openssl rand -hex 32
+      GATEWAY_ADMIN_KEY: ${GATEWAY_ADMIN_KEY:?Set GATEWAY_ADMIN_KEY in .env (openssl rand -hex 32)}
+      # Where the operator page and admin API answer at all (default: this machine only;
+      # see DEPLOY.md), whether console webhooks may be private addresses (testing only),
+      # and whether console sign-ups skip the operator's approval.
+      GATEWAY_OPERATOR_HOSTS: ${GATEWAY_OPERATOR_HOSTS:-}
+      # Defaults for every organisation's protection (the operator page and each organisation's console
+      # override them; services/gateway/settings.js). Keep the same values on ca-service.
+      ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
+      MONITOR_EXCLUDE_TYPES: ${MONITOR_EXCLUDE_TYPES:-hidden}
+      CONTINUUM_PANEL: ${CONTINUUM_PANEL:-show}
+      CONTINUUM_KEYSTROKE: ${CONTINUUM_KEYSTROKE:-on}
+      CONTINUUM_MOUSE: ${CONTINUUM_MOUSE:-on}
+      ADAPTIVE_RETRAINING: ${ADAPTIVE_RETRAINING:-on}
+      ADAPTIVE_MIN_GAP_HOURS: ${ADAPTIVE_MIN_GAP_HOURS:-3}
+      KEYSTROKE_DECISION_WINDOWS: ${KEYSTROKE_DECISION_WINDOWS:-20}
+      # Where browsers reach the gateway (its console, operator and extension pages, and the
+      # passkeys made on them), and the Continuum Guard extension's id.
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
+      CONTINUUM_EXTENSION_ID: ${CONTINUUM_EXTENSION_ID:-}
+      GATEWAY_ALLOW_PRIVATE_WEBHOOKS: ${GATEWAY_ALLOW_PRIVATE_WEBHOOKS:-0}
+      GATEWAY_AUTO_APPROVE_TENANTS: ${GATEWAY_AUTO_APPROVE_TENANTS:-0}
       # Comma-separated tenant API keys (blank = open, for local dev only).
       GATEWAY_API_KEYS: ${GATEWAY_API_KEYS:-}
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
+    # Public on `edge`; the only bridge into `internal`. Never on `model`.
+    networks: [edge, internal]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     volumes:
       - continuum_gateway_data:/app/data   # RS256 signing key + tenant registry (persistent)
+
+networks:
+  edge:
+  internal:
+  model:
 
 volumes:
   continuum_gateway_data:

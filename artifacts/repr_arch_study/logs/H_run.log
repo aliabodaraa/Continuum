@@ -1,0 +1,64 @@
+2026-09-13 13:30:46.565598: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-09-13 13:30:46.597582: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[H] targets 19 | prereg 7f2730531628
+Loaded 2000 impostor windows from /app/data/mouse_only/Mouse_A5_W50_base.h5
+Feature scaler loaded from /app/artifacts/mouse-fcn-a5/scaler.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user1/mouse_model
+     user1  val windows 66  epochs 10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user8/mouse_model
+     user8  val windows 66  epochs 15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user9/mouse_model
+     user9  val windows 66  epochs 9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user16/mouse_model
+    user16  val windows 66  epochs 15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user19/mouse_model
+    user19  val windows 66  epochs 15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user29/mouse_model
+    user29  val windows 66  epochs 15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user69/mouse_model
+    user69  val windows 66  epochs 15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user70/mouse_model
+    user70  val windows 66  epochs 14
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user85/mouse_model
+    user85  val windows 66  epochs 12
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user86/mouse_model
+    user86  val windows 66  epochs 10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user89/mouse_model
+    user89  val windows 66  epochs 15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user91/mouse_model
+    user91  val windows 66  epochs 15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user101/mouse_model
+   user101  val windows 66  epochs 14
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user104/mouse_model
+   user104  val windows 66  epochs 15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user107/mouse_model
+   user107  val windows 66  epochs 7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user108/mouse_model
+   user108  val windows 66  epochs 7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user111/mouse_model
+   user111  val windows 66  epochs 7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user115/mouse_model
+   user115  val windows 66  epochs 15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/final_eval/h/user119/mouse_model
+   user119  val windows 66  epochs 15
+wrote /app/artifacts/repr_arch_study/parts/H_run.json

@@ -1,0 +1,79 @@
+{
+  "userId": 1,
+  "repeats": 3,
+  "nPositive": 797,
+  "nPositiveSamples": 43,
+  "nHeldOutClean": 118,
+  "arms": {
+    "old (random shuffle)": [
+      {
+        "leakage": 1.0,
+        "valAccuracy": 0.9749478079331941,
+        "calibratedThreshold": 0.185,
+        "balancedAccuracy": 0.9749608150470219,
+        "epochs": 25,
+        "heldOutEer": 0.13554661016949154,
+        "heldOutAuc": 0.9207415254237288,
+        "heldOutTarAt050": 0.847457627118644,
+        "heldOutFarAt050": 0.0705
+      },
+      {
+        "leakage": 1.0,
+        "valAccuracy": 0.9895615866388309,
+        "calibratedThreshold": 0.181,
+        "balancedAccuracy": 0.9812206112852664,
+        "epochs": 25,
+        "heldOutEer": 0.13554661016949154,
+        "heldOutAuc": 0.9439703389830508,
+        "heldOutTarAt050": 0.7966101694915254,
+        "heldOutFarAt050": 0.058
+      },
+      {
+        "leakage": 1.0,
+        "valAccuracy": 0.9770354906054279,
+        "calibratedThreshold": 0.438,
+        "balancedAccuracy": 0.9749608150470219,
+        "epochs": 25,
+        "heldOutEer": 0.14403389830508473,
+        "heldOutAuc": 0.9167245762711864,
+        "heldOutTarAt050": 0.847457627118644,
+        "heldOutFarAt050": 0.10375
+      }
+    ],
+    "new (group split)": [
+      {
+        "leakage": 0.0,
+        "valAccuracy": 0.9586776859504132,
+        "calibratedThreshold": 0.263,
+        "balancedAccuracy": 0.9630094043887147,
+        "epochs": 25,
+        "heldOutEer": 0.1270593220338983,
+        "heldOutAuc": 0.9275233050847458,
+        "heldOutTarAt050": 0.8389830508474576,
+        "heldOutFarAt050": 0.07775
+      },
+      {
+        "leakage": 0.0,
+        "valAccuracy": 0.9916317991631799,
+        "calibratedThreshold": 0.743,
+        "balancedAccuracy": 0.9874410993474103,
+        "epochs": 21,
+        "heldOutEer": 0.1270593220338983,
+        "heldOutAuc": 0.9314470338983051,
+        "heldOutTarAt050": 0.8135593220338984,
+        "heldOutFarAt050": 0.05025
+      },
+      {
+        "leakage": 0.0,
+        "valAccuracy": 0.9802371541501976,
+        "calibratedThreshold": 0.618,
+        "balancedAccuracy": 0.9841416190300571,
+        "epochs": 25,
+        "heldOutEer": 0.1270593220338983,
+        "heldOutAuc": 0.943843220338983,
+        "heldOutTarAt050": 0.8559322033898306,
+        "heldOutFarAt050": 0.1045
+      }
+    ]
+  }
+}

@@ -1,0 +1,1615 @@
+{
+ "root": "/app/data/bogazici/extracted/boun-mouse-dynamics-dataset",
+ "labels": {
+  "rows": 157187,
+  "counts": {
+   "1": 62901,
+   "0": 94286
+  }
+ },
+ "users": {
+  "user1": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 958,
+    "labels": {
+     "1": 479,
+     "0": 479
+    },
+    "windowsPerSessionSample": [
+     187,
+     164,
+     95,
+     633,
+     178,
+     125,
+     164,
+     291,
+     335,
+     344
+    ]
+   },
+   "external_tests": {
+    "files": 958,
+    "labels": {
+     "1": 479,
+     "0": 479
+    },
+    "windowsPerSessionSample": [
+     0,
+     312,
+     296,
+     387,
+     214,
+     104,
+     156,
+     161,
+     237,
+     191
+    ]
+   },
+   "trainingFirstTimes": [
+    1569397093.379,
+    1569478466.2489998,
+    1569564799.129,
+    1569909876.6079998,
+    1570079547.403,
+    1570169899.971,
+    1570234804.575,
+    1570321013.908,
+    1570686924.4989998,
+    1570771482.235
+   ],
+   "firstTrainingSession": {
+    "file": "session_411580470436.csv",
+    "events": 166415,
+    "afterCoalescing": 105390,
+    "steps": 93891,
+    "meanStepSeconds": 0.02556878727570817,
+    "medianMoveIntervalMsRaw": 10.0,
+    "medianMoveIntervalMsCoalesced": 17.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1569398886515.0,
+    "sessionsUsed": [
+     "session_411580470436.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 958,
+    "afterEnrolment": 434,
+    "beforeEnrolment": 524
+   }
+  },
+  "user2": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 276,
+    "labels": {
+     "1": 138,
+     "0": 138
+    },
+    "windowsPerSessionSample": [
+     227,
+     438,
+     69,
+     148,
+     212,
+     214,
+     130,
+     193,
+     209,
+     331
+    ]
+   },
+   "external_tests": {
+    "files": 276,
+    "labels": {
+     "1": 138,
+     "0": 138
+    },
+    "windowsPerSessionSample": [
+     110,
+     336,
+     316,
+     337,
+     116,
+     260,
+     0,
+     216,
+     98,
+     167
+    ]
+   },
+   "trainingFirstTimes": [
+    1563438116.758,
+    1563521574.4870002,
+    1563706323.772,
+    1563786457.198,
+    1563948471.291,
+    1564041272.798,
+    1564220682.284,
+    1564480162.032,
+    1564599724.941,
+    1564650731.724
+   ],
+   "firstTrainingSession": {
+    "file": "session_576087576531.csv",
+    "events": 255264,
+    "afterCoalescing": 135812,
+    "steps": 114412,
+    "meanStepSeconds": 0.029749807740218057,
+    "medianMoveIntervalMsRaw": 8.0,
+    "medianMoveIntervalMsCoalesced": 16.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1563438448629.0,
+    "sessionsUsed": [
+     "session_576087576531.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 276,
+    "afterEnrolment": 162,
+    "beforeEnrolment": 114
+   }
+  },
+  "user3": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 6908,
+    "labels": {
+     "1": 3454,
+     "0": 3454
+    },
+    "windowsPerSessionSample": [
+     141,
+     374,
+     267,
+     351,
+     383,
+     289,
+     214,
+     141,
+     259,
+     389
+    ]
+   },
+   "external_tests": {
+    "files": 4447,
+    "labels": {
+     "0": 3454,
+     "1": 993
+    },
+    "windowsPerSessionSample": [
+     243,
+     230,
+     343,
+     228,
+     246,
+     567,
+     228,
+     150,
+     173,
+     391
+    ]
+   },
+   "trainingFirstTimes": [
+    1568355177.783,
+    1569392075.576,
+    1571378715.85,
+    1572250366.982,
+    1573107710.39,
+    1573193472.09,
+    1574230509.941,
+    1574315128.96,
+    1574506051.502,
+    1574587393.76
+   ],
+   "firstTrainingSession": {
+    "file": "session_544715697612.csv",
+    "events": 579850,
+    "afterCoalescing": 409015,
+    "steps": 368773,
+    "meanStepSeconds": 0.02897181464995065,
+    "medianMoveIntervalMsRaw": 10.000244140625,
+    "medianMoveIntervalMsCoalesced": 16.000244140625
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1568355549283.0,
+    "sessionsUsed": [
+     "session_544715697612.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 6908,
+    "afterEnrolment": 6508,
+    "beforeEnrolment": 400
+   }
+  },
+  "user4": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 2996,
+    "labels": {
+     "1": 1498,
+     "0": 1498
+    },
+    "windowsPerSessionSample": [
+     296,
+     499,
+     385,
+     340,
+     252,
+     165,
+     185,
+     230,
+     400,
+     129
+    ]
+   },
+   "external_tests": {
+    "files": 2491,
+    "labels": {
+     "0": 1498,
+     "1": 993
+    },
+    "windowsPerSessionSample": [
+     474,
+     374,
+     240,
+     323,
+     385,
+     190,
+     253,
+     261,
+     495,
+     198
+    ]
+   },
+   "trainingFirstTimes": [
+    1569911854.798,
+    1570602793.2729998,
+    1570689291.6020002,
+    1570776813.8860002,
+    1572416542.125,
+    1572503565.9529998,
+    1572592236.231,
+    1572935648.461,
+    1573542229.199,
+    1573626488.292
+   ],
+   "firstTrainingSession": {
+    "file": "session_822187962577.csv",
+    "events": 524315,
+    "afterCoalescing": 323030,
+    "steps": 303081,
+    "meanStepSeconds": 0.028001949991491023,
+    "medianMoveIntervalMsRaw": 9.0,
+    "medianMoveIntervalMsCoalesced": 16.999755859375
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1569913352315.0,
+    "sessionsUsed": [
+     "session_822187962577.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 2996,
+    "afterEnrolment": 1576,
+    "beforeEnrolment": 1420
+   }
+  },
+  "user5": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 16688,
+    "labels": {
+     "1": 8344,
+     "0": 8344
+    },
+    "windowsPerSessionSample": [
+     449,
+     125,
+     127,
+     85,
+     408,
+     159,
+     208,
+     144,
+     305,
+     117
+    ]
+   },
+   "external_tests": {
+    "files": 9337,
+    "labels": {
+     "0": 8344,
+     "1": 993
+    },
+    "windowsPerSessionSample": [
+     434,
+     62,
+     344,
+     290,
+     146,
+     110,
+     42,
+     255,
+     99,
+     48
+    ]
+   },
+   "trainingFirstTimes": [
+    1568419200.002,
+    1569028525.3779998,
+    1569567179.639,
+    1569715200.0070002,
+    1570688995.02,
+    1570774804.052,
+    1570838634.022,
+    1571446605.1720002,
+    1573195872.52,
+    1573776000.034
+   ],
+   "firstTrainingSession": {
+    "file": "session_600315593716.csv",
+    "events": 1635188,
+    "afterCoalescing": 1168360,
+    "steps": 1117971,
+    "meanStepSeconds": 0.025034551902421754,
+    "medianMoveIntervalMsRaw": 10.0,
+    "medianMoveIntervalMsCoalesced": 17.999755859375
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1568419374370.0,
+    "sessionsUsed": [
+     "session_600315593716.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 16688,
+    "afterEnrolment": 15672,
+    "beforeEnrolment": 1016
+   }
+  },
+  "user6": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 5322,
+    "labels": {
+     "0": 2661,
+     "1": 2661
+    },
+    "windowsPerSessionSample": [
+     115,
+     187,
+     220,
+     205,
+     409,
+     176,
+     236,
+     224,
+     321,
+     246
+    ]
+   },
+   "external_tests": {
+    "files": 3654,
+    "labels": {
+     "1": 993,
+     "0": 2661
+    },
+    "windowsPerSessionSample": [
+     254,
+     0,
+     127,
+     274,
+     364,
+     273,
+     238,
+     233,
+     133,
+     106
+    ]
+   },
+   "trainingFirstTimes": [
+    1570081581.746,
+    1570429883.8760002,
+    1570535479.92,
+    1570601811.611,
+    1570683460.688,
+    1571503113.11,
+    1572118676.396,
+    1572169536.085,
+    1572682321.66,
+    1572787922.353
+   ],
+   "firstTrainingSession": {
+    "file": "session_659542591210.csv",
+    "events": 17167,
+    "afterCoalescing": 14122,
+    "steps": 12884,
+    "meanStepSeconds": 0.03516105252502499,
+    "medianMoveIntervalMsRaw": 15.000244140625,
+    "medianMoveIntervalMsCoalesced": 16.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1570083787062.0,
+    "sessionsUsed": [
+     "session_659542591210.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 5322,
+    "afterEnrolment": 4268,
+    "beforeEnrolment": 1054
+   }
+  },
+  "user7": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 7936,
+    "labels": {
+     "1": 3968,
+     "0": 3968
+    },
+    "windowsPerSessionSample": [
+     161,
+     161,
+     138,
+     139,
+     494,
+     320,
+     195,
+     151,
+     253,
+     445
+    ]
+   },
+   "external_tests": {
+    "files": 4961,
+    "labels": {
+     "1": 993,
+     "0": 3968
+    },
+    "windowsPerSessionSample": [
+     194,
+     309,
+     348,
+     40,
+     233,
+     113,
+     316,
+     223,
+     236,
+     96
+    ]
+   },
+   "trainingFirstTimes": [
+    1568450575.53,
+    1568537725.6,
+    1569077086.026,
+    1570860866.093,
+    1571562792.7970002,
+    1572078144.9770002,
+    1572161164.717,
+    1573380645.939,
+    1573893373.43,
+    1573985447.827
+   ],
+   "firstTrainingSession": {
+    "file": "session_875982496100.csv",
+    "events": 98859,
+    "afterCoalescing": 51849,
+    "steps": 48315,
+    "meanStepSeconds": 0.03454366145449298,
+    "medianMoveIntervalMsRaw": 8.0,
+    "medianMoveIntervalMsCoalesced": 16.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1568451107329.0,
+    "sessionsUsed": [
+     "session_875982496100.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 7936,
+    "afterEnrolment": 7306,
+    "beforeEnrolment": 630
+   }
+  },
+  "user8": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 3782,
+    "labels": {
+     "1": 1891,
+     "0": 1891
+    },
+    "windowsPerSessionSample": [
+     148,
+     269,
+     367,
+     172,
+     220,
+     252,
+     135,
+     76,
+     331,
+     285
+    ]
+   },
+   "external_tests": {
+    "files": 2884,
+    "labels": {
+     "0": 1891,
+     "1": 993
+    },
+    "windowsPerSessionSample": [
+     174,
+     265,
+     132,
+     276,
+     537,
+     186,
+     272,
+     125,
+     301,
+     270
+    ]
+   },
+   "trainingFirstTimes": [
+    1568614066.452,
+    1569480432.6920002,
+    1569911610.788,
+    1569998212.695,
+    1570084268.729,
+    1570601992.823,
+    1571725576.1829998,
+    1571812261.577,
+    1571983323.556,
+    1574057226.0029998
+   ],
+   "firstTrainingSession": {
+    "file": "session_152525479055.csv",
+    "events": 445781,
+    "afterCoalescing": 237086,
+    "steps": 218592,
+    "meanStepSeconds": 0.02999367775384442,
+    "medianMoveIntervalMsRaw": 8.0,
+    "medianMoveIntervalMsCoalesced": 16.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1568614747229.0,
+    "sessionsUsed": [
+     "session_152525479055.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 3782,
+    "afterEnrolment": 3460,
+    "beforeEnrolment": 322
+   }
+  },
+  "user9": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 7778,
+    "labels": {
+     "1": 3889,
+     "0": 3889
+    },
+    "windowsPerSessionSample": [
+     507,
+     70,
+     323,
+     262,
+     82,
+     251,
+     334,
+     160,
+     228,
+     96
+    ]
+   },
+   "external_tests": {
+    "files": 4882,
+    "labels": {
+     "0": 3889,
+     "1": 993
+    },
+    "windowsPerSessionSample": [
+     192,
+     326,
+     221,
+     101,
+     347,
+     478,
+     184,
+     102,
+     265,
+     247
+    ]
+   },
+   "trainingFirstTimes": [
+    1568025628.202,
+    1568183964.423,
+    1568529681.607,
+    1569117769.156,
+    1569673533.699,
+    1570377834.806,
+    1570892882.9,
+    1571503333.438,
+    1571560982.716,
+    1571986804.0270002
+   ],
+   "firstTrainingSession": {
+    "file": "session_310314552977.csv",
+    "events": 108712,
+    "afterCoalescing": 53119,
+    "steps": 49644,
+    "meanStepSeconds": 0.029056623147041313,
+    "medianMoveIntervalMsRaw": 8.0,
+    "medianMoveIntervalMsCoalesced": 16.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1568026009814.0,
+    "sessionsUsed": [
+     "session_310314552977.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 7778,
+    "afterEnrolment": 7778,
+    "beforeEnrolment": 0
+   }
+  },
+  "user10": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 898,
+    "labels": {
+     "0": 449,
+     "1": 449
+    },
+    "windowsPerSessionSample": [
+     232,
+     277,
+     282,
+     240,
+     472,
+     268,
+     312,
+     233,
+     168,
+     315
+    ]
+   },
+   "external_tests": {
+    "files": 898,
+    "labels": {
+     "1": 449,
+     "0": 449
+    },
+    "windowsPerSessionSample": [
+     523,
+     296,
+     395,
+     542,
+     343,
+     200,
+     235,
+     247,
+     257,
+     64
+    ]
+   },
+   "trainingFirstTimes": [
+    1568025192.246,
+    1568089723.279,
+    1568182571.617,
+    1568270540.474,
+    1568356515.255,
+    1569911999.391,
+    1570083699.498,
+    1570172649.4120002,
+    1571898560.1239998,
+    1571989851.1520002
+   ],
+   "firstTrainingSession": {
+    "file": "session_838251991518.csv",
+    "events": 696466,
+    "afterCoalescing": 368442,
+    "steps": 346559,
+    "meanStepSeconds": 0.028705490304405015,
+    "medianMoveIntervalMsRaw": 8.0,
+    "medianMoveIntervalMsCoalesced": 16.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1568025504021.0,
+    "sessionsUsed": [
+     "session_838251991518.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 898,
+    "afterEnrolment": 898,
+    "beforeEnrolment": 0
+   }
+  },
+  "user11": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 6252,
+    "labels": {
+     "1": 3126,
+     "0": 3126
+    },
+    "windowsPerSessionSample": [
+     244,
+     173,
+     83,
+     156,
+     301,
+     255,
+     208,
+     41,
+     147,
+     248
+    ]
+   },
+   "external_tests": {
+    "files": 4119,
+    "labels": {
+     "0": 3126,
+     "1": 993
+    },
+    "windowsPerSessionSample": [
+     163,
+     149,
+     266,
+     221,
+     152,
+     147,
+     166,
+     173,
+     383,
+     89
+    ]
+   },
+   "trainingFirstTimes": [
+    1568522337.605,
+    1568873690.44,
+    1569305296.081,
+    1569388157.7770002,
+    1571636608.139,
+    1571894693.686,
+    1572846715.725,
+    1573018674.695,
+    1573623624.583,
+    1574055839.059
+   ],
+   "firstTrainingSession": {
+    "file": "session_192435781543.csv",
+    "events": 630309,
+    "afterCoalescing": 420173,
+    "steps": 393032,
+    "meanStepSeconds": 0.02822420566202207,
+    "medianMoveIntervalMsRaw": 9.0,
+    "medianMoveIntervalMsCoalesced": 16.000244140625
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1568525412458.0,
+    "sessionsUsed": [
+     "session_192435781543.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 6252,
+    "afterEnrolment": 5848,
+    "beforeEnrolment": 404
+   }
+  },
+  "user12": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 4736,
+    "labels": {
+     "0": 2368,
+     "1": 2368
+    },
+    "windowsPerSessionSample": [
+     353,
+     149,
+     203,
+     149,
+     244,
+     194,
+     656,
+     141,
+     351,
+     89
+    ]
+   },
+   "external_tests": {
+    "files": 3361,
+    "labels": {
+     "0": 2368,
+     "1": 993
+    },
+    "windowsPerSessionSample": [
+     258,
+     244,
+     277,
+     135,
+     428,
+     120,
+     259,
+     389,
+     422,
+     229
+    ]
+   },
+   "trainingFirstTimes": [
+    1568616673.809,
+    1568982524.698,
+    1569178249.029,
+    1569711315.46,
+    1570392743.996,
+    1571386288.562,
+    1571725100.7610002,
+    1572010849.0879998,
+    1573196505.337,
+    1574522072.3879998
+   ],
+   "firstTrainingSession": {
+    "file": "session_877660619519.csv",
+    "events": 185642,
+    "afterCoalescing": 101767,
+    "steps": 91830,
+    "meanStepSeconds": 0.026924697837758967,
+    "medianMoveIntervalMsRaw": 8.0,
+    "medianMoveIntervalMsCoalesced": 16.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1568617162116.0002,
+    "sessionsUsed": [
+     "session_877660619519.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 4736,
+    "afterEnrolment": 4242,
+    "beforeEnrolment": 493
+   }
+  },
+  "user13": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 4278,
+    "labels": {
+     "1": 2139,
+     "0": 2139
+    },
+    "windowsPerSessionSample": [
+     158,
+     157,
+     107,
+     437,
+     636,
+     237,
+     171,
+     365,
+     149,
+     69
+    ]
+   },
+   "external_tests": {
+    "files": 3132,
+    "labels": {
+     "0": 2139,
+     "1": 993
+    },
+    "windowsPerSessionSample": [
+     215,
+     164,
+     556,
+     173,
+     167,
+     63,
+     238,
+     191,
+     416,
+     323
+    ]
+   },
+   "trainingFirstTimes": [
+    1569218264.091,
+    1569306612.025,
+    1569999396.9770002,
+    1570602856.035,
+    1571035275.252,
+    1572849072.084,
+    1572936163.985,
+    1573108628.021,
+    1573453833.09,
+    1573539826.195
+   ],
+   "firstTrainingSession": {
+    "file": "session_713938891369.csv",
+    "events": 559972,
+    "afterCoalescing": 309322,
+    "steps": 289649,
+    "meanStepSeconds": 0.029484973177361606,
+    "medianMoveIntervalMsRaw": 8.0,
+    "medianMoveIntervalMsCoalesced": 16.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1569222657547.0002,
+    "sessionsUsed": [
+     "session_713938891369.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 4278,
+    "afterEnrolment": 3372,
+    "beforeEnrolment": 906
+   }
+  },
+  "user14": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 4314,
+    "labels": {
+     "0": 2157,
+     "1": 2157
+    },
+    "windowsPerSessionSample": [
+     249,
+     198,
+     155,
+     239,
+     270,
+     349,
+     148,
+     147,
+     155,
+     257
+    ]
+   },
+   "external_tests": {
+    "files": 3150,
+    "labels": {
+     "1": 993,
+     "0": 2157
+    },
+    "windowsPerSessionSample": [
+     200,
+     212,
+     270,
+     113,
+     398,
+     130,
+     148,
+     253,
+     76,
+     217
+    ]
+   },
+   "trainingFirstTimes": [
+    1571034776.1829998,
+    1571901838.89,
+    1573622834.601,
+    1573708741.7770002,
+    1574053032.281,
+    1574135894.97,
+    1574657265.646,
+    1574749747.451,
+    1575269111.994,
+    1575528096.3079998
+   ],
+   "firstTrainingSession": {
+    "file": "session_7998888785.csv",
+    "events": 412942,
+    "afterCoalescing": 216912,
+    "steps": 203624,
+    "meanStepSeconds": 0.027159195438469397,
+    "medianMoveIntervalMsRaw": 8.0,
+    "medianMoveIntervalMsCoalesced": 16.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1571036965046.0,
+    "sessionsUsed": [
+     "session_7998888785.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 4314,
+    "afterEnrolment": 2406,
+    "beforeEnrolment": 1907
+   }
+  },
+  "user15": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 288,
+    "labels": {
+     "0": 144,
+     "1": 144
+    },
+    "windowsPerSessionSample": [
+     117,
+     207,
+     152,
+     407,
+     236,
+     79,
+     433,
+     294,
+     290,
+     328
+    ]
+   },
+   "external_tests": {
+    "files": 288,
+    "labels": {
+     "0": 144,
+     "1": 144
+    },
+    "windowsPerSessionSample": [
+     148,
+     346,
+     319,
+     95,
+     258,
+     328,
+     91,
+     329,
+     268,
+     435
+    ]
+   },
+   "trainingFirstTimes": [
+    1577685684.505,
+    1577769960.981,
+    1578026247.377,
+    1578291199.663,
+    1578378112.663,
+    1578464301.704,
+    1578550931.137,
+    1579068002.7589998,
+    1579154927.663,
+    1579240590.967
+   ],
+   "firstTrainingSession": {
+    "file": "session_740561165993.csv",
+    "events": 316867,
+    "afterCoalescing": 185247,
+    "steps": 183205,
+    "meanStepSeconds": 0.02797399640419458,
+    "medianMoveIntervalMsRaw": 8.0,
+    "medianMoveIntervalMsCoalesced": 16.000244140625
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1577686842675.0,
+    "sessionsUsed": [
+     "session_740561165993.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 288,
+    "afterEnrolment": 226,
+    "beforeEnrolment": 62
+   }
+  },
+  "user16": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 1806,
+    "labels": {
+     "0": 903,
+     "1": 903
+    },
+    "windowsPerSessionSample": [
+     314,
+     411,
+     73,
+     245,
+     411,
+     435,
+     187,
+     117,
+     163,
+     502
+    ]
+   },
+   "external_tests": {
+    "files": 1806,
+    "labels": {
+     "1": 903,
+     "0": 903
+    },
+    "windowsPerSessionSample": [
+     509,
+     412,
+     329,
+     130,
+     175,
+     79,
+     120,
+     228,
+     68,
+     181
+    ]
+   },
+   "trainingFirstTimes": [
+    1566197890.26,
+    1568010895.184,
+    1568094761.816,
+    1568699728.0110002,
+    1568874007.7270002,
+    1569220534.9120002,
+    1569394022.119,
+    1569824390.1120002,
+    1570428599.206,
+    1571030974.298
+   ],
+   "firstTrainingSession": {
+    "file": "session_890951852058.csv",
+    "events": 330215,
+    "afterCoalescing": 161647,
+    "steps": 152752,
+    "meanStepSeconds": 0.03103386535356841,
+    "medianMoveIntervalMsRaw": 8.0,
+    "medianMoveIntervalMsCoalesced": 16.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1566198298611.0,
+    "sessionsUsed": [
+     "session_890951852058.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 1806,
+    "afterEnrolment": 1666,
+    "beforeEnrolment": 140
+   }
+  },
+  "user17": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 4994,
+    "labels": {
+     "0": 2497,
+     "1": 2497
+    },
+    "windowsPerSessionSample": [
+     199,
+     121,
+     501,
+     109,
+     414,
+     221,
+     465,
+     142,
+     425,
+     183
+    ]
+   },
+   "external_tests": {
+    "files": 3490,
+    "labels": {
+     "0": 2497,
+     "1": 993
+    },
+    "windowsPerSessionSample": [
+     240,
+     333,
+     181,
+     392,
+     402,
+     390,
+     176,
+     238,
+     312,
+     174
+    ]
+   },
+   "trainingFirstTimes": [
+    1569392730.475,
+    1570000368.825,
+    1570171838.85,
+    1570516995.688,
+    1571038954.531,
+    1571121920.589,
+    1571210597.6,
+    1571300093.481,
+    1571727433.004,
+    1571900844.7
+   ],
+   "firstTrainingSession": {
+    "file": "session_195587250026.csv",
+    "events": 495109,
+    "afterCoalescing": 270054,
+    "steps": 264444,
+    "meanStepSeconds": 0.026793714384110805,
+    "medianMoveIntervalMsRaw": 8.0,
+    "medianMoveIntervalMsCoalesced": 16.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1569395725633.0,
+    "sessionsUsed": [
+     "session_195587250026.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 4994,
+    "afterEnrolment": 3820,
+    "beforeEnrolment": 1174
+   }
+  },
+  "user18": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 1472,
+    "labels": {
+     "1": 736,
+     "0": 736
+    },
+    "windowsPerSessionSample": [
+     211,
+     141,
+     150,
+     203,
+     131,
+     237,
+     130,
+     277,
+     88,
+     92
+    ]
+   },
+   "external_tests": {
+    "files": 1472,
+    "labels": {
+     "0": 736,
+     "1": 736
+    },
+    "windowsPerSessionSample": [
+     170,
+     97,
+     178,
+     128,
+     491,
+     76,
+     344,
+     140,
+     334,
+     316
+    ]
+   },
+   "trainingFirstTimes": [
+    1571028848.484,
+    1571988471.312,
+    1572591712.641,
+    1572940795.3979998,
+    1574080922.779,
+    1574505632.91,
+    1575290995.452,
+    1575361704.216,
+    1576147802.065,
+    1577286089.0470002
+   ],
+   "firstTrainingSession": {
+    "file": "session_211763942788.csv",
+    "events": 14478,
+    "afterCoalescing": 8995,
+    "steps": 8585,
+    "meanStepSeconds": 0.029707862494084886,
+    "medianMoveIntervalMsRaw": 8.0,
+    "medianMoveIntervalMsCoalesced": 16.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1571032788732.9998,
+    "sessionsUsed": [
+     "session_211763942788.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 1472,
+    "afterEnrolment": 258,
+    "beforeEnrolment": 1214
+   }
+  },
+  "user19": {
+   "training": {
+    "files": 10,
+    "labels": {
+     "missing": 10
+    }
+   },
+   "internal_tests": {
+    "files": 12604,
+    "labels": {
+     "1": 6302,
+     "0": 6302
+    },
+    "windowsPerSessionSample": [
+     170,
+     239,
+     110,
+     374,
+     37,
+     199,
+     119,
+     311,
+     119,
+     92
+    ]
+   },
+   "external_tests": {
+    "files": 7295,
+    "labels": {
+     "0": 6302,
+     "1": 993
+    },
+    "windowsPerSessionSample": [
+     70,
+     136,
+     372,
+     0,
+     634,
+     322,
+     260,
+     142,
+     108,
+     160
+    ]
+   },
+   "trainingFirstTimes": [
+    1569825912.8839998,
+    1570598157.569,
+    1570774670.414,
+    1571119669.168,
+    1571290962.707,
+    1573798822.716,
+    1574317050.51,
+    1574748944.8720002,
+    1575269299.6179998,
+    1575353819.004
+   ],
+   "firstTrainingSession": {
+    "file": "session_994700994551.csv",
+    "events": 358061,
+    "afterCoalescing": 230682,
+    "steps": 219512,
+    "meanStepSeconds": 0.030319417700674894,
+    "medianMoveIntervalMsRaw": 8.000244140625,
+    "medianMoveIntervalMsCoalesced": 16.0
+   },
+   "enrolment": {
+    "windows": 440,
+    "endMs": 1569828405746.0,
+    "sessionsUsed": [
+     "session_994700994551.csv"
+    ]
+   },
+   "genuineSessions": {
+    "label0": 12604,
+    "afterEnrolment": 10752,
+    "beforeEnrolment": 1852
+   }
+  }
+ },
+ "vocab": {
+  "state": {
+   "Move": 345761,
+   "Drag": 17829,
+   "Pressed": 4028,
+   "Released": 4027
+  },
+  "button": {
+   "NoButton": 363590,
+   "Left": 6261,
+   "Right": 1794
+  }
+ },
+ "fileNames": {
+  "files": 157377,
+  "unique": 157377,
+  "testFiles": 157187,
+  "testFilesNotInLabels": 0,
+  "labelsNotInTestFiles": 0
+ },
+ "eventRate": {
+  "medianMoveIntervalMsRaw": [
+   10.0,
+   8.0,
+   10.000244140625,
+   9.0,
+   10.0,
+   15.000244140625,
+   8.0,
+   8.0,
+   8.0,
+   8.0,
+   9.0,
+   8.0,
+   8.0,
+   8.0,
+   8.0,
+   8.0,
+   8.0,
+   8.0,
+   8.000244140625
+  ],
+  "medianMoveIntervalMsCoalesced": [
+   17.0,
+   16.0,
+   16.000244140625,
+   16.999755859375,
+   17.999755859375,
+   16.0,
+   16.0,
+   16.0,
+   16.0,
+   16.0,
+   16.000244140625,
+   16.0,
+   16.0,
+   16.0,
+   16.000244140625,
+   16.0,
+   16.0,
+   16.0,
+   16.0
+  ]
+ },
+ "firstLines": {
+  "user1/training/session_122839150245.csv": [
+   "client_timestamp,x,y,button,state,window",
+   "1570169899.971,694,489,None,Move,browsing",
+   "1570169899.99,703,473,None,Move,browsing",
+   "1570169900.0089998,713,454,None,Move,browsing"
+  ],
+  "user1/internal_tests/session_1006787515335302874715875.csv": [
+   "client_timestamp,x,y,button,state,window",
+   "1574171866.946,980,-434,None,Move,office",
+   "1574171867.184,980,-434,None,Move,office",
+   "1574171867.1920002,979,-433,None,Move,office"
+  ],
+  "user1/external_tests/session_1000796189725513024725757.csv": [
+   "client_timestamp,x,y,button,state,window",
+   "1563885604.324,827,198,None,Move,browsing",
+   "1563885604.325,827,200,None,Move,browsing",
+   "1563885604.3279998,825,200,None,Move,browsing"
+  ],
+  "user2/training/session_12385422861.csv": [
+   "client_timestamp,x,y,button,state,window",
+   "1563786457.198,1242,460,None,Move,",
+   "1563786457.205,1243,460,None,Move,",
+   "1563786482.972,974,529,None,Move,file system"
+  ],
+  "user2/internal_tests/session_1010802986432598512179217.csv": [
+   "client_timestamp,x,y,button,state,window",
+   "1574929522.627,2696,882,Left,Pressed,browsing",
+   "1574929522.7429998,2696,882,Left,Released,browsing",
+   "1574929538.91,2695,880,None,Move,browsing"
+  ],
+  "user2/external_tests/session_1018796424043303249465293.csv": [
+   "client_timestamp,x,y,button,state,window",
+   "1564561370.342,882,858,None,Move,entertainment",
+   "1564561370.35,882,858,None,Move,entertainment",
+   "1564561370.3579998,881,858,None,Move,entertainment"
+  ]
+ }
+}

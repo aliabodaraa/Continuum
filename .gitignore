@@ -17,14 +17,29 @@ venv/
 *.db-wal
 *.sqlite
 
-# ─── Training datasets (public BioKey/SapiMouse HDF sets) ───
+# ─── Training datasets (public keystroke/SapiMouse HDF sets) ───
 # Training-only and too large for GitHub (>100 MB files). Re-download or copy
 # them onto a new machine before retraining. NOTE: building the model-api image
-# also needs data/mouse_only/Mouse_WS50.h5 present locally (it is NOT in git).
+# also needs data/mouse_only/Mouse_A5_W50_base.h5 present locally (it is NOT in git;
+# services/model-api/train_mouse_fcn.py regenerates it from SapiMouse).
 data/*.h5
 data/**/*.h5
 data/*.zip
 data/sapimouse/
+# Third-party impostor datasets fetched for subject-disjoint evaluation. Redistributable
+# under their own licences (KeyRecs CC-BY 4.0, Aalto research-use) but not ours to vendor,
+# and large — re-download with the converters in services/model-api/ when needed.
+data/keyrecs/
+data/Keystrokes/
+data/*.csv
+# Bogazici Mouse Dynamics Dataset (CC BY 4.0, 4.87 GB split zip): the untouched test set of
+# PREREGISTRATION_L stage C. Nothing in it is parsed before Amendment L-1.
+data/bogazici/
+# Protocol L network weights and smoke-test outputs (same policy as artifacts/mouse-fcn-a5-j80/).
+# The results (selection_scores.json, SELECTION_L.json, scores_D.json, stage_D.*) are committed.
+artifacts/phase2/L/models/
+artifacts/phase2/L/smoke/
+
 
 # ─── Runtime-generated per-user models (biometric) ───
 # Base models under artifacts/ ARE tracked (needed to build the image); only the
@@ -36,7 +51,10 @@ artifacts/users/
 services/model-api/artifacts/
 
 # Dead / experimental model variants — keep only ws50-gru (keystroke base) and
-# mouse-ws50-base (mouse base); everything else is regenerable experiment output.
+# mouse-fcn-a5 (mouse base); everything else is regenerable experiment output.
+# Per-user evaluation models and exported inputs of the mouse study (regenerable with
+# final_mouse_eval.py / export_g_inputs.py / extension/scripts/eval_ondevice_g.js).
+artifacts/final_eval/
 artifacts/*-v2
 artifacts/*.BROKEN*
 artifacts/*.log
@@ -44,6 +62,11 @@ artifacts/smoke-*
 artifacts/ws20-gru/
 artifacts/ws50/
 artifacts/mouse-ws50-gru/
+# Mouse accuracy-experiment outputs (regenerable via the scripts in services/model-api;
+# results are recorded in the commit message and the paper, the weights are not needed).
+artifacts/mouse-ws50-id-enriched/
+artifacts/mouse-ws50-arcface/
+artifacts/mouse-ws50-arcface-warm/
 
 # Redundant training checkpoints — serving uses the SavedModel (final_model/).
 **/best_model.h5
@@ -57,8 +80,13 @@ tools/*.exe
 # Never commit — a leaked RS256 key lets anyone forge verdicts; tenant secrets
 # allow impersonation. Dev regenerates them locally on first start.
 services/gateway/gateway-verdict-key.pem
+services/gateway/gateway-identity-key.pem
 services/gateway/tenants.json
 services/gateway/identity.json
+services/gateway/accounts.json
+services/gateway/audit.jsonl
+services/gateway/settings.json
+services/gateway/*.json.tmp
 
 # ─── Data migration snapshots (biometric — never push to a remote) ───
 continuum-data-*.tgz
@@ -67,3 +95,46 @@ continuum-data-*.tgz
 _backups/
 *.pptx
 ~$*
+
+# seeding artefacts written into bind-mounted service dirs at runtime
+services/ca-service/idmap.json
+services/ca-service/gwmap.json
+services/ca-service/keyrecs_accounts.json
+apps/demo/idmap.json
+apps/demo/keyrecs_accounts.json
+services/gateway/gwmap.json
+# one-off identity-migration dumps (derived from the live ca.db / identity.json;
+# regenerate with seed_principals.js + backfill_gw.js, never a source of truth)
+services/ca-service/identity_snapshot.json
+services/ca-service/idmap_snapshot.json
+services/ca-service/reconstructed.json
+services/gateway/principals_seed.json
+
+# ─── Mouse validity-protocol outputs (added 2026-09-23) ───
+# Per-user evaluation models of protocols J/K (hundreds of 3.4 MB SavedModels) and the
+# base networks retrained for the two untouched tests — regenerable with
+# protocol_j_p*.py / protocol_k*.py and train_mouse_fcn.py (seeded). The score JSONs in
+# artifacts/repr_arch_study/ ARE kept: they are the evidence behind every reported number.
+artifacts/protocol_j/models/
+artifacts/mouse-fcn-a5-j80/
+artifacts/mouse-fcn-a5-k60/
+
+# Third-party mouse dataset (Balabit) — not ours to vendor, same rule as KeyRecs/Aalto.
+data/balabit/
+
+# Published papers (publishers' copyright) — kept locally, never pushed.
+pdfs/
+
+# Database backups and copies (biometric - same rule as *.db above). `*.db` alone
+# misses names like ca.db.pre-a5-migration-2026-09-13.bak.
+*.db.*
+*.db-*
+*.bak
+# Protocol KS smoke-test outputs.
+artifacts/phase3/smoke/
+# Protocol L stage C: per-user models and smoke-test outputs (results are committed).
+artifacts/phase2/L/stageC/models/
+artifacts/phase2/L/stageC/smoke/
+
+# Local compose settings: secrets (GATEWAY_ADMIN_KEY, ...). Template: .env.example
+.env

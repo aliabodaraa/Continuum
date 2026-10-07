@@ -1,0 +1,51 @@
+P0 development S0 (19 targets)
+  OK  window auc mean                  got 0.865058 published 0.865058
+  OK  window eer mean                  got 0.199575 published 0.199575
+  OK  window tar01 mean                got 0.348100 published 0.348100
+  OK  live promptsPerMinMean           got 0.190884 published 0.190884
+  OK  live impostorRunsCaught          got 0.900585 published 0.900585
+  OK  live usersNeverPrompted          got 0.947368 published 0.947368
+  OK  live timeToCatchMedianS          got 17.216000 published 17.216000
+J_P6 lockbox
+  OK  S0 promptsPerMin                 got 0.174613 published 0.174613
+  OK  S0 runsCaught                    got 0.771053 published 0.771053
+  OK  S0 auc                           got 0.854234 published 0.854234
+  OK  S0 eer                           got 0.207313 published 0.207313
+  OK  S0 tar01                         got 0.285020 published 0.285020
+  OK  S1 promptsPerMin                 got 0.326487 published 0.326487
+  OK  S1 runsCaught                    got 0.950000 published 0.950000
+  OK  S1 auc                           got 0.878731 published 0.878731
+  OK  S1 eer                           got 0.188104 published 0.188104
+  OK  S1 tar01                         got 0.300238 published 0.300238
+  OK  diff promptsPerMin meanDiff      got 0.151874 published 0.151874
+  OK  diff promptsPerMin ci lo         got 0.000000 published 0.000000
+  OK  diff runsCaught meanDiff         got 0.178947 published 0.178947
+  OK  diff runsCaught ci lo            got 0.073684 published 0.073684
+  OK  diff auc meanDiff                got 0.024497 published 0.024497
+  OK  diff auc ci lo                   got 0.011626 published 0.011626
+  OK  diff eer meanDiff                got -0.019209 published -0.019209
+  OK  diff eer ci lo                   got -0.031140 published -0.031140
+  OK  diff tar01 meanDiff              got 0.015218 published 0.015218
+  OK  diff tar01 ci lo                 got -0.023641 published -0.023641
+K3 lockbox
+  OK  S0 promptsPerMin                 got 0.109403 published 0.109403
+  OK  S0 runsCaught                    got 0.918421 published 0.918421
+  OK  S0 auc                           got 0.903062 published 0.903062
+  OK  S0 eer                           got 0.168269 published 0.168269
+  OK  S0 tar01                         got 0.338485 published 0.338485
+  OK  S2 promptsPerMin                 got 0.215714 published 0.215714
+  OK  S2 runsCaught                    got 0.931579 published 0.931579
+  OK  S2 auc                           got 0.921284 published 0.921284
+  OK  S2 eer                           got 0.144719 published 0.144719
+  OK  S2 tar01                         got 0.397965 published 0.397965
+  OK  diff promptsPerMin meanDiff      got 0.106311 published 0.106311
+  OK  diff promptsPerMin ci lo         got 0.000000 published 0.000000
+  OK  diff runsCaught meanDiff         got 0.013158 published 0.013158
+  OK  diff runsCaught ci lo            got -0.044737 published -0.044737
+  OK  diff auc meanDiff                got 0.018222 published 0.018222
+  OK  diff auc ci lo                   got 0.010765 published 0.010765
+  OK  diff eer meanDiff                got -0.023550 published -0.023550
+  OK  diff eer ci lo                   got -0.033826 published -0.033826
+  OK  diff tar01 meanDiff              got 0.059480 published 0.059480
+  OK  diff tar01 ci lo                 got 0.019845 published 0.019845
+ALL MATCH

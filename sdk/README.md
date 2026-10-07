@@ -18,6 +18,9 @@ sdk/
         data-api-base="https://<gateway>"
         data-site-key="pk_live_…"
         data-defer="1"></script>
+<!-- optional: data-panel="show|hide", data-keystroke="on|off", data-mouse="optional|on|off",
+     data-onboarding="eager|lazy". A value the organisation chose in its console (or the operator
+     on the operator page) overrides these; a deployment default does not. -->
 <script>
   // after your own login, hand the SDK a backend-signed identity token
   Continuum.identify(tokenMintedByYourBackend);
@@ -26,6 +29,11 @@ sdk/
 `guard.js` self-loads the two capture modules + the WebAuthn lib from the same
 origin, injects the onboarding wizard + guard + step-up (Shadow DOM), and talks
 only to the gateway. See the gateway + `@continuum/node` for the server side.
+
+**What leaves the page.** Key codes and timings from every input, textarea and rich-text
+editor (`contenteditable`) on the page, and the typed text's length, never the text itself.
+Password fields send timing with key code 0. Field types the organisation never watches
+(console → Protection; `hidden` by default) send nothing, and the server drops them too.
 
 ## Served by
 - **Gateway** (`services/gateway`) → mounts this folder at `/app/sdk-public`; this

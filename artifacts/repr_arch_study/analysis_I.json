@@ -1,0 +1,103 @@
+{
+ "preregistrationISha256": "b91f3687a0bdd02943caa08f9b0175a2c945e0d09e0979df3cc2f23744a423d2",
+ "server": {
+  "deployed": {
+   "q": 5,
+   "rule": "vote",
+   "n": 20,
+   "k": 12,
+   "test": {
+    "promptsPerMinMean": 2.8461631671167615,
+    "promptsPerMinMedian": 2.027712064886786,
+    "usersNeverPrompted": 0.47368421052631576,
+    "impostorRunsCaught": 0.9941520467836257,
+    "impostorRunsNeverCaught": 0.005847953216374324,
+    "timeToCatchMedianS": 6.456
+   }
+  },
+  "selected": {
+   "q": 1,
+   "rule": "vote",
+   "n": 60,
+   "k": 30,
+   "budget": 0.2,
+   "cal": {
+    "promptsPerMinMean": 0.19088431933037778,
+    "promptsPerMinMedian": 0.0,
+    "usersNeverPrompted": 0.9473684210526315,
+    "impostorRunsCaught": 0.8368421052631579,
+    "impostorRunsNeverCaught": 0.16315789473684206,
+    "timeToCatchMedianS": 17.216
+   },
+   "test": {
+    "promptsPerMinMean": 0.28953461881624526,
+    "promptsPerMinMedian": 0.0,
+    "usersNeverPrompted": 0.8947368421052632,
+    "impostorRunsCaught": 0.8654970760233918,
+    "impostorRunsNeverCaught": 0.13450292397660824,
+    "timeToCatchMedianS": 17.216
+   }
+  },
+  "selectedMinusDeployedRate": {
+   "meanDiff": -2.556628548300516,
+   "ci95": [
+    -4.04154567065947,
+    -1.223645579803484
+   ],
+   "p": 0.0,
+   "n": 19,
+   "bBetter": 0
+  },
+  "adopt": false
+ },
+ "extension": {
+  "deployed": {
+   "q": 10,
+   "rule": "vote",
+   "n": 20,
+   "k": 14,
+   "test": {
+    "promptsPerMinMean": 1.9476858456347472,
+    "promptsPerMinMedian": 0.0,
+    "usersNeverPrompted": 0.631578947368421,
+    "impostorRunsCaught": 1.0,
+    "impostorRunsNeverCaught": 0.0,
+    "timeToCatchMedianS": 6.456
+   }
+  },
+  "selected": {
+   "q": 2,
+   "rule": "mean",
+   "n": 60,
+   "k": null,
+   "budget": 0.2,
+   "cal": {
+    "promptsPerMinMean": 0.19088431933037778,
+    "promptsPerMinMedian": 0.0,
+    "usersNeverPrompted": 0.9473684210526315,
+    "impostorRunsCaught": 0.868421052631579,
+    "impostorRunsNeverCaught": 0.13157894736842102,
+    "timeToCatchMedianS": 17.216
+   },
+   "test": {
+    "promptsPerMinMean": 0.2237677524923336,
+    "promptsPerMinMedian": 0.0,
+    "usersNeverPrompted": 0.9298245614035088,
+    "impostorRunsCaught": 0.8732943469785575,
+    "impostorRunsNeverCaught": 0.12670565302144254,
+    "timeToCatchMedianS": 17.216
+   }
+  },
+  "selectedMinusDeployedRate": {
+   "meanDiff": -1.7239180931424136,
+   "ci95": [
+    -3.0047645524508653,
+    -0.6296703520768306
+   ],
+   "p": 0.0002,
+   "n": 19,
+   "bBetter": 0
+  },
+  "adopt": false
+ }
+}

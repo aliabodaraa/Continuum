@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="en">
   <head>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Continuous Auth — Dashboard</title>
@@ -637,9 +639,9 @@
           <div class="stat-sub">passkey triggered</div>
         </div>
         <div class="stat-box">
-          <div class="stat-label">Avg Score</div>
+          <div class="stat-label">Mean Confidence</div>
           <div class="stat-value" id="statAvgScore">--</div>
-          <div class="stat-sub">mean confidence</div>
+          <div class="stat-sub" title="Average of the model's genuine-probability across all checks. NOT a percentage of checks — compare it with the score distribution, not with the genuine/suspicious counts.">avg model score (not % of checks)</div>
         </div>
       </div>
 
@@ -666,9 +668,9 @@
             <div class="stat-sub">accumulated training data</div>
           </div>
           <div class="stat-box">
-            <div class="stat-label">Model Accuracy</div>
+            <div class="stat-label">Training Fit</div>
             <div class="stat-value" id="mouseAcc" style="color: var(--success)">--</div>
-            <div class="stat-sub">balanced (validation)</div>
+            <div class="stat-sub" title="Balanced accuracy on the validation split of this user's own fine-tuning run (choose_user_threshold in model-api). It is a training diagnostic, NOT live accuracy — live performance is lower and must be measured against unseen impostors.">balanced acc. on train split</div>
           </div>
         </div>
       </div>
@@ -773,10 +775,11 @@
               line-height: 1.6;
             "
           >
-            TAR / FRR measured from each user's own genuine sessions. FAR
-            requires explicit cross-user impostor testing (log in as an impostor
-            account and type on the Write page while monitoring another user's
-            model — then export All Users CSV).
+            Accept / Reject rate below are measured only from each account's own
+            sessions — nobody is trying to break in, so this is <strong>not</strong>
+            a security test, just a usability count. The real security numbers
+            (tested against 99 unseen people trying to impersonate each other) are
+            summarized in the benchmark card underneath.
           </div>
           <div
             id="metricsSummary"
@@ -787,32 +790,46 @@
               margin-bottom: 16px;
             "
           ></div>
+          <div
+            style="
+              background: var(--bg);
+              border: 1px solid var(--border);
+              border-radius: 8px;
+              padding: 12px 16px;
+              margin-bottom: 16px;
+              font-size: 12px;
+              color: var(--muted);
+              line-height: 1.6;
+            "
+          >
+            <strong style="color: var(--text)">Real benchmark</strong> — measured
+            once, properly, against 99 people who never trained the model
+            (subject-disjoint, unseen impostors): median EER
+            <strong style="color: var(--text)">14.5%</strong>, decision-level
+            TAR at a strict 1% false-accept budget
+            <strong style="color: var(--text)">23.5%</strong>, AUC
+            <strong style="color: var(--text)">0.93</strong>. This is the number
+            that actually says how secure the system is — the live counts above
+            are just this account's own traffic, with no attacker involved.
+            <a href="https://claude.ai/code/artifact/d9b221ed-279a-4958-a3ea-4f164fb6090b" target="_blank" rel="noopener">Full write-up &rarr;</a>
+          </div>
           <div style="overflow-x: auto">
             <table class="decisions-table" id="metricsTable">
               <thead>
                 <tr>
                   <th>User</th>
-                  <th title="True Accept Rate = genuine verdicts / total">
-                    TAR
+                  <th title="Accept rate on this user's OWN sessions = genuine verdicts / total. A usability measure. It says nothing about security: a model that accepted everything would also score high here.">
+                    Accept rate
+                    <span style="font-weight:400;color:var(--muted);font-size:10px">(own sessions)</span>
                   </th>
                   <th
-                    title="False Rejection Rate = suspicious verdicts on genuine user / total"
+                    title="Reject rate = 1 - accept rate, computed over the same rows. NOT an independent measurement — the two always sum to 100%."
                   >
-                    FRR
+                    Reject rate
+                    <span style="font-weight:400;color:var(--muted);font-size:10px">(= 1 - accept)</span>
                   </th>
                   <th title="Average confidence score across all checks">
                     Avg Score
-                  </th>
-                  <th
-                    title="Per-user Equal Error Rate threshold, calibrated on the training validation split. RESEARCH METRIC ONLY — the live decision uses the fixed 0.50 Lu et al. boundary, not this value."
-                  >
-                    EER Threshold
-                    <span style="font-weight: 400; color: var(--muted); font-size: 10px">(research)</span>
-                  </th>
-                  <th
-                    title="CNN+LSTM accuracy on validation split during training"
-                  >
-                    Train Acc
                   </th>
                   <th>Enrollment</th>
                   <th>Decisions</th>
@@ -820,7 +837,7 @@
               </thead>
               <tbody id="metricsBody">
                 <tr>
-                  <td colspan="8"><div class="empty-state">Loading…</div></td>
+                  <td colspan="6"><div class="empty-state">Loading…</div></td>
                 </tr>
               </tbody>
             </table>
@@ -1023,6 +1040,10 @@
           if (d.enrolled) {
             st.textContent = "Enrolled";
             st.style.color = "var(--success)";
+          } else if (d.training) {
+            // The server's training queue is building the model (2-3 minutes).
+            st.textContent = "Building model…";
+            st.style.color = "var(--warning, #b45309)";
           } else {
             st.textContent = "Not enrolled";
             st.style.color = "var(--danger)";
@@ -1397,13 +1418,13 @@
             ["Users", s.totalUsers],
             ["Total Decisions", s.totalDecisions],
             [
-              "Overall TAR",
+              "Overall Accept rate",
               s.overallTAR != null
                 ? (s.overallTAR * 100).toFixed(1) + "%"
                 : "--",
             ],
             [
-              "Overall FRR",
+              "Overall Reject rate",
               s.overallFRR != null
                 ? (s.overallFRR * 100).toFixed(1) + "%"
                 : "--",
@@ -1425,7 +1446,7 @@
           // Per-user table
           if (!data.users || !data.users.length) {
             document.getElementById("metricsBody").innerHTML =
-              `<tr><td colspan="8"><div class="empty-state">No data yet — use the Write page to generate decisions.</div></td></tr>`;
+              `<tr><td colspan="6"><div class="empty-state">No data yet — use the Write page to generate decisions.</div></td></tr>`;
             return;
           }
           document.getElementById("metricsBody").innerHTML = data.users
@@ -1440,14 +1461,6 @@
                   : "—";
               const avgScore =
                 u.avgScore != null ? `${(u.avgScore * 100).toFixed(1)}%` : "—";
-              const thr =
-                u.eerThreshold != null
-                  ? `${(u.eerThreshold * 100).toFixed(1)}%${u.thresholdSource === "default" ? ` <span style="color:var(--warning);font-size:10px">(default)</span>` : ""}`
-                  : "—";
-              const acc =
-                u.trainingAccuracy != null
-                  ? `${(u.trainingAccuracy * 100).toFixed(1)}%`
-                  : "—";
               const enrolled =
                 u.sampleCount != null ? `${u.sampleCount} samples` : "—";
               return `<tr>
@@ -1455,8 +1468,6 @@
               <td>${tar}</td>
               <td>${frr}</td>
               <td>${avgScore}</td>
-              <td>${thr}</td>
-              <td>${acc}</td>
               <td style="color:var(--muted)">${enrolled}</td>
               <td style="text-align:center;font-weight:700">${u.totalDecisions}</td>
             </tr>`;

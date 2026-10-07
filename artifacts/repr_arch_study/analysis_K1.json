@@ -1,0 +1,104 @@
+{
+ "preregistrationJSha256": "23db222bdb4916e5e316dc9c1fde9ced1701e066cfd3c6fcb4e7e976063b7f98",
+ "splitJSha256": "4df1abbeaf904e2be02623b6d04549a9c66719878b687d8f27d2f21287759192",
+ "preregistrationKSha256": "c602b16b80c1a1b36e6f70aa3669e8556f0693f3f71fb94ad9e5a7df91fbec3e",
+ "phase": "K1",
+ "users": [
+  "user1",
+  "user101",
+  "user104",
+  "user107",
+  "user108",
+  "user111",
+  "user115",
+  "user119",
+  "user16",
+  "user19",
+  "user29",
+  "user69",
+  "user70",
+  "user8",
+  "user85",
+  "user86",
+  "user89",
+  "user9",
+  "user91"
+ ],
+ "deployedPoint": {
+  "q": 1,
+  "rule": "vote",
+  "n": 60,
+  "k": 30
+ },
+ "summary": {
+  "KEEP": {
+   "auc": 0.8650573956505841,
+   "eer": 0.19965323914552482,
+   "tar01": 0.34809983958889545,
+   "promptsPerMin": 0.19088431933037778,
+   "runsCaught": 0.8947368421052632,
+   "zeroStepShare": 0.06182456140350876
+  },
+  "DROP": {
+   "auc": 0.8647569068418007,
+   "eer": 0.20239303378904983,
+   "tar01": 0.3338512422170878,
+   "promptsPerMin": 0.22222619454926096,
+   "runsCaught": 0.9064327485380117,
+   "zeroStepShare": 0.0
+  }
+ },
+ "tests": {
+  "auc": {
+   "meanDiff": -0.0003004888087835745,
+   "ci95": [
+    -0.013331029233058234,
+    0.011270844635445604
+   ],
+   "p": 0.9918,
+   "n": 19,
+   "bBetter": 11
+  },
+  "eer": {
+   "meanDiff": 0.0027397946435250018,
+   "ci95": [
+    -0.01018206858951257,
+    0.017282916459161368
+   ],
+   "p": 0.7252,
+   "n": 19,
+   "bBetter": 10
+  },
+  "tar01": {
+   "meanDiff": -0.01424859737180764,
+   "ci95": [
+    -0.04217467791377079,
+    0.011350644566424354
+   ],
+   "p": 0.3012,
+   "n": 19,
+   "bBetter": 9
+  },
+  "promptsPerMin": {
+   "meanDiff": 0.03134187521888316,
+   "ci95": [
+    -0.26904815698721346,
+    0.363073782643863
+   ],
+   "p": 0.9356,
+   "n": 19,
+   "bBetter": 1
+  },
+  "runsCaught": {
+   "meanDiff": 0.011695906432748523,
+   "ci95": [
+    -0.05263157894736843,
+    0.08187134502923973
+   ],
+   "p": 0.7972,
+   "n": 19,
+   "bBetter": 3
+  }
+ },
+ "verdict": "clicks carry no measurable identity (AUC interval inside \u00b10.02)"
+}

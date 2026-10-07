@@ -1,5 +1,8 @@
 import json
 import os
+import re
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 try:
@@ -17,9 +20,11 @@ except Exception:
 try:
     from tensorflow.keras.models import load_model
     from tensorflow.keras.callbacks import EarlyStopping
+    from tensorflow.keras.utils import set_random_seed
 except Exception:
     load_model = None
     EarlyStopping = None
+    set_random_seed = None
 
 try:
     from model import build_1d_cnn_2rnn
@@ -31,12 +36,65 @@ try:
 except Exception:
     FeatureScaler = None
 
+try:
+    import loso
+except Exception:
+    loso = None
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ---- SERVICE AUTHENTICATION -------------------------------------------------------
+#
+# This service had no notion of a caller. Its only protection was topology: compose gives
+# it `expose:` rather than `ports:`, so it is not bound to the host. That is not an access
+# control, and compose declared no networks at all — every container on the default bridge,
+# including the demo app and the acme sample app, could reach it directly.
+#
+# What that exposed is worse than it sounds. /api/user/predict scores caller-supplied
+# windows against a NAMED user's model, so anything on that network was a biometric oracle:
+# submit candidate windows for a victim, read back the genuine probability, and hill-climb
+# a forgery the real system will accept — no login and no session required. The same reach
+# covers /api/user/train (poison a victim's model) and /api/user/rollback (revert it).
+# confine_path() below blocks filesystem escape; it does nothing here, because the path is
+# DERIVED from the caller's own userId field rather than supplied as one.
+#
+# The key answers "is this ca-service?" — a service credential, not a user identity. The
+# question "may this request act for this person?" is answered one hop earlier, by the
+# gateway's RS256 identity assertion that ca-service verifies. Only ca-service holds both a
+# verified assertion and this key, so the two checks compose: nothing reaches a model
+# without the gateway having vouched for the principal.
+#
+# Unset = disabled, matching CA_API_KEY and PASSKEY_API_KEY, so a bare `python api.py` still
+# works for local model work. Every compose file sets it.
+MODEL_API_KEY = os.getenv("MODEL_API_KEY", "")
+if not MODEL_API_KEY:
+    print(
+        "[model-api][SECURITY] MODEL_API_KEY is unset — the scoring and training endpoints "
+        "are UNAUTHENTICATED. Set it for any deployment: openssl rand -hex 32"
+    )
+
+
+def api_key_ok(supplied):
+    """Constant-time compare so a wrong key leaks nothing through timing."""
+    if not MODEL_API_KEY:
+        return True  # check inactive
+    import hmac
+    return hmac.compare_digest(str(supplied or ""), MODEL_API_KEY)
+
+
 MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(BASE_DIR, "artifacts", "ws50", "final_model"))
 SCALER_PATH = os.getenv("SCALER_PATH", os.path.join(os.path.dirname(MODEL_PATH), "scaler.json"))
+# Storage roots, declared before anything that derives a default from them.
+# DATA_DIR is set by compose (/app/data); deriving the negatives default from
+# BASE_DIR instead pointed at /app/services/model-api/data, which does not
+# exist, so get_dataset_negatives silently returned nothing and every live
+# retrain ran with app-user negatives only — far weaker than intended, and
+# occasionally none at all, which falls through to synthetic noise.
+ARTIFACTS_DIR = os.getenv("ARTIFACTS_DIR", os.path.join(BASE_DIR, "artifacts"))
+DATA_DIR = os.getenv("DATA_DIR", os.path.join(BASE_DIR, "data"))
 NEGATIVE_DATASET_PATH = os.getenv(
-    "NEGATIVE_DATASET_PATH", os.path.join(BASE_DIR, "data", "Rand_WS50.h5")
+    "NEGATIVE_DATASET_PATH", os.path.join(DATA_DIR, "Rand_WS50.h5")
 )
 HOST = os.getenv("MODEL_HOST", "0.0.0.0")
 PORT = int(os.getenv("MODEL_PORT", "5000"))
@@ -46,12 +104,43 @@ PORT = int(os.getenv("MODEL_PORT", "5000"))
 # These two roots are the only places this service reads or writes; any path a
 # caller does supply (legacy/dev tooling like the sweep scripts) is CONFINED to
 # them, so no request can make this service touch arbitrary files.
-ARTIFACTS_DIR = os.getenv("ARTIFACTS_DIR", os.path.join(BASE_DIR, "artifacts"))
-DATA_DIR = os.getenv("DATA_DIR", os.path.join(BASE_DIR, "data"))
 # Mouse-modality defaults (this service's own layout, env-overridable).
-MOUSE_BASE_MODEL_PATH = os.getenv("MOUSE_BASE_MODEL_PATH", os.path.join(ARTIFACTS_DIR, "mouse-ws50-base", "final_model"))
-MOUSE_SCALER_PATH = os.getenv("MOUSE_SCALER_PATH", os.path.join(ARTIFACTS_DIR, "mouse-ws50-base", "scaler.json"))
-MOUSE_NEG_DATASET_PATH = os.getenv("MOUSE_NEG_DATASET_PATH", os.path.join(DATA_DIR, "mouse_only", "Mouse_WS50.h5"))
+# These point at mouse-ws50-gru (train_mouse_base_id.py), NOT mouse-ws50-base.
+# mouse-ws50-base came from train_mouse_base.py, which splits windows at random.
+# Windows are cut size 50 / stride 10, so neighbours share 40 of their 50 motion
+# steps: measured by CONTENT, 99.99% of its test windows share raw steps with a
+# training window and 90.8% have an immediate neighbour, so its 51.1% top-1 is
+# contamination, not generalisation. mouse-ws50-gru is session-disjoint (3-min
+# session trains, 1-min session tests) with 20 users held out entirely, and
+# reports 40.3% top-1 on 100-way identification against a 1% chance level.
+# It is also the artifact every mouse evaluation and docs/MOUSE_MODALITY.md
+# describe; both scalers are 7-dimensional, so the wrong one loaded silently.
+#
+# UPDATE: now mouse-ws50-aligned, retrained after the TRAIN/SERVE SKEW was
+# fixed. The browser (sdk/js/mouse-features.js) breaks streams at 0.5 s, drops
+# zero-displacement moves and skips near-static windows; the training data was
+# built with a 2.0 s break and neither filter, so the deployed model was
+# scoring a feature distribution it had never been trained on. That gap was
+# measured in production: 52% of every live window was zero-displacement filler
+# emitted during scrolling, which pinned scores near 0.28 and caused constant
+# false locks. preprocess_mouse.py now applies the browser's rules and this
+# base was retrained under them.
+#
+# On SapiMouse the change is statistically indistinguishable — paired AUC
+# difference at 20 windows is +0.0000, 95% CI [-0.0131, +0.0167], better for
+# 7 of 20 subjects. That is expected and is NOT the justification: SapiMouse is
+# a dense clicking task with no scrolling, so the filters remove only 0.5% of
+# its windows and it cannot exercise the defect. The justification is
+# correctness — production must score what it was trained on — and the
+# measurement above establishes only that the fix costs nothing.
+# UPDATE (2026-09-13): mouse-fcn-a5, the configuration the pre-registered study selected
+# (artifacts/repr_arch_study/RUN_LOG.md): SapiMouse's FCN on (|dx|, |dy|) windows, trained by
+# train_mouse_fcn.py on the 100 base users. Its arch.json tells train_user_payload which layers
+# to freeze. Negatives now come from BASE users only: the previous file pooled all 120 users,
+# held-out ones included, which is harmless for real users but contaminates held-out evaluation.
+MOUSE_BASE_MODEL_PATH = os.getenv("MOUSE_BASE_MODEL_PATH", os.path.join(ARTIFACTS_DIR, "mouse-fcn-a5", "final_model"))
+MOUSE_SCALER_PATH = os.getenv("MOUSE_SCALER_PATH", os.path.join(ARTIFACTS_DIR, "mouse-fcn-a5", "scaler.json"))
+MOUSE_NEG_DATASET_PATH = os.getenv("MOUSE_NEG_DATASET_PATH", os.path.join(DATA_DIR, "mouse_only", "Mouse_A5_W50_base.h5"))
 
 
 def confine_path(p):
@@ -70,19 +159,130 @@ model_error = None
 _scaler = None
 _dataset_negatives = None
 _user_model_cache = {}
+_user_model_locks = {}
+_user_model_locks_guard = threading.Lock()
+
+# Warm cache (TODO 5b). A cold load of a user's model can take longer than ca-service's 5 s
+# inference deadline; the caller then gives up, retries, and used to start a second load of the
+# same model. Now one load runs per model and later callers wait for it, the server loads the
+# models of recently active users in the background at boot, and a model is loaded again as soon
+# as training or a rollback replaces it.
+_LIVE_MODEL = re.compile(r"(^|[/\\])users[/\\]user-[^/\\]+[/\\](final_model|mouse_model)$")
+LAST_USED_FILE = os.path.join(ARTIFACTS_DIR, "users", ".last_used.json")
+WARM_DAYS = float(os.getenv("MODEL_WARM_DAYS", "14"))
+WARM_MAX = int(os.getenv("MODEL_WARM_MAX", "8"))
+_track_use = False            # set by the server only: scripts that import this module record nothing
+_last_used = {}
+_last_used_saved = 0.0
+
+
+def _model_lock(path):
+    with _user_model_locks_guard:
+        return _user_model_locks.setdefault(path, threading.Lock())
 
 
 def get_user_model(path):
-    if path not in _user_model_cache:
-        _user_model_cache[path] = load_model(path)
-        print(f"[cache] Loaded user model: {path}")
-    return _user_model_cache[path]
+    cached = _user_model_cache.get(path)
+    if cached is not None:
+        return cached
+    with _model_lock(path):
+        if path not in _user_model_cache:
+            _user_model_cache[path] = load_model(path)
+            print(f"[cache] Loaded user model: {path}")
+        return _user_model_cache[path]
 
 
 def invalidate_user_model_cache(path):
-    if path in _user_model_cache:
-        del _user_model_cache[path]
-        print(f"[cache] Evicted stale model: {path}")
+    with _model_lock(path):
+        if path in _user_model_cache:
+            del _user_model_cache[path]
+            print(f"[cache] Evicted stale model: {path}")
+
+
+def load_live_model(path):
+    """Load a live profile into the cache: an F2 head (with the shared frozen embedder) or a
+    per-user network."""
+    if is_f2_profile(path):
+        _f2_state()
+        _f2_head(path)
+    else:
+        get_user_model(path)
+
+
+def warm_user_model_async(path):
+    """Load a live user model in the background (server only)."""
+    if not _track_use or not _LIVE_MODEL.search(path):
+        return
+
+    def run():
+        try:
+            load_live_model(path)
+        except Exception as exc:                     # a failed warm-up must never break serving
+            print(f"[cache] Warm-up of {path} failed: {exc}")
+    threading.Thread(target=run, daemon=True).start()
+
+
+def note_model_use(path):
+    """Remember when a live user model last served a prediction, so the next boot can warm it.
+    Written at once for a model's first use since boot, then at most every 10 minutes."""
+    global _last_used_saved
+    if not _track_use or not _LIVE_MODEL.search(path):
+        return
+    now = time.time()
+    first = path not in _last_used
+    _last_used[path] = now
+    if not first and now - _last_used_saved < 600:
+        return
+    _last_used_saved = now
+    try:
+        used = {}
+        if os.path.exists(LAST_USED_FILE):
+            with open(LAST_USED_FILE, encoding="utf-8") as f:
+                used = json.load(f)
+        used.update({os.path.relpath(p, ARTIFACTS_DIR).replace(os.sep, "/"): t for p, t in _last_used.items()})
+        tmp = LAST_USED_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(used, f)
+        os.replace(tmp, LAST_USED_FILE)
+    except (OSError, ValueError) as exc:
+        print(f"[cache] Could not record model use: {exc}")
+
+
+def warm_recent_user_models():
+    """Server boot: record use from now on, and load in the background the live models used or
+    trained in the last WARM_DAYS days, newest first, at most WARM_MAX. A model's time is the later
+    of its last recorded prediction and its last training (the directory's modification time), so a
+    model just rebuilt for a user who has not checked since is warmed too."""
+    global _track_use
+    _track_use = True
+    cutoff = time.time() - WARM_DAYS * 86400
+    latest = {}
+    try:
+        root = os.path.join(ARTIFACTS_DIR, "users")
+        for user in os.listdir(root) if os.path.isdir(root) else []:
+            for leaf in ("final_model", "mouse_model"):
+                p = os.path.join(root, user, leaf)
+                if _LIVE_MODEL.search(p) and os.path.isdir(p):
+                    latest[p] = os.path.getmtime(p)
+        if os.path.exists(LAST_USED_FILE):
+            with open(LAST_USED_FILE, encoding="utf-8") as f:
+                for rel, t in json.load(f).items():
+                    p = os.path.join(ARTIFACTS_DIR, rel)
+                    if p in latest:
+                        latest[p] = max(latest[p], float(t))
+    except (OSError, ValueError) as exc:
+        print(f"[cache] Could not list recent models: {exc}")
+    paths = [p for p, t in sorted(latest.items(), key=lambda kv: kv[1], reverse=True) if t >= cutoff][:WARM_MAX]
+
+    def run():
+        for p in paths:
+            try:
+                load_live_model(p)
+            except Exception as exc:
+                print(f"[cache] Warm-up of {p} failed: {exc}")
+        print(f"[cache] Warm-up done: {len(paths)} user models")
+    print(f"[cache] Warming {len(paths)} recently used user models in the background")
+    threading.Thread(target=run, daemon=True).start()
 
 
 _scaler_cache = {}
@@ -109,36 +309,80 @@ def scale_windows(windows, scaler_path=None):
 
 
 _dataset_negatives_cache = {}
+_dataset_negative_errors = {}
 
 
-def get_dataset_negatives(window_size, num_features, max_windows=2000, dataset_path=None):
+def get_dataset_negatives(window_size, num_features, max_windows=2000, dataset_path=None,
+                          with_participants=False):
     """
     Real impostor windows sampled from a training dataset — each window belongs
     to a participant who is "not the current user", making far stronger
     negatives than synthetic noise. Defaults to the keystroke NEGATIVE_DATASET_
     PATH; a per-request `dataset_path` lets the mouse modality draw impostors
-    from SapiMouse (Mouse_WS*.h5).
+    from SapiMouse (Mouse_WS*.h5) and the live keystroke profile from Aalto
+    (aalto_neg_A200.h5, T3.3). `max_windows` <= 0 keeps every window.
+
+    with_participants=True returns (windows, participant ids or None); the ids
+    exist only in files that store a `participant` dataset (the Aalto file).
     """
     path = dataset_path or NEGATIVE_DATASET_PATH
-    if path not in _dataset_negatives_cache:
+    if max_windows is None or max_windows <= 0:
+        max_windows = 0
+    cache_key = (path, max_windows)
+    if cache_key not in _dataset_negatives_cache:
         try:
             import h5py
 
             with h5py.File(path, "r") as f:
                 key = "train_data" if "train_data" in f else "X"
                 data = f[key]
-                rng = np.random.default_rng(13)
-                idx = np.sort(rng.choice(len(data), size=min(max_windows, len(data)), replace=False))
-                _dataset_negatives_cache[path] = np.array(data[idx], dtype=np.float32)
-            print(f"Loaded {len(_dataset_negatives_cache[path])} impostor windows from {path}")
+                if max_windows and max_windows < len(data):
+                    rng = np.random.default_rng(13)
+                    idx = np.sort(rng.choice(len(data), size=max_windows, replace=False))
+                else:
+                    idx = np.arange(len(data))
+                pids = np.asarray(f["participant"])[idx] if "participant" in f else None
+                _dataset_negatives_cache[cache_key] = (np.array(data[idx], dtype=np.float32), pids)
+            _dataset_negative_errors.pop(path, None)
+            print(f"Loaded {len(_dataset_negatives_cache[cache_key][0])} impostor windows from {path}")
         except Exception as exc:
-            print(f"Warning: could not load dataset negatives from {path}: {exc}")
-            _dataset_negatives_cache[path] = np.empty((0, window_size, num_features), dtype=np.float32)
+            # This used to print a warning and hand back an empty array, so a
+            # mistyped path degraded every retrain to app-user-only (or synthetic)
+            # negatives with nothing visible to the caller. Record the reason so
+            # it reaches the training response and the stored profile.
+            _dataset_negative_errors[path] = f"{type(exc).__name__}: {exc}"
+            print(f"ERROR: dataset negatives unavailable at {path}: {exc}")
+            _dataset_negatives_cache[cache_key] = (
+                np.empty((0, window_size, num_features), dtype=np.float32), None)
 
-    neg = _dataset_negatives_cache[path]
+    neg, pids = _dataset_negatives_cache[cache_key]
     if neg.shape[1:] != (window_size, num_features):
-        return np.empty((0, window_size, num_features), dtype=np.float32)
-    return neg
+        # Previously returned empty with no message at all — the most silent of
+        # the two failure modes, and the one a modality mix-up would hit.
+        if len(neg):
+            _dataset_negative_errors[path] = (
+                f"shape mismatch: dataset holds {neg.shape[1:]}, "
+                f"model needs {(window_size, num_features)}")
+            print(f"ERROR: {_dataset_negative_errors[path]} ({path})")
+        neg, pids = np.empty((0, window_size, num_features), dtype=np.float32), None
+    return (neg, pids) if with_participants else neg
+
+
+def dataset_negative_status(path=None):
+    """Why dataset negatives are unavailable, or None when they loaded."""
+    return _dataset_negative_errors.get(path or NEGATIVE_DATASET_PATH)
+
+
+def preflight_negatives():
+    """Check the configured negatives dataset at STARTUP, so a misconfigured path
+    is caught at boot rather than silently degrading the next retrain."""
+    path = NEGATIVE_DATASET_PATH
+    if not os.path.exists(path):
+        print(f"PREFLIGHT FAIL: negatives dataset missing: {path}")
+        _dataset_negative_errors[path] = f"file does not exist: {path}"
+        return False
+    print(f"PREFLIGHT OK: negatives dataset present: {path}")
+    return True
 
 
 def init_model():
@@ -198,6 +442,148 @@ def user_model_path(user_id, modality="keystroke"):
     return os.path.join(ARTIFACTS_DIR, "users", f"user-{safe_user_id}", leaf)
 
 
+# ---- ACTION-BASED mouse path (Antal & Egyed-Zsigmond, IET Biometrics 2019) --
+# The window path above segments motion into fixed 50-step windows, a parameter
+# carried over from the KEYSTROKE method of Lu et al. that has no published
+# basis for a pointer. This path segments into mouse ACTIONS and scores each
+# with a Random Forest over the paper's 39 features, which is the field's
+# standard and what the deployed mouse channel now uses.
+#
+# The Random Forest is chosen over the CNN+GRU arm on a measured operating
+# point, not on preference: at a 1% false-accept budget it reaches TAR 35.11%
+# against the network's 7.14% on the same 20 held-out subjects, even though the
+# two have identical AUC (0.947). TAR@FAR=1% is what decides whether the channel
+# is usable as a step-up trigger.
+MOUSE_ACTION_DATASET_PATH = os.getenv(
+    "MOUSE_ACTION_DATASET_PATH", os.path.join(DATA_DIR, "mouse_only", "Mouse_Actions.h5"))
+MOUSE_ACTION_FEATURES = 39
+MOUSE_ACTION_TREES = 100        # the paper's Random Forest size
+MOUSE_ACTION_SET_SIZE = 20      # the paper: 10-20 actions are needed per decision
+_action_negatives_cache = {}
+
+
+def user_action_model_path(user_id):
+    safe = str(user_id).replace("/", "").replace("\\", "")
+    return os.path.join(ARTIFACTS_DIR, "users", f"user-{safe}", "mouse_action_model.joblib")
+
+
+def to_action_array(value):
+    arr = np.array(value, dtype=np.float64)
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    if arr.ndim != 2 or arr.shape[1] != MOUSE_ACTION_FEATURES:
+        raise ValueError(
+            f"actions must be (n, {MOUSE_ACTION_FEATURES}); got {arr.shape}")
+    arr[~np.isfinite(arr)] = 0.0
+    return arr
+
+
+def get_action_negatives(max_actions=4000, dataset_path=None):
+    """Real actions from other people, for the per-user Random Forest."""
+    path = dataset_path or MOUSE_ACTION_DATASET_PATH
+    if path not in _action_negatives_cache:
+        import h5py
+        with h5py.File(path, "r") as f:
+            X = np.array(f["X"], dtype=np.float64)
+        rng = np.random.default_rng(13)
+        if len(X) > max_actions:
+            X = X[rng.choice(len(X), size=max_actions, replace=False)]
+        X[~np.isfinite(X)] = 0.0
+        _action_negatives_cache[path] = X
+        print(f"Loaded {len(X)} impostor actions from {path}")
+    return _action_negatives_cache[path]
+
+
+def train_user_actions_payload(payload):
+    """Per-user Random Forest over 39 action features."""
+    try:
+        from joblib import dump
+        from sklearn.ensemble import RandomForestClassifier
+    except Exception as exc:
+        return {"error": f"scikit-learn/joblib unavailable: {exc}"}, 503
+    try:
+        pos = to_action_array(payload.get("actions") or [])
+    except ValueError as exc:
+        return {"error": str(exc)}, 400
+
+    min_actions = int(payload.get("minActions", 40))
+    if len(pos) < min_actions:
+        return {"error": f"not enough actions: {len(pos)} collected, {min_actions} required",
+                "actionCount": int(len(pos)),
+                "requiredActions": min_actions}, 400
+
+    raw_neg = payload.get("negativeActions")
+    if raw_neg:
+        neg = to_action_array(raw_neg)
+        neg_source = "app-users"
+    else:
+        pool = get_action_negatives()
+        rng = np.random.default_rng(21)
+        take = min(len(pos), len(pool))
+        neg = pool[rng.choice(len(pool), size=take, replace=False)]
+        neg_source = "dataset"
+
+    X = np.vstack([pos, neg])
+    y = np.concatenate([np.ones(len(pos)), np.zeros(len(neg))])
+
+    clf = RandomForestClassifier(n_estimators=MOUSE_ACTION_TREES,
+                                 random_state=13, n_jobs=-1)
+    clf.fit(X, y)
+
+    path = user_action_model_path(payload["userId"])
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    dump(clf, path)
+    _user_action_models.pop(path, None)
+
+    # Out-of-bag-style sanity: resubstitution accuracy on the genuine half only,
+    # reported so a caller can see the fit did something, never as a metric.
+    train_acc = float(clf.score(X, y))
+    return {
+        "ok": True, "userId": payload["userId"], "modelPath": path,
+        "actionCount": int(len(pos)), "negativeActionCount": int(len(neg)),
+        "negativeSource": neg_source, "trees": MOUSE_ACTION_TREES,
+        "setSize": MOUSE_ACTION_SET_SIZE, "trainAccuracy": train_acc,
+        "method": "Antal & Egyed-Zsigmond, IET Biometrics 8(5):285-294, 2019",
+    }, 200
+
+
+_user_action_models = {}
+
+
+def predict_user_actions_payload(payload):
+    """Score actions and aggregate by the paper's mean-of-k rule."""
+    try:
+        from joblib import load
+    except Exception as exc:
+        return {"error": f"joblib unavailable: {exc}"}, 503
+    try:
+        acts = to_action_array(payload.get("actions") or [])
+    except ValueError as exc:
+        return {"error": str(exc)}, 400
+
+    path = confine_path(payload.get("modelPath")) or user_action_model_path(payload["userId"])
+    if not os.path.exists(path):
+        return {"error": "no action model for this user", "modelPath": path}, 404
+    if path not in _user_action_models:
+        _user_action_models[path] = load(path)
+    clf = _user_action_models[path]
+
+    scores = clf.predict_proba(acts)[:, 1].astype(float)
+    k = int(payload.get("setSize", MOUSE_ACTION_SET_SIZE))
+    threshold = float(payload.get("threshold", 0.5))
+
+    # P(A) = (1/k) * sum(p_i) over the most recent k actions (the paper's rule).
+    warmup = len(scores) < k
+    set_score = float(np.mean(scores[-k:])) if len(scores) else 0.0
+    return {
+        "ok": True, "userId": payload["userId"],
+        "scores": scores.tolist(),
+        "setScore": set_score, "setSize": k, "threshold": threshold,
+        "warmup": warmup,
+        "isSuspicious": bool((not warmup) and set_score < threshold),
+    }, 200
+
+
 def to_window_array(value):
     if np is None:
         raise RuntimeError("NumPy is not installed")
@@ -223,6 +609,103 @@ def make_synthetic_negatives(positive_windows):
         scale = rng.uniform(0.55, 1.75, size=(1, negatives.shape[2] - 2))
         negatives[idx, :, 2:] = negatives[idx, :, 2:] * scale
     return negatives
+
+
+# ---- leakage-free train/validation splitting -------------------------------
+# Windows are built with a sliding stride, so consecutive windows SHARE most of
+# their rows: at window 50 / stride 10 any two windows closer than 5 apart
+# overlap. A random shuffle therefore puts near-identical copies of the same
+# keystrokes on both sides of the split, and everything measured on the
+# validation side — val_loss (which drives early stopping) and the calibrated
+# per-user threshold — is measured against data the model effectively trained
+# on. Both are then optimistic, and the threshold is calibrated too low.
+#
+# Two strategies, best first:
+#   * BY GROUP: callers send one group id per window (the source sample /
+#     session). Whole groups go to one side, so no window can have its overlapping
+#     neighbour on the other side. This is the correct fix.
+#   * CONTIGUOUS + GAP: no groups supplied — take the validation set from the END
+#     of the sequence and discard `gap` windows at the boundary, the only place
+#     where overlap can cross. Weaker than grouping (a single long session still
+#     spans both sides) but strictly better than shuffling.
+DEFAULT_OVERLAP_GAP = 5          # ceil(WINDOW_SIZE / WINDOW_STRIDE) for 50/10
+DEFAULT_VAL_FRACTION = 0.2
+MAX_VAL_SHARE = 0.5              # never let group assignment swallow the training set
+
+
+def _contiguous_split(n, val_fraction, gap):
+    """Validation from the tail, with `gap` windows dropped at the boundary."""
+    n_val = int(round(n * val_fraction))
+    if n < 2 or n_val < 1:
+        return list(range(n)), []
+    cut = n - n_val
+    train = list(range(0, max(cut - gap, 0)))
+    if not train:                                  # too few windows to afford a gap
+        train = list(range(0, cut))
+    return train, list(range(cut, n))
+
+
+def _group_split(groups, val_fraction, seed):
+    """Assign whole groups to validation. Returns None if it cannot be done."""
+    uniq = list(dict.fromkeys(groups))
+    if len(uniq) < 2:
+        return None
+    counts = {g: 0 for g in uniq}
+    for g in groups:
+        counts[g] += 1
+    order = list(uniq)
+    np.random.default_rng(seed).shuffle(order)
+    target = max(1, int(round(len(groups) * val_fraction)))
+    cap = int(len(groups) * MAX_VAL_SHARE)
+    val_groups, taken = set(), 0
+    for g in order:
+        if taken >= target:
+            break
+        if val_groups and taken + counts[g] > cap:
+            continue                               # would leave too little to train on
+        val_groups.add(g)
+        taken += counts[g]
+    train = [i for i, g in enumerate(groups) if g not in val_groups]
+    val = [i for i, g in enumerate(groups) if g in val_groups]
+    return (train, val) if train and val else None
+
+
+def dedupe_windows(X, groups=None):
+    """Drop exact-duplicate windows, keeping the first occurrence.
+
+    Grouping by source sample stops windows from one sample straddling the split, but it cannot
+    help when the SAME content is filed under two different sample ids — a session submitted
+    twice. Those produce byte-identical windows in two different groups, so a group split
+    happily puts one copy on each side and the validation set again contains its own training
+    data. Observed live: 23 of user 1's 165 validation windows were exact copies of training
+    windows, from a duplicate sample pair.
+
+    Deduplicating is preferable to merging the groups: a session recorded twice is not twice the
+    evidence, and keeping both would over-weight that content in the fit.
+
+    Returns (kept_indices, n_dropped)."""
+    seen = {}
+    keep = []
+    for i, w in enumerate(X):
+        h = np.asarray(w, dtype=np.float32).tobytes()
+        if h in seen:
+            continue
+        seen[h] = i
+        keep.append(i)
+    return keep, len(X) - len(keep)
+
+
+def split_no_overlap(n, groups=None, val_fraction=DEFAULT_VAL_FRACTION,
+                     gap=DEFAULT_OVERLAP_GAP, seed=7):
+    """Train/validation indices that never place overlapping windows on both sides.
+
+    Returns (train_idx, val_idx, strategy)."""
+    if groups is not None and len(groups) == n:
+        got = _group_split(list(groups), val_fraction, seed)
+        if got:
+            return got[0], got[1], "group"
+    train, val = _contiguous_split(n, val_fraction, gap)
+    return train, val, "contiguous+gap"
 
 
 MIN_EER_VALIDATION_WINDOWS = 3   # minimum positive windows needed for EER to be statistically meaningful
@@ -269,6 +752,16 @@ def train_user_payload(payload):
         return {"error": "userId and positiveWindows are required"}, 400
 
     try:
+        # Weight init, dropout, and model.fit's batch shuffling were the one
+        # unseeded source of randomness left in this pipeline: negative sampling
+        # and the train/val split already use fixed np.random.default_rng seeds
+        # (see below), but retraining on IDENTICAL data still produced genuine-user
+        # confidence swinging from a mean of 0.92 down to 0.74 run to run, because
+        # nothing pinned TF/Keras's own RNG. Seeding it makes "retrain on the same
+        # data" actually reproducible; it does not by itself make any one fit better.
+        if set_random_seed is not None:
+            set_random_seed(int(payload.get("trainSeed", 7)))
+
         positives = to_window_array(payload["positiveWindows"])
 
         # Modality-aware storage, OWNED here: callers send `modality`
@@ -307,12 +800,21 @@ def train_user_payload(payload):
         negative_source = "app-users" if len(negatives) > 0 else None
 
         target_negatives = max(len(positives) * 2, 60)
+        dataset_groups = None
         if len(negatives) < target_negatives:
-            dataset_negatives = get_dataset_negatives(window_size, num_features, dataset_path=neg_dataset_path)
+            # negativeDatasetMaxWindows: how many of the file's windows are eligible (default 2000,
+            # <= 0 = all). The live keystroke profile sends 0 so all of KS's A200 windows count.
+            dataset_negatives, dataset_pids = get_dataset_negatives(
+                window_size, num_features, dataset_path=neg_dataset_path,
+                max_windows=int(payload.get("negativeDatasetMaxWindows", 2000)), with_participants=True)
             if len(dataset_negatives) > 0:
                 rng = np.random.default_rng(21)
                 take = min(target_negatives - len(negatives), len(dataset_negatives))
-                picked = dataset_negatives[rng.choice(len(dataset_negatives), size=take, replace=False)]
+                pick = rng.choice(len(dataset_negatives), size=take, replace=False)
+                picked = dataset_negatives[pick]
+                if dataset_pids is not None:
+                    # Validation negatives come from typists absent from training, as in KS.
+                    dataset_groups = [f"ds-{int(p)}" for p in dataset_pids[pick]]
                 negatives = np.concatenate([negatives, picked], axis=0) if len(negatives) else picked
                 negative_source = (negative_source + "+dataset") if negative_source else "dataset"
 
@@ -320,30 +822,93 @@ def train_user_payload(payload):
             negatives = make_synthetic_negatives(positives)
             negative_source = "synthetic"
 
-        X = np.concatenate([positives, negatives], axis=0).astype(np.float32)
-        X = scale_windows(X, scaler_path)
-        y = np.concatenate([
-            np.ones(len(positives), dtype=np.int64),
-            np.zeros(len(negatives), dtype=np.int64),
-        ])
+        # Split BEFORE combining, and split each class on its own, so validation
+        # always contains both classes (a random split can leave it with none of
+        # one) and so each class is grouped by its own source samples.
+        gap = int(payload.get("overlapGap", DEFAULT_OVERLAP_GAP))
+        val_fraction = float(payload.get("valFraction", DEFAULT_VAL_FRACTION))
+        pos_groups = payload.get("positiveGroups")
+        neg_groups = payload.get("negativeGroups")
+        if dataset_groups is not None:
+            n_own = len(negatives) - len(dataset_groups)
+            own = list(neg_groups)[:n_own] if neg_groups is not None else []
+            neg_groups = own + [f"pad-{i}" for i in range(n_own - len(own))] + dataset_groups
+        if len(negatives) and neg_groups is not None and len(neg_groups) != len(negatives):
+            # dataset/synthetic negatives were appended after the caller's own,
+            # so the supplied ids cover only the first block; pad the remainder
+            # with one distinct group each rather than dropping the grouping.
+            neg_groups = list(neg_groups) + [f"pad-{i}" for i in range(len(negatives) - len(neg_groups))]
 
-        indices = np.arange(len(X))
+        # Remove exact duplicates BEFORE splitting: identical content filed under two
+        # sample ids defeats grouping and puts copies on both sides.
+        p_keep, p_dropped = dedupe_windows(positives)
+        n_keep, n_dropped = dedupe_windows(negatives) if len(negatives) else ([], 0)
+        if p_dropped or n_dropped:
+            print(f"dedupe: dropped {p_dropped} duplicate positive, {n_dropped} duplicate "
+                  f"negative windows before splitting")
+        positives = positives[p_keep]
+        if len(negatives):
+            negatives = negatives[n_keep]
+        if pos_groups is not None and len(pos_groups) >= len(p_keep):
+            pos_groups = [pos_groups[i] for i in p_keep]
+        if neg_groups is not None and len(neg_groups) >= len(n_keep):
+            neg_groups = [neg_groups[i] for i in n_keep]
+
+        # Evaluation-only option (protocol J, PREREGISTRATION_J.md): the caller names which positive
+        # windows train and which validate, by index into positiveWindows; windows in neither list
+        # (held-out or purged at a boundary) are not used for fitting. Absent in production calls.
+        explicit = payload.get("explicitSplit")
+        if explicit is not None:
+            pos_map = {orig: new for new, orig in enumerate(p_keep)}
+            p_tr = [pos_map[i] for i in explicit.get("train", []) if i in pos_map]
+            p_va = [pos_map[i] for i in explicit.get("val", []) if i in pos_map]
+            p_how = "explicit"
+        else:
+            p_tr, p_va, p_how = split_no_overlap(len(positives), pos_groups, val_fraction, gap)
+        n_tr, n_va, n_how = split_no_overlap(len(negatives), neg_groups, val_fraction, gap)
+        split_strategy = f"positives={p_how}, negatives={n_how}"
+
+        pos_s = scale_windows(positives.astype(np.float32), scaler_path)
+        neg_s = (scale_windows(negatives.astype(np.float32), scaler_path)
+                 if len(negatives) else negatives.astype(np.float32))
+
+        def _stack(pi, ni):
+            xs = [pos_s[pi]] if len(pi) else []
+            ys = [np.ones(len(pi), dtype=np.int64)] if len(pi) else []
+            if len(ni):
+                xs.append(neg_s[ni])
+                ys.append(np.zeros(len(ni), dtype=np.int64))
+            if not xs:
+                return (np.empty((0, window_size, num_features), dtype=np.float32),
+                        np.empty((0,), dtype=np.int64))
+            return np.concatenate(xs, axis=0), np.concatenate(ys)
+
+        X_train, y_train = _stack(p_tr, n_tr)
+        X_val, y_val = _stack(p_va, n_va)
+
+        # Shuffling the TRAINING order is harmless (it only affects batch
+        # composition); shuffling across the split boundary is what leaked.
         rng = np.random.default_rng(7)
-        rng.shuffle(indices)
-        X = X[indices]
-        y = y[indices]
-
-        split = max(1, int(len(X) * 0.8))
-        if split >= len(X):
-            split = len(X) - 1
-        X_train, X_val = X[:split], X[split:]
-        y_train, y_val = y[:split], y[split:]
+        order = rng.permutation(len(X_train))
+        X_train, y_train = X_train[order], y_train[order]
 
         # Fine-tune the pre-trained base model (transfer learning) when its
         # input shape matches; otherwise train from scratch.
         model_instance = None
         trained_from = "scratch"
+        freeze_names = []
         rnn_type = "gru" if "gru" in base_model_path.lower() else "lstm"
+        # A base exported with an arch.json sidecar (train_mouse_fcn.py) declares its own
+        # feature layer and the layers to freeze; such bases are personalised generically
+        # below instead of being rebuilt as a CNN+GRU. Bases without it keep the original path.
+        arch_meta = {}
+        arch_json = os.path.join(os.path.dirname(os.path.normpath(base_model_path)), "arch.json")
+        if base_model_path and os.path.exists(arch_json):
+            try:
+                with open(arch_json) as fh:
+                    arch_meta = json.load(fh)
+            except Exception as exc:
+                print(f"Warning: unreadable {arch_json}: {exc}")
         model_units = int(os.getenv("MODEL_UNITS", "16"))
         if os.path.exists(base_model_path):
             try:
@@ -355,6 +920,19 @@ def train_user_payload(payload):
                         # freeze only Conv1D below.
                         model_instance = base
                         trained_from = "base-model-fine-tune"
+                    elif arch_meta:
+                        # Generic feature-extractor transfer (e.g. SapiMouse's FCN): keep every
+                        # base layer up to the declared embedding, add a fresh binary head, and
+                        # freeze the declared layers -- the same procedure the pre-registered
+                        # study evaluated (repr_arch_study.personalise).
+                        from tensorflow.keras import Model as _Model
+                        from tensorflow.keras.layers import Dense as _Dense
+                        emb = base.get_layer(arch_meta.get("embedding_layer", "embedding")).output
+                        model_instance = _Model(base.input, _Dense(2, activation="softmax", name="head")(emb))
+                        freeze_names = list(arch_meta.get("freeze", []))
+                        trained_from = "base-feature-extractor"
+                        print(f"  transfer: {arch_meta.get('arch')} base, embedding "
+                              f"{int(emb.shape[-1])}-d, freezing {freeze_names}")
                     else:
                         # FEATURE-EXTRACTOR base (e.g. the mouse USER-ID model, which
                         # has an N-user head). Copy every layer EXCEPT the head into a
@@ -395,7 +973,11 @@ def train_user_payload(payload):
         # motion/rhythm features survive small-sample fine-tuning; the GRU + new
         # Dense head adapt to the individual user. From scratch: everything trains.
         if trained_from in ("base-model-fine-tune", "base-feature-extractor"):
-            model_instance.layers[0].trainable = False
+            if freeze_names:
+                for name in freeze_names:
+                    model_instance.get_layer(name).trainable = False
+            else:
+                model_instance.layers[0].trainable = False
 
         learning_rate = 3e-4 if trained_from in ("base-model-fine-tune", "base-feature-extractor") else 1e-3
         model_instance.compile(
@@ -436,6 +1018,7 @@ def train_user_payload(payload):
             previous_model_available = True
         model_instance.save(path)
         invalidate_user_model_cache(path)
+        warm_user_model_async(path)
 
         eval_loss, eval_acc = model_instance.evaluate(X_val, y_val, verbose=0)
         # Calibrate the decision threshold on held-out validation data only.
@@ -444,25 +1027,465 @@ def train_user_payload(payload):
             calibration_predictions[:, 1],
             y_val,
         )
+        # Scores of the user's own enrolment windows under the new model, as percentiles. The
+        # mouse channel's per-user threshold is the q-th percentile of these (the operating
+        # point the pre-registered study selects), so the caller can store it with the profile.
+        enrol_scores = model_instance.predict(pos_s, batch_size=1024, verbose=0)[:, 1]
+        enrol_percentiles = {str(q): float(np.percentile(enrol_scores, q))
+                             for q in (1, 2, 5, 10, 15, 20, 30, 40, 50)}
+        # The same percentiles over the genuine windows held out from training (validation). They
+        # are out-of-sample, unlike the enrolment scores above (artifacts/repr_arch_study,
+        # PREREGISTRATION_H.md compares the two sources, and a third, for the threshold).
+        val_genuine = calibration_predictions[:, 1][y_val == 1] if len(y_val) else np.empty(0)
+        val_percentiles = ({str(q): float(np.percentile(val_genuine, q))
+                            for q in (1, 2, 5, 10, 15, 20, 30, 40, 50)} if len(val_genuine) else None)
         return {
             "ok": True,
             "userId": payload["userId"],
             "modelPath": path,
+            "enrolScorePercentiles": enrol_percentiles,
+            "validationScorePercentiles": val_percentiles,
+            "validationGenuineScores": [float(v) for v in val_genuine],
             "positiveWindowCount": int(len(positives)),
             "negativeWindowCount": int(len(negatives)),
             "negativeSource": negative_source,
+            "datasetNegativeError": dataset_negative_status(neg_dataset_path),
             "trainedFrom": trained_from,
             "inputShape": [int(window_size), int(num_features)],
             "accuracy": float(eval_acc),
             "loss": float(eval_loss),
             "threshold": threshold,
             "thresholdSource": "eer" if balanced_accuracy is not None else "default",
+            "splitStrategy": split_strategy,
+            "validationWindowCount": int(len(X_val)),
+            "duplicateWindowsDropped": int(p_dropped + n_dropped),
+            "validationPositiveCount": int(np.sum(y_val == 1)) if len(y_val) else 0,
             "balancedAccuracy": balanced_accuracy,
             "epochsTrained": len(history.history.get("loss", [])),
             "previousModelPath": prev_path if previous_model_available else None,
         }, 200
     except Exception as exc:
         return {"error": str(exc)}, 500
+
+
+LOSO_PERCENTILES = (1, 2, 5, 10, 15, 20, 30, 40, 50)
+
+
+def train_user_loso_payload(payload):
+    """Mouse enrolment with a leave-one-sample-out threshold source (S1, AMENDMENT_J1.md §2).
+
+    positiveWindows are the user's enrolment in time order, a whole number of loso.SAMPLE-window
+    samples. Each fold model trains on the other samples and scores the one it never saw; then the
+    deployed model trains on all of them and is saved where train_user_payload always saves it.
+    Every model goes through train_user_payload with an explicit split, exactly as
+    protocol_j_p1.fit_and_score drove it for the lockbox evaluation (same negatives, seeds and
+    settings), so the only difference from that recipe is where the fold models live: a scratch
+    directory beside the user's model, removed before this returns. The folds run first, so a
+    retrain replaces the live model only at the end.
+
+    Returns the final model's training response plus the pooled out-of-sample scores
+    (losoScores) and their percentiles (losoScorePercentiles); the caller picks its threshold
+    from those.
+    """
+    import shutil
+
+    if load_model is None or build_1d_cnn_2rnn is None or np is None or loso is None:
+        return {"error": "TensorFlow training stack is not available"}, 503
+    if not payload or "userId" not in payload or "positiveWindows" not in payload:
+        return {"error": "userId and positiveWindows are required"}, 400
+    if int(payload.get("sampleWindows", loso.SAMPLE)) != loso.SAMPLE:
+        return {"error": f"sampleWindows must be {loso.SAMPLE}, the evaluated sample size"}, 400
+    try:
+        positives = to_window_array(payload["positiveWindows"])
+        modality = payload.get("modality") or "keystroke"
+        final_path = confine_path(payload.get("modelPath")) or user_model_path(payload["userId"], modality)
+    except ValueError as exc:
+        return {"error": str(exc)}, 400
+    n = len(positives)
+    samples = n // loso.SAMPLE
+    if n % loso.SAMPLE or samples < 2:
+        return {"error": f"need a whole number (>= 2) of {loso.SAMPLE}-window samples, got {n} windows"}, 400
+
+    # Settings forwarded unchanged to every model; the internal calls fix the rest.
+    common = {k: payload[k] for k in ("modality", "scalerPath", "baseModelPath", "negativeDatasetPath",
+                                      "overlapGap", "epochs", "batchSize", "trainSeed") if k in payload}
+    order = list(range(samples))
+    fold_root = final_path + "_loso"
+
+    def fit(model_path, ordered, train, val):
+        pos = {t: p for p, t in enumerate(ordered)}
+        return train_user_payload({
+            **common, "userId": payload["userId"], "modelPath": model_path,
+            "positiveWindows": positives[ordered],
+            "explicitSplit": {"train": [pos[t] for t in train], "val": [pos[t] for t in val]},
+            "minPositiveWindows": 1})
+
+    oof = np.full(n, np.nan)
+    shutil.rmtree(fold_root, ignore_errors=True)   # debris from an interrupted run
+    try:
+        for s in order:
+            ordered, train, val, held = loso.plan_folds(order, [s])
+            fold_path = os.path.join(fold_root, f"fold{s}")
+            res, code = fit(fold_path, ordered, train, val)
+            if code != 200:
+                return {"error": f"fold {s}: {res.get('error')}", "fold": s}, code
+            pred, code = predict_user_payload({
+                "userId": payload["userId"], "modality": modality, "modelPath": fold_path,
+                "windows": positives[held], **({"scalerPath": payload["scalerPath"]} if "scalerPath" in payload else {})})
+            invalidate_user_model_cache(fold_path)
+            shutil.rmtree(fold_path, ignore_errors=True)
+            if code != 200:
+                return {"error": f"fold {s} scoring: {pred.get('error')}", "fold": s}, code
+            oof[held] = [float(p[1]) for p in pred["prediction"]]
+    finally:
+        shutil.rmtree(fold_root, ignore_errors=True)
+
+    ordered, train, val, _ = loso.plan_folds(order, [])
+    res, code = fit(final_path, ordered, train, val)
+    if code != 200:
+        return res, code
+    res.update({
+        "thresholdScheme": "leave-one-sample-out",
+        "losoSamples": samples,
+        "losoSampleWindows": loso.SAMPLE,
+        "losoScores": [round(float(v), 6) for v in oof],
+        "losoScorePercentiles": {str(q): float(np.percentile(oof, q)) for q in LOSO_PERCENTILES},
+    })
+    return res, 200
+
+
+# ---- F2: the frozen deployed network with a per-user logistic head (T3.4) ------------------------
+# Protocol L tested F2 against S1 (artifacts/repr_arch_study/PREREGISTRATION_L.md, Amendments L-1 and
+# L-2). On the untouched Bogazici users it was non-inferior (per-user AUC of 33-window decisions
+# +0.0203 [+0.0039, +0.0376]) and better on pooled EER (-7.76 points [-10.93, -3.19]); on the
+# development users no difference was detected (stage D: -0.0019 [-0.0162, +0.0127]). It trains in
+# seconds instead of nine fine-tunes, does not
+# depend on the order of the samples, and keeps no per-user network. This is the analysis recipe
+# (analysis/phase2: score_c.score_f2 and l_common.head_scores) moved into serving; validate_f2.py
+# checks that this code reproduces those scores.
+#   embedding  e(w) = unit(embed(scale(w)) - mu): the deployed network's "embedding" layer, frozen and
+#              loaded once for every user; the scaler as stage C applied it (float64, zero spread -> 1)
+#   cohort     mu and C = unit(Z - mu) from f2_cohort.npz (build_f2_cohort.py: 40 windows from each of
+#              the network's 100 training users, seed 7)
+#   head       LogisticRegression(C=1, lbfgs, max_iter=5000): the user's windows (label 1) against
+#              2 x n cohort rows drawn with default_rng(21) (label 0)
+#   threshold  leave-one-sample-out: for each 55-window sample, a head refit without that sample and
+#              the loso.PURGE windows on each side of it (same negatives) scores the sample
+# A profile is one JSON file, f2_head.json, in the user's mouse model folder. A cohort rebuilt later
+# does not match the heads trained on the old one, so predictions refuse such a head (409); rebuild
+# the profiles by changing ca-service's MOUSE_DECISION_VERSION.
+F2_COHORT_PATH = os.getenv("MOUSE_F2_COHORT_PATH", os.path.join(ARTIFACTS_DIR, "mouse-fcn-a5", "f2_cohort.npz"))
+F2_HEAD_FILE = "f2_head.json"
+F2_NEG_SEED = 21
+_f2 = {}
+_f2_lock = threading.Lock()
+
+
+def _sha256_file(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _sha256_dir(path):
+    """Directory hash, defined as analysis/phase2/c_common.dir_sha (the value Amendment L-2 froze)."""
+    import hashlib
+    h = hashlib.sha256()
+    for base, _, files in sorted(os.walk(path)):
+        for f in sorted(files):
+            p = os.path.join(base, f)
+            h.update(os.path.relpath(p, path).replace(os.sep, "/").encode())
+            h.update(_sha256_file(p).encode())
+    return h.hexdigest()
+
+
+def _f2_state():
+    """The frozen embedder, the scaler and the cohort, loaded once for every user. Refuses a cohort
+    file built for another network or scaler than the deployed ones."""
+    with _f2_lock:
+        if _f2:
+            return _f2
+        import tensorflow as tf
+        with np.load(F2_COHORT_PATH, allow_pickle=False) as z:
+            mu, C, meta = z["mu"], z["C"], json.loads(str(z["meta"]))
+        state = {"mu": mu, "C": C, "cohortSha256": _sha256_file(F2_COHORT_PATH),
+                 "baseModelSha256": _sha256_dir(MOUSE_BASE_MODEL_PATH),
+                 "scalerSha256": _sha256_file(MOUSE_SCALER_PATH)}
+        if (meta.get("baseModelSha256"), meta.get("scalerSha256")) != (state["baseModelSha256"], state["scalerSha256"]):
+            raise RuntimeError(f"{F2_COHORT_PATH} was built for another network or scaler than the deployed "
+                               "ones; rebuild it with build_f2_cohort.py")
+        with open(MOUSE_SCALER_PATH, encoding="utf-8") as f:
+            sc = json.load(f)
+        state["mean"] = np.asarray(sc["mean"], np.float64)
+        state["std"] = np.asarray(sc["std"], np.float64)
+        state["std"][state["std"] == 0] = 1.0
+        base = load_model(MOUSE_BASE_MODEL_PATH, compile=False)
+        state["embed"] = tf.keras.Model(base.input, base.get_layer("embedding").output)
+        state["dim"] = int(state["embed"].output_shape[-1])
+        _f2.update(state)
+        print(f"[f2] frozen embedder and cohort loaded ({len(C)} cohort rows, cohort sha "
+              f"{state['cohortSha256'][:12]})")
+        return _f2
+
+
+def _f2_embed(windows):
+    """e(w) for raw windows, exactly as analysis/phase2 computes it: scale in float64, embed with
+    one predict call (batch 1024), centre on the cohort mean, L2-normalise."""
+    st = _f2_state()
+    X = np.asarray(windows)
+    if not len(X):
+        return np.zeros((0, st["dim"]), np.float32)
+    scaled = ((np.asarray(X, np.float64) - st["mean"]) / st["std"]).astype(np.float32)
+    Z = st["embed"].predict(scaled, batch_size=1024, verbose=0) - st["mu"]
+    return Z / np.maximum(np.linalg.norm(Z, axis=1, keepdims=True), 1e-12)
+
+
+def _f2_fit(P, neg):
+    from sklearn.linear_model import LogisticRegression
+    X = np.concatenate([P, neg])
+    y = np.r_[np.ones(len(P)), np.zeros(len(neg))]
+    return LogisticRegression(C=1.0, solver="lbfgs", max_iter=5000).fit(X, y)
+
+
+def _f2_head(path):
+    """A user's F2 head, cached with the per-user networks (invalidate_user_model_cache evicts it)."""
+    cached = _user_model_cache.get(path)
+    if cached is not None:
+        return cached
+    with _model_lock(path):
+        if path not in _user_model_cache:
+            from sklearn.linear_model import LogisticRegression
+            with open(os.path.join(path, F2_HEAD_FILE), encoding="utf-8") as f:
+                h = json.load(f)
+            clf = LogisticRegression(C=1.0, solver="lbfgs", max_iter=5000)
+            clf.classes_ = np.asarray(h["classes"], dtype=h["classesDtype"])
+            clf.coef_ = np.asarray([h["coef"]], dtype=h["coefDtype"])
+            clf.intercept_ = np.asarray(h["intercept"], dtype=h["interceptDtype"])
+            clf.n_features_in_ = len(h["coef"])
+            _user_model_cache[path] = (clf, h)
+            print(f"[cache] Loaded F2 head: {path}")
+        return _user_model_cache[path]
+
+
+def is_f2_profile(path):
+    return os.path.isfile(os.path.join(path, F2_HEAD_FILE))
+
+
+def train_user_f2_payload(payload):
+    """Mouse enrolment under F2 (headScheme "f2" on the leave-one-sample-out path).
+
+    positiveWindows are the user's enrolment in time order, a whole number of loso.SAMPLE-window
+    samples, as for S1. Returns the same fields as train_user_loso_payload (losoScores at full
+    precision, losoScorePercentiles, enrolScorePercentiles), so ca-service reads its threshold
+    unchanged. The previous profile is snapshotted to <path>_prev, and the new head file appears
+    atomically in the existing folder, so a check never finds the folder missing.
+    """
+    import shutil
+    import sklearn
+
+    if load_model is None or np is None or loso is None:
+        return {"error": "TensorFlow training stack is not available"}, 503
+    if not payload or "userId" not in payload or "positiveWindows" not in payload:
+        return {"error": "userId and positiveWindows are required"}, 400
+    if (payload.get("modality") or "keystroke") != "mouse":
+        return {"error": "headScheme f2 is for the mouse modality"}, 400
+    if payload.get("thresholdScheme") != "leave-one-sample-out":
+        return {"error": "headScheme f2 goes with thresholdScheme leave-one-sample-out"}, 400
+    if payload.get("scalerPath") or payload.get("baseModelPath"):
+        return {"error": "F2 uses the deployed network and scaler, which its cohort was built for"}, 400
+    if int(payload.get("sampleWindows", loso.SAMPLE)) != loso.SAMPLE:
+        return {"error": f"sampleWindows must be {loso.SAMPLE}, the evaluated sample size"}, 400
+    try:
+        positives = to_window_array(payload["positiveWindows"])
+        path = confine_path(payload.get("modelPath")) or user_model_path(payload["userId"], "mouse")
+    except ValueError as exc:
+        return {"error": str(exc)}, 400
+    n = len(positives)
+    samples = n // loso.SAMPLE
+    if n % loso.SAMPLE or samples < 2:
+        return {"error": f"need a whole number (>= 2) of {loso.SAMPLE}-window samples, got {n} windows"}, 400
+
+    t0 = time.time()
+    try:
+        st = _f2_state()
+        E = _f2_embed(positives)
+    except Exception as exc:
+        return {"error": f"F2 is unavailable: {exc}"}, 503
+    C = st["C"]
+    if 2 * n > len(C):
+        return {"error": f"the cohort has {len(C)} rows; {n} windows need {2 * n} negatives"}, 400
+    neg = C[np.random.default_rng(F2_NEG_SEED).choice(len(C), 2 * n, replace=False)]
+    full = _f2_fit(E, neg)
+    oof = np.zeros(n)
+    for s in range(samples):
+        lo, hi = s * loso.SAMPLE, (s + 1) * loso.SAMPLE
+        keep = np.array([i for i in range(n) if i < lo - loso.PURGE or i >= hi + loso.PURGE])
+        oof[lo:hi] = _f2_fit(E[keep], neg).predict_proba(E[lo:hi])[:, 1]
+    enrol = full.predict_proba(E)[:, 1]
+
+    head = {
+        "scheme": "f2", "userId": str(payload["userId"]), "windows": n, "negatives": int(len(neg)),
+        "classes": full.classes_.tolist(), "classesDtype": str(full.classes_.dtype),
+        "coef": full.coef_.ravel().tolist(), "coefDtype": str(full.coef_.dtype),
+        "intercept": full.intercept_.tolist(), "interceptDtype": str(full.intercept_.dtype),
+        "iterations": int(full.n_iter_[0]),
+        "cohortSha256": st["cohortSha256"], "baseModelSha256": st["baseModelSha256"],
+        "scalerSha256": st["scalerSha256"], "sklearn": sklearn.__version__,
+        "trainedAtUtc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    os.makedirs(path, exist_ok=True)
+    prev_path = path + "_prev"
+    previous = bool(os.listdir(path))
+    if previous:
+        shutil.rmtree(prev_path, ignore_errors=True)
+        shutil.copytree(path, prev_path)
+        invalidate_user_model_cache(prev_path)
+    tmp = os.path.join(path, F2_HEAD_FILE + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(head, f)
+    os.replace(tmp, os.path.join(path, F2_HEAD_FILE))
+    for entry in os.listdir(path):                  # the previous profile's files (an S1 network)
+        p = os.path.join(path, entry)
+        if entry == F2_HEAD_FILE:
+            continue
+        if os.path.isdir(p):
+            shutil.rmtree(p)
+        else:
+            os.remove(p)
+    invalidate_user_model_cache(path)
+    warm_user_model_async(path)
+
+    return {
+        "ok": True, "userId": payload["userId"], "modelPath": path, "modality": "mouse",
+        "headScheme": "f2", "thresholdScheme": "leave-one-sample-out",
+        "positiveWindowCount": n, "negativeWindowCount": int(len(neg)),
+        "losoSamples": samples, "losoSampleWindows": loso.SAMPLE,
+        "losoScores": [float(v) for v in oof],
+        "losoScorePercentiles": {str(q): float(np.percentile(oof, q)) for q in LOSO_PERCENTILES},
+        "enrolScorePercentiles": {str(q): float(np.percentile(enrol, q)) for q in LOSO_PERCENTILES},
+        "previousModelAvailable": previous,
+        "cohortSha256": st["cohortSha256"], "baseModelSha256": st["baseModelSha256"],
+        "trainingSeconds": round(time.time() - t0, 3),
+    }, 200
+
+
+def predict_user_f2_payload(path, payload):
+    """Score windows with a user's F2 head: p = predict_proba(e(w)). Same response as the network path."""
+    try:
+        clf, head = _f2_head(path)
+        st = _f2_state()
+    except Exception as exc:
+        return {"error": f"F2 profile unavailable: {exc}"}, 503
+    if head.get("cohortSha256") != st["cohortSha256"]:
+        return {"error": "this F2 head was trained on another cohort; retrain the profile", "retrain": True}, 409
+    windows = to_window_array(payload["windows"])
+    proba = clf.predict_proba(_f2_embed(windows))
+    mean_score = float(np.mean(proba[:, 1])) if len(proba) else 0.0
+    threshold = float(payload.get("threshold", 0.65))
+    return {
+        "ok": True, "model_loaded": True, "headScheme": "f2",
+        "prediction": proba.tolist(),
+        "genuineScore": mean_score,
+        "threshold": threshold,
+        "isSuspicious": bool(mean_score < threshold),
+        "windowCount": int(len(windows)),
+    }, 200
+
+
+def dispatch_train(body):
+    """/api/user/train: the action-based path, F2, the leave-one-sample-out enrolment (S1), or the
+    original single-model path, chosen by the payload."""
+    if body and body.get("actions") is not None:
+        return train_user_actions_payload(body)
+    if body and body.get("headScheme") not in (None, "s1", "f2"):
+        return {"error": f"unknown headScheme {body.get('headScheme')!r}"}, 400
+    if body and body.get("headScheme") == "f2":
+        return train_user_f2_payload(body)
+    if body and body.get("thresholdScheme") == "leave-one-sample-out":
+        return train_user_loso_payload(body)
+    return train_user_payload(body)
+
+
+# ---- Training in a child process (TODO 5b) --------------------------------------------------------
+# Every Keras training kept about 40 MB in this process for good (measured 2026-09-26 with
+# _backups/leak_probe.py: 10 keystroke trainings, 781 -> 1157 MB). Neither clear_session, malloc_trim,
+# MALLOC_ARENA_MAX=2, a cached base model nor skipping the save stopped it, so the memory is held
+# inside TensorFlow. The server therefore runs each training in a fresh child process that exits
+# when it is done; the operating system takes all of its memory back. The child runs the same
+# dispatch_train on the same files, so results do not change. The parent only drops the cached
+# models the child replaced and warms the new one. MODEL_TRAIN_IN_CHILD=0 restores in-process
+# training. Scripts that import this module and call the train functions directly are unaffected.
+TRAIN_IN_CHILD = os.getenv("MODEL_TRAIN_IN_CHILD", "1") == "1"
+TRAIN_CHILD_TIMEOUT_S = float(os.getenv("MODEL_TRAIN_TIMEOUT_S", "900"))   # ca-service waits 600 s
+_train_slots = threading.BoundedSemaphore(int(os.getenv("MODEL_TRAIN_CONCURRENCY", "2")))
+
+
+def _train_child(body, conn):
+    try:
+        result = dispatch_train(body)
+    except BaseException as exc:                     # report, never hang the parent
+        result = ({"error": f"training worker: {type(exc).__name__}: {exc}"}, 500)
+    try:
+        conn.send(result)
+    finally:
+        conn.close()
+
+
+def _trained_paths(body, result):
+    """The live model folders a training may have replaced, for cache eviction in the parent."""
+    paths = set()
+    if isinstance(result, dict) and result.get("modelPath"):
+        paths.add(result["modelPath"])
+    try:
+        explicit = confine_path(body.get("modelPath"))
+        if explicit:
+            paths.add(explicit)
+        elif body.get("userId") is not None:
+            if body.get("actions") is not None:
+                paths.add(user_action_model_path(body["userId"]))
+            else:
+                paths.add(user_model_path(body["userId"], body.get("modality") or "keystroke"))
+    except (ValueError, TypeError):
+        pass
+    return paths
+
+
+def train_isolated(body):
+    """/api/user/train in a child process (see above)."""
+    if not TRAIN_IN_CHILD:
+        return dispatch_train(body)
+    import multiprocessing as mp
+
+    ctx = mp.get_context("spawn")
+    with _train_slots:
+        recv, send = ctx.Pipe(duplex=False)
+        child = ctx.Process(target=_train_child, args=(body, send), daemon=True)
+        child.start()
+        send.close()
+        try:
+            if recv.poll(TRAIN_CHILD_TIMEOUT_S):
+                payload, status = recv.recv()
+            else:
+                payload, status = {"error": f"training exceeded {TRAIN_CHILD_TIMEOUT_S:.0f} s"}, 504
+        except EOFError:                             # the child died without answering
+            child.join(5)
+            payload, status = {"error": f"training worker exited with code {child.exitcode}"}, 500
+        finally:
+            recv.close()
+            if child.is_alive():
+                child.join(10)
+            if child.is_alive():
+                child.kill()
+                child.join()
+    for path in _trained_paths(body or {}, payload):
+        invalidate_user_model_cache(path)
+        invalidate_user_model_cache(path + "_prev")
+        if status == 200:
+            warm_user_model_async(path)
+    return payload, status
 
 
 def rollback_user_payload(payload):
@@ -479,6 +1502,7 @@ def rollback_user_payload(payload):
         shutil.rmtree(path)
     shutil.copytree(prev_path, path)
     invalidate_user_model_cache(path)
+    warm_user_model_async(path)
     return {"ok": True, "userId": payload["userId"], "modelPath": path, "rolledBack": True}, 200
 
 
@@ -495,6 +1519,16 @@ def predict_user_payload(payload):
         req_scaler = confine_path(payload.get("scalerPath")) or (MOUSE_SCALER_PATH if modality == "mouse" else None)
     except ValueError as exc:
         return {"error": str(exc)}, 400
+    if modality == "mouse" and is_f2_profile(path):
+        if payload.get("scalerPath"):
+            return {"error": "F2 profiles use the deployed scaler"}, 400
+        try:
+            res = predict_user_f2_payload(path, payload)
+        except Exception as exc:
+            return {"error": str(exc)}, 500
+        if res[1] == 200:
+            note_model_use(path)
+        return res
     if not os.path.exists(path):
         # Personal model not yet created — use global model as fallback
         if model is None:
@@ -506,6 +1540,7 @@ def predict_user_payload(payload):
     try:
         if user_model is None:
             user_model = get_user_model(path)
+            note_model_use(path)
         windows = scale_windows(to_window_array(payload["windows"]), req_scaler)
         predictions = user_model.predict(windows, verbose=0)
         genuine_scores = predictions[:, 1]
@@ -537,6 +1572,18 @@ def health_payload():
 def create_flask_app():
     app = Flask(__name__)
 
+    @app.before_request
+    def _require_service_key():
+        # /health stays open: it is how the orchestrator decides whether this container is
+        # ready, it reveals nothing beyond "TensorFlow loaded", and gating it would mean
+        # handing the healthcheck a credential.
+        if request.path == "/health":
+            return None
+        if not api_key_ok(request.headers.get("X-Api-Key")):
+            print(f"[model-api][SECURITY] rejected {request.method} {request.path} — bad or missing X-Api-Key")
+            return jsonify({"error": "invalid_or_missing_api_key"}), 401
+        return None
+
     @app.route("/api/predict", methods=["POST"])
     def predict():
         payload, status = predict_payload(request.get_json())
@@ -544,12 +1591,21 @@ def create_flask_app():
 
     @app.route("/api/user/train", methods=["POST"])
     def train_user():
-        payload, status = train_user_payload(request.get_json())
+        # An `actions` field selects the action-based mouse path; `windows`
+        # keeps the original window path. Dispatching on the payload rather
+        # than on a mode flag means an old client cannot accidentally land in
+        # the new pipeline or the reverse. `thresholdScheme` selects the
+        # leave-one-sample-out enrolment (S1) on the window path.
+        payload, status = train_isolated(request.get_json())
         return jsonify(payload), status
 
     @app.route("/api/user/predict", methods=["POST"])
     def predict_user():
-        payload, status = predict_user_payload(request.get_json())
+        body = request.get_json()
+        if body and body.get("actions") is not None:
+            payload, status = predict_user_actions_payload(body)
+        else:
+            payload, status = predict_user_payload(body)
         return jsonify(payload), status
 
     @app.route("/api/user/rollback", methods=["POST"])
@@ -584,12 +1640,20 @@ class ContinuumHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Not found"}, 404)
             return
 
+        # The stdlib fallback server enforces the same credential as the Flask app. Leaving
+        # it open would mean the protection quietly disappeared on any host where Flask
+        # failed to import — exactly the situation where nobody is looking.
+        if not api_key_ok(self.headers.get("X-Api-Key")):
+            print(f"[model-api][SECURITY] rejected POST {self.path} — bad or missing X-Api-Key")
+            self._send_json({"error": "invalid_or_missing_api_key"}, 401)
+            return
+
         try:
             length = int(self.headers.get("Content-Length", "0"))
             raw_body = self.rfile.read(length).decode("utf-8")
             payload = json.loads(raw_body) if raw_body else {}
             if self.path == "/api/user/train":
-                response, status = train_user_payload(payload)
+                response, status = train_isolated(payload)
             elif self.path == "/api/user/predict":
                 response, status = predict_user_payload(payload)
             elif self.path == "/api/user/rollback":
@@ -606,6 +1670,8 @@ class ContinuumHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     init_model()
+    preflight_negatives()
+    warm_recent_user_models()
     if Flask is not None:
         debug = os.getenv("MODEL_DEBUG", "1") == "1"
         print(f"Starting Flask model API on http://localhost:{PORT} (debug={debug})")

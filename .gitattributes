@@ -13,3 +13,39 @@ variables.data-* binary
 
 # Shell scripts must stay LF even on Windows checkouts.
 *.sh text eol=lf
+
+# Frozen, hashed study files (artifacts/repr_arch_study/*.sha256): stored and checked out
+# byte for byte, so every recorded SHA-256 verifies from any clone on any platform.
+artifacts/repr_arch_study/PREREGISTRATION*.md -text
+artifacts/repr_arch_study/AMENDMENT*.md -text
+artifacts/repr_arch_study/SPLIT_*.json -text
+artifacts/repr_arch_study/SELECTION_*.json -text
+services/model-api/make_split_*.py -text
+services/model-api/analysis/phase1/eval_decision_level.py -text
+services/model-api/analysis/phase2/*.py -text
+# Code whose hashes protocol L records (l_common.CODE and code_hashes()).
+services/model-api/analysis/phase1/p1lib.py -text
+services/model-api/repr_arch_study.py -text
+services/model-api/preprocess_mouse.py -text
+# Protocol L results, whose hashes later steps record.
+artifacts/phase2/L/*.json -text
+# Protocol KS (phase 3): frozen pre-registration, code and the modules it hashes.
+artifacts/phase3/PREREGISTRATION_KS*.md -text
+services/model-api/analysis/phase3/*.py -text
+services/model-api/population_sweep.py -text
+services/model-api/keystroke_user_sweep.py -text
+services/model-api/aalto_to_windows.py -text
+services/model-api/preprocessing.py -text
+artifacts/phase3/*.json -text
+# Stage C (protocol L) will hash these as well.
+services/model-api/api.py -text
+services/model-api/loso.py -text
+# Amendment L-2 hashes the deployed mouse scaler and hold-out list.
+artifacts/mouse-fcn-a5/*.json -text
+# Experiment AR (phase 4): frozen pre-registration, the code it hashes, and its results.
+artifacts/phase4/PREREGISTRATION_AR.md -text
+artifacts/phase4/PREREGISTRATION_AR.sha256 -text
+services/model-api/analysis/phase4/*.py -text
+artifacts/phase4/*.json -text
+artifacts/phase4/parts/*.json -text
+artifacts/phase4/smoke/*.json -text

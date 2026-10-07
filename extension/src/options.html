@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Continuum Guard — Settings</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f4f7fc; --text: #0f172a; --muted: #47546b; --faint: #6b7891; --card: #ffffff; --line: #dde3ee;
+        --accent: #4f46e5; --accent-2: #6366f1; --field-bg: #fff; --field-border: #cbd5e1;
+        --code-bg: #eef2ff; --ok: #047857; --bad: #dc2626;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b1120; --text: #e8edf7; --muted: #a2aec6; --faint: #7c8aa8; --card: #111a2e; --line: #23304d;
+          --accent: #6366f1; --accent-2: #818cf8; --field-bg: #0f1729; --field-border: #2d3a5b;
+          --code-bg: #18223a; --ok: #6ee7b7; --bad: #f87171;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 560px; margin: 40px auto; padding: 0 20px; color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      h2 { font-size: 16px; margin: 30px 0 8px; }
+      p.sub { color: var(--muted); margin: 0 0 16px; font-size: 13.5px; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-top: 12px; }
+      .card h3 { font-size: 14.5px; margin: 0 0 4px; }
+      .card p { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+      label { display: block; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+      input, select { width: 100%; padding: 10px 12px; border: 1.5px solid var(--field-border); border-radius: 10px; font: inherit; background: var(--field-bg); color: var(--text); }
+      input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+      input[type=checkbox] { width: auto; margin: 0; }
+      button { background: linear-gradient(135deg, var(--accent-2), var(--accent)); color: #fff; border: 0; border-radius: 10px; padding: 10px 18px; font: 700 13.5px system-ui; cursor: pointer; margin-top: 10px; transition: transform .06s ease, filter .16s ease; }
+      button:hover { filter: brightness(1.07); }
+      button:active { transform: translateY(1px); }
+      button.ghost { background: none; border: 1.5px solid var(--field-border); color: var(--text); }
+      .check { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 13px; margin-top: 12px; }
+      .msg { font-size: 13px; font-weight: 600; margin-top: 10px; min-height: 1.2em; }
+      .ok { color: var(--ok); } .bad { color: var(--bad); }
+      .note { color: var(--faint); font-size: 12.5px; margin-top: 6px; line-height: 1.5; }
+      code { background: var(--code-bg); color: var(--text); padding: 1px 5px; border-radius: 4px; }
+      .hidden { display: none; }
+      details summary { cursor: pointer; font-weight: 700; font-size: 16px; margin: 30px 0 8px; }
+      .steps { font-size: 13.5px; margin: 6px 0 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Continuum Guard — Settings</h1>
+    <p class="sub">Continuum Guard checks that the person typing and moving the mouse is you, on every website. Your Continuum server does the scoring; this browser only records the rhythm.</p>
+
+    <!-- signed in -->
+    <div id="signedIn" class="card hidden">
+      <h3 id="whoTitle">Signed in</h3>
+      <p id="whoLine"></p>
+      <div class="steps" id="enrolLine"></div>
+      <button id="enrolBtn" class="hidden">Finish enrolment</button>
+      <button id="signOutBtn" class="ghost">Sign out</button>
+      <div id="accountMsg" class="msg"></div>
+    </div>
+
+    <!-- signed out -->
+    <div id="signedOut" class="hidden">
+      <div class="card">
+        <label for="gateway">Continuum server</label>
+        <input id="gateway" type="text" placeholder="http://localhost:8080" />
+        <button id="test" class="ghost">Test connection</button>
+        <div id="probe" class="msg"></div>
+      </div>
+      <div class="card">
+        <h3>Personal use</h3>
+        <p>Create a Continuum account, or sign in to yours, with your email and a passkey.</p>
+        <button id="personalBtn">Continue with a personal account</button>
+      </div>
+      <div class="card">
+        <h3>My organisation</h3>
+        <p>If your company or an app you use runs Continuum, sign in with your account there. Ask them for their <b>organisation code</b>.</p>
+        <label for="orgKey">Organisation code</label>
+        <input id="orgKey" type="text" placeholder="pk_…" />
+        <button id="orgBtn">Sign in with my organisation</button>
+      </div>
+      <div id="signInMsg" class="msg"></div>
+      <p class="note">For organisation admins: this extension's id is <code id="extId">…</code>. Your organisation must allow it in the Continuum console.</p>
+    </div>
+
+    <h2>Display</h2>
+    <label class="check"><input id="showVerdict" type="checkbox" /> Show the live verdict (typing and mouse) in the popup and on the toolbar badge</label>
+    <label class="check"><input id="debug" type="checkbox" /> Verbose diagnostics in the console</label>
+    <p class="note">Diagnostics are off by default. When on, every check and verdict is logged to the service-worker console and to each page's console.</p>
+
+    <details id="studyBox">
+      <summary>Research study (experimenter only)</summary>
+      <p class="sub">When on, this browser is used as a participant's account in the Continuum user study, whatever account is signed in above. Every score is logged for the study under the participant's pseudonym. Key codes and timings are sent; the text itself is not.</p>
+      <label class="check" style="margin-top:0"><input id="studyOn" type="checkbox" /> Study mode on</label>
+      <label for="studyGateway" style="margin-top:12px">Gateway URL</label>
+      <input id="studyGateway" type="text" placeholder="http://localhost:8080" />
+      <label for="studyKey" style="margin-top:12px">Study site key</label>
+      <input id="studyKey" type="text" placeholder="pk_study_..." />
+      <label for="studyParticipant" style="margin-top:12px">Participant pseudonym (the account being used)</label>
+      <input id="studyParticipant" type="text" placeholder="P07" />
+      <label for="studyCondition" style="margin-top:12px">Who is typing</label>
+      <select id="studyCondition">
+        <option value="genuine">The participant (genuine)</option>
+        <option value="impostor">Another participant (impostor session)</option>
+      </select>
+      <input id="studyImpostor" type="text" placeholder="pseudonym of the person typing, e.g. P12" style="margin-top:8px;display:none" />
+      <label for="studyClient" style="margin-top:12px">Machine</label>
+      <select id="studyClient">
+        <option value="extension-study">The participant's own computer</option>
+        <option value="lab">Lab machine</option>
+      </select>
+      <label class="check"><input id="studyShow" type="checkbox" /> Show verdicts while testing (never during a participant's session: participants must not see their scores)</label>
+      <button id="studySave">Save study settings</button>
+      <button id="studyEnrol" class="ghost" style="margin-left:8px">Open enrolment page</button>
+      <div id="studyMsg" class="msg"></div>
+    </details>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -1,0 +1,403 @@
+{
+ "note": "descriptive, not pre-registered; test halves; rule vote 30 of 60; live loop replayed as in Experiment I",
+ "source": "parts/F_new.json",
+ "personal": {
+  "rule": "1st percentile of own enrolment scores",
+  "summary": {
+   "promptsPerMinMean": 0.28953461881624526,
+   "promptsPerMinMax": 3.6268020672771777,
+   "usersNeverPrompted": 17,
+   "usersAbove1PromptPerMin": 2,
+   "impostorCaughtMedianOverUsers": 1.0,
+   "impostorCaughtMinOverUsers": 0.2222222222222222,
+   "usersWithCaptureBelow50pct": 2,
+   "usersWithCaptureBelow80pct": 4,
+   "impostorRunsCaughtPooled": 0.8654970760233918
+  },
+  "perUser": {
+   "user1": {
+    "threshold": 0.030264412704855203,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.2222222222222222,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 21.116500000000002,
+    "genuineBelowThreshold": 0.010101010101010102,
+    "aucTestHalf": 0.8915750093527871
+   },
+   "user101": {
+    "threshold": 0.06918323673307895,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.22077922077922077,
+    "aucTestHalf": 0.8108417508417508
+   },
+   "user104": {
+    "threshold": 0.15198550179600714,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.34146341463414637,
+    "aucTestHalf": 0.8296476964769648
+   },
+   "user107": {
+    "threshold": 0.1842068177461624,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.045454545454545456,
+    "aucTestHalf": 0.9714983164983165
+   },
+   "user108": {
+    "threshold": 0.05633358608931303,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.7777777777777778,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.102803738317757,
+    "aucTestHalf": 0.8068328141225337
+   },
+   "user111": {
+    "threshold": 0.03492440801113844,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.8888888888888888,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.01098901098901099,
+    "aucTestHalf": 0.9056735856735857
+   },
+   "user115": {
+    "threshold": 0.013564702896401286,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.22115384615384615,
+    "aucTestHalf": 0.793974358974359
+   },
+   "user119": {
+    "threshold": 0.3083436399698257,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.27358490566037735,
+    "aucTestHalf": 0.8917470300489169
+   },
+   "user16": {
+    "threshold": 0.04142476122826338,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.5555555555555556,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.041237113402061855,
+    "aucTestHalf": 0.8125009545628102
+   },
+   "user19": {
+    "threshold": 0.278825016617775,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.13108614232209737,
+    "aucTestHalf": 0.991652101539742
+   },
+   "user29": {
+    "threshold": 0.04273415315896273,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.8888888888888888,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.03305785123966942,
+    "aucTestHalf": 0.9202203856749311
+   },
+   "user69": {
+    "threshold": 0.1791497401893139,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.14545454545454545,
+    "aucTestHalf": 0.897016835016835
+   },
+   "user70": {
+    "threshold": 0.032809448651969435,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.2222222222222222,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 19.5025,
+    "genuineBelowThreshold": 0.09433962264150944,
+    "aucTestHalf": 0.7725576519916143
+   },
+   "user8": {
+    "threshold": 0.06408038444817066,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.8888888888888888,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.2980769230769231,
+    "aucTestHalf": 0.8016381766381766
+   },
+   "user85": {
+    "threshold": 0.20791588172316552,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.15789473684210525,
+    "aucTestHalf": 0.9379571150097465
+   },
+   "user86": {
+    "threshold": 0.14247825592756272,
+    "promptsPerMin": 1.8743556902314826,
+    "prompts": 1,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.3865546218487395,
+    "aucTestHalf": 0.7406100217864924
+   },
+   "user89": {
+    "threshold": 0.540196378827095,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.06201550387596899,
+    "aucTestHalf": 0.9992592592592593
+   },
+   "user9": {
+    "threshold": 0.2741454771161079,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.01680672268907563,
+    "aucTestHalf": 0.9940305010893247
+   },
+   "user91": {
+    "threshold": 0.12947872273623945,
+    "promptsPerMin": 3.6268020672771777,
+    "prompts": 2,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.9105691056910569,
+    "aucTestHalf": 0.7048599819331527
+   }
+  }
+ },
+ "shared": {
+  "rule": "one threshold for all users, chosen on calibration at <= 0.2 prompts/min",
+  "threshold": 0.015,
+  "summary": {
+   "promptsPerMinMean": 0.19088431933037778,
+   "promptsPerMinMax": 3.6268020672771777,
+   "usersNeverPrompted": 18,
+   "usersAbove1PromptPerMin": 1,
+   "impostorCaughtMedianOverUsers": 0.5555555555555556,
+   "impostorCaughtMinOverUsers": 0.1111111111111111,
+   "usersWithCaptureBelow50pct": 9,
+   "usersWithCaptureBelow80pct": 15,
+   "impostorRunsCaughtPooled": 0.5730994152046783
+  },
+  "perUser": {
+   "user1": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.2222222222222222,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 28.514,
+    "genuineBelowThreshold": 0.0
+   },
+   "user8": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.6666666666666666,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.10576923076923077
+   },
+   "user9": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.6666666666666666,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.0
+   },
+   "user16": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.3333333333333333,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 24.748,
+    "genuineBelowThreshold": 0.020618556701030927
+   },
+   "user19": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.018726591760299626
+   },
+   "user29": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.4444444444444444,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.008264462809917356
+   },
+   "user69": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.6666666666666666,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.0
+   },
+   "user70": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.2222222222222222,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 22.596,
+    "genuineBelowThreshold": 0.05660377358490566
+   },
+   "user85": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.7777777777777778,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.010526315789473684
+   },
+   "user86": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.4444444444444444,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.11764705882352941
+   },
+   "user89": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.0
+   },
+   "user91": {
+    "threshold": 0.015,
+    "promptsPerMin": 3.6268020672771777,
+    "prompts": 2,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.6910569105691057
+   },
+   "user101": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.6666666666666666,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.06493506493506493
+   },
+   "user104": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.4444444444444444,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.0
+   },
+   "user107": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.4444444444444444,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.0
+   },
+   "user108": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.1111111111111111,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 18.561,
+    "genuineBelowThreshold": 0.04672897196261682
+   },
+   "user111": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.2222222222222222,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 21.789,
+    "genuineBelowThreshold": 0.0
+   },
+   "user115": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 1.0,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.23076923076923078
+   },
+   "user119": {
+    "threshold": 0.015,
+    "promptsPerMin": 0.0,
+    "prompts": 0,
+    "impostorRunsCaught": 0.5555555555555556,
+    "impostorRuns": 9,
+    "timeToCatchMedianS": 17.216,
+    "genuineBelowThreshold": 0.018867924528301886
+   }
+  }
+ },
+ "correlations": {
+  "thresholdVsCapture_spearman": 0.719298245614035,
+  "aucVsCapture_spearman": 0.2771929824561403,
+  "thresholdVsAuc_spearman": 0.5877192982456141
+ }
+}

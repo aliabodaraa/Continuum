@@ -1,8 +1,8 @@
 # Publishing Continuum images to Docker Hub (`aliabodaraa/*`)
 
 Two mechanisms: a **one-time / occasional manual ship** (covers everything, incl.
-`model-api`), and **automatic re-publish on every push** (the frequently-changing
-Node services) via GitHub Actions.
+`model-api`), and **automatic re-publish after the tests pass on `main`** (the
+frequently-changing Node services) via GitHub Actions.
 
 Images published: `aliabodaraa/{model-api, ca-service, passkey-service, gateway, web-demo}`.
 
@@ -17,10 +17,17 @@ Builds + pushes all five images at `:0.1.0` and `:latest`. Use this for the **fi
 publish and whenever `model-api` changes (its build bakes a 119 MB mouse dataset that
 is too large for git, so CI can't rebuild it).
 
-## 2. Automatic re-publish on every push (GitHub Actions)
+## 2. Automatic re-publish after the tests pass (GitHub Actions)
+`.github/workflows/ci.yml` runs on every push and pull request, on any branch: syntax
+checks, unit tests, Dockerfile lint, an image build, a check that no secret or runtime
+file (`*.pem`, `*.db`, `.env`, tenants/accounts/identity json, audit log) is inside any
+image, and a vulnerability scan (report only for now).
+
 `.github/workflows/publish.yml` rebuilds + pushes `ca-service`, `passkey-service`,
-`gateway`, and `web-demo` on every push to `main` that touches `services/**`, `sdk/**`,
-or `apps/demo/**` (and via manual "Run workflow"). Each image gets `:latest` + `:<short-sha>`.
+`gateway`, and `web-demo` only when that CI run **succeeded on a push to `main`** in this
+repository (never for a pull request or a fork), from the exact commit CI tested. Each
+image gets `:latest` + `:<short-sha>`. A manual "Run workflow" can add a version tag
+(e.g. `0.2.0`). A failed test means nothing is published.
 
 ### One-time setup
 1. **Create a Docker Hub access token**: hub.docker.com → Account Settings → Security →
@@ -28,7 +35,7 @@ or `apps/demo/**` (and via manual "Run workflow"). Each image gets `:latest` + `
 2. **Add GitHub repo secrets** (Settings → Secrets and variables → Actions → New secret):
    - `DOCKERHUB_USERNAME` = `aliabodaraa`
    - `DOCKERHUB_TOKEN` = the token from step 1
-3. Push the repo to GitHub. From then on, every push auto-publishes.
+3. Push the repo to GitHub. From then on, every push to `main` that passes CI publishes.
 
 > `model-api` is deliberately excluded from CI (dataset too large for git; rarely changes).
 > Re-publish it with the manual command in §1 when its code or base models change.

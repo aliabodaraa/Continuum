@@ -1,0 +1,38 @@
+{
+ "source": "parts/F_new.json",
+ "users": 19,
+ "byPercentile": {
+  "1": {
+   "thresholdMin": 0.013564702896401286,
+   "thresholdMax": 0.540196378827095,
+   "thresholdMedian": 0.12947872273623945,
+   "genuineTestBelowThresholdMedian": 0.13108614232209737,
+   "usersWithAllGenuineBelow": 0,
+   "usersWithOverHalfGenuineBelow": 1
+  },
+  "2": {
+   "thresholdMin": 0.03605342321097851,
+   "thresholdMax": 0.6031261885166168,
+   "thresholdMedian": 0.1870399871468544,
+   "genuineTestBelowThresholdMedian": 0.20973782771535582,
+   "usersWithAllGenuineBelow": 0,
+   "usersWithOverHalfGenuineBelow": 1
+  },
+  "5": {
+   "thresholdMin": 0.07965879403054714,
+   "thresholdMax": 0.7841368049383164,
+   "thresholdMedian": 0.3353512793779373,
+   "genuineTestBelowThresholdMedian": 0.32209737827715357,
+   "usersWithAllGenuineBelow": 1,
+   "usersWithOverHalfGenuineBelow": 5
+  },
+  "10": {
+   "thresholdMin": 0.10966195613145828,
+   "thresholdMax": 0.9042757749557495,
+   "thresholdMedian": 0.5085881412029266,
+   "genuineTestBelowThresholdMedian": 0.5377358490566038,
+   "usersWithAllGenuineBelow": 1,
+   "usersWithOverHalfGenuineBelow": 10
+  }
+ }
+}

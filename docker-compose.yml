@@ -1,4 +1,19 @@
 # Continuum — development stack (bind mounts + hot reload).
+#
+# NETWORK SEGMENTATION. Compose previously declared no networks, so every container sat on
+# one default bridge and the layering described in ARCHITECTURE.md was a convention rather
+# than a boundary: the demo app and acme could reach model-api directly and score, train or
+# roll back ANY user's biometric model. Three networks now make the topology match the
+# diagram.
+#
+#   edge     — browser-facing. gateway, web, acme.
+#   internal — gateway/web to the services holding identity-scoped data (ca, passkey).
+#   model    — ca-service and model-api ONLY. Nothing else can address the model at all.
+#
+# The `model` network is the one that matters. model-api answers /api/user/predict for a
+# NAMED user, so reachability alone is a biometric scoring oracle. It is now unreachable
+# except from the single service that holds a gateway-verified identity assertion, and even
+# that hop carries a credential (MODEL_API_KEY). Topology AND credential, not topology alone.
 services:
   model-api:
     profiles:
@@ -11,12 +26,33 @@ services:
       MODEL_PORT: 5000
       MODEL_PATH: ${MODEL_PATH:-/app/artifacts/ws50-gru/final_model}
       MODEL_UNITS: ${MODEL_UNITS:-32}
+      # Service credential. MUST match ca-service's MODEL_API_KEY below — every request
+      # except /health is rejected without it. Unset means the check is inactive, which the
+      # service announces loudly at startup; the bundle and prod stacks make it required.
+      MODEL_API_KEY: ${MODEL_API_KEY:-dev-model-api-key}
       # Storage roots OWNED by model-api — callers reference models by
       # (userId, modality); this service derives + confines every path.
       ARTIFACTS_DIR: /app/artifacts
       DATA_DIR: /app/data
-    ports:
-      - "5000:5000"
+    # NOT published to the host. Only ca-service calls this service, over the
+    # internal Docker network. When it was published on :5000 an unauthenticated
+    # host client could score arbitrary windows against any user's model — a
+    # biometric oracle usable for hill-climbing an accepted forgery — and could
+    # reach /api/user/train and /api/user/rollback. `expose` keeps it reachable
+    # service-to-service without a host binding.
+    expose:
+      - "5000"
+    networks: [model]
+    healthcheck:
+      # /health is deliberately the one unauthenticated route (see api.py). TensorFlow
+      # takes tens of seconds to load, which is exactly why `service_started` was the
+      # wrong readiness signal for dependants: the container is up long before the
+      # model is, so ca-service could accept traffic it could not score.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/health',timeout=3).status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
     volumes:
       - .:/app
     command: python services/model-api/api.py
@@ -29,6 +65,21 @@ services:
       PORT: 4000
       RP_ID: localhost
       ORIGIN: http://localhost:3000
+      # Every route but /health needs it. Only the gateway and the demo call this service,
+      # both server-side; no browser does since the extension's step-up moved to the
+      # gateway's own pages.
+      PASSKEY_API_KEY: ${PASSKEY_API_KEY:-dev-passkey-service-key}
+    # NOT published to the host (it was, on :4000, for the extension's old /ext/* pages).
+    # Reachable only on `internal`, from the gateway and the demo.
+    expose:
+      - "4000"
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     volumes:
       - ./services/passkey-service:/app
       - passkey_node_modules:/app/node_modules
@@ -40,11 +91,24 @@ services:
       dockerfile: Dockerfile
     depends_on:
       model-api:
-        condition: service_started
+        # Wait for the model to be LOADED, not merely for the container to exist.
+        condition: service_healthy
         required: false
     environment:
       PORT: 4100
       MODEL_API_URL: http://model-api:5000
+      # Service credential for the ca -> model hop; model-api rejects requests without it.
+      # It answers "is this ca-service?". WHICH user the request may act for was settled one
+      # hop earlier by the gateway's RS256 identity assertion, which this service verifies.
+      MODEL_API_KEY: ${MODEL_API_KEY:-dev-model-api-key}
+      # Deadlines on that hop. Inference sits in the authentication path, so this is a
+      # latency budget: past it no verdict is issued (503) instead of the request hanging
+      # forever on a wedged TensorFlow process. Training is a batch job and gets minutes.
+      MODEL_INFER_TIMEOUT_MS: ${MODEL_INFER_TIMEOUT_MS:-5000}
+      MODEL_TRAIN_TIMEOUT_MS: ${MODEL_TRAIN_TIMEOUT_MS:-600000}
+      # Shared secret for service-to-service calls. Unset, the check in server.js is a
+      # no-op and any process on the Docker network can read or write biometric data.
+      CA_API_KEY: ${CA_API_KEY:-dev-ca-service-key}
       # Field types the SDK must NOT monitor (comma-sep). Password is monitored
       # by default (value masked); add it here to exclude. Hidden is always sensible.
       MONITOR_EXCLUDE_TYPES: ${MONITOR_EXCLUDE_TYPES:-hidden}
@@ -52,9 +116,32 @@ services:
       #   eager (default) — popup enrolls everything missing at load
       #   lazy            — passkey only; each modality enrolls when its toggle is enabled
       ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
+      # User-study logging (lib/studyLog.js, docs/recovery/user_study/LOGGING_SPEC.md): off unless 1.
+      # When on, requests that carry a study context are logged in the study_* tables, and model
+      # folders are hashed through the read-only /model-store mount below.
+      STUDY_LOGGING: ${STUDY_LOGGING:-0}
+      # Defaults for every organisation's protection (each one can change them in its console, and the
+      # operator on the operator page; see services/gateway/settings.js). panel: show|hide;
+      # keystroke / mouse / adaptive retraining: on|off; the minimum hours between two accepted samples.
+      CONTINUUM_PANEL: ${CONTINUUM_PANEL:-show}
+      CONTINUUM_KEYSTROKE: ${CONTINUUM_KEYSTROKE:-on}
+      CONTINUUM_MOUSE: ${CONTINUUM_MOUSE:-on}
+      ADAPTIVE_RETRAINING: ${ADAPTIVE_RETRAINING:-on}
+      ADAPTIVE_MIN_GAP_HOURS: ${ADAPTIVE_MIN_GAP_HOURS:-3}
+      KEYSTROKE_DECISION_WINDOWS: ${KEYSTROKE_DECISION_WINDOWS:-20}
+    # The ONLY service attached to both `internal` and `model` — it is the sole path in.
+    networks: [internal, model]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     volumes:
       - ./services/ca-service:/app
       - ca_node_modules:/app/node_modules
+      # model-api's per-user model store, read-only, for the study log's model hashes only.
+      - ./artifacts/users:/model-store:ro
     command: npm start
 
   gateway:
@@ -67,19 +154,65 @@ services:
         sdk: ./sdk
     depends_on:
       ca-service:
-        condition: service_started
+        condition: service_healthy
       passkey-service:
-        condition: service_started
+        condition: service_healthy
     environment:
       PORT: 8080
+      # IDENTITY ANCHOR — pinned deliberately to the value that was already effective
+      # (previously an implicit fallback in server.js). Pinning changes no id: it turns an
+      # undocumented default into an explicit, reviewable input.
+      #
+      # Rotating this is an IDENTITY MIGRATION EVENT, not a config change — it alters
+      # HMAC(secret, siteKey|externalId) and would re-map every user. That was survivable
+      # only until the principals registry existed; from now on identity is READ FROM THE
+      # TABLE, so rotation is safe for anyone already seeded there. Seed first, rotate after.
+      GATEWAY_SESSION_SECRET: ${GATEWAY_SESSION_SECRET:-dev-gateway-session-secret}
       CA_API_URL: http://ca-service:4100
       PASSKEY_API_URL: http://passkey-service:4000
-      # Onboarding strategy handed to gateway-mode SDKs at session bootstrap.
+      # Defaults for every organisation's protection; the operator page and each organisation's console
+      # override them (services/gateway/settings.js), and the gateway signs the result into its assertions.
       ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
+      MONITOR_EXCLUDE_TYPES: ${MONITOR_EXCLUDE_TYPES:-hidden}
+      CONTINUUM_PANEL: ${CONTINUUM_PANEL:-show}
+      CONTINUUM_KEYSTROKE: ${CONTINUUM_KEYSTROKE:-on}
+      CONTINUUM_MOUSE: ${CONTINUUM_MOUSE:-on}
+      ADAPTIVE_RETRAINING: ${ADAPTIVE_RETRAINING:-on}
+      ADAPTIVE_MIN_GAP_HOURS: ${ADAPTIVE_MIN_GAP_HOURS:-3}
+      KEYSTROKE_DECISION_WINDOWS: ${KEYSTROKE_DECISION_WINDOWS:-20}
       # CAEP: push signed risk-change events to the demo tenant's receiver.
       DEMO_WEBHOOK_URL: http://web:3000/continuum/events
+      # Where browsers reach the gateway: its pages (console, extension sign-in, study) and
+      # every passkey made there belong to this origin.
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
+      # Tenant registration by the operator, and approval of console sign-ups (X-Admin-Key).
+      # Empty = open, with a warning in the log; set it in .env.
+      GATEWAY_ADMIN_KEY: ${GATEWAY_ADMIN_KEY:-}
+      # Where the operator page and admin API answer at all (default: this machine only;
+      # see DEPLOY.md), whether console webhooks may be private addresses (testing only),
+      # and whether console sign-ups skip the operator's approval.
+      GATEWAY_OPERATOR_HOSTS: ${GATEWAY_OPERATOR_HOSTS:-}
+      GATEWAY_ALLOW_PRIVATE_WEBHOOKS: ${GATEWAY_ALLOW_PRIVATE_WEBHOOKS:-0}
+      GATEWAY_AUTO_APPROVE_TENANTS: ${GATEWAY_AUTO_APPROVE_TENANTS:-0}
+      # The Continuum Guard extension's id (chrome://extensions): the personal and demo
+      # tenants admit it, and the console offers it to organisations.
+      CONTINUUM_EXTENSION_ID: ${CONTINUUM_EXTENSION_ID:-}
+      # The demo's sign-in page for the extension (@continuum/node's /continuum/link).
+      DEMO_SIGNIN_URL: http://localhost:3000/continuum/link
+      # The gateway relays to both downstream services, so it must present both keys —
+      # otherwise activating them 401s every SDK call it forwards.
+      CA_API_KEY: ${CA_API_KEY:-dev-ca-service-key}
+      PASSKEY_API_KEY: ${PASSKEY_API_KEY:-dev-passkey-service-key}
     ports:
       - "8080:8080"
+    # Both networks: public on `edge`, and the only bridge into `internal`.
+    networks: [edge, internal]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     volumes:
       - ./services/gateway:/app
       - gateway_node_modules:/app/node_modules
@@ -97,9 +230,9 @@ services:
         sdk: ./sdk
     depends_on:
       passkey-service:
-        condition: service_started
+        condition: service_healthy
       ca-service:
-        condition: service_started
+        condition: service_healthy
     environment:
       PORT: 3000
       ORIGIN: http://localhost:3000
@@ -115,8 +248,18 @@ services:
       CONTINUUM_JWKS_URI: http://gateway:8080/.well-known/jwks.json
       # Resolve the unified Continuum id for the app's own CA calls (identity unification).
       GATEWAY_URL: http://gateway:8080
+      # The gateway as BROWSERS reach it: /continuum/link sends the user back there after
+      # signing in to the extension.
+      CONTINUUM_GATEWAY_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
+      # caClient.js / passkeyClient.js already send these as X-Api-Key when set.
+      CA_API_KEY: ${CA_API_KEY:-dev-ca-service-key}
+      PASSKEY_API_KEY: ${PASSKEY_API_KEY:-dev-passkey-service-key}
     ports:
       - "3000:3000"
+    # `edge` for the browser, `internal` for its own CA/passkey calls. Deliberately NOT
+    # on `model`: the demo talks to the CA, never to the model. That was already the
+    # stated design — now it is enforced rather than trusted.
+    networks: [edge, internal]
     volumes:
       - ./apps/demo:/app
       - web_node_modules:/app/node_modules
@@ -133,7 +276,7 @@ services:
       dockerfile: Dockerfile
     depends_on:
       gateway:
-        condition: service_started
+        condition: service_healthy
     environment:
       PORT: 4200
       # Identity minting still uses the tenant secret (HMAC, client_secret_jwt).
@@ -142,6 +285,9 @@ services:
       CONTINUUM_JWKS_URI: http://gateway:8080/.well-known/jwks.json
     ports:
       - "4200:4200"
+    # `edge` only. Acme adopts Continuum through the gateway and the SDK; it has no
+    # business addressing ca-service, passkey-service or model-api, and now it cannot.
+    networks: [edge]
     volumes:
       - ./apps/acme:/app
       - acme_node_modules:/app/node_modules
@@ -153,9 +299,15 @@ services:
       dockerfile: services/model-api/Dockerfile.model
     profiles:
       - training
+    networks: [model]
     volumes:
       - .:/app
     command: python services/model-api/train.py --data-dir data --window-size 50 --epochs 150 --batch-size 64 --output-dir artifacts/ws50-gru --rnn-type gru --units 32
+
+networks:
+  edge:
+  internal:
+  model:
 
 volumes:
   web_node_modules:

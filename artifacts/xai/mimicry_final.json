@@ -1,0 +1,52 @@
+{
+  "userId": 1,
+  "threshold": 0.5,
+  "genuineMean": 0.9516674231129642,
+  "nImpostorWindows": 800,
+  "method": "real impostors shifted a fraction alpha toward the target's timing distribution (first two moments); key codes untouched; ud recomputed from UD = DD - dwell1",
+  "caveat": "alpha>0 rows are SYNTHETIC and bound FAR from below for a mimicry attacker; only alpha=0 is measured reality",
+  "curve": [
+    {
+      "alpha": 0.0,
+      "far": 0.1,
+      "meanScore": 0.10246863482600613,
+      "auc": 0.9841964285714285,
+      "label": "real unseen people"
+    },
+    {
+      "alpha": 0.25,
+      "far": 0.19875,
+      "meanScore": 0.21310530867094285,
+      "auc": 0.9503826530612245,
+      "label": "25% of the way to target"
+    },
+    {
+      "alpha": 0.5,
+      "far": 0.375,
+      "meanScore": 0.39032317734172417,
+      "auc": 0.8782844387755102,
+      "label": "50% of the way to target"
+    },
+    {
+      "alpha": 0.75,
+      "far": 0.5925,
+      "meanScore": 0.6047348396004596,
+      "auc": 0.7579942602040817,
+      "label": "75% of the way to target"
+    },
+    {
+      "alpha": 0.9,
+      "far": 0.7375,
+      "meanScore": 0.7329915815978819,
+      "auc": 0.664046556122449,
+      "label": "90% of the way to target"
+    },
+    {
+      "alpha": 1.0,
+      "far": 0.82125,
+      "meanScore": 0.8098140805507452,
+      "auc": 0.5952295918367347,
+      "label": "timing fully matched"
+    }
+  ]
+}

@@ -1,7 +1,23 @@
 (function () {
-  function createTracker(form) {
+  // opts.skip(field) -> true: that field leaves no event at all (the organisation's "fields never
+  // watched"; the SDK passes its own check). Fields are inputs, textareas and rich-text editors
+  // (contenteditable; the outermost editable element is the field).
+  function createTracker(form, opts) {
     let events = [];
     let startTime = 0;
+    const skip = opts && typeof opts.skip === "function" ? opts.skip : null;
+
+    function fieldOf(t) {
+      if (!t || t.nodeType !== 1) return null;
+      if (t.matches("input, textarea")) return t;
+      if (!t.isContentEditable) return null;
+      let root = t;
+      while (root.parentElement && root.parentElement.isContentEditable) root = root.parentElement;
+      return root;
+    }
+    function typeOf(f) {
+      return f.matches("input, textarea") ? (f.type || f.tagName.toLowerCase()) : "contenteditable";
+    }
 
     // Timestamps use evt.timeStamp — the moment the browser CREATED the input
     // event (high-resolution, monotonic) — NOT Date.now() at handler run time.
@@ -22,23 +38,25 @@
     }
 
     function track(evt) {
-      if (!evt.target.matches("input, textarea")) return;
+      const f = fieldOf(evt.target);
+      if (!f || (skip && skip(f))) return;
 
       events.push({
-        fieldName: evt.target.name || evt.target.id || "field",
-        fieldType: evt.target.type || evt.target.tagName.toLowerCase(),
-        keyCode: evt.target.type === "password" ? 0 : evt.keyCode,
+        fieldName: f.name || f.id || "field",
+        fieldType: typeOf(f),
+        keyCode: f.type === "password" ? 0 : evt.keyCode,
         eventType: evt.type,
         timestampRelative: relativeTime(evt),
       });
     }
 
     function trackPaste(evt) {
-      if (!evt.target.matches("input, textarea")) return;
+      const f = fieldOf(evt.target);
+      if (!f || (skip && skip(f))) return;
 
       events.push({
-        fieldName: evt.target.name || evt.target.id || "field",
-        fieldType: evt.target.type || evt.target.tagName.toLowerCase(),
+        fieldName: f.name || f.id || "field",
+        fieldType: typeOf(f),
         keyCode: 0,
         eventType: "paste",
         timestampRelative: relativeTime(evt),

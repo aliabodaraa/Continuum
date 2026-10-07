@@ -1,0 +1,1113 @@
+2026-09-19 11:26:17.163702: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-09-19 11:26:17.193207: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+Loaded 2000 impostor windows from /app/data/mouse_only/Mouse_A5_W50_base80.h5
+Feature scaler loaded from /app/artifacts/mouse-fcn-a5-j80/scaler.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E330/o0/B5
+[K2 w1] user8 E=330 (6 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E440/o0/B7
+[K2 w1] user8 E=440 (8 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user8/E550/o0/B9
+[K2 w1] user8 E=550 (10 samples, 1 order(s))
+[K2 w1] wrote /app/artifacts/repr_arch_study/parts/K2/user8.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E330/o0/B5
+[K2 w1] user19 E=330 (6 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E440/o0/B7
+[K2 w1] user19 E=440 (8 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E550/o0/B9
+[K2 w1] user19 E=550 (10 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B11
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B12
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B12
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B13
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B13
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B14
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B14
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B15
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B16
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B16
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B17
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B17
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B18
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B18
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B19
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B19
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B20
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B20
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B21
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B21
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B22
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B22
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B23
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B23
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B24
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B24
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B25
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B25
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B26
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B26
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B27
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o0/B27
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B11
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B12
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B12
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B13
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B13
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B14
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B14
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B15
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B16
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B16
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B17
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B17
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B18
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B18
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B19
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B19
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B20
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B20
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B21
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B21
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B22
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B22
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B23
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B23
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B24
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B24
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B25
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B25
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B26
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B26
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B27
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B27
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o1/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B11
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B12
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B12
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B13
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B13
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B14
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B14
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B15
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B15
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B16
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B16
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B17
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B17
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B18
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B18
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B19
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B19
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B20
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B20
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B21
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B21
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B22
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B22
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B23
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B23
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B24
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B24
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B25
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B25
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B26
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B26
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B27
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B27
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user19/E1540/o2/B1
+[K2 w1] user19 E=1540 (28 samples, 3 order(s))
+[K2 w1] wrote /app/artifacts/repr_arch_study/parts/K2/user19.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E330/o0/B5
+[K2 w1] user70 E=330 (6 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E440/o0/B7
+[K2 w1] user70 E=440 (8 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E550/o0/B9
+[K2 w1] user70 E=550 (10 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o0/B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o1/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user70/E605/o2/B1
+[K2 w1] user70 E=605 (11 samples, 3 order(s))
+[K2 w1] wrote /app/artifacts/repr_arch_study/parts/K2/user70.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E330/o0/B5
+[K2 w1] user89 E=330 (6 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E440/o0/B7
+[K2 w1] user89 E=440 (8 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E550/o0/B9
+[K2 w1] user89 E=550 (10 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o0/B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o1/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user89/E605/o2/B1
+[K2 w1] user89 E=605 (11 samples, 3 order(s))
+[K2 w1] wrote /app/artifacts/repr_arch_study/parts/K2/user89.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E330/o0/B5
+[K2 w1] user104 E=330 (6 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E440/o0/B7
+[K2 w1] user104 E=440 (8 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E550/o0/B9
+[K2 w1] user104 E=550 (10 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o0/B11
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B11
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o1/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B9
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B10
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B10
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B11
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B11
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user104/E660/o2/B1
+[K2 w1] user104 E=660 (12 samples, 3 order(s))
+[K2 w1] wrote /app/artifacts/repr_arch_study/parts/K2/user104.json
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E330/o0/B5
+[K2 w1] user111 E=330 (6 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E440/o0/B7
+[K2 w1] user111 E=440 (8 samples, 1 order(s))
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/F
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/F
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B0
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B0
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B1
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B1
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B2
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B2
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B3
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B3
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B4
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B4
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B5
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B5
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B6
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B6
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B7
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B7
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B8
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B8
+  transfer: fcn base, embedding 128-d, freezing ['conv1', 'bn1']
+[cache] Loaded user model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B9
+[cache] Evicted stale model: /app/artifacts/protocol_j/models/K2/user111/E550/o0/B9
+[K2 w1] user111 E=550 (10 samples, 1 order(s))
+[K2 w1] wrote /app/artifacts/repr_arch_study/parts/K2/user111.json

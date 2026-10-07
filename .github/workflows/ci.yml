@@ -1,0 +1,121 @@
+name: CI
+
+# Runs on every push to any branch and on every pull request. Publishing to Docker Hub
+# (publish.yml) starts only after this workflow succeeds on main.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Syntax and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: JavaScript syntax (every .js / .mjs outside node_modules and vendor)
+        run: |
+          fail=0
+          while IFS= read -r -d '' f; do node --check "$f" || { echo "::error file=$f::syntax error"; fail=1; }; done \
+            < <(find services apps sdk extension packages scripts tools examples -type f \( -name '*.js' -o -name '*.mjs' \) \
+                  -not -path '*/node_modules/*' -not -path '*/vendor/*' -print0 2>/dev/null)
+          exit $fail
+
+      - name: Python syntax
+        run: python -m compileall -q services/model-api scripts tools
+
+      - name: Shell syntax
+        run: for f in scripts/*.sh; do bash -n "$f"; done
+
+      - name: Compose files are valid (dummy values for the required secrets)
+        env:
+          MODEL_API_KEY: ci
+          CA_SIGNING_SECRET: ci
+          SESSION_SECRET: ci
+          GATEWAY_SESSION_SECRET: ci
+          GATEWAY_ADMIN_KEY: ci
+          REGISTRY: ci
+        run: |
+          for f in docker-compose.yml docker-compose.prod.yml docker-compose.bundle.yml; do
+            docker compose -f "$f" config -q && echo "$f: valid"
+          done
+
+      - name: Install ca-service dependencies
+        working-directory: services/ca-service
+        run: npm install --omit=dev --no-audit --no-fund
+
+      - name: Unit tests (gateway settings; ca-service rules and training queue)
+        run: node --test services/gateway/test/*.test.js services/ca-service/test/*.test.js
+
+      - name: Unit tests (backup manifest)
+        run: python -m unittest discover -s scripts -p "test_*.py" -v
+
+  images:
+    name: Lint, build and scan images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: ca-service,      context: services/ca-service,      dockerfile: services/ca-service/Dockerfile }
+          - { name: passkey-service, context: services/passkey-service, dockerfile: services/passkey-service/Dockerfile }
+          - { name: gateway,         context: services/gateway,         dockerfile: services/gateway/Dockerfile, sdk: true }
+          - { name: web-demo,        context: apps/demo,                dockerfile: apps/demo/Dockerfile,        sdk: true }
+          - { name: model-api,       context: .,                        dockerfile: services/model-api/Dockerfile.model }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint the Dockerfile (fails on errors; settings in .hadolint.yaml)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ matrix.dockerfile }}
+          config: .hadolint.yaml
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          build-contexts: ${{ matrix.sdk && 'sdk=./sdk' || '' }}
+          load: true
+          push: false
+          tags: continuum-ci/${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: Image must not carry secrets or runtime state
+        run: |
+          leaked=$(docker run --rm --entrypoint sh continuum-ci/${{ matrix.name }}:${{ github.sha }} -c \
+            'find / -xdev \( -name "*.pem" -o -name "*.db" -o -name ".env" -o -name tenants.json -o -name accounts.json -o -name identity.json -o -name audit.jsonl \) \
+               -not -path "*/node_modules/*" -not -path "/usr/*" -not -path "/etc/*" -not -path "/proc/*" 2>/dev/null' || true)
+          if [ -n "$leaked" ]; then echo "::error::secret or state files baked into the image:"; echo "$leaked"; exit 1; fi
+          echo "no secret or state files in the image"
+
+      - name: Vulnerability scan (report only for now)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: continuum-ci/${{ matrix.name }}:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: table
+          exit-code: "0"

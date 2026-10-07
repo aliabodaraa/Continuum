@@ -20,15 +20,49 @@ const PROFILE_VERSION = 3;
 // Continuous-auth decision is made on the most recent windows only
 // (Lu et al. packet structure): averaging over the whole session lets a
 // takeover hide behind earlier genuine typing.
-const RECENT_WINDOW_COUNT = 6;
+// 20 windows (was 6). The 99-user paired sweep (artifacts/xai/decision_sweep.json,
+// decision_paired.json) measured vote 10-of-20 against 3-of-6 on identical scores:
+// false lock -8.84 pts [-10.57, -6.41], impostor capture +0.40 pts [+0.11, +0.74].
+// The sweep scores full packets only; server.js keeps the same rule by treating
+// windowCount <= RECENT_WINDOW_COUNT as warmup (the paste / un-verifiable /
+// overwhelming-impostor fast paths still fire early). Cost: the first packet
+// verdict needs 21 windows (>= 250 digraph steps) instead of 7 (>= 110); on
+// stored real sessions 20 windows took about 400 keydowns.
+const RECENT_WINDOW_COUNT = 20;
+// The packets an organisation may choose instead (console, Protection; the operator's default;
+// KEYSTROKE_DECISION_WINDOWS), always with the simple-majority vote. Only lengths measured on the
+// same 99-user scores are offered (manuscript tables 9-b and 11; artifacts/xai/decision_sweep.json,
+// decision_paired.json): a shorter packet gives its first verdict sooner (about 18 s of steady
+// typing at 6 against 42 s at 20) but flags the genuine user more often (FRR at 0.50: 23.6% at 6,
+// 18.8% at 10, 14.8% at 20); impostor capture is about the same. 20 stays the default, and every
+// figure in the paper is for it.
+const DECISION_WINDOW_CHOICES = [6, 10, 20];
+function decisionWindows(n) { return DECISION_WINDOW_CHOICES.includes(Number(n)) ? Number(n) : RECENT_WINDOW_COUNT; }
+// Warm-up fast path (server.js): before the first full packet, a check whose scored windows number
+// k >= WARMUP_FAST_MIN_WINDOWS with at least ceil(WARMUP_FAST_FRACTION * k) below 0.50 challenges at
+// once. It was 4 windows; the OWNER chose 8 on 2026-09-26, before the user study, on exploratory
+// numbers from experiment KS's A200 scores (99 users, a check after every window;
+// _backups/warmup_fastpath_rate.py): genuine users locked at session start 8.1% -> 2.0%, impostor
+// runs caught within warm-up 91.1% -> 87.0%. Runs it misses still meet the 10-of-20 vote after
+// warm-up. A single long pause among a genuine user's first ~90 keys used to be enough.
+const WARMUP_FAST_MIN_WINDOWS = 8;
+const WARMUP_FAST_FRACTION = 0.75;
 // Wider recent span used for the adaptive "contribute" rolling mean. Requires
-// sustained clean typing (≈3 packets) rather than a single lucky packet, and
-// rolls forward so an earlier rough patch ages out instead of permanently
-// blocking eligibility.
+// sustained clean typing (≈3 of the former 6-window packets) rather than a single
+// lucky stretch, and rolls forward so an earlier rough patch ages out instead of
+// permanently blocking eligibility.
 const ROLLING_WINDOW_COUNT = 18;
+// Adaptive contribution is judged on the former 6-window packet: /contribute needs
+// at least this many scored windows, every one of the last this-many above the
+// window floor, and the SDK's cooldown between offers is this many strides. Kept
+// separate from RECENT_WINDOW_COUNT so the packet change leaves adaptive learning
+// exactly as it was.
+const CONTRIBUTE_WINDOW_COUNT = 6;
+// Windows scored per check: enough for both the packet (at most 20) and the rolling mean.
+const SCORED_WINDOW_COUNT = Math.max(RECENT_WINDOW_COUNT, ROLLING_WINDOW_COUNT);
 // Fraction of recent windows scoring below the user threshold that flags the
 // session. Lu et al. (2020): flag when ≥ p of packet windows score < 50%.
-// At 6 windows: 3/6 = 0.50 ≥ 0.50 → SUSPICIOUS; 2/6 → tolerated.
+// At 20 windows: 10/20 = 0.50 ≥ 0.50 → SUSPICIOUS; 9/20 → tolerated.
 // Raised from 1/3 to 0.50 to reduce false rejections for genuine users
 // who momentarily type differently, while still catching impostors.
 const PACKET_VOTE_FRACTION = 0.50;
@@ -45,7 +79,17 @@ const WINDOW_DECISION_THRESHOLD = 0.50;
 // evaluation by never leaving "warmup". Past this bound we stop treating a
 // window-less session as warmup and flag it so the passkey challenge can fire.
 const UNVERIFIABLE_KEY_COUNT = 120;
-const MODEL_API_URL = process.env.MODEL_API_URL || "http://localhost:5000";
+// Negatives for per-user training (T3.3): real typists from the Aalto 136M-keystroke study,
+// the 200 of experiment KS's A200 arm, instead of other app users' samples. Until then the
+// live negatives were the 40 seeded KeyRecs accounts, i.e. KS's REF arm, and all three Aalto
+// arms beat it: A1000 - REF +0.020 [+0.010, +0.031] per-user AUC of 20-window decisions
+// (confirmatory), A200 - REF +0.027 [+0.017, +0.039] (docs/recovery/RESULTS_KS.md). A200 was
+// picked post hoc among the three. A mix of app users and Aalto was not tested, so app-user
+// samples are no longer sent. The file (build_aalto_negatives.py) lives on model-api's side;
+// all its windows are eligible and model-api groups them by typist for the validation split.
+const NEGATIVES_SOURCE = "aalto-A200";
+const NEGATIVES_DATASET_PATH = process.env.KEYSTROKE_NEGATIVES_PATH || "/app/data/aalto_neg_A200.h5";
+// MODEL_API_URL now lives in lib/modelClient.js — the single, authenticated, bounded hop.
 
 function normalizeEvents(events) {
   if (!Array.isArray(events)) return [];
@@ -171,6 +215,12 @@ const MIN_HUMAN_DWELL_SECONDS = 0.01;
  * model can be fine-tuned on and applied to live typing.
  */
 function eventSteps(events) {
+  return eventStepsTimed(events).map((s) => s.row);
+}
+
+// eventSteps with each step's client timestamps (t0 = first keydown, t1 = second keydown), which
+// identify a window across overlapping checks for the user-study log. The rows are eventSteps'.
+function eventStepsTimed(events) {
   const normalized = normalizeEvents(events);
   const lastDownByFieldAndKey = new Map();
   const keyUps = new Map();
@@ -229,6 +279,8 @@ function eventSteps(events) {
         ud,
       ],
       dd,
+      t0: first.timestampRelative,
+      t1: second.timestampRelative,
     });
   }
 
@@ -245,9 +297,24 @@ function eventSteps(events) {
   const steps = [];
   for (let i = 0; i < raw.length; i += 1) {
     if (raw[i].dd > PAUSE_DD_SECONDS) continue; // composition pause — not rhythm
-    steps.push(raw[i].row);
+    steps.push({ row: raw[i].row, t0: raw[i].t0, t1: raw[i].t1 });
   }
   return steps;
+}
+
+// eventsToFeatureWindows plus one key per window: "<first step t0>-<last step t1>" in client
+// milliseconds. Two windows with the same key hold the same 50 steps.
+function featureWindowsWithKeys(events) {
+  const steps = eventStepsTimed(events);
+  if (steps.length < WINDOW_SIZE) return { windows: [], keys: [] };
+  const windows = [];
+  const keys = [];
+  for (let start = 0; start <= steps.length - WINDOW_SIZE; start += WINDOW_STRIDE) {
+    const w = steps.slice(start, start + WINDOW_SIZE);
+    windows.push(w.map((s) => s.row));
+    keys.push(`${w[0].t0}-${w[WINDOW_SIZE - 1].t1}`);
+  }
+  return { windows, keys };
 }
 
 function eventsToFeatureWindows(events) {
@@ -271,9 +338,87 @@ function eventsToFeatureWindows(events) {
   return windows;
 }
 
-function typingQuality(textContent, events) {
+// Rhythm-consistency check for adaptive contributions. Every other adaptive-learning
+// gate (confidence floor, dedup, per-day cap) judges a candidate sample through the
+// CURRENT model's own opinion — circular for a still-young model that hasn't reliably
+// learned this person's rhythm yet. This check is model-independent: it compares the
+// candidate's own timing statistics directly against this same user's already-enrolled
+// history, so it can catch an inconsistent sample even before the model is any good.
+//
+// Indexes into an eventSteps() row [id1,id2,dwell1,dwell2,dd,ud]: only the three
+// INDEPENDENT timing features are checked (dwell1, dwell2, dd) — id1/id2 are which-key
+// identity, not rhythm, and ud is algebraically redundant (ud = dd - dwell1 exactly).
+const RHYTHM_FEATURE_INDEXES = [2, 3, 4];
+const RHYTHM_FEATURE_LABELS = ["dwell1", "dwell2", "dd"];
+// A conservative starting bound, not a data-derived optimum — see the "quality-filtered
+// enrolment volume" experiment on the roadmap, which would calibrate this from evidence
+// rather than a heuristic guess.
+const RHYTHM_Z_SCORE_LIMIT = 3.0;
+// Below this many historical digraphs, per-feature std is too noisy to judge against —
+// fail OPEN (treat as consistent) rather than block early contributions a fresh
+// enrolment needs.
+const RHYTHM_MIN_HISTORY_DIGRAPHS = 100;
+
+function digraphFeatureMeans(events) {
+  const steps = eventSteps(events);
+  if (!steps.length) return null;
+  const sums = RHYTHM_FEATURE_INDEXES.map(() => 0);
+  for (const row of steps) {
+    RHYTHM_FEATURE_INDEXES.forEach((idx, i) => { sums[i] += row[idx]; });
+  }
+  return { means: sums.map((s) => s / steps.length), count: steps.length };
+}
+
+// Pooled mean/std per feature across every historical DIGRAPH (not a mean-of-per-sample
+// means) — pooling at the digraph level is what makes the std reflect this user's true
+// spread rather than being understated by averaging away sample-to-sample variation.
+function digraphFeatureStats(eventsList) {
+  const sums = RHYTHM_FEATURE_INDEXES.map(() => 0);
+  const sqSums = RHYTHM_FEATURE_INDEXES.map(() => 0);
+  let n = 0;
+  for (const events of eventsList) {
+    const steps = eventSteps(events);
+    for (const row of steps) {
+      RHYTHM_FEATURE_INDEXES.forEach((idx, i) => {
+        sums[i] += row[idx];
+        sqSums[i] += row[idx] * row[idx];
+      });
+      n += 1;
+    }
+  }
+  if (n < RHYTHM_MIN_HISTORY_DIGRAPHS) return null;
+  const means = sums.map((s) => s / n);
+  const stds = sqSums.map((sq, i) => Math.sqrt(Math.max(sq / n - means[i] * means[i], 1e-8)));
+  return { means, stds, n };
+}
+
+// historicalEventsList = one raw keystrokeEvents array per already-enrolled sample for
+// this user (fetch via each sample's stored events, NOT the derived windows — the
+// comparison is on raw digraph timing, before scaling/model scoring).
+function checkRhythmConsistency(candidateEvents, historicalEventsList) {
+  const history = digraphFeatureStats(historicalEventsList || []);
+  if (!history) return { consistent: true, reason: "not enough enrolled history to judge yet" };
+  const candidate = digraphFeatureMeans(candidateEvents);
+  if (!candidate) return { consistent: true, reason: "no scorable digraphs in candidate" };
+  const zScores = candidate.means.map((m, i) => (m - history.means[i]) / (history.stds[i] || 1e-8));
+  let worstIdx = 0;
+  zScores.forEach((z, i) => { if (Math.abs(z) > Math.abs(zScores[worstIdx])) worstIdx = i; });
+  return {
+    consistent: Math.abs(zScores[worstIdx]) <= RHYTHM_Z_SCORE_LIMIT,
+    worstFeature: RHYTHM_FEATURE_LABELS[worstIdx],
+    worstZ: zScores[worstIdx],
+    zScores,
+    historyDigraphCount: history.n,
+  };
+}
+
+// `knownLength` lets a client send the trimmed text LENGTH instead of the text (the user-study
+// extension does): the length is all this uses.
+function typingQuality(textContent, events, knownLength = null) {
   const normalized = normalizeEvents(events);
-  const textLength = String(textContent || "").trim().length;
+  const textLength = textContent != null || !Number.isFinite(Number(knownLength))
+    ? String(textContent || "").trim().length
+    : Math.max(0, Math.floor(Number(knownLength)));
   const keydownCount = normalized.filter((evt) => evt.eventType === "keydown").length;
   const pasteEvents = normalized.filter((evt) => evt.eventType === "paste");
   const pastedLength = pasteEvents.reduce((total, evt) => total + Number(evt.pastedLength || 0), 0);
@@ -333,15 +478,86 @@ function getTrainingSampleRows(userId, db) {
     .all(userId, MAX_TRAINING_SAMPLES);
 }
 
-function getTrainingWindows(userId, db) {
+// Windows slide with an 80% overlap, so two windows from the SAME sample share
+// most of their rows. The model-api needs to know which sample each window came
+// from, or its train/validation split puts near-duplicates on both sides and
+// every validation figure — including the calibrated threshold — is measured
+// against data the model already saw. So carry the sample id alongside.
+function getTrainingWindowsGrouped(userId, db) {
   const rows = getTrainingSampleRows(userId, db);
-  return rows.flatMap((row) => eventsToFeatureWindows(getSampleEvents(row.id, db)));
+  const windows = [];
+  const groups = [];
+  for (const row of rows) {
+    for (const w of eventsToFeatureWindows(getSampleEvents(row.id, db))) {
+      windows.push(w);
+      groups.push(row.id);
+    }
+  }
+  return { windows, groups };
 }
 
-function getNegativeWindows(userId, db) {
-  const rows = db
+function getTrainingWindows(userId, db) {
+  return getTrainingWindowsGrouped(userId, db).windows;
+}
+
+// A user may exist under more than one id — a demo account id and a hashed CA
+// uid for the same human. Those aliases land in the negative pool, so the model
+// is trained to reject its own owner's typing. Observed live: 44 of user 1's
+// negative samples belonged to an id sharing all 71 of user 1's distinct texts.
+//
+// Aliases are detected by verbatim text overlap, but the test cannot be "shares
+// any text": the fixed enrolment prompts are typed by EVERY user by design, so a
+// genuine impostor legitimately shares a handful. An alias shares nearly
+// everything. So compare the SHARE of the candidate's own distinct long texts
+// that also belong to the target, and drop it only past a majority.
+const ALIAS_TEXT_OVERLAP = 0.5;   // >50% of a candidate's own texts are the target's
+const ALIAS_MIN_TEXTS = 4;        // below this, overlap is not evidence either way
+
+function aliasUserIds(userId, db) {
+  const own = new Set(
+    db
+      .prepare(
+        "SELECT DISTINCT text_hash t FROM keystroke_texts WHERE user_id = ? AND text_hash IS NOT NULL AND char_count > 40",
+      )
+      .all(userId)
+      .map((r) => r.t),
+  );
+  if (own.size === 0) return new Set();
+  const candidates = db
     .prepare(
-      `SELECT id
+      `SELECT DISTINCT user_id u FROM keystroke_texts
+       WHERE user_id <> ? AND is_training = 1 AND is_suspicious = 0`,
+    )
+    .all(userId)
+    .map((r) => r.u);
+  const aliases = new Set();
+  for (const u of candidates) {
+    const texts = db
+      .prepare(
+        "SELECT DISTINCT text_hash t FROM keystroke_texts WHERE user_id = ? AND text_hash IS NOT NULL AND char_count > 40",
+      )
+      .all(u)
+      .map((r) => r.t);
+    if (texts.length < ALIAS_MIN_TEXTS) continue;
+    const shared = texts.filter((t) => own.has(t)).length;
+    if (shared / texts.length > ALIAS_TEXT_OVERLAP) {
+      aliases.add(u);
+      console.log(
+        `[negatives] excluding user ${u} from user ${userId}'s negatives: ${shared}/${texts.length} texts shared — same person under another id`,
+      );
+    }
+  }
+  return aliases;
+}
+
+// THE definition of which samples may serve as negatives for a user. Exported for
+// validation so a test asserts against the shipped selection rather than a copy of
+// the query that could drift away from it.
+function negativeSampleRows(userId, db) {
+  const aliases = aliasUserIds(userId, db);
+  return db
+    .prepare(
+      `SELECT id, user_id, text_hash
        FROM keystroke_texts
        WHERE user_id <> ?
          AND is_training = 1
@@ -349,22 +565,39 @@ function getNegativeWindows(userId, db) {
        ORDER BY submitted_at DESC
        LIMIT ?`,
     )
-    .all(userId, MAX_TRAINING_SAMPLES);
-  return rows.flatMap((row) => eventsToFeatureWindows(getSampleEvents(row.id, db)));
+    .all(userId, MAX_TRAINING_SAMPLES)
+    .filter((r) => !aliases.has(r.user_id));
 }
 
-async function postModelApi(path, payload) {
-  const response = await fetch(`${MODEL_API_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || `Model API ${path} failed`);
-  }
-  return data;
+// Was this profile trained on other negatives than the current NEGATIVES_SOURCE? Such a profile
+// is retrained once (server.js activity path and the login hook below). This replaces the old
+// pool-growth refresh: negatives no longer come from other app users, so new enrolments do not
+// change what a retrain would learn from.
+function needsNegativesRefresh(userId, db) {
+  const profile = getUserTypingProfile(userId, db);
+  return isServedProfile(profile) && profile.negatives !== NEGATIVES_SOURCE;
 }
+
+// A profile the live check actually scores with. Rows from an older feature scheme are kept
+// but treated as untrained; retraining them is the enrolment flow's job, not a refresh's (two
+// such rows have samples that give no window under the current scheme, so a refresh would be
+// queued on every visit and never save anything).
+function isServedProfile(profile) {
+  return !!profile && profile.type === "per-user-cnn-lstm" && Number(profile.version) >= PROFILE_VERSION;
+}
+
+// Authenticated + deadline-bounded. See lib/modelClient.js for why the local copy of this
+// function (a bare, credential-less, unbounded fetch) had to go.
+const { postModelApi } = require("./modelClient");
+const studyLog = require("./studyLog");
+// The live keystroke decision rule, as the user-study log records it: fixed 0.50 window boundary,
+// packet vote over the last `packet` windows (the organisation's choice, 20 by default), and the
+// warm-up fast path's minimum.
+function ruleVersion(packet) {
+  const n = decisionWindows(packet);
+  return `lu-050-${Math.ceil(n * PACKET_VOTE_FRACTION)}of${n}-warm${WARMUP_FAST_MIN_WINDOWS}`;
+}
+const RULE_VERSION = ruleVersion(RECENT_WINDOW_COUNT);
 
 function saveProfile(userId, db, profile) {
   db.prepare(
@@ -410,16 +643,23 @@ async function scoreWindowsWithModel(userId, windows, modelPath) {
 
 async function trainUserTypingProfile(userId, db) {
   const sampleCount = getTrainingSampleRows(userId, db).length;
-  const positiveWindows = getTrainingWindows(userId, db);
+  const positive = getTrainingWindowsGrouped(userId, db);
+  const positiveWindows = positive.windows;
   if (sampleCount < MIN_TRAINING_SAMPLES || positiveWindows.length < MIN_POSITIVE_WINDOWS) {
     return null;
   }
 
-  const negativeWindows = getNegativeWindows(userId, db);
+  const previous = getUserTypingProfile(userId, db);
   const result = await postModelApi("/api/user/train", {
     userId,
     positiveWindows,
-    negativeWindows,
+    // all max(2 x positives, 60) negatives come from the Aalto file (NEGATIVES_SOURCE)
+    negativeWindows: [],
+    negativeDatasetPath: NEGATIVES_DATASET_PATH,
+    negativeDatasetMaxWindows: 0,
+    // one source-sample id per window, so the split keeps whole samples together
+    positiveGroups: positive.groups,
+    overlapGap: Math.ceil(WINDOW_SIZE / WINDOW_STRIDE),
     minPositiveWindows: MIN_POSITIVE_WINDOWS,
     // Model storage is OWNED by the model-api: we say what (userId + modality),
     // it decides where. No filesystem coupling between the services.
@@ -427,6 +667,22 @@ async function trainUserTypingProfile(userId, db) {
     epochs: 25,
     batchSize: 16,
   });
+
+  // A degraded negative pool produces a weak model that still trains "successfully".
+  // It used to pass unremarked; surface it so a broken dataset path is visible in
+  // the service log instead of only in the resulting accuracy months later.
+  // With no app-user negatives any more, a missing Aalto file would fall through to synthetic
+  // noise, so this is now a failed training: the new model is rolled back and the previous
+  // profile keeps serving.
+  if (result && (result.datasetNegativeError || result.negativeSource !== "dataset")) {
+    console.error(
+      `[train] DEGRADED NEGATIVES user=${userId} source=${result.negativeSource} ` +
+        `reason=${result.datasetNegativeError || "no dataset negatives available"}`,
+    );
+    if (result.previousModelPath) await postModelApi("/api/user/rollback", { userId });
+    throw new Error(`keystroke training needs the ${NEGATIVES_SOURCE} negatives: ` +
+      `${result.datasetNegativeError || `got ${result.negativeSource}`}`);
+  }
 
   // ---- Model-update ACCEPTANCE TEST (validation-gated update) ----
   // Retraining is stochastic: on identical data, successive fits scored a
@@ -436,8 +692,16 @@ async function trainUserTypingProfile(userId, db) {
   // we score both the new fit and the pre-retrain snapshot on held-out
   // genuine windows; if the new one is clearly worse we ROLL BACK and keep
   // the proven model. The stored samples still count toward future retrains.
+  // The gate guards against a bad fit of the SAME recipe. The one retrain that moves a profile
+  // to NEGATIVES_SOURCE is a deliberate recipe change, tested in KS, and it skips the gate:
+  // a rollback there would re-save the old profile, which would ask for this retrain again.
+  const migrating = !!previous && previous.negatives !== NEGATIVES_SOURCE;
+  if (migrating) {
+    console.log(`[retrain-gate] user=${userId} negatives ${previous.negatives || "app-users"} -> ` +
+      `${NEGATIVES_SOURCE}: recipe change, gate skipped`);
+  }
   try {
-    if (result.previousModelPath) {
+    if (result.previousModelPath && !migrating) {
       const heldOut = getHeldOutWindows(userId, db);
       if (heldOut.length >= 30) {
         const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
@@ -481,6 +745,7 @@ async function trainUserTypingProfile(userId, db) {
     positiveWindowCount: result.positiveWindowCount,
     negativeWindowCount: result.negativeWindowCount,
     negativeSource: result.negativeSource,
+    negatives: NEGATIVES_SOURCE,
     trainedFrom: result.trainedFrom,
     trainingAccuracy: result.accuracy,
     balancedAccuracy: result.balancedAccuracy,
@@ -488,6 +753,13 @@ async function trainUserTypingProfile(userId, db) {
   };
 
   saveProfile(userId, db, profile);
+  // User study: the live cutoff is the fixed 0.50, so the threshold-source scores are the per-user
+  // validation (held-out genuine) scores model-api computed for this model.
+  studyLog.recordProfile(userId, {
+    channel: "keystroke", ruleVersion: `${RULE_VERSION};${NEGATIVES_SOURCE}`, threshold: WINDOW_DECISION_THRESHOLD,
+    thresholdSource: "fixed-0.50; scores = validation genuine", modelPath: result.modelPath,
+    windowCount: result.positiveWindowCount, thresholdScores: result.validationGenuineScores,
+  });
   return profile;
 }
 
@@ -553,18 +825,22 @@ function getUserTypingBaseline(userId, db) {
   };
 }
 
-async function evaluateKeystrokes({ events, timings, userId, db }) {
+// packetWindows: the organisation's packet (DECISION_WINDOW_CHOICES); anything else means the default.
+async function evaluateKeystrokes({ events, timings, userId, db, packetWindows }) {
+  const packet = decisionWindows(packetWindows);
   const normalized = normalizeEvents(events);
   const metrics = {
     ...analyzeKeystrokeTiming(normalized),
     ...(timings || {}),
   };
-  const allWindows = eventsToFeatureWindows(normalized);
-  // We score the last ROLLING_WINDOW_COUNT windows in one prediction: the last
+  // The same windows as eventsToFeatureWindows, each with its key for the user-study log.
+  const { windows: allWindows, keys: allKeys } = featureWindowsWithKeys(normalized);
+  // We score the last SCORED_WINDOW_COUNT windows in one prediction: the last
   // RECENT_WINDOW_COUNT of them (the packet) drive the live Lu vote, while the
-  // mean over the wider set is the "rolling mean" used to decide when a stretch
-  // of typing is clean enough to offer as an adaptive-learning sample.
-  const windows = allWindows.slice(-ROLLING_WINDOW_COUNT);
+  // mean over the last ROLLING_WINDOW_COUNT is the "rolling mean" used to decide
+  // when a stretch of typing is clean enough to offer as an adaptive-learning sample.
+  const windows = allWindows.slice(-SCORED_WINDOW_COUNT);
+  const windowKeys = allKeys.slice(-SCORED_WINDOW_COUNT);
   const profile = getUserTypingProfile(userId, db);
 
   if (
@@ -624,13 +900,14 @@ async function evaluateKeystrokes({ events, timings, userId, db }) {
     const LU_WINDOW_THRESHOLD = WINDOW_DECISION_THRESHOLD;
     const mean = (arr) =>
       arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-    // Scores for all sent windows (up to ROLLING_WINDOW_COUNT).
-    const rollingScores = Array.isArray(result.prediction)
+    // Scores for all sent windows (up to SCORED_WINDOW_COUNT).
+    const scoredScores = Array.isArray(result.prediction)
       ? result.prediction.map((p) => Number(p[1]))
       : [];
-    // The packet = the most recent RECENT_WINDOW_COUNT windows; the live vote
+    const rollingScores = scoredScores.slice(-ROLLING_WINDOW_COUNT);
+    // The packet = the most recent `packet` windows; the live vote
     // and the on-screen tiles use only these.
-    const perWindowScores = rollingScores.slice(-RECENT_WINDOW_COUNT);
+    const perWindowScores = scoredScores.slice(-packet);
     const lowWindows = perWindowScores.filter((s) => s < LU_WINDOW_THRESHOLD).length;
     const voteFraction = perWindowScores.length > 0 ? lowWindows / perWindowScores.length : 0;
     // Live verdict = pure Lu et al. (2020) packet vote at the fixed 0.50 boundary.
@@ -644,9 +921,9 @@ async function evaluateKeystrokes({ events, timings, userId, db }) {
     // out-of-distribution feature ARTIFACT apart from a real rhythm change.
     try {
       let lo = 0;
-      for (let i = 1; i < rollingScores.length; i += 1)
-        if (rollingScores[i] < rollingScores[lo]) lo = i;
-      if (rollingScores.length && rollingScores[lo] < 0.25) {
+      for (let i = 1; i < scoredScores.length; i += 1)
+        if (scoredScores[i] < scoredScores[lo]) lo = i;
+      if (scoredScores.length && scoredScores[lo] < 0.25) {
         const w = windows[lo] || [];
         const lbl = ["id1", "id2", "dw1", "dw2", "dd", "ud"];
         const stats = lbl.map((l, f) => {
@@ -654,7 +931,7 @@ async function evaluateKeystrokes({ events, timings, userId, db }) {
           for (const r of w) { if (r[f] < mn) mn = r[f]; if (r[f] > mx) mx = r[f]; sum += r[f]; }
           return `${l}:${mn.toFixed(2)}/${(sum / (w.length || 1)).toFixed(2)}/${mx.toFixed(2)}`;
         });
-        console.log(`[DIAG] user=${userId} keys=${metrics.keyCount} loScore=${rollingScores[lo].toFixed(4)} winLen=${w.length} (min/avg/max) ${stats.join(" ")}`);
+        console.log(`[DIAG] user=${userId} keys=${metrics.keyCount} loScore=${scoredScores[lo].toFixed(4)} winLen=${w.length} (min/avg/max) ${stats.join(" ")}`);
         console.log(`[DIAG] lastRows=${JSON.stringify(w.slice(-3).map((r) => r.map((x) => +x.toFixed(2))))}`);
       }
     } catch (_) {}
@@ -676,6 +953,7 @@ async function evaluateKeystrokes({ events, timings, userId, db }) {
       profile,
       windowCount: allWindows.length,
       recentWindowScores: perWindowScores,
+      recentWindowKeys: windowKeys.slice(-perWindowScores.length),
       cnnLstm: result,
     };
   } catch (err) {
@@ -727,51 +1005,24 @@ function logAuthDecision(userId, db, { source, evaluation, passkeyTriggered = fa
   }
 }
 
-// Track in-flight login-triggered retrains so we don't stack duplicates.
-const loginRetrainsInFlight = new Set();
+// Duplicate suppression used to be an in-memory Set here. It is now a property of the
+// durable queue: enqueue() is a no-op when a job for this (user, modality) is already
+// queued or running, and unlike the Set that fact survives a restart — so an interrupted
+// retrain is resumed rather than silently forgotten.
+const trainingQueue = require("./trainingQueue");
 
-function hasNewImpostorsSince(userId, db, since) {
-  // Only count users who are fully enrolled (MIN_TRAINING_SAMPLES samples)
-  // and whose most recent training sample arrived after our last model training.
-  // A partially-enrolled user contributes too few windows to justify a retrain.
-  const row = db
-    .prepare(
-      `SELECT COUNT(*) as count FROM (
-         SELECT user_id
-         FROM keystroke_texts
-         WHERE user_id <> ?
-           AND is_training = 1
-           AND is_suspicious = 0
-         GROUP BY user_id
-         HAVING COUNT(*) >= ?
-           AND MAX(submitted_at) > ?
-       )`,
-    )
-    .get(userId, MIN_TRAINING_SAMPLES, since || "1970-01-01");
-  return row.count > 0;
-}
-
-// Called after login: if any other user has enrolled since this user's model
-// was last trained, retrain silently in the background so the model benefits
-// from the new impostor data without delaying the login response.
-async function maybeRetrainForNewImpostors(userId, db) {
-  if (loginRetrainsInFlight.has(userId)) return;
-  const profile = getUserTypingProfile(userId, db);
-  if (!profile || !profile.trainedAt) return;
-  if (!hasNewImpostorsSince(userId, db, profile.trainedAt)) return;
-
-  loginRetrainsInFlight.add(userId);
-  setImmediate(async () => {
-    try {
-      console.log(`[login-retrain] New impostors detected — retraining model for user ${userId}`);
-      await trainUserTypingProfile(userId, db);
-      console.log(`[login-retrain] User ${userId} model updated with new impostor data`);
-    } catch (err) {
-      console.error(`[login-retrain] Retraining failed for user ${userId}:`, err.message);
-    } finally {
-      loginRetrainsInFlight.delete(userId);
-    }
-  });
+// Called after login. It used to retrain whenever any other user had enrolled since this
+// user's model was trained, so the model could learn from the new impostors. Negatives now
+// come from the fixed Aalto file (NEGATIVES_SOURCE), so the one retrain still owed is the move
+// of an older profile onto it. The route keeps its name for the SDK.
+//
+// This used to fire-and-forget a `setImmediate`. Both halves of that were lost on restart —
+// the run itself, and the guard that stopped it being started twice — and nothing recorded
+// that the work had been owed. Now it records a row and returns; the worker in
+// lib/trainingQueue.js does the work and re-queues it if the service dies mid-run.
+function maybeRetrainForNewImpostors(userId, db) {
+  if (!needsNegativesRefresh(userId, db)) return null;
+  return trainingQueue.enqueue(userId, "keystroke", "negatives-refresh");
 }
 
 module.exports = {
@@ -781,19 +1032,32 @@ module.exports = {
   WINDOW_STRIDE,
   RECENT_WINDOW_COUNT,
   ROLLING_WINDOW_COUNT,
+  CONTRIBUTE_WINDOW_COUNT,
   PACKET_VOTE_FRACTION,
   WINDOW_DECISION_THRESHOLD,
   CHECK_MIN_TEXT_CHARS,
   analyzeKeystrokeTiming,
+  checkRhythmConsistency,
+  NEGATIVES_SOURCE,
   evaluateKeystrokes,
   eventsToFeatureWindows,
   logAuthDecision,
+  needsNegativesRefresh,
+  isServedProfile,
   typingQuality,
   getUserTypingBaseline,
   getUserTypingProfile,
   getUserTypingStatus,
   maybeRetrainForNewImpostors,
+  negativeSampleRows,
   normalizeEvents,
   resetUserTypingProfile,
   trainUserTypingProfile,
+  featureWindowsWithKeys,
+  RULE_VERSION,
+  ruleVersion,
+  DECISION_WINDOW_CHOICES,
+  decisionWindows,
+  WARMUP_FAST_MIN_WINDOWS,
+  WARMUP_FAST_FRACTION,
 };

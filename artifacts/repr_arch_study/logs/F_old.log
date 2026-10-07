@@ -1,0 +1,46 @@
+built /app/data/mouse_only/Mouse_WS50_base.h5: (68845, 50, 7)
+2026-09-13 09:00:09.745592: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-09-13 09:00:09.801486: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+[F old] targets 19 | base /app/artifacts/mouse-ws50-aligned/final_model
+Loaded 2000 impostor windows from /app/data/mouse_only/Mouse_WS50_base.h5
+Feature scaler loaded from /app/artifacts/mouse-ws50-aligned/scaler.json
+[cache] Loaded user model: /app/artifacts/final_eval/old/user1/mouse_model
+     user1  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=11
+[cache] Loaded user model: /app/artifacts/final_eval/old/user8/mouse_model
+     user8  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=9
+[cache] Loaded user model: /app/artifacts/final_eval/old/user9/mouse_model
+     user9  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=15
+[cache] Loaded user model: /app/artifacts/final_eval/old/user16/mouse_model
+    user16  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=15
+[cache] Loaded user model: /app/artifacts/final_eval/old/user19/mouse_model
+    user19  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=9
+[cache] Loaded user model: /app/artifacts/final_eval/old/user29/mouse_model
+    user29  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=11
+[cache] Loaded user model: /app/artifacts/final_eval/old/user69/mouse_model
+    user69  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=15
+[cache] Loaded user model: /app/artifacts/final_eval/old/user70/mouse_model
+    user70  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=12
+[cache] Loaded user model: /app/artifacts/final_eval/old/user85/mouse_model
+    user85  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=15
+[cache] Loaded user model: /app/artifacts/final_eval/old/user86/mouse_model
+    user86  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=15
+[cache] Loaded user model: /app/artifacts/final_eval/old/user89/mouse_model
+    user89  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=15
+[cache] Loaded user model: /app/artifacts/final_eval/old/user91/mouse_model
+    user91  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=14
+[cache] Loaded user model: /app/artifacts/final_eval/old/user101/mouse_model
+   user101  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=14
+[cache] Loaded user model: /app/artifacts/final_eval/old/user104/mouse_model
+   user104  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=15
+[cache] Loaded user model: /app/artifacts/final_eval/old/user107/mouse_model
+   user107  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=15
+[cache] Loaded user model: /app/artifacts/final_eval/old/user108/mouse_model
+   user108  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=15
+[cache] Loaded user model: /app/artifacts/final_eval/old/user111/mouse_model
+   user111  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=13
+[cache] Loaded user model: /app/artifacts/final_eval/old/user115/mouse_model
+   user115  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=15
+[cache] Loaded user model: /app/artifacts/final_eval/old/user119/mouse_model
+   user119  trainedFrom=base-model-fine-tune  negatives=660 (dataset)  epochs=15
+wrote /app/artifacts/repr_arch_study/parts/F_old.json

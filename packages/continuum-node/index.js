@@ -113,6 +113,14 @@ function createGuard(opts) {
     } catch (e) { next(e); }
   }
 
+  // Standard HS256 JWT (the documented identity contract) — identical to what
+  // any other language's JWT library would produce with the tenant secret.
+  function signIdentity(uid, ttlSec, extra) {
+    const h = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+    const p = Buffer.from(JSON.stringify({ ...(extra || {}), sub: String(uid), exp: Math.floor(Date.now() / 1000) + ttlSec })).toString("base64url");
+    return h + "." + p + "." + crypto.createHmac("sha256", secret).update(h + "." + p).digest("base64url");
+  }
+
   // Identity endpoint middleware. The consumer mounts this and only tells it HOW
   // to read the currently-logged-in user from their own session/framework — no
   // crypto, no hand-rolled endpoint:
@@ -128,11 +136,47 @@ function createGuard(opts) {
       let uid = null;
       try { uid = getUserId(req); } catch (e) { uid = null; }
       if (uid == null || uid === "") return res.status(401).json({ error: "not_logged_in" });
-      // Standard HS256 JWT (the documented identity contract) — identical to what
-      // any other language's JWT library would produce with the tenant secret.
-      const h = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
-      const p = Buffer.from(JSON.stringify({ sub: String(uid), exp: Math.floor(Date.now() / 1000) + ttl })).toString("base64url");
-      res.json({ token: h + "." + p + "." + crypto.createHmac("sha256", secret).update(h + "." + p).digest("base64url") });
+      res.json({ token: signIdentity(uid, ttl) });
+    };
+  }
+
+  // Sign-in for the Continuum Guard browser extension: this app's side of the gateway's /v1/link/*
+  // flow (OAuth-style, see the gateway's "EXTENSION SIGN-IN"). Its address is the tenant's
+  // "sign-in page for the extension" in the Continuum console. It serves
+  //   GET /continuum/link?continuum_link=<link id>
+  // A signed-in user is sent straight back to the gateway with an identity token bound to that link
+  // id and valid for 2 minutes, as a form post, so the token never appears in an address. Anyone else
+  // goes to the app's own login page first (loginUrl, with ?next= back here). The extension never
+  // sees the user's password or this app's secret.
+  function link(getUserId, opts) {
+    opts = opts || {};
+    const linkPath = opts.path || "/continuum/link";
+    const gatewayUrl = String(opts.gatewayUrl || process.env.CONTINUUM_GATEWAY_URL || "").replace(/\/+$/, "");
+    const loginUrl = opts.loginUrl || "/login.html";
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    return function (req, res, next) {
+      if ((req.path || req.url).split("?")[0] !== linkPath || req.method !== "GET") return next();
+      let id = "";
+      try { id = new URL(req.originalUrl || req.url, "http://x").searchParams.get("continuum_link") || ""; } catch (e) {}
+      if (!/^[a-f0-9]{32}$/.test(id)) return res.status(400).type("text/plain").send("Missing or malformed continuum_link.");
+      if (!gatewayUrl) return res.status(500).type("text/plain").send("The Continuum gateway address is not configured (CONTINUUM_GATEWAY_URL).");
+      let uid = null;
+      try { uid = getUserId(req); } catch (e) { uid = null; }
+      if (uid == null || uid === "") {
+        const back = linkPath + "?continuum_link=" + id;
+        return res.redirect(302, loginUrl + (loginUrl.includes("?") ? "&" : "?") + "next=" + encodeURIComponent(back));
+      }
+      let name = null;
+      try { name = opts.name ? opts.name(req) : null; } catch (e) { name = null; }
+      const token = signIdentity(uid, 120, name ? { link: id, name: String(name) } : { link: id });
+      res.set("Cache-Control", "no-store");
+      res.set("Referrer-Policy", "no-referrer");
+      res.type("html").send('<!doctype html><meta charset="utf-8"><title>Continuum Guard</title>'
+        + '<body style="font:15px system-ui,sans-serif;max-width:420px;margin:60px auto;padding:0 16px">'
+        + '<form id="f" method="post" action="' + esc(gatewayUrl) + '/v1/link/callback">'
+        + '<input type="hidden" name="link" value="' + esc(id) + '"><input type="hidden" name="identity_token" value="' + esc(token) + '">'
+        + '<p>Signing you in to Continuum Guard…</p><button type="submit">Continue</button></form>'
+        + '<script>document.getElementById("f").submit()</script></body>');
     };
   }
 
@@ -165,7 +209,15 @@ function createGuard(opts) {
     };
   }
 
-  return { verify, verifyToken, requireTrusted, identity, events, pushedRiskFor };
+  return { verify, verifyToken, requireTrusted, identity, link, events, pushedRiskFor };
+}
+
+// The logged-in user's display name, from the same conventions as defaultUser; shown in the
+// extension ("Signed in as …"). Optional: null leaves the user id.
+function defaultName(req) {
+  if (req.user && typeof req.user === "object") return req.user.email || req.user.name || req.user.username || null;
+  if (req.session) return req.session.username || req.session.email || null;
+  return null;
 }
 
 // Zero-config user detection. The one thing only the app knows is WHERE its
@@ -191,7 +243,7 @@ function defaultUser(req) {
 // One-line integration. The returned value is itself the identity middleware
 // (app.use(continuum)) AND carries .protect / .verify:
 //   const continuum = require("@continuum/node")({ secret: process.env.CONTINUUM_SECRET });
-//   app.use(continuum);                    // serves /continuum/identity (user auto-detected)
+//   app.use(continuum);                    // serves /continuum/identity and /continuum/link (user auto-detected)
 //   app.post("/transfer", continuum.protect, handler);   // enforce on sensitive routes
 // Pass `user: req => ...` only if your session shape isn't a common convention.
 function continuum(opts) {
@@ -200,14 +252,18 @@ function continuum(opts) {
   const getUser = opts.user || defaultUser;                   // auto-detect unless overridden
   const idMw = g.identity(getUser);                           // serves /continuum/identity
   const evMw = g.events(opts.onRisk || null);                 // receives /continuum/events (+ optional cb)
+  // serves /continuum/link (the browser extension's sign-in); needs the gateway's public address
+  const linkMw = g.link(getUser, { gatewayUrl: opts.gatewayUrl, loginUrl: opts.loginUrl, name: opts.userName || defaultName });
   const IDENTITY_PATH = "/continuum/identity";
   const EVENTS_PATH = "/continuum/events";
+  const LINK_PATH = "/continuum/link";
   // One middleware does it all: serve identity, receive pushed events, and attach
   // THIS request's pushed risk so protect() reacts to CAEP with no extra app code.
   const mw = function (req, res, next) {
     const p = (req.path || req.url).split("?")[0];
     if (req.method === "POST" && p === EVENTS_PATH) return evMw(req, res, next);
     if (p === IDENTITY_PATH) return idMw(req, res, next);
+    if (p === LINK_PATH) return linkMw(req, res, next);
     try { const s = getUser(req); if (s != null && s !== "") req.continuumRisk = g.pushedRiskFor(s); } catch (e) {}
     next();
   };
@@ -216,6 +272,7 @@ function continuum(opts) {
   mw.verify = g.verify;
   mw.verifyToken = g.verifyToken;
   mw.identity = g.identity;
+  mw.link = g.link;
   mw.events = g.events;
   mw.riskFor = g.pushedRiskFor;
   return mw;

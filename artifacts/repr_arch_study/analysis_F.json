@@ -1,0 +1,172 @@
+{
+ "preregistrationFSha256": "ebe78d5ed4bd4e76447671bc5ce614ba4b0e6ea5b4da082e0cc2d6d046ae347d",
+ "new": {
+  "window": {
+   "auc": 0.8670575550784895,
+   "eer": 0.19923395438205466,
+   "tar01": 0.31991797225308155
+  },
+  "aucMedian": 0.8915750093527871,
+  "ops": {
+   "0.01": {
+    "q": 5,
+    "rule": "vote",
+    "n": 20,
+    "k": 12,
+    "calFL": 0.008097165991902834,
+    "calCap": 0.8732467717771278,
+    "flBudget": 0.01,
+    "testFLmedian": 0.056818181818181816,
+    "testFLmean": 0.21058569597119484,
+    "testCaptureMedian": 0.9558948261238337,
+    "testCaptureMean": 0.8986652381590108,
+    "interruptedShare": 0.5263157894736842,
+    "neverDetectedShare": 0.005847953216374213,
+    "latencyWindowsMedian": 20.0,
+    "latencySecondsMedian": 6.456
+   },
+   "0.02": {
+    "q": 5,
+    "rule": "vote",
+    "n": 20,
+    "k": 12,
+    "calFL": 0.008097165991902834,
+    "calCap": 0.8732467717771278,
+    "flBudget": 0.02,
+    "testFLmedian": 0.056818181818181816,
+    "testFLmean": 0.21058569597119484,
+    "testCaptureMedian": 0.9558948261238337,
+    "testCaptureMean": 0.8986652381590108,
+    "interruptedShare": 0.5263157894736842,
+    "neverDetectedShare": 0.005847953216374213,
+    "latencyWindowsMedian": 20.0,
+    "latencySecondsMedian": 6.456
+   },
+   "0.05": {
+    "q": 5,
+    "rule": "vote",
+    "n": 20,
+    "k": 11,
+    "calFL": 0.04597701149425287,
+    "calCap": 0.9106870229007633,
+    "flBudget": 0.05,
+    "testFLmedian": 0.09090909090909091,
+    "testFLmean": 0.2513325904098109,
+    "testCaptureMedian": 0.9711620016963529,
+    "testCaptureMean": 0.92482478460783,
+    "interruptedShare": 0.6842105263157895,
+    "neverDetectedShare": 0.0,
+    "latencyWindowsMedian": 20.0,
+    "latencySecondsMedian": 6.456
+   }
+  }
+ },
+ "old": {
+  "window": {
+   "auc": 0.8775485432647198,
+   "eer": 0.1858981626587303,
+   "tar01": 0.32934302958227823
+  },
+  "aucMedian": 0.8741788252899364,
+  "ops": {
+   "0.01": {
+    "q": 5,
+    "rule": "mean",
+    "n": 20,
+    "k": null,
+    "calFL": 0.0,
+    "calCap": 0.9221374045801527,
+    "flBudget": 0.01,
+    "testFLmedian": 0.0,
+    "testFLmean": 0.23314309180524842,
+    "testCaptureMedian": 0.991518235793045,
+    "testCaptureMean": 0.8476853711887862,
+    "interruptedShare": 0.42105263157894735,
+    "neverDetectedShare": 0.023391812865496964,
+    "latencyWindowsMedian": 20.0,
+    "latencySecondsMedian": 6.456
+   },
+   "0.02": {
+    "q": 5,
+    "rule": "mean",
+    "n": 20,
+    "k": null,
+    "calFL": 0.0,
+    "calCap": 0.9221374045801527,
+    "flBudget": 0.02,
+    "testFLmedian": 0.0,
+    "testFLmean": 0.23314309180524842,
+    "testCaptureMedian": 0.991518235793045,
+    "testCaptureMean": 0.8476853711887862,
+    "interruptedShare": 0.42105263157894735,
+    "neverDetectedShare": 0.023391812865496964,
+    "latencyWindowsMedian": 20.0,
+    "latencySecondsMedian": 6.456
+   },
+   "0.05": {
+    "q": 5,
+    "rule": "mean",
+    "n": 20,
+    "k": null,
+    "calFL": 0.0,
+    "calCap": 0.9221374045801527,
+    "flBudget": 0.05,
+    "testFLmedian": 0.0,
+    "testFLmean": 0.23314309180524842,
+    "testCaptureMedian": 0.991518235793045,
+    "testCaptureMean": 0.8476853711887862,
+    "interruptedShare": 0.42105263157894735,
+    "neverDetectedShare": 0.023391812865496964,
+    "latencyWindowsMedian": 20.0,
+    "latencySecondsMedian": 6.456
+   }
+  }
+ },
+ "diff_auc": {
+  "meanDiff": -0.010490988186230265,
+  "ci95": [
+   -0.04049752718121533,
+   0.016060362345016375
+  ],
+  "p": 0.4686,
+  "n": 19,
+  "bBetter": 9
+ },
+ "diff_tar01": {
+  "meanDiff": -0.009425057329196747,
+  "ci95": [
+   -0.06723570588569887,
+   0.04849404417070083
+  ],
+  "p": 0.7568,
+  "n": 19,
+  "bBetter": 9
+ },
+ "diff_eer": {
+  "meanDiff": 0.013335791723324327,
+  "ci95": [
+   -0.009691898206151345,
+   0.03913743851782961
+  ],
+  "p": 0.2894,
+  "n": 19,
+  "bBetter": 10
+ },
+ "deployedOperatingPoint": {
+  "q": 5,
+  "rule": "vote",
+  "n": 20,
+  "k": 12,
+  "calFL": 0.008097165991902834,
+  "calCap": 0.8732467717771278,
+  "flBudget": 0.01,
+  "testFLmedian": 0.056818181818181816,
+  "testFLmean": 0.21058569597119484,
+  "testCaptureMedian": 0.9558948261238337,
+  "testCaptureMean": 0.8986652381590108,
+  "interruptedShare": 0.5263157894736842,
+  "neverDetectedShare": 0.005847953216374213,
+  "latencyWindowsMedian": 20.0,
+  "latencySecondsMedian": 6.456
+ }
+}

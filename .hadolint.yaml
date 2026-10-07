@@ -1,0 +1,5 @@
+# Dockerfile lint settings for CI (.github/workflows/ci.yml).
+failure-threshold: error
+ignored:
+  # COPY --from=sdk refers to a named build context (additional_contexts / build-contexts), not a stage.
+  - DL3022

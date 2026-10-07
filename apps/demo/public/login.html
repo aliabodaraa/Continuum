@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Continuous Auth — Sign In</title>
@@ -240,6 +242,8 @@
     function showError(msg) { const el = document.getElementById("alertError"); el.textContent = msg; el.style.display = "block"; document.getElementById("alertSuccess").style.display = "none"; }
     function showSuccess(msg) { const el = document.getElementById("alertSuccess"); el.textContent = msg; el.style.display = "block"; document.getElementById("alertError").style.display = "none"; }
     function showRecovery() { document.getElementById("alertRecovery").style.display = "block"; }
+    // Where to go after signing in: a path on this site only ("/x", never "//host" or "/\host").
+    const NEXT = (() => { const n = new URLSearchParams(location.search).get("next") || ""; return /^\/(?![\/\\])/.test(n) ? n : ""; })();
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       setLoading(submitBtn, true, "Signing in…");
@@ -249,6 +253,8 @@
         const res = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) });
         const data = await res.json();
         if (!res.ok) { showError(data.error || "Login failed"); return; }
+        // Signing in to the Continuum Guard extension (/continuum/link) returns there, not to the dashboard.
+        if (NEXT) { showSuccess("Logged in. Returning to Continuum Guard…"); window.location.href = NEXT; return; }
         if (data.passkeySetupRequired) { showSuccess("Logged in. Please register a passkey to continue…"); setTimeout(() => (window.location.href = "/dashboard.html"), 900); return; }
         if (data.typingStatus && !data.typingStatus.trained) { showSuccess("Logged in. Rhythm enrollment required…"); setTimeout(() => (window.location.href = "/dashboard.html"), 900); return; }
         showSuccess("Login successful. Redirecting…");

@@ -1,0 +1,232 @@
+{
+  "task": "per-user verification on held-out users (open enrolment)",
+  "design": "3 extractors x 2 verification heads, everything else held constant",
+  "heldConstant": [
+    "holdout users",
+    "base users",
+    "representation (50x7)",
+    "single shared scaler",
+    "enrolment budget",
+    "genuine test session",
+    "contiguous impostor runs",
+    "negative pool",
+    "frozen extractor",
+    "metrics",
+    "threshold rule",
+    "bootstrap"
+  ],
+  "inherentAsymmetry": "binary head sees negatives; OCSVM sees only the target's own samples -- inherent to a one-class method, reported not corrected",
+  "voteRule": "15-of-20",
+  "cells": {
+    "lu_cnn_gru+binary": {
+      "extractor": "lu_cnn_gru",
+      "head": "binary",
+      "description": "Lu et al. 2020 (keystroke) - Conv1D(32,k2) + 2x GRU(32) | supervised binary head - REQUIRES negatives",
+      "bySeed": {
+        "0": [
+          {
+            "participant": "user1",
+            "eer": 0.28795920993373225,
+            "auc": 0.7857020309249608,
+            "tarAtFar01": 0.08585858585858586,
+            "tarAtFar05": 0.25252525252525254,
+            "farAtTau": 0.24628450106157113,
+            "tarAtTau": 0.7070707070707071,
+            "decisionFalseLock": 0.0,
+            "decisionCaught": 0.6024639253838385,
+            "embeddingDim": 1568,
+            "secs": 1.9
+          },
+          {
+            "participant": "user8",
+            "eer": 0.3488953506261731,
+            "auc": 0.7203743021152788,
+            "tarAtFar01": 0.03864734299516908,
+            "tarAtFar05": 0.1932367149758454,
+            "farAtTau": 0.3832271762208068,
+            "tarAtTau": 0.6666666666666666,
+            "decisionFalseLock": 0.015957446808510637,
+            "decisionCaught": 0.3768469114571404,
+            "embeddingDim": 1568,
+            "secs": 2.2
+          }
+        ]
+      }
+    },
+    "lu_cnn_gru+ocsvm": {
+      "extractor": "lu_cnn_gru",
+      "head": "ocsvm",
+      "description": "Lu et al. 2020 (keystroke) - Conv1D(32,k2) + 2x GRU(32) | One-Class SVM - target's own samples only",
+      "bySeed": {
+        "0": [
+          {
+            "participant": "user1",
+            "eer": 0.45015441034549314,
+            "auc": 0.5836639573369934,
+            "tarAtFar01": 0.025252525252525252,
+            "tarAtFar05": 0.06565656565656566,
+            "farAtTau": 0.6256192498230715,
+            "tarAtTau": 0.7575757575757576,
+            "decisionFalseLock": 0.0,
+            "decisionCaught": 0.22418642024909605,
+            "embeddingDim": 1568,
+            "secs": 1.5
+          },
+          {
+            "participant": "user8",
+            "eer": 0.37194221360657254,
+            "auc": 0.6905938986156839,
+            "tarAtFar01": 0.043478260869565216,
+            "tarAtFar05": 0.1497584541062802,
+            "farAtTau": 0.4554140127388535,
+            "tarAtTau": 0.7246376811594203,
+            "decisionFalseLock": 0.0,
+            "decisionCaught": 0.3579750903977501,
+            "embeddingDim": 1568,
+            "secs": 0.4
+          }
+        ]
+      }
+    },
+    "antal_twotower+binary": {
+      "extractor": "antal_twotower",
+      "head": "binary",
+      "description": "Antal & Fejer 2020 (mouse) - two-tower 1D CNN | supervised binary head - REQUIRES negatives",
+      "bySeed": {
+        "0": [
+          {
+            "participant": "user1",
+            "eer": 0.2829569581161938,
+            "auc": 0.7844331496136167,
+            "tarAtFar01": 0.010101010101010102,
+            "tarAtFar05": 0.15656565656565657,
+            "farAtTau": 0.32873319179051663,
+            "tarAtTau": 0.797979797979798,
+            "decisionFalseLock": 0.0,
+            "decisionCaught": 0.4570765574133664,
+            "embeddingDim": 60,
+            "secs": 2.0
+          },
+          {
+            "participant": "user8",
+            "eer": 0.3949890765869719,
+            "auc": 0.6973103445917994,
+            "tarAtFar01": 0.033816425120772944,
+            "tarAtFar05": 0.12077294685990338,
+            "farAtTau": 0.5318471337579618,
+            "tarAtTau": 0.8405797101449275,
+            "decisionFalseLock": 0.0,
+            "decisionCaught": 0.27090037285551755,
+            "embeddingDim": 60,
+            "secs": 2.0
+          }
+        ]
+      }
+    },
+    "antal_twotower+ocsvm": {
+      "extractor": "antal_twotower",
+      "head": "ocsvm",
+      "description": "Antal & Fejer 2020 (mouse) - two-tower 1D CNN | One-Class SVM - target's own samples only",
+      "bySeed": {
+        "0": [
+          {
+            "participant": "user1",
+            "eer": 0.39442192626906003,
+            "auc": 0.660302601385404,
+            "tarAtFar01": 0.05555555555555555,
+            "tarAtFar05": 0.10606060606060606,
+            "farAtTau": 0.416135881104034,
+            "tarAtTau": 0.6262626262626263,
+            "decisionFalseLock": 0.0335195530726257,
+            "decisionCaught": 0.3599839292888711,
+            "embeddingDim": 60,
+            "secs": 0.2
+          },
+          {
+            "participant": "user8",
+            "eer": 0.37318071325271546,
+            "auc": 0.7064029320560291,
+            "tarAtFar01": 0.04830917874396135,
+            "tarAtFar05": 0.09178743961352658,
+            "farAtTau": 0.4288747346072187,
+            "tarAtTau": 0.7294685990338164,
+            "decisionFalseLock": 0.0,
+            "decisionCaught": 0.372840498192045,
+            "embeddingDim": 60,
+            "secs": 0.2
+          }
+        ]
+      }
+    },
+    "sapi_fcn+binary": {
+      "extractor": "sapi_fcn",
+      "head": "binary",
+      "description": "SapiMouse 2021 (mouse) - FCN, GAP-128 embedding | supervised binary head - REQUIRES negatives",
+      "bySeed": {
+        "0": [
+          {
+            "participant": "user1",
+            "eer": 0.19703403461365243,
+            "auc": 0.8911138990756825,
+            "tarAtFar01": 0.20202020202020202,
+            "tarAtFar05": 0.45454545454545453,
+            "farAtTau": 0.13481953290870488,
+            "tarAtTau": 0.7222222222222222,
+            "decisionFalseLock": 0.0,
+            "decisionCaught": 0.851345922057051,
+            "embeddingDim": 128,
+            "secs": 1.8
+          },
+          {
+            "participant": "user8",
+            "eer": 0.3565571248346103,
+            "auc": 0.7055071779986393,
+            "tarAtFar01": 0.014492753623188406,
+            "tarAtFar05": 0.09178743961352658,
+            "farAtTau": 0.32661004953998585,
+            "tarAtTau": 0.5990338164251208,
+            "decisionFalseLock": 0.05319148936170213,
+            "decisionCaught": 0.4969867416633185,
+            "embeddingDim": 128,
+            "secs": 1.9
+          }
+        ]
+      }
+    },
+    "sapi_fcn+ocsvm": {
+      "extractor": "sapi_fcn",
+      "head": "ocsvm",
+      "description": "SapiMouse 2021 (mouse) - FCN, GAP-128 embedding | One-Class SVM - target's own samples only",
+      "bySeed": {
+        "0": [
+          {
+            "participant": "user1",
+            "eer": 0.27171395483497396,
+            "auc": 0.8182139870037959,
+            "tarAtFar01": 0.09595959595959595,
+            "tarAtFar05": 0.2828282828282828,
+            "farAtTau": 0.2105449398443029,
+            "tarAtTau": 0.6616161616161617,
+            "decisionFalseLock": 0.0,
+            "decisionCaught": 0.6528726396143029,
+            "embeddingDim": 128,
+            "secs": 0.2
+          },
+          {
+            "participant": "user8",
+            "eer": 0.35850333856426353,
+            "auc": 0.7057037652440588,
+            "tarAtFar01": 0.014492753623188406,
+            "tarAtFar05": 0.11594202898550725,
+            "farAtTau": 0.33899504600141545,
+            "tarAtTau": 0.6038647342995169,
+            "decisionFalseLock": 0.031914893617021274,
+            "decisionCaught": 0.4744877460827641,
+            "embeddingDim": 128,
+            "secs": 0.2
+          }
+        ]
+      }
+    }
+  }
+}

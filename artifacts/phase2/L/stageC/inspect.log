@@ -1,0 +1,133 @@
+[inspect] user1: 958 internal / 958 external test files, enrolment 440 windows, genuine after enrolment 434
+[inspect] user2: 276 internal / 276 external test files, enrolment 440 windows, genuine after enrolment 162
+[inspect] user3: 6908 internal / 4447 external test files, enrolment 440 windows, genuine after enrolment 6508
+[inspect] user4: 2996 internal / 2491 external test files, enrolment 440 windows, genuine after enrolment 1576
+[inspect] user5: 16688 internal / 9337 external test files, enrolment 440 windows, genuine after enrolment 15672
+[inspect] user6: 5322 internal / 3654 external test files, enrolment 440 windows, genuine after enrolment 4268
+[inspect] user7: 7936 internal / 4961 external test files, enrolment 440 windows, genuine after enrolment 7306
+[inspect] user8: 3782 internal / 2884 external test files, enrolment 440 windows, genuine after enrolment 3460
+[inspect] user9: 7778 internal / 4882 external test files, enrolment 440 windows, genuine after enrolment 7778
+[inspect] user10: 898 internal / 898 external test files, enrolment 440 windows, genuine after enrolment 898
+[inspect] user11: 6252 internal / 4119 external test files, enrolment 440 windows, genuine after enrolment 5848
+[inspect] user12: 4736 internal / 3361 external test files, enrolment 440 windows, genuine after enrolment 4242
+[inspect] user13: 4278 internal / 3132 external test files, enrolment 440 windows, genuine after enrolment 3372
+[inspect] user14: 4314 internal / 3150 external test files, enrolment 440 windows, genuine after enrolment 2406
+[inspect] user15: 288 internal / 288 external test files, enrolment 440 windows, genuine after enrolment 226
+[inspect] user16: 1806 internal / 1806 external test files, enrolment 440 windows, genuine after enrolment 1666
+[inspect] user17: 4994 internal / 3490 external test files, enrolment 440 windows, genuine after enrolment 3820
+[inspect] user18: 1472 internal / 1472 external test files, enrolment 440 windows, genuine after enrolment 258
+[inspect] user19: 12604 internal / 7295 external test files, enrolment 440 windows, genuine after enrolment 10752
+{
+ "root": "/app/data/bogazici/extracted/boun-mouse-dynamics-dataset",
+ "labels": {
+  "rows": 157187,
+  "counts": {
+   "1": 62901,
+   "0": 94286
+  }
+ },
+ "vocab": {
+  "state": {
+   "Move": 345761,
+   "Drag": 17829,
+   "Pressed": 4028,
+   "Released": 4027
+  },
+  "button": {
+   "NoButton": 363590,
+   "Left": 6261,
+   "Right": 1794
+  }
+ },
+ "fileNames": {
+  "files": 157377,
+  "unique": 157377,
+  "testFiles": 157187,
+  "testFilesNotInLabels": 0,
+  "labelsNotInTestFiles": 0
+ },
+ "eventRate": {
+  "medianMoveIntervalMsRaw": [
+   10.0,
+   8.0,
+   10.000244140625,
+   9.0,
+   10.0,
+   15.000244140625,
+   8.0,
+   8.0,
+   8.0,
+   8.0,
+   9.0,
+   8.0,
+   8.0,
+   8.0,
+   8.0,
+   8.0,
+   8.0,
+   8.0,
+   8.000244140625
+  ],
+  "medianMoveIntervalMsCoalesced": [
+   17.0,
+   16.0,
+   16.000244140625,
+   16.999755859375,
+   17.999755859375,
+   16.0,
+   16.0,
+   16.0,
+   16.0,
+   16.0,
+   16.000244140625,
+   16.0,
+   16.0,
+   16.0,
+   16.000244140625,
+   16.0,
+   16.0,
+   16.0,
+   16.0
+  ]
+ },
+ "firstLines": {
+  "user1/training/session_122839150245.csv": [
+   "client_timestamp,x,y,button,state,window",
+   "1570169899.971,694,489,None,Move,browsing",
+   "1570169899.99,703,473,None,Move,browsing",
+   "1570169900.0089998,713,454,None,Move,browsing"
+  ],
+  "user1/internal_tests/session_1006787515335302874715875.csv": [
+   "client_timestamp,x,y,button,state,window",
+   "1574171866.946,980,-434,None,Move,office",
+   "1574171867.184,980,-434,None,Move,office",
+   "1574171867.1920002,979,-433,None,Move,office"
+  ],
+  "user1/external_tests/session_1000796189725513024725757.csv": [
+   "client_timestamp,x,y,button,state,window",
+   "1563885604.324,827,198,None,Move,browsing",
+   "1563885604.325,827,200,None,Move,browsing",
+   "1563885604.3279998,825,200,None,Move,browsing"
+  ],
+  "user2/training/session_12385422861.csv": [
+   "client_timestamp,x,y,button,state,window",
+   "1563786457.198,1242,460,None,Move,",
+   "1563786457.205,1243,460,None,Move,",
+   "1563786482.972,974,529,None,Move,file system"
+  ],
+  "user2/internal_tests/session_1010802986432598512179217.csv": [
+   "client_timestamp,x,y,button,state,window",
+   "1574929522.627,2696,882,Left,Pressed,browsing",
+   "1574929522.7429998,2696,882,Left,Released,browsing",
+   "1574929538.91,2695,880,None,Move,browsing"
+  ],
+  "user2/external_tests/session_1018796424043303249465293.csv": [
+   "client_timestamp,x,y,button,state,window",
+   "1564561370.342,882,858,None,Move,entertainment",
+   "1564561370.35,882,858,None,Move,entertainment",
+   "1564561370.3579998,881,858,None,Move,entertainment"
+  ]
+ }
+}
+wrote /app/artifacts/phase2/L/stageC/bogazici_inspect.json
+EXIT 0

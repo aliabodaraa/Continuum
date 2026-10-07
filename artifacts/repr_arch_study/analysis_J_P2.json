@@ -1,0 +1,185 @@
+{
+ "preregistrationJSha256": "23db222bdb4916e5e316dc9c1fde9ced1701e066cfd3c6fcb4e7e976063b7f98",
+ "splitJSha256": "4df1abbeaf904e2be02623b6d04549a9c66719878b687d8f27d2f21287759192",
+ "phase": "P2",
+ "method": "B",
+ "operatingPoint": {
+  "q": 40,
+  "rule": "vote",
+  "n": 40,
+  "k": 37,
+  "budget": 0.2,
+  "cal": {
+   "promptsPerMinMean": 0.19088431933037778,
+   "promptsPerMinMedian": 0.0,
+   "usersNeverPrompted": 0.9473684210526315,
+   "interruptionMean": 0.05263157894736842,
+   "impostorRunsCaught": 0.8368421052631579,
+   "impostorRunsNeverCaught": 0.16315789473684206,
+   "timeToCatchMedianS": 12.374
+  }
+ },
+ "testHalvesIdentityOrder": {
+  "promptsPerMinMean": 0.28953461881624526,
+  "promptsPerMinMedian": 0.0,
+  "usersNeverPrompted": 0.8947368421052632,
+  "interruptionMean": 0.06015037593984962,
+  "impostorRunsCaught": 0.8713450292397661,
+  "impostorRunsNeverCaught": 0.1286549707602339,
+  "timeToCatchMedianS": 12.374
+ },
+ "perUser": {
+  "user1": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 10,
+   "interruption": 0.0,
+   "lowWindowRate": 0.13131313131313133,
+   "runsCaught": 0.4444444444444444
+  },
+  "user101": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 6,
+   "interruption": 0.0,
+   "lowWindowRate": 0.3116883116883117,
+   "runsCaught": 0.7777777777777778
+  },
+  "user104": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 14,
+   "interruption": 0.0,
+   "lowWindowRate": 0.3008130081300813,
+   "runsCaught": 0.4444444444444444
+  },
+  "user107": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 8,
+   "interruption": 0.0,
+   "lowWindowRate": 0.2840909090909091,
+   "runsCaught": 1.0
+  },
+  "user108": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 11,
+   "interruption": 0.0,
+   "lowWindowRate": 0.5887850467289719,
+   "runsCaught": 1.0
+  },
+  "user111": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 9,
+   "interruption": 0.0,
+   "lowWindowRate": 0.6923076923076923,
+   "runsCaught": 1.0
+  },
+  "user115": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 11,
+   "interruption": 0.0,
+   "lowWindowRate": 0.7115384615384616,
+   "runsCaught": 1.0
+  },
+  "user119": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 11,
+   "interruption": 0.0,
+   "lowWindowRate": 0.29245283018867924,
+   "runsCaught": 0.8888888888888888
+  },
+  "user16": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 10,
+   "interruption": 0.0,
+   "lowWindowRate": 0.4948453608247423,
+   "runsCaught": 0.7777777777777778
+  },
+  "user19": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 38,
+   "interruption": 0.0,
+   "lowWindowRate": 0.2397003745318352,
+   "runsCaught": 1.0
+  },
+  "user29": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 14,
+   "interruption": 0.0,
+   "lowWindowRate": 0.4462809917355372,
+   "runsCaught": 1.0
+  },
+  "user69": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 12,
+   "interruption": 0.0,
+   "lowWindowRate": 0.12727272727272726,
+   "runsCaught": 0.6666666666666666
+  },
+  "user70": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 11,
+   "interruption": 0.0,
+   "lowWindowRate": 0.5943396226415094,
+   "runsCaught": 0.7777777777777778
+  },
+  "user8": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 11,
+   "interruption": 0.0,
+   "lowWindowRate": 0.5384615384615384,
+   "runsCaught": 0.7777777777777778
+  },
+  "user85": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 9,
+   "interruption": 0.0,
+   "lowWindowRate": 0.6526315789473685,
+   "runsCaught": 1.0
+  },
+  "user86": {
+   "promptsPerMin": 1.8743556902314826,
+   "prompts": 1,
+   "decisions": 7,
+   "interruption": 0.14285714285714285,
+   "lowWindowRate": 0.7394957983193278,
+   "runsCaught": 1.0
+  },
+  "user89": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 15,
+   "interruption": 0.0,
+   "lowWindowRate": 0.23255813953488372,
+   "runsCaught": 1.0
+  },
+  "user9": {
+   "promptsPerMin": 0.0,
+   "prompts": 0,
+   "decisions": 13,
+   "interruption": 0.0,
+   "lowWindowRate": 0.19327731092436976,
+   "runsCaught": 1.0
+  },
+  "user91": {
+   "promptsPerMin": 3.6268020672771777,
+   "prompts": 2,
+   "decisions": 2,
+   "interruption": 1.0,
+   "lowWindowRate": 1.0,
+   "runsCaught": 1.0
+  }
+ }
+}

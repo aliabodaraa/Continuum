@@ -1,0 +1,25 @@
+{
+ "seed": 13,
+ "holdout_users": [
+  "user1",
+  "user8",
+  "user9",
+  "user16",
+  "user19",
+  "user29",
+  "user69",
+  "user70",
+  "user85",
+  "user86",
+  "user89",
+  "user91",
+  "user98",
+  "user101",
+  "user104",
+  "user107",
+  "user108",
+  "user111",
+  "user115",
+  "user119"
+ ]
+}

@@ -13,11 +13,24 @@ fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new Database(dbPath);
 
+// Additive migration for databases created before text_hash/char_count existed.
+function addColumnIfMissing(table, column, decl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (cols.length && !cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS keystroke_texts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
-    text_content TEXT NOT NULL,
+    -- text_content was removed: the plaintext a user typed is no longer stored anywhere.
+    -- Derived from the text in memory at write time so nothing downstream needs the text
+    -- itself. Every stored-text consumer compares samples for EQUALITY (alias detection,
+    -- duplicate detection, prompt-reuse detection) or wants a LENGTH (paste coverage,
+    -- character totals); none needs the words. Keeping these two lets the plaintext be
+    -- dropped without losing any capability.
+    text_hash TEXT,
+    char_count INTEGER,
     keystroke_timings TEXT,
     model_confidence REAL,
     is_suspicious INTEGER DEFAULT 0,
@@ -87,6 +100,185 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_ke_text ON keystroke_events(keystroke_text_id);
   CREATE INDEX IF NOT EXISTS idx_ad_user ON auth_decisions(user_id);
   CREATE INDEX IF NOT EXISTS idx_mouse_samples_user ON mouse_samples(user_id);
+
+  -- Action-based mouse profile (Antal & Egyed-Zsigmond, IET Biometrics 2019).
+  -- Separate from mouse_profiles/mouse_samples: the two pipelines store
+  -- different things (39-feature action vectors vs 50x7 windows) and must be
+  -- able to coexist while the window path is kept as a comparison arm.
+  CREATE TABLE IF NOT EXISTS mouse_action_profiles (
+    user_id INTEGER PRIMARY KEY,
+    model_path TEXT NOT NULL,
+    sample_actions INTEGER NOT NULL,
+    trained_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS mouse_action_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    actions TEXT NOT NULL,
+    action_count INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_mouse_action_samples_user ON mouse_action_samples(user_id);
+
+  -- DURABLE DECISION STATE.
+  --
+  -- The keystroke challenge debounce (2 of the last 3 checks) and the mouse suspicious
+  -- streak used to live in process memory: a 'Map' in ca-service, another 'Map' in the
+  -- gateway, and 'req.session.mouseSuspiciousStreak' in the demo. Three copies of one
+  -- fact, all of them lost on restart.
+  --
+  -- The failure that matters is not the lost counter, it is WHO benefits from losing it.
+  -- An impostor one suspicious check away from a step-up gets a clean slate from any
+  -- restart — a deploy, a crash, an OOM kill. The debounce exists precisely to accumulate
+  -- evidence across checks, so state that cannot survive a restart is a debounce with a
+  -- reset button. It is also why the gateway cannot run two replicas: two processes would
+  -- each hold half the evidence and neither would ever reach the threshold.
+  --
+  -- Generic (user_id, key) rather than a column per counter: these are small, they change
+  -- together, and new modalities should not need a migration to get one.
+  CREATE TABLE IF NOT EXISTS decision_state (
+    user_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, key)
+  );
+
+  -- DURABLE TRAINING QUEUE.
+  --
+  -- Adaptive retraining used to be 'setImmediate(...)' guarded by an in-memory Set. Both
+  -- halves failed on restart: the in-flight run vanished mid-training (leaving a possibly
+  -- half-written model directory), and the guard that prevents a duplicate run vanished
+  -- with it. Nothing recorded that training had been owed, so the work was simply lost and
+  -- the user's model silently stopped keeping up with them.
+  --
+  -- A row is the durable record of owed work. 'state' makes an interrupted run recoverable:
+  -- on boot the worker returns anything still marked 'running' to 'queued', because a
+  -- process that is gone cannot be running anything. 'attempts' bounds the retry so a
+  -- permanently unsatisfiable job (corrupt samples, a model shape that no longer loads)
+  -- fails loudly instead of spinning forever.
+  CREATE TABLE IF NOT EXISTS training_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    modality TEXT NOT NULL DEFAULT 'keystroke',
+    state TEXT NOT NULL DEFAULT 'queued',   -- queued | running | done | failed
+    reason TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    started_at DATETIME,
+    finished_at DATETIME
+  );
+
+  -- The worker claims by (state, id) and callers dedupe by (user_id, modality, state).
+  CREATE INDEX IF NOT EXISTS idx_jobs_state ON training_jobs(state, id);
+  CREATE INDEX IF NOT EXISTS idx_jobs_user ON training_jobs(user_id, modality, state);
 `);
+
+// Run after the CREATE TABLEs so both fresh and existing databases end up with the columns.
+addColumnIfMissing("keystroke_texts", "text_hash", "TEXT");
+addColumnIfMissing("keystroke_texts", "char_count", "INTEGER");
+// Mouse profiles now carry the per-user decision threshold (5th percentile of the user's own
+// enrolment scores) and the feature version the model was trained on, so a profile built on the
+// retired 7-feature representation is recognised and retrained instead of mis-scored.
+addColumnIfMissing("mouse_profiles", "threshold", "REAL");
+addColumnIfMissing("mouse_profiles", "feature_version", "TEXT");
+addColumnIfMissing("mouse_profiles", "enrol_percentiles", "TEXT");
+// S1 (lib/mouse.js): the threshold comes from leave-one-sample-out scores, whose percentile table is
+// stored beside the in-sample one, and every profile records the decision rule it was trained for,
+// so a profile from an earlier rule is rebuilt rather than scored against the current vote.
+addColumnIfMissing("mouse_profiles", "loso_percentiles", "TEXT");
+addColumnIfMissing("mouse_profiles", "decision_version", "TEXT");
+// One row per scored mouse check (lib/mouse.js checkMouse): what the model saw and decided.
+db.exec(`CREATE TABLE IF NOT EXISTS mouse_decisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  checked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  window_count INTEGER,
+  threshold REAL,
+  low_windows INTEGER,
+  vote_k INTEGER,
+  vote_n INTEGER,
+  warmup INTEGER,
+  suspicious INTEGER,
+  scores TEXT
+)`);
+db.exec("CREATE INDEX IF NOT EXISTS idx_mouse_decisions_user ON mouse_decisions(user_id, id)");
+
+// USER STUDY LOGGING (docs/recovery/user_study/LOGGING_SPEC.md; lib/studyLog.js). Written only when
+// STUDY_LOGGING=1 and the request carries a study context, so production databases stay empty here.
+// Scores are stored at full precision: EER and AUC are computed offline from them.
+db.exec(`
+  -- Which Continuum user is which study participant (pseudonym only; the key to real names is offline).
+  CREATE TABLE IF NOT EXISTS study_participants (
+    user_id INTEGER PRIMARY KEY,
+    pseudonym TEXT NOT NULL UNIQUE,
+    first_seen DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  -- One row per (re)training: the model and every score its threshold source produced.
+  CREATE TABLE IF NOT EXISTS study_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    channel TEXT NOT NULL,                 -- keystroke | mouse
+    rule_version TEXT NOT NULL,
+    threshold REAL,
+    threshold_source TEXT,
+    model_path TEXT,
+    model_sha256 TEXT,
+    window_count INTEGER,
+    threshold_scores TEXT,                 -- JSON array, full precision
+    trained_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  -- One row per scored check (decision), and the prompt it led to.
+  CREATE TABLE IF NOT EXISTS study_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    session_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    condition TEXT NOT NULL,
+    client_ts REAL,
+    rule_version TEXT,
+    threshold REAL,
+    window_count INTEGER,
+    low_windows INTEGER,
+    verdict TEXT,                          -- warmup | ok | suspicious | challenge
+    prompt_required INTEGER DEFAULT 0,
+    checked_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  -- One row per window scored by a check. Checks overlap, so a window is scored again by later
+  -- checks; window_key identifies it (mouse: the client's counter; keystroke: its first and last
+  -- step's client timestamps), and the export keeps each window once.
+  CREATE TABLE IF NOT EXISTS study_windows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    decision_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    session_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    condition TEXT NOT NULL,
+    window_key TEXT NOT NULL,
+    score REAL NOT NULL,
+    day_since_enrolment INTEGER
+  );
+  -- Passkey prompts as the client saw them: shown, then passed / failed / dismissed.
+  CREATE TABLE IF NOT EXISTS study_prompts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    session_id TEXT NOT NULL,
+    channel TEXT,
+    decision_id INTEGER,
+    event TEXT NOT NULL,                   -- shown | passed | failed | dismissed
+    client_ts REAL,
+    logged_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_study_windows_user ON study_windows(user_id, id);
+  CREATE INDEX IF NOT EXISTS idx_study_decisions_user ON study_decisions(user_id, id);
+  CREATE INDEX IF NOT EXISTS idx_study_profiles_user ON study_profiles(user_id, id);
+`);
+// The inputs of a decision's verdict besides its scores (JSON), so an export can be replayed exactly.
+addColumnIfMissing("study_decisions", "details", "TEXT");
+// Which study client produced the decision: "extension-study" (the participant's own browser) or "lab".
+addColumnIfMissing("study_decisions", "client", "TEXT");
 
 module.exports = db;

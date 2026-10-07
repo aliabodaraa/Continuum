@@ -1,0 +1,23 @@
+{
+ "preregistrationJSha256": "23db222bdb4916e5e316dc9c1fde9ced1701e066cfd3c6fcb4e7e976063b7f98",
+ "splitJSha256": "4df1abbeaf904e2be02623b6d04549a9c66719878b687d8f27d2f21287759192",
+ "preregistrationKSha256": "c602b16b80c1a1b36e6f70aa3669e8556f0693f3f71fb94ad9e5a7df91fbec3e",
+ "phase": "K2-point",
+ "budget": "FULL",
+ "operatingPoint": {
+  "q": 20,
+  "rule": "vote",
+  "n": 40,
+  "k": 29,
+  "budget": 0.2,
+  "cal": {
+   "promptsPerMinMean": 0.19088431933037778,
+   "promptsPerMinMedian": 0.0,
+   "usersNeverPrompted": 0.9473684210526315,
+   "interruptionMean": 0.05263157894736842,
+   "impostorRunsCaught": 0.9315789473684211,
+   "impostorRunsNeverCaught": 0.06842105263157894,
+   "timeToCatchMedianS": 12.374
+  }
+ }
+}

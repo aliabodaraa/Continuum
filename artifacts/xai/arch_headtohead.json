@@ -1,0 +1,99 @@
+{
+  "question": "Does the mouse-derived architecture beat the keystroke-derived one on mouse data, everything else held constant?",
+  "heldConstant": [
+    "windows",
+    "subject holdout",
+    "temporal split",
+    "scaler",
+    "class count",
+    "optimiser",
+    "callbacks"
+  ],
+  "runs": [
+    {
+      "arm": "lu_cnn_2gru",
+      "top1": 0.42313323572474376,
+      "top5": 0.7215867496339677,
+      "trainableParams": 170052,
+      "epochsRun": 40,
+      "bestValLoss": 1.762831211090088,
+      "seed": 17,
+      "description": "Lu et al. 2020 (keystroke) -- Conv1D(32,k2) + 2x GRU(32)"
+    },
+    {
+      "arm": "lu_cnn_2gru",
+      "top1": 0.3838762811127379,
+      "top5": 0.6841599560761347,
+      "trainableParams": 170052,
+      "epochsRun": 36,
+      "bestValLoss": 2.0184550285339355,
+      "seed": 18,
+      "description": "Lu et al. 2020 (keystroke) -- Conv1D(32,k2) + 2x GRU(32)"
+    },
+    {
+      "arm": "lu_cnn_2gru",
+      "top1": 0.4222181551976574,
+      "top5": 0.706121888726208,
+      "trainableParams": 170052,
+      "epochsRun": 40,
+      "bestValLoss": 1.8308345079421997,
+      "seed": 19,
+      "description": "Lu et al. 2020 (keystroke) -- Conv1D(32,k2) + 2x GRU(32)"
+    },
+    {
+      "arm": "antal_two_tower",
+      "top1": 0.33757320644216693,
+      "top5": 0.6311310395314788,
+      "trainableParams": 28360,
+      "epochsRun": 27,
+      "bestValLoss": 2.338343620300293,
+      "seed": 17,
+      "description": "Antal & Fejer 2020 (mouse) -- two-tower 1D CNN, verified vs AFE_Project"
+    },
+    {
+      "arm": "antal_two_tower",
+      "top1": 0.3162975841874085,
+      "top5": 0.611090775988287,
+      "trainableParams": 28360,
+      "epochsRun": 24,
+      "bestValLoss": 2.3278212547302246,
+      "seed": 18,
+      "description": "Antal & Fejer 2020 (mouse) -- two-tower 1D CNN, verified vs AFE_Project"
+    },
+    {
+      "arm": "antal_two_tower",
+      "top1": 0.3277818448023426,
+      "top5": 0.6148883601756955,
+      "trainableParams": 28360,
+      "epochsRun": 25,
+      "bestValLoss": 2.3458471298217773,
+      "seed": 19,
+      "description": "Antal & Fejer 2020 (mouse) -- two-tower 1D CNN, verified vs AFE_Project"
+    }
+  ],
+  "summary": {
+    "lu_cnn_2gru": {
+      "description": "Lu et al. 2020 (keystroke) -- Conv1D(32,k2) + 2x GRU(32)",
+      "n": 3,
+      "top1Mean": 0.40974255734504633,
+      "top1Std": 0.01829403414025688,
+      "top1Runs": [
+        0.42313323572474376,
+        0.3838762811127379,
+        0.4222181551976574
+      ]
+    },
+    "antal_two_tower": {
+      "description": "Antal & Fejer 2020 (mouse) -- two-tower 1D CNN, verified vs AFE_Project",
+      "n": 3,
+      "top1Mean": 0.32721754514397267,
+      "top1Std": 0.00869489701530426,
+      "top1Runs": [
+        0.33757320644216693,
+        0.3162975841874085,
+        0.3277818448023426
+      ]
+    }
+  },
+  "chance": 0.01
+}

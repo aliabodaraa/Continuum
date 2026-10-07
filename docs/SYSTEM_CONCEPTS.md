@@ -139,36 +139,41 @@ Nothing else. One comparison per window.
 
 ## 7. Packet Decision (Session-Level)
 
-**Packet = last 6 windows** (or fewer if not enough data yet).
+**Packet = last 20 windows.** Only a full packet gives a verdict: the server treats
+`windowCount <= 20` as warm-up, so the first verdict needs 21 windows. The paste, un-verifiable
+and overwhelming-impostor fast paths (`server.js`) still fire earlier.
 
 ```javascript
-RECENT_WINDOW_COUNT  = 6
-PACKET_VOTE_FRACTION = 0.34
+RECENT_WINDOW_COUNT  = 20
+PACKET_VOTE_FRACTION = 0.50
 ```
 
 ### Rule
 ```
-fraction = bad_windows / total_windows_in_packet
-if fraction >= 0.34  →  Suspicious
-else                 →  Genuine
+fraction = low_windows / 20            (a window is low when its genuine probability < 0.50)
+if fraction >= 0.50  →  Suspicious     (10 or more of 20)
+else                 →  Genuine        (9 of 20 are tolerated)
 ```
 
-### With different packet sizes
-| Windows available | Bad needed to flag | Fraction |
-|---|---|---|
-| 4 | 2 | 2/4 = 0.50 >= 0.34 ✓ |
-| 5 | 2 | 2/5 = 0.40 >= 0.34 ✓ |
-| 6 | 3 | 3/6 = 0.50 >= 0.34 ✓ (2/6=0.33 < 0.34, tolerated) |
+### Why 20, not Lu et al.'s 6
+Lu et al. decide on 6 windows. The 99-user paired sweep (`services/model-api/decision_sweep.py`,
+`analysis/decision_paired.py`; `artifacts/xai/decision_paired.json`) compared the two votes on
+identical scores: 10 of 20 cuts false locks by 8.84 points [6.41, 10.57] and catches 0.40 points
+more impostor packets [0.11, 0.74]. The cost is time: the first verdict needs about 42 s of typing
+instead of 18 s. It was measured earlier and kept at 6 only to match the base paper (manuscript
+§4-9b); the recovery plan adopted it on 2026-09-23. A majority vote amplifies whatever the window
+level gives it, in both directions: for a user whose genuine windows are mostly low anyway, 20
+windows make the false lock worse, not better (`validate_endtoend.py`).
 
-6 windows is the **designed operating point** from Lu et al. — at 6 windows,
-2 bad windows are tolerated, 3 are required to flag.
+### Why 0.50?
+Raised from an earlier ~1/3 fraction to reduce false rejections for genuine users who
+momentarily type differently, while still catching impostors — see the fraction's own
+history in `keystrokeSecurity.js`.
 
-Early checks (4–5 windows) are stricter by design: less data, less tolerance.
-
-### Why 0.34?
-Adapted from Lu et al. (2020). Their system used stride=1, so adjacent windows are
-nearly identical and a single attack spans many windows. Our stride=10 means 2 out
-of 6 windows ≈ 33% is the minimum meaningful signal. 0.34 sits just above that.
+### Adaptive learning keeps the old packet
+Adaptive contributions are still judged on the last `CONTRIBUTE_WINDOW_COUNT = 6` windows (at
+least 6 scored, all of them above the window floor), and the rolling mean on the last 18, so the
+packet change left adaptive learning exactly as it was.
 
 ---
 
@@ -196,7 +201,7 @@ their typing variance and the impostors in training.
 the validation split, EER is not computed and 0.65 default is used instead.
 
 ### PACKET_VOTE_FRACTION never changes
-0.34 is hardcoded. Only the EER threshold changes on retrain.
+0.50 is hardcoded (its history is in the constant's comment in `keystrokeSecurity.js`). Only the EER threshold changes on retrain.
 
 ---
 
@@ -209,8 +214,8 @@ What changes:
 - EER threshold (recomputed with new genuine/impostor data)
 
 What does NOT change:
-- PACKET_VOTE_FRACTION (0.34) — always fixed
-- RECENT_WINDOW_COUNT (6) — always fixed
+- PACKET_VOTE_FRACTION (0.50) — always fixed
+- RECENT_WINDOW_COUNT (20) — always fixed
 - WINDOW_SIZE (50) — always fixed
 - WINDOW_STRIDE (10) — always fixed
 

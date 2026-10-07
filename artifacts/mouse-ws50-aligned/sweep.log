@@ -1,0 +1,43 @@
+holdout 20 | usable targets 20 | running 20 | impostor identities 20
+negative pool (1200, 50, 7) from 100 base users
+budget 250 | epochs 15 | impostor run len 150
+targets, impostor identities and negative identities are disjoint sets
+
+   target  enrol   gen  imps     EER    AUC  FAR@.5  TAR@.5   T@F1%   secs
+    user1    250   198    19 18.76%  0.886  8.85% 56.06%  4.55%   42.0
+    user8    250   207    19 30.43%  0.771 13.48% 46.86%  7.25%   37.1
+    user9    250   237    19  8.38%  0.974  6.02% 89.45% 63.29%   38.8
+   user16    250   194    19 31.45%  0.738 28.56% 62.37%  4.64%   41.6
+   user19    250   533    19  0.00%  1.000  0.00% 94.75% 100.00%   41.6
+   user29    250   242    19 19.46%  0.888 12.07% 70.25%  9.50%   39.7
+   user69    250   219    19 26.48%  0.811 12.07% 46.58%  7.76%   34.3
+   user70    250   212    19 27.95%  0.797 13.02% 52.36%  0.94%   41.8
+   user85    250   190    19 17.42%  0.920  7.43% 67.37% 37.89%   36.8
+   user86    250   237    19 19.82%  0.872  7.43% 54.43% 27.43%   35.5
+   user89    250   257    19  0.34%  1.000  0.25% 98.83% 100.00%   35.6
+   user91    250   246    19 40.31%  0.622  5.73%  0.41%  0.00%   34.5
+   user98    250   126    19  0.00%  1.000  0.00% 100.00% 100.00%   35.4
+  user101    250   153    19 18.96%  0.896 11.75% 66.01% 16.34%   36.1
+  user104    250   246    19 25.61%  0.806 10.12% 46.75% 13.41%   36.5
+  user107    250   176    19  4.59%  0.992  0.78% 80.68% 84.66%   36.5
+  user108    250   213    19 28.63%  0.781 13.38% 53.99% 23.47%   34.8
+  user111    250   181    19 23.21%  0.839 13.80% 66.30% 17.13%   37.1
+  user115    250   208    19 26.96%  0.779  8.46% 26.44%  0.48%   34.3
+  user119    250   212    19 21.61%  0.878 10.93% 64.15% 28.30%   36.9
+
+==============================================================================
+MOUSE POPULATION  n=20  budget=250  base=mouse-ws50-aligned
+==============================================================================
+  EER         median 0.2071  IQR 0.1516-0.2721  min 0.0000  max 0.4031  CI[0.1809, 0.2672]
+  AUC         median 0.8748  IQR 0.7928-0.9336  min 0.6221  max 1.0000  CI[0.8013, 0.9078]
+  TAR@FAR=1%  median 0.1673  IQR 0.0659-0.4424  min 0.0000  max 1.0000  CI[0.0750, 0.3310]
+  FAR@0.50    median 0.0948  IQR 0.0594-0.1231  min 0.0000  max 0.2856  CI[0.0672, 0.1207]
+  TAR@0.50    median 0.6326  IQR 0.5098-0.7286  min 0.0041  max 1.0000  CI[0.5317, 0.6881]
+
+  users with EER < 10%: 5/20
+  users with EER > 20%: 10/20
+  users with EER > 30%: 3/20
+
+wrote /app/artifacts/mouse-ws50-aligned/population_scores.json
+NEXT: python decision_sweep.py --scores /app/artifacts/mouse-ws50-aligned/population_scores.json --out /app/artifacts/mouse-ws50-aligned/mouse_decision_sweep.json
+EXIT=0

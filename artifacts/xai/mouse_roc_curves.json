@@ -1,0 +1,26 @@
+{
+  "source": "artifacts/repr_arch_study/parts/F_new.json (Experiment F, 19 held-out users)",
+  "packetWindows": 60,
+  "voteK": 30,
+  "packetStride": 1,
+  "nGenuineWindows": 4361,
+  "nImpostorWindows": 53694,
+  "nGenuinePackets": 3240,
+  "nImpostorPackets": 32395,
+  "window": {
+    "aucPooled": 0.8495551263780701,
+    "eerValue": 0.22681191789525856,
+    "eerThreshold": 0.11800000000000001,
+    "farAtRef": 0.12738853503184713,
+    "tarAtRef": 0.6498509516166017
+  },
+  "decision": {
+    "aucPooled": 0.9262774938595538,
+    "eerValue": 0.11494712737638602,
+    "eerThreshold": 0.11800000000000001,
+    "farAtRef": 0.030652878530637445,
+    "tarAtRef": 0.7191358024691358
+  },
+  "refThreshold": 0.25,
+  "note": "Deployed mouse system uses each user's own 1st-percentile enrolment threshold, not a shared cutoff; 0.25 is a fixed-cutoff reference to mirror the keystroke convention. Computed post hoc; not pre-registered."
+}

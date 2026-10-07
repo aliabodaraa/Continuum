@@ -1,0 +1,148 @@
+{
+ "question": "deployed windows vs Antal-Fejer blocks trained as AFE_Project, matched session time, same subjects/sessions/impostors",
+ "windowsScores": "/app/artifacts/mouse-ws50-aligned/population_scores.json",
+ "blocksScores": "/app/artifacts/antal2020/sweep.json",
+ "timeBasis": {
+  "secondsPerStep": 0.02687066536459144,
+  "secondsPerBlock": 3.5402058823529416,
+  "oneWindowMedian": 1.2170000000000627,
+  "voteWindows": 20,
+  "voteSteps": 240,
+  "voteSpanMedian": 6.096999999999891,
+  "voteSpanIQR": [
+   5.398999999999857,
+   6.79749999999993
+  ]
+ },
+ "enrolment": {
+  "windows": "first 250 windows of the 3-min session",
+  "blocks": "all blocks of the 3-min session"
+ },
+ "byTime": [
+  {
+   "seconds": 3.54,
+   "kWindows": 9,
+   "kBlocks": 1,
+   "n": 20,
+   "windows": {
+    "aucMedian": 0.9389356303418803,
+    "aucMean": 0.9179631914970778,
+    "eerMedian": 0.12139423076923077,
+    "genuineGroupsMedian": 16
+   },
+   "blocks": {
+    "aucMedian": 0.7668813087365123,
+    "aucMean": 0.7398770877900506,
+    "eerMedian": 0.2883310128785242,
+    "genuineGroupsMedian": 17
+   },
+   "pairedAucDiffMean": 0.17808610370702724,
+   "ci95": [
+    0.11424412987620793,
+    0.247430529113869
+   ],
+   "p": 0.0,
+   "windowsBetter": 19
+  },
+  {
+   "seconds": 7.08,
+   "kWindows": 22,
+   "kBlocks": 2,
+   "n": 20,
+   "windows": {
+    "aucMedian": 0.9724310776942355,
+    "aucMean": 0.9379928989139517,
+    "eerMedian": 0.10292397660818713,
+    "genuineGroupsMedian": 8
+   },
+   "blocks": {
+    "aucMedian": 0.8343558282208589,
+    "aucMean": 0.7621372423419379,
+    "eerMedian": 0.25076687116564417,
+    "genuineGroupsMedian": 8
+   },
+   "pairedAucDiffMean": 0.17585565657201352,
+   "ci95": [
+    0.10349300354487069,
+    0.2545592597971648
+   ],
+   "p": 0.0,
+   "windowsBetter": 19
+  },
+  {
+   "seconds": 10.62,
+   "kWindows": 36,
+   "kBlocks": 3,
+   "n": 20,
+   "windows": {
+    "aucMedian": 0.9802631578947368,
+    "aucMean": 0.949298245614035,
+    "eerMedian": 0.017543859649122806,
+    "genuineGroupsMedian": 5
+   },
+   "blocks": {
+    "aucMedian": 0.8490566037735849,
+    "aucMean": 0.7729918838130941,
+    "eerMedian": 0.22028301886792453,
+    "genuineGroupsMedian": 5
+   },
+   "pairedAucDiffMean": 0.176306361800941,
+   "ci95": [
+    0.09978370177148674,
+    0.2567868842742096
+   ],
+   "p": 0.0,
+   "windowsBetter": 17
+  },
+  {
+   "seconds": 14.16,
+   "kWindows": 49,
+   "kBlocks": 4,
+   "n": 20,
+   "windows": {
+    "aucMedian": 0.993421052631579,
+    "aucMean": 0.9554824561403509,
+    "eerMedian": 0.006578947368421052,
+    "genuineGroupsMedian": 4
+   },
+   "blocks": {
+    "aucMedian": 0.8651315789473684,
+    "aucMean": 0.7779682387787652,
+    "eerMedian": 0.25,
+    "genuineGroupsMedian": 4
+   },
+   "pairedAucDiffMean": 0.17751421736158576,
+   "ci95": [
+    0.10072687827523354,
+    0.26126027369560256
+   ],
+   "p": 0.0,
+   "windowsBetter": 18
+  },
+  {
+   "seconds": 17.7,
+   "kWindows": 62,
+   "kBlocks": 5,
+   "n": 19,
+   "windows": {
+    "aucMedian": 1.0,
+    "aucMean": 0.9649122807017545,
+    "eerMedian": 0.0,
+    "genuineGroupsMedian": 3
+   },
+   "blocks": {
+    "aucMedian": 0.8587570621468926,
+    "aucMean": 0.7788015113763368,
+    "eerMedian": 0.3192090395480226,
+    "genuineGroupsMedian": 3
+   },
+   "pairedAucDiffMean": 0.1861107693254176,
+   "ci95": [
+    0.10578705422254515,
+    0.27167677925087413
+   ],
+   "p": 0.0,
+   "windowsBetter": 16
+  }
+ ]
+}

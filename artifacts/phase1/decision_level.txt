@@ -1,0 +1,86 @@
+
+== development, Method A vs Method B, 330 windows, mean over 10 training orders
+ N=15 (5.1 s): genuine decisions/user median 11 (min 8), impostor decisions/user 150
+   per-user AUC (pct):  A 0.923  B 0.937  diff +0.014 [+0.003, +0.027] p 0.012  better for 14/19, tied 1
+   pooled pct.eer            A 0.162  B 0.162  diff +0.000 [-0.018, +0.019] p 0.995
+   pooled pct.auc            A 0.903  B 0.908  diff +0.005 [-0.007, +0.021] p 0.485
+   pooled pct.frrAtFar1      A 0.692  B 0.651  diff -0.041 [-0.123, +0.086] p 0.605
+   pooled pct.frrAtFar5      A 0.405  B 0.372  diff -0.033 [-0.132, +0.054] p 0.510
+ N=33 (9.9 s): genuine decisions/user median 5 (min 4), impostor decisions/user 75
+   per-user AUC (pct):  A 0.943  B 0.958  diff +0.015 [+0.005, +0.026] p 0.001  better for 11/19, tied 5
+   pooled pct.eer            A 0.133  B 0.133  diff -0.000 [-0.030, +0.023] p 0.790
+   pooled pct.auc            A 0.916  B 0.925  diff +0.008 [-0.006, +0.028] p 0.305
+   pooled pct.frrAtFar1      A 0.621  B 0.558  diff -0.063 [-0.201, +0.083] p 0.440
+   pooled pct.frrAtFar5      A 0.331  B 0.287  diff -0.044 [-0.152, +0.070] p 0.565
+ N=60 (17.2 s): genuine decisions/user median 3 (min 2), impostor decisions/user 38
+   per-user AUC (pct):  A 0.964  B 0.974  diff +0.010 [+0.001, +0.022] p 0.028  better for 10/19, tied 7
+   pooled pct.eer            A 0.123  B 0.113  diff -0.010 [-0.037, +0.027] p 0.710
+   pooled pct.auc            A 0.930  B 0.938  diff +0.008 [-0.007, +0.026] p 0.310
+   pooled pct.frrAtFar1      A 0.583  B 0.492  diff -0.092 [-0.231, +0.075] p 0.255
+   pooled pct.frrAtFar5      A 0.293  B 0.240  diff -0.053 [-0.168, +0.057] p 0.490
+
+== lockbox 1 (P6): S0 vs S1  [EXPLORATORY]
+ N=15 (5.1 s): genuine decisions/user median 11 (min 9), impostor decisions/user 152
+   per-user AUC (pct):  A 0.915  B 0.944  diff +0.029 [+0.014, +0.045] p 0.000  better for 15/20, tied 1
+   pooled vote.eer           A 0.192  B 0.145  diff -0.047 [-0.107, +0.007] p 0.087
+   pooled vote.auc           A 0.870  B 0.916  diff +0.045 [-0.004, +0.108] p 0.085
+   pooled vote.frrAtFar1     A 0.440  B 0.816  diff +0.376 [+0.068, +0.487] p 0.019
+   pooled vote.frrAtFar5     A 0.440  B 0.408  diff -0.032 [-0.251, +0.241] p 0.807
+   pooled pct.eer            A 0.172  B 0.145  diff -0.027 [-0.071, +0.023] p 0.274
+   pooled pct.auc            A 0.902  B 0.925  diff +0.023 [-0.015, +0.064] p 0.266
+   pooled pct.frrAtFar1      A 0.752  B 0.808  diff +0.056 [-0.223, +0.192] p 0.865
+   pooled pct.frrAtFar5      A 0.544  B 0.432  diff -0.112 [-0.315, +0.089] p 0.282
+ N=33 (9.9 s): genuine decisions/user median 6 (min 4), impostor decisions/user 76
+   per-user AUC (pct):  A 0.938  B 0.964  diff +0.026 [+0.012, +0.041] p 0.000  better for 13/20, tied 7
+   pooled vote.eer           A 0.193  B 0.104  diff -0.089 [-0.154, -0.013] p 0.011
+   pooled vote.auc           A 0.883  B 0.941  diff +0.058 [+0.003, +0.128] p 0.031
+   pooled vote.frrAtFar1     A 0.610  B 0.821  diff +0.211 [-0.182, +0.362] p 0.306
+   pooled vote.frrAtFar5     A 0.610  B 0.415  diff -0.195 [-0.479, +0.185] p 0.382
+   pooled pct.eer            A 0.161  B 0.113  diff -0.049 [-0.108, +0.005] p 0.082
+   pooled pct.auc            A 0.920  B 0.946  diff +0.027 [-0.012, +0.070] p 0.203
+   pooled pct.frrAtFar1      A 0.732  B 0.740  diff +0.008 [-0.350, +0.239] p 0.882
+   pooled pct.frrAtFar5      A 0.447  B 0.333  diff -0.114 [-0.357, +0.150] p 0.371
+ N=60 (17.2 s): genuine decisions/user median 3 (min 2), impostor decisions/user 38
+   per-user AUC (pct):  A 0.946  B 0.968  diff +0.021 [+0.008, +0.037] p 0.001  better for 8/20, tied 11
+   pooled vote.eer           A 0.188  B 0.091  diff -0.096 [-0.159, -0.018] p 0.010
+   pooled vote.auc           A 0.891  B 0.951  diff +0.060 [+0.004, +0.135] p 0.031
+   pooled vote.frrAtFar1     A 0.746  B 0.821  diff +0.075 [-0.443, +0.258] p 0.784
+   pooled vote.frrAtFar5     A 0.582  B 0.299  diff -0.284 [-0.629, +0.203] p 0.260
+   pooled pct.eer            A 0.148  B 0.105  diff -0.043 [-0.103, +0.015] p 0.182
+   pooled pct.auc            A 0.931  B 0.954  diff +0.023 [-0.011, +0.065] p 0.246
+   pooled pct.frrAtFar1      A 0.687  B 0.761  diff +0.075 [-0.455, +0.328] p 1.000
+   pooled pct.frrAtFar5      A 0.418  B 0.313  diff -0.104 [-0.391, +0.138] p 0.327
+
+== lockbox 2 (K3): S0 vs S2  [EXPLORATORY]
+ N=15 (5.1 s): genuine decisions/user median 13 (min 9), impostor decisions/user 152
+   per-user AUC (pct):  A 0.963  B 0.975  diff +0.013 [+0.004, +0.022] p 0.003  better for 12/20, tied 3
+   pooled vote.eer           A 0.119  B 0.124  diff +0.006 [-0.031, +0.035] p 0.967
+   pooled vote.auc           A 0.948  B 0.940  diff -0.007 [-0.029, +0.016] p 0.591
+   pooled vote.frrAtFar1     A 0.537  B 0.658  diff +0.121 [-0.100, +0.304] p 0.256
+   pooled vote.frrAtFar5     A 0.241  B 0.311  diff +0.070 [-0.113, +0.209] p 0.793
+   pooled pct.eer            A 0.096  B 0.113  diff +0.016 [-0.012, +0.036] p 0.285
+   pooled pct.auc            A 0.964  B 0.952  diff -0.011 [-0.027, +0.005] p 0.177
+   pooled pct.frrAtFar1      A 0.498  B 0.626  diff +0.128 [-0.104, +0.282] p 0.283
+   pooled pct.frrAtFar5      A 0.206  B 0.296  diff +0.089 [-0.032, +0.213] p 0.191
+ N=33 (9.9 s): genuine decisions/user median 6 (min 5), impostor decisions/user 76
+   per-user AUC (pct):  A 0.978  B 0.986  diff +0.008 [+0.001, +0.016] p 0.026  better for 12/20, tied 5
+   pooled vote.eer           A 0.085  B 0.108  diff +0.023 [-0.015, +0.050] p 0.245
+   pooled vote.auc           A 0.967  B 0.955  diff -0.012 [-0.034, +0.009] p 0.292
+   pooled vote.frrAtFar1     A 0.512  B 0.622  diff +0.110 [-0.233, +0.280] p 0.704
+   pooled vote.frrAtFar5     A 0.142  B 0.236  diff +0.094 [-0.066, +0.244] p 0.372
+   pooled pct.eer            A 0.079  B 0.102  diff +0.024 [-0.010, +0.059] p 0.145
+   pooled pct.auc            A 0.978  B 0.963  diff -0.015 [-0.029, -0.001] p 0.038
+   pooled pct.frrAtFar1      A 0.283  B 0.583  diff +0.299 [-0.051, +0.441] p 0.108
+   pooled pct.frrAtFar5      A 0.118  B 0.181  diff +0.063 [-0.016, +0.209] p 0.146
+ N=60 (17.2 s): genuine decisions/user median 3 (min 2), impostor decisions/user 38
+   per-user AUC (pct):  A 0.983  B 0.992  diff +0.010 [+0.001, +0.020] p 0.027  better for 6/20, tied 13
+   pooled vote.eer           A 0.086  B 0.089  diff +0.003 [-0.032, +0.038] p 0.874
+   pooled vote.auc           A 0.973  B 0.962  diff -0.011 [-0.030, +0.007] p 0.289
+   pooled vote.frrAtFar1     A 0.507  B 0.594  diff +0.087 [-0.286, +0.353] p 0.657
+   pooled vote.frrAtFar5     A 0.130  B 0.188  diff +0.058 [-0.058, +0.329] p 0.423
+   pooled pct.eer            A 0.060  B 0.087  diff +0.027 [-0.023, +0.062] p 0.360
+   pooled pct.auc            A 0.984  B 0.968  diff -0.015 [-0.032, +0.000] p 0.054
+   pooled pct.frrAtFar1      A 0.304  B 0.594  diff +0.290 [-0.113, +0.500] p 0.201
+   pooled pct.frrAtFar5      A 0.072  B 0.145  diff +0.072 [-0.014, +0.329] p 0.162
+
+wrote artifacts/phase1/decision_level.json in 49 s
