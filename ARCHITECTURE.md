@@ -383,6 +383,21 @@ Implementation details:
   unauthenticated: gating it would mean handing the orchestrator a credential, and it
   reveals nothing beyond whether the model loaded.
 - **Three networks** (`edge` / `internal` / `model`) in all three stacks — see §2b.
+- **Node images (since 2026-10-07, branch `cloud-native`):** Node 24 LTS (Node 20 reached end of
+  life on 2026-04-30); one Dockerfile per service with three stages: `deps` (`npm ci` from the
+  committed `package-lock.json`; the compiler for better-sqlite3 stays here), `dev` (the dev Compose
+  stack and Tilt; source mounted, `node --watch`) and `runtime` (the default: what CI, the bundle and
+  Kubernetes run). The runtime stage has no compiler and no npm in front of the process, runs as
+  **uid 1000** (numeric, so Kubernetes `runAsNonRoot` can verify it), keeps its data in `/app/data`
+  by default, and sets `NODE_ENV=production`, which makes the gateway and ca-service **refuse to
+  start** without their secrets or with a development default. Sizes: ca-service 525 → 245 MB,
+  passkey-service 534 → 249 MB, demo 538 → 262 MB. Dev volumes for `node_modules` are new
+  (`*_node24`), since the old ones hold Node 20 builds of native modules.
+- **Every Node service** answers `/ready` (its own storage reachable; ca-service deliberately not the
+  model, which it degrades around) next to `/health`, stops cleanly on SIGTERM (finishes requests,
+  closes its database; an interrupted training job is recovered at the next start), and with
+  `LOG_FORMAT=json` writes one JSON object per log line. An install whose volumes were created by the
+  older, root-run images needs a one-time `chown` (DEPLOY.md).
 
 ## 12. Publishing & CI
 - **`scripts/release.sh`** — builds + pushes all five images to a registry, versioned

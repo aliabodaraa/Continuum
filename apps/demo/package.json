@@ -15,8 +15,11 @@
     "@simplewebauthn/browser": "^8.3.5",
     "@types/express-session": "^1.17.10",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^9.2.2",
+    "better-sqlite3": "^12.11.1",
     "express-session": "^1.17.3",
     "uuid": "^9.0.1"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

@@ -13,7 +13,11 @@
 import { spawn, execFileSync } from "node:child_process"; import fs from "node:fs"; import os from "node:os"; import path from "node:path";
 import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const GW = "http://localhost:8080", PORT = 9360, CA = "continuum-ca-service-1";
+// Containers the test acts on directly; defaults are the running stack's. For the side-by-side stack
+// (project continuum-next) set CONTINUUM_CONTAINER_PREFIX=continuum-next.
+const PREFIX = process.env.CONTINUUM_CONTAINER_PREFIX || "continuum";
+const GW = process.env.CONTINUUM_GATEWAY || "http://localhost:8080", PORT = 9360;
+const CA = `${PREFIX}-ca-service-1`, GW_CONTAINER = `${PREFIX}-gateway-1`;
 const CHROME = path.join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ADMIN_KEY = (fs.readFileSync(path.join(ROOT, ".env"), "utf8").match(/^GATEWAY_ADMIN_KEY=(.*?)\s*$/m) || [])[1] || "";
@@ -124,7 +128,7 @@ try {
 } finally {
   try {
     if (token) for (const p of ["/v1/sdk/keystroke/reset", "/v1/sdk/mouse/reset"]) await gw(p);
-    if (userId) execFileSync("docker", ["exec", "continuum-gateway-1", "node", "-e", `fetch(process.env.PASSKEY_API_URL+'/v1/users/${userId}/reset',{method:'POST',headers:{'X-Api-Key':process.env.PASSKEY_API_KEY}}).then(r=>console.log('passkey reset',r.status))`], { encoding: "utf8" });
+    if (userId) execFileSync("docker", ["exec", GW_CONTAINER, "node", "-e", `fetch(process.env.PASSKEY_API_URL+'/v1/users/${userId}/reset',{method:'POST',headers:{'X-Api-Key':process.env.PASSKEY_API_KEY}}).then(r=>console.log('passkey reset',r.status))`], { encoding: "utf8" });
     if (userId) execFileSync("docker", ["exec", "-w", "/app", CA, "node", "-e", `const db=require('better-sqlite3')('/app/ca.db');db.prepare('DELETE FROM session_locks WHERE user_id=?').run(${userId});`]);
     console.log("  cleanup done");
   } catch (e) { console.log("  cleanup: " + e.message); }

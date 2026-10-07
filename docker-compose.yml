@@ -61,6 +61,7 @@ services:
     build:
       context: ./services/passkey-service
       dockerfile: Dockerfile
+      target: dev   # the runtime stage is for deployments (non-root, no source mount)
     environment:
       PORT: 4000
       RP_ID: localhost
@@ -82,13 +83,14 @@ services:
       start_period: 10s
     volumes:
       - ./services/passkey-service:/app
-      - passkey_node_modules:/app/node_modules
+      - passkey_node_modules_node24:/app/node_modules
     command: npm start
 
   ca-service:
     build:
       context: ./services/ca-service
       dockerfile: Dockerfile
+      target: dev   # the runtime stage is for deployments (non-root, no source mount)
     depends_on:
       model-api:
         # Wait for the model to be LOADED, not merely for the container to exist.
@@ -139,7 +141,7 @@ services:
       start_period: 10s
     volumes:
       - ./services/ca-service:/app
-      - ca_node_modules:/app/node_modules
+      - ca_node_modules_node24:/app/node_modules
       # model-api's per-user model store, read-only, for the study log's model hashes only.
       - ./artifacts/users:/model-store:ro
     command: npm start
@@ -148,6 +150,7 @@ services:
     build:
       context: ./services/gateway
       dockerfile: Dockerfile
+      target: dev   # the runtime stage is for deployments (non-root, no source mount)
       # Same Dockerfile as prod bakes the SDK from this named context; the volume
       # mount below overlays it with the live ./sdk for hot reload.
       additional_contexts:
@@ -218,7 +221,7 @@ services:
       start_period: 10s
     volumes:
       - ./services/gateway:/app
-      - gateway_node_modules:/app/node_modules
+      - gateway_node_modules_node24:/app/node_modules
       # The customer-facing SDK lives in its own top-level sdk/ (not the demo).
       - ./sdk:/app/sdk-public:ro
     command: npm start
@@ -227,6 +230,7 @@ services:
     build:
       context: ./apps/demo
       dockerfile: Dockerfile
+      target: dev   # the runtime stage is for deployments (non-root, no source mount)
       # Same Dockerfile as prod bakes the SDK from this named context; the volume
       # mount below overlays it with the live ./sdk for hot reload.
       additional_contexts:
@@ -265,7 +269,7 @@ services:
     networks: [edge, internal]
     volumes:
       - ./apps/demo:/app
-      - web_node_modules:/app/node_modules
+      - web_node_modules_node24:/app/node_modules
       # The demo pages also use the shared SDK libs (served from the same sdk/).
       - ./sdk:/app/sdk-assets:ro
     command: npm start
@@ -277,6 +281,7 @@ services:
     build:
       context: ./apps/acme
       dockerfile: Dockerfile
+      target: dev   # the runtime stage is for deployments (non-root, no source mount)
     depends_on:
       gateway:
         condition: service_healthy
@@ -293,7 +298,7 @@ services:
     networks: [edge]
     volumes:
       - ./apps/acme:/app
-      - acme_node_modules:/app/node_modules
+      - acme_node_modules_node24:/app/node_modules
     command: npm start
 
   trainer:
@@ -313,8 +318,9 @@ networks:
   model:
 
 volumes:
-  web_node_modules:
-  passkey_node_modules:
-  ca_node_modules:
-  gateway_node_modules:
-  acme_node_modules:
+  # "_node24": new volumes for the Node 24 images (the old ones hold Node 20 builds of native modules).
+  web_node_modules_node24:
+  passkey_node_modules_node24:
+  ca_node_modules_node24:
+  gateway_node_modules_node24:
+  acme_node_modules_node24:

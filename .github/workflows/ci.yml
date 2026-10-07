@@ -35,7 +35,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - uses: actions/setup-python@v5
         with:
@@ -70,7 +70,7 @@ jobs:
 
       - name: Install dependencies (ca-service, gateway)
         run: |
-          for d in services/ca-service services/gateway; do (cd "$d" && npm install --omit=dev --no-audit --no-fund); done
+          for d in services/ca-service services/gateway; do (cd "$d" && npm ci --omit=dev --no-audit --no-fund); done
 
       - name: Unit tests (gateway settings and storage, both backends; ca-service rules and training queue)
         env:
@@ -88,10 +88,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: ca-service,      context: services/ca-service,      dockerfile: services/ca-service/Dockerfile }
-          - { name: passkey-service, context: services/passkey-service, dockerfile: services/passkey-service/Dockerfile }
-          - { name: gateway,         context: services/gateway,         dockerfile: services/gateway/Dockerfile, sdk: true }
-          - { name: web-demo,        context: apps/demo,                dockerfile: apps/demo/Dockerfile,        sdk: true }
+          - { name: ca-service,      context: services/ca-service,      dockerfile: services/ca-service/Dockerfile,      nonroot: true }
+          - { name: passkey-service, context: services/passkey-service, dockerfile: services/passkey-service/Dockerfile, nonroot: true }
+          - { name: gateway,         context: services/gateway,         dockerfile: services/gateway/Dockerfile,         sdk: true, nonroot: true }
+          - { name: web-demo,        context: apps/demo,                dockerfile: apps/demo/Dockerfile,                sdk: true, nonroot: true }
           - { name: model-api,       context: .,                        dockerfile: services/model-api/Dockerfile.model }
     steps:
       - uses: actions/checkout@v4
@@ -123,6 +123,13 @@ jobs:
                -not -path "*/node_modules/*" -not -path "/usr/*" -not -path "/etc/*" -not -path "/proc/*" 2>/dev/null' || true)
           if [ -n "$leaked" ]; then echo "::error::secret or state files baked into the image:"; echo "$leaked"; exit 1; fi
           echo "no secret or state files in the image"
+
+      - name: Image runs as a non-root user
+        if: ${{ matrix.nonroot }}
+        run: |
+          uid=$(docker run --rm --entrypoint id continuum-ci/${{ matrix.name }}:${{ github.sha }} -u)
+          if [ "$uid" = 0 ]; then echo "::error::the image runs as root"; exit 1; fi
+          echo "runs as uid $uid"
 
       - name: Vulnerability scan (report only for now)
         uses: aquasecurity/trivy-action@0.28.0

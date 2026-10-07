@@ -48,4 +48,6 @@ app.post("/save-note", guard.requireTrusted, (req, res) => {
 });
 
 const PORT = process.env.PORT || 4200;
-app.listen(PORT, () => console.log(`Acme app on http://localhost:${PORT}`));
+const server = app.listen(PORT, () => console.log(`Acme app on http://localhost:${PORT}`));
+// node as PID 1 ignores SIGTERM unless it is handled: without this, every stop waited out the timeout.
+for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, () => server.close(() => process.exit(0)));

@@ -232,7 +232,9 @@ app.get("/", (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Continuum server listening on port ${PORT}`);
   console.log(`Open http://localhost:${PORT} in your browser`);
 });
+// node as PID 1 ignores SIGTERM unless it is handled: without this, every stop waited out the timeout.
+for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, () => server.close(() => process.exit(0)));

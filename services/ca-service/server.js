@@ -2,6 +2,7 @@
 // standalone microservice. Owns keystroke + mouse models/data and scores via the
 // model-api. Stateless w.r.t. the caller: every endpoint takes an explicit
 // userId. It returns VERDICTS; the demo/BFF applies session + passkey policy.
+require("./lib/log")("ca-service");   // LOG_FORMAT=json: one JSON object per log line
 const express = require("express");
 const crypto = require("crypto");
 const db = require("./db");
@@ -25,6 +26,17 @@ const API_KEY = process.env.CA_API_KEY || "";
 // host app's backend, via the @continuum/node middleware) can ENFORCE the
 // decision without trusting the browser. Dependency-free (Node crypto).
 const RISK_SECRET = process.env.CA_SIGNING_SECRET || "dev-continuum-risk-secret";
+// The production image (NODE_ENV=production) refuses to start without its secrets, or with a development
+// default. Development keeps running with the defaults.
+if (process.env.NODE_ENV === "production") {
+  const missing = [];
+  if (RISK_SECRET === "dev-continuum-risk-secret") missing.push("CA_SIGNING_SECRET");
+  if (!process.env.MODEL_API_KEY) missing.push("MODEL_API_KEY");
+  if (missing.length) {
+    console.error(`[ca] refusing to start in production without: ${missing.join(", ")} (openssl rand -hex 32 each)`);
+    process.exit(1);
+  }
+}
 const RISK_TTL_SEC = Number(process.env.CA_RISK_TTL_SEC || 90);
 function b64url(s) { return Buffer.from(s).toString("base64url"); }
 function signRisk(userId, risk, modality) {
@@ -234,7 +246,7 @@ function sendError(res, where, err, extra = {}) {
 const app = express();
 app.use(express.json({ limit: "5mb" }));
 app.use((req, res, next) => {
-  if (req.path === "/health") return next();
+  if (req.path === "/health" || req.path === "/ready") return next();
   if (API_KEY && req.get("X-Api-Key") !== API_KEY) {
     return res.status(401).json({ error: "Invalid or missing API key" });
   }
@@ -262,6 +274,13 @@ const tenantOf = (req) => {
 };
 
 app.get("/health", (req, res) => res.json({ ok: true, service: "ca" }));
+// Readiness: its own database answers. Not the model service: with the model down this service still
+// answers ("model unavailable", never a made-up verdict), so taking it out of rotation would only turn
+// those answers into connection errors.
+app.get("/ready", (req, res) => {
+  try { db.prepare("SELECT 1").get(); res.json({ ready: true, service: "ca" }); }
+  catch (e) { res.status(503).json({ ready: false, service: "ca", error: e.message }); }
+});
 
 // ---- config + onboarding status (used by the demo gate) ----
 app.get("/v1/keystroke/config", async (req, res) => {
@@ -814,9 +833,23 @@ trainingQueue.registerHandler("mouse", async (userId) => {
   return r.body;
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`CA service on http://localhost:${PORT}`);
   // Started after listen so a boot-time backlog cannot delay readiness — and, more to the
   // point, so a job interrupted by the last shutdown is picked back up on this one.
   trainingQueue.start();
 });
+// A stop request (docker stop, a Kubernetes rollout): take no new jobs, finish the requests in flight,
+// close the database. A training job still running is left "running" and recovered by the next start
+// (trainingQueue.recoverOrphans), as after a crash.
+let stopping = false;
+for (const sig of ["SIGTERM", "SIGINT"]) {
+  process.on(sig, () => {
+    if (stopping) return;
+    stopping = true;
+    console.log(`[ca] ${sig}: stopping`);
+    trainingQueue.stop();
+    server.close(() => { try { db.close(); } catch (_) {} process.exit(0); });
+    setTimeout(() => process.exit(0), 10000).unref();
+  });
+}

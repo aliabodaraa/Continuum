@@ -30,7 +30,10 @@ const EXT = path.resolve(HERE, "..");
 const ROOT = path.resolve(EXT, "..");
 const CHROME = path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe");
 const GW = process.env.CONTINUUM_GATEWAY || "http://localhost:8080";
-const CA = "continuum-ca-service-1";
+// Containers the test acts on directly; defaults are the running stack's. For the side-by-side stack
+// (project continuum-next) set CONTINUUM_CONTAINER_PREFIX=continuum-next.
+const PREFIX = process.env.CONTINUUM_CONTAINER_PREFIX || "continuum";
+const CA = `${PREFIX}-ca-service-1`, GW_CONTAINER = `${PREFIX}-gateway-1`;
 const PORT = 9338;
 // A fresh test participant per run (the tenant is reused), so nothing of an earlier run can leak in.
 const P = "ZZE2E" + Math.random().toString(36).slice(2, 7).toUpperCase(), TYPIST = "ZZE2F";
@@ -366,7 +369,7 @@ try {
     // a server lock left by an interrupted run would outlive the test user's reset
     if (userId) caNode(`db.prepare('DELETE FROM session_locks WHERE user_id=?').run(${userId}); console.log('lock cleared')`, true);
     // the test passkey, cleared from inside the gateway container (its service key stays there)
-    if (userId) execFileSync("docker", ["exec", "continuum-gateway-1", "node", "-e", `fetch(process.env.PASSKEY_API_URL+'/v1/users/${userId}/reset',{method:'POST',headers:{'X-Api-Key':process.env.PASSKEY_API_KEY||''}}).then(r=>console.log('passkey reset',r.status))`], { encoding: "utf8" });
+    if (userId) execFileSync("docker", ["exec", GW_CONTAINER, "node", "-e", `fetch(process.env.PASSKEY_API_URL+'/v1/users/${userId}/reset',{method:'POST',headers:{'X-Api-Key':process.env.PASSKEY_API_KEY||''}}).then(r=>console.log('passkey reset',r.status))`], { encoding: "utf8" });
     if (userId) caNode(`for (const t of ['study_windows','study_decisions','study_prompts','study_profiles','study_participants']) db.prepare('DELETE FROM '+t+' WHERE user_id=?').run(${userId}); console.log('cleaned')`, true);
     caScript("-e", "require('fs').rmSync('/tmp/e2e_study_export',{recursive:true,force:true})");
   } catch (e) { console.log("  cleanup: " + e.message); }

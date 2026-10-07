@@ -66,6 +66,7 @@ services:
       MODEL_INFER_TIMEOUT_MS: ${MODEL_INFER_TIMEOUT_MS:-5000}
       MODEL_TRAIN_TIMEOUT_MS: ${MODEL_TRAIN_TIMEOUT_MS:-600000}
       DB_PATH: /app/data/ca.db
+      LOG_FORMAT: ${LOG_FORMAT:-}   # json = one JSON object per log line (for a log collector)
       CA_API_KEY: ${CA_API_KEY:-}
       # Signs the risk verdicts; the host's @continuum/node uses the SAME value.
       # REQUIRED — no shared fallback, or every deployment would sign with the
@@ -104,6 +105,7 @@ services:
       RP_ID: ${RP_ID:-localhost}
       ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
       DB_PATH: /app/data/passkey.db
+      LOG_FORMAT: ${LOG_FORMAT:-}   # json = one JSON object per log line (for a log collector)
       PASSKEY_API_KEY: ${PASSKEY_API_KEY:-}
     expose: ["4000"]
     networks: [internal]
@@ -137,6 +139,7 @@ services:
       # Signing key + tenant registry are generated/seeded here on first run and
       # persist across restarts — NOT baked into the image (see gateway/.dockerignore).
       DATA_DIR: /app/data
+      LOG_FORMAT: ${LOG_FORMAT:-}   # json = one JSON object per log line (for a log collector)
       # The auto-seeded demo tenant's secret; a consumer signing identities must use
       # the SAME value. REQUIRED (no shared fallback). Generate: openssl rand -hex 32
       CA_SIGNING_SECRET: ${CA_SIGNING_SECRET:?Set CA_SIGNING_SECRET in .env (openssl rand -hex 32)}

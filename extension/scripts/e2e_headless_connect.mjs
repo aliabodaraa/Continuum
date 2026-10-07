@@ -47,6 +47,9 @@ const ADMIN_KEY = process.env.GATEWAY_ADMIN_KEY || (envFile.match(/^GATEWAY_ADMI
 const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-connect-e2e-"));
 // The gateway's identity records: identity.json (STORAGE=json), or, when CONTINUUM_GATEWAY_PG names the
 // PostgreSQL container of a side-by-side stack (docker-compose.side-by-side.yml), its gw_identities table.
+// Containers the test acts on directly; defaults are the running stack's. For the side-by-side stack
+// (project continuum-next) set CONTINUUM_CONTAINER_PREFIX=continuum-next.
+const PREFIX = process.env.CONTINUUM_CONTAINER_PREFIX || "continuum";
 const GW_PG = process.env.CONTINUUM_GATEWAY_PG || "";
 function identityKeys() {
   if (!GW_PG) return Object.keys(JSON.parse(fs.readFileSync(path.join(ROOT, "services", "gateway", "identity.json"), "utf8")).users);
@@ -518,7 +521,7 @@ try {
       if (r.status !== 200 && r.status !== 404) console.log(`  cleanup: account ${email}: HTTP ${r.status}`);
     }
     if (demoUserId) {
-      execFileSync("docker", ["exec", "-w", "/app", "continuum-web-1", "node", "-e",
+      execFileSync("docker", ["exec", "-w", "/app", `${PREFIX}-web-1`, "node", "-e",
         `const db=require('better-sqlite3')(process.env.DB_PATH||'/app/db/continuum.db');db.prepare('DELETE FROM users WHERE id=? AND username=?').run(${Number(demoUserId)},${JSON.stringify(DEMO_USER)});console.log('demo user removed')`], { encoding: "utf8" });
     }
   } catch (e) { console.log("  cleanup: " + e.message); }

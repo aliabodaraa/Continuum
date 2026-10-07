@@ -4,6 +4,13 @@
   "private": true,
   "description": "A totally independent host app that adopts Continuum via the SDK only. Its own origin, its own backend, no Continuum session.",
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
-  "dependencies": { "express": "^4.18.2" }
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=24"
+  }
 }

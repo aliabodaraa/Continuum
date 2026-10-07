@@ -5,6 +5,7 @@
 // (the app / BFF) is responsible for authenticating the user and deciding WHEN
 // to register or step-up; this service only performs the WebAuthn crypto and
 // owns the credential + challenge store. It knows nothing about behavioral CA.
+require("./log")("passkey-service");   // LOG_FORMAT=json: one JSON object per log line
 const express = require("express");
 const {
   generateRegistrationOptions,
@@ -43,7 +44,7 @@ app.use(express.json({ limit: "1mb" }));
 // pages are gone (the extension now uses the gateway's own pages) and the port is no longer
 // published, so every route but /health needs the key: open, the ceremony let anyone who could
 // reach the service name a userId and add their own passkey to it.
-const OPEN_PREFIXES = ["/health"];
+const OPEN_PREFIXES = ["/health", "/ready"];
 app.use((req, res, next) => {
   if (OPEN_PREFIXES.some((p) => req.path === p || req.path.startsWith(p))) return next();
   if (API_KEY && req.get("X-Api-Key") !== API_KEY) {
@@ -95,6 +96,11 @@ function saveChallenge(userId, challenge, type) {
 
 // ---- health ----
 app.get("/health", (req, res) => res.json({ ok: true, service: "passkey" }));
+// Readiness: the credential store answers.
+app.get("/ready", (req, res) => {
+  try { db.prepare("SELECT 1").get(); res.json({ ready: true, service: "passkey" }); }
+  catch (e) { res.status(503).json({ ready: false, service: "passkey", error: e.message }); }
+});
 
 // ---- lightweight lookups the app uses on hot paths ----
 app.get("/v1/users/:userId/passkeys", (req, res) => {
@@ -286,6 +292,17 @@ app.post("/v1/auth/complete", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Passkey service on http://localhost:${PORT} (rpID=${DEFAULT_RP_ID})`);
 });
+// A stop request (docker stop, a Kubernetes rollout): finish the requests in flight, close the database.
+let stopping = false;
+for (const sig of ["SIGTERM", "SIGINT"]) {
+  process.on(sig, () => {
+    if (stopping) return;
+    stopping = true;
+    console.log(`[passkey] ${sig}: stopping`);
+    server.close(() => { try { db.close(); } catch (_) {} process.exit(0); });
+    setTimeout(() => process.exit(0), 10000).unref();
+  });
+}

@@ -680,8 +680,8 @@ continuum/
 | # | Step | Proof before it counts | Status |
 |---|---|---|---|
 | 0 | Safety net: tag `pre-cloud-v1`, full backups with restore drill, CI | restore identical | **done** |
-| 1 | Gateway records → PostgreSQL behind `STORAGE` | migration identical on real data; e2e 92/92 on both backends; two copies in sync; outage recovery | **done** (uncommitted) |
-| 2 | Foundations, no behaviour change: Node 24; lockfiles + `npm ci`; multi-stage non-root images; `node server.js`; SIGTERM + `/ready` in all services; JSON logs; startup config validation; research code out of the model image | ci-local, e2e suites unchanged | next |
+| 1 | Gateway records → PostgreSQL behind `STORAGE` | migration identical on real data; e2e 92/92 on both backends; two copies in sync; outage recovery | **done** (cb9575d) |
+| 2 | Foundations, no behaviour change: Node 24; lockfiles + `npm ci`; multi-stage non-root images; `node server.js`; SIGTERM + `/ready` in all services; JSON logs; startup config validation (research code out of the model image moves to step 6, with the model image) | ci-local, e2e suites unchanged | **done** for the Node services |
 | 3 | Gateway fully stateless: sign-in links, ceremonies, lockouts → PostgreSQL; CAEP transitions from ca-service; webhook outbox; the demo apps use only the public API | e2e connect/study; two copies | |
 | 4 | passkey-service → PostgreSQL (the same switch + migrate + verify pattern) | credential counts and hashes identical; passkey sign-in e2e | |
 | 5 | ca-service → PostgreSQL (23 tables, ~880k rows); queue claims with `SKIP LOCKED`; `/model-store` mount removed (trainer returns version + hash) | per-table counts and checksums; **decision replay: 0 differences**; study e2e 29/29 | |

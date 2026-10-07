@@ -12,6 +12,7 @@
 //   • exposes a CORS-enabled, TOKEN-SCOPED facade (/v1/sdk/*) that injects userId/
 //     username/origin and routes to CA + passkey,
 //   • signs each risk verdict RS256 (public keys at /.well-known/jwks.json).
+require("./log")("gateway");   // LOG_FORMAT=json: one JSON object per log line
 const express = require("express");
 const crypto = require("crypto");
 const fs = require("fs");
@@ -46,6 +47,19 @@ if (!ADMIN_KEY) {
 }
 // Default demo tenant's secret — must equal the demo host's CONTINUUM_SECRET.
 const DEMO_SECRET = process.env.CA_SIGNING_SECRET || "dev-continuum-risk-secret";
+// The production image (NODE_ENV=production) refuses to start without its secrets, or with a development
+// default: a gateway that signs with a published value is worse than one that does not run. Development
+// keeps the warnings above.
+if (process.env.NODE_ENV === "production") {
+  const missing = [];
+  if (SESSION_SECRET === "dev-gateway-session-secret") missing.push("GATEWAY_SESSION_SECRET");
+  if (!ADMIN_KEY) missing.push("GATEWAY_ADMIN_KEY");
+  if (DEMO_SECRET === "dev-continuum-risk-secret") missing.push("CA_SIGNING_SECRET");
+  if (missing.length) {
+    console.error(`[gateway] refusing to start in production without: ${missing.join(", ")} (openssl rand -hex 32 each)`);
+    process.exit(1);
+  }
+}
 const USER_ID_BASE = Number(process.env.GATEWAY_USER_ID_BASE || 900000);
 // The signing keys live here (a mounted secret in a cloud deployment), and with STORAGE=json the records too.
 const DATA_DIR = process.env.DATA_DIR || __dirname;

@@ -24,7 +24,7 @@ for a in "$@"; do
   esac
 done
 
-NODE_IMAGE="${CI_NODE_IMAGE:-node:20-bookworm-slim}"        # the services' own base image
+NODE_IMAGE="${CI_NODE_IMAGE:-node:24-bookworm-slim}"        # the services' own base image
 PY_IMAGE="${CI_PY_IMAGE:-python:3.11.9-slim-bookworm}"
 # Windows (Git Bash): docker wants Windows paths and no MSYS path rewriting.
 if command -v cygpath >/dev/null 2>&1; then
@@ -89,8 +89,8 @@ node_checks() {
     for f in scripts/*.sh; do bash -n "$f" || exit 1; done
     echo "shell syntax: ok"
     for d in services/ca-service services/gateway; do
-      (cd "$d" && npm install --omit=dev --no-audit --no-fund --loglevel=error >/dev/null) \
-        || { echo "npm install failed in $d"; exit 1; }
+      (cd "$d" && npm ci --omit=dev --no-audit --no-fund --loglevel=error >/dev/null) \
+        || { echo "npm ci failed in $d (is package-lock.json in step with package.json?)"; exit 1; }
     done
     node --test --test-reporter=spec services/gateway/test/*.test.js services/ca-service/test/*.test.js
   '
@@ -128,18 +128,18 @@ workflow_checks() {
     .github/workflows/ci.yml .github/workflows/publish.yml && echo "workflows: ok"
 }
 
-# name | build context | Dockerfile | needs the sdk/ build context
+# name | build context | Dockerfile | needs the sdk/ build context | must run as a non-root user
 IMAGE_SPECS=(
-  "ca-service|services/ca-service|services/ca-service/Dockerfile|"
-  "passkey-service|services/passkey-service|services/passkey-service/Dockerfile|"
-  "gateway|services/gateway|services/gateway/Dockerfile|sdk"
-  "web-demo|apps/demo|apps/demo/Dockerfile|sdk"
-  "model-api|.|services/model-api/Dockerfile.model|"
+  "ca-service|services/ca-service|services/ca-service/Dockerfile||nonroot"
+  "passkey-service|services/passkey-service|services/passkey-service/Dockerfile||nonroot"
+  "gateway|services/gateway|services/gateway/Dockerfile|sdk|nonroot"
+  "web-demo|apps/demo|apps/demo/Dockerfile|sdk|nonroot"
+  "model-api|.|services/model-api/Dockerfile.model||"
 )
 image_checks() {
-  local spec name ctx file sdk tag leaked rc=0
+  local spec name ctx file sdk nonroot tag leaked user rc=0
   for spec in "${IMAGE_SPECS[@]}"; do
-    IFS='|' read -r name ctx file sdk <<<"$spec"
+    IFS='|' read -r name ctx file sdk nonroot <<<"$spec"
     tag="continuum-ci/$name:local"
     local extra=()
     [ -n "$sdk" ] && extra=(--build-context "sdk=./sdk")
@@ -154,6 +154,10 @@ image_checks() {
       echo "   secret or state files inside the image:"; echo "$leaked" | sed 's/^/     /'; rc=1
     else
       echo "   built; no secret or state files inside"
+    fi
+    if [ -n "$nonroot" ]; then
+      user=$(docker run --rm --entrypoint id "$tag" -u 2>/dev/null)
+      if [ -z "$user" ] || [ "$user" = 0 ]; then echo "   runs as root (uid ${user:-?}): FAILED"; rc=1; else echo "   runs as uid $user, not root"; fi
     fi
     if [ "$SCAN" = 1 ]; then
       docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v continuum-trivy-cache:/root/.cache \

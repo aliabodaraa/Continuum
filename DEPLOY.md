@@ -218,6 +218,26 @@ State lives on named volumes — back these up:
 | `continuum_passkey_db` | Registered passkeys + challenges |
 | `continuum_db` (demo only) | Demo users |
 
+### Upgrading an install made before the Node 24 images (2026-10)
+The gateway, ca-service, passkey-service and demo images now run as user 1000, not root. A **new**
+volume takes the right owner by itself; a volume created by an older image belongs to root, and the
+service cannot write to it (`EACCES` in its log). Give those volumes to user 1000 once, with the stack
+stopped:
+```bash
+docker compose -f docker-compose.bundle.yml down
+for v in continuum_gateway_data continuum_ca_db continuum_passkey_db; do
+  docker run --rm -v "$v:/v" alpine chown -R 1000:1000 /v
+done
+docker compose -f docker-compose.bundle.yml up -d
+```
+(model-api still runs as root until its own move; its volume needs nothing.) In Kubernetes the pod's
+`fsGroup` does this.
+
+### Logs
+`LOG_FORMAT=json` in `.env` makes every service log one JSON object per line (time, level, service,
+message) for a log collector; empty keeps readable text. Each service also answers `/ready` (its own
+storage reachable) next to `/health` (the process is up), and stops cleanly on `docker stop`.
+
 ## Portability smoke test (proving "runs anywhere")
 On a second machine with only the compose file + `.env`:
 ```bash
