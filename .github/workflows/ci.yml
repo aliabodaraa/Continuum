@@ -19,6 +19,17 @@ jobs:
     name: Syntax and unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # A throwaway database for the gateway's PostgreSQL storage tests (services/gateway/test/storage.test.js).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d ci"
+          --health-interval 5s --health-timeout 3s --health-retries 20
     steps:
       - uses: actions/checkout@v4
 
@@ -57,11 +68,13 @@ jobs:
             docker compose -f "$f" config -q && echo "$f: valid"
           done
 
-      - name: Install ca-service dependencies
-        working-directory: services/ca-service
-        run: npm install --omit=dev --no-audit --no-fund
+      - name: Install dependencies (ca-service, gateway)
+        run: |
+          for d in services/ca-service services/gateway; do (cd "$d" && npm install --omit=dev --no-audit --no-fund); done
 
-      - name: Unit tests (gateway settings; ca-service rules and training queue)
+      - name: Unit tests (gateway settings and storage, both backends; ca-service rules and training queue)
+        env:
+          TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/ci
         run: node --test services/gateway/test/*.test.js services/ca-service/test/*.test.js
 
       - name: Unit tests (backup manifest)

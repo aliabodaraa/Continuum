@@ -47,12 +47,15 @@ if (!ADMIN_KEY) {
 // Default demo tenant's secret — must equal the demo host's CONTINUUM_SECRET.
 const DEMO_SECRET = process.env.CA_SIGNING_SECRET || "dev-continuum-risk-secret";
 const USER_ID_BASE = Number(process.env.GATEWAY_USER_ID_BASE || 900000);
+// The signing keys live here (a mounted secret in a cloud deployment), and with STORAGE=json the records too.
 const DATA_DIR = process.env.DATA_DIR || __dirname;
-const IDENTITY_FILE = path.join(DATA_DIR, "identity.json");
-const TENANTS_FILE = path.join(DATA_DIR, "tenants.json");
-// Operator defaults, organisation settings and server switches (settings.js has the precedence).
-const settings = require("./settings")(DATA_DIR);
-const ACCOUNTS_FILE = path.join(DATA_DIR, "accounts.json");
+// Where the records live (storage.js): "json" files in DATA_DIR, or "postgres" (DATABASE_URL).
+const STORAGE = (process.env.STORAGE || "json").toLowerCase();
+const { openStorage, siteKeyOf } = require("./storage");
+const createSettings = require("./settings");
+// Opened in boot(), before the server listens: storage, its records, and the operator defaults,
+// organisation settings and server switches (settings.js has the precedence).
+let storage, tenants, store, accounts, settings;
 const SDK_PUBLIC = path.join(__dirname, "sdk-public");
 const GATEWAY_PAGES = path.join(__dirname, "public");
 // Where browsers reach this gateway. Its own pages (console, extension sign-in, study) live on
@@ -77,61 +80,35 @@ const autoApprove = () => settings.server("autoApproveTenants");
 const REFRESH_TTL_SEC = Number(process.env.GATEWAY_REFRESH_TTL_SEC || 90 * 86400);
 const CONSOLE_TTL_SEC = Number(process.env.GATEWAY_CONSOLE_TTL_SEC || 3600);
 
-// The tenant registry and the identity store are plain JSON files (TODO §1). Two rules keep them safe:
-//  * a missing file starts empty, but a file that exists and cannot be read or parsed stops the
-//    gateway. Reading it as empty used to re-seed pk_demo over the wreckage and re-allocate every
-//    user id, orphaning their biometric profiles, with nothing in the log.
-//  * a save writes a temporary file and renames it over the old one (atomic on one filesystem), so a
-//    crash mid-write leaves the previous version, and a failed save throws so the caller can refuse
-//    instead of answering from memory only.
-function loadJson(file, fallback) {
-  let text;
-  try { text = fs.readFileSync(file, "utf8"); } catch (e) {
-    if (e.code === "ENOENT") return fallback;
-    throw new Error(`[gateway] cannot read ${file}: ${e.message}`);
-  }
-  try { return JSON.parse(text); } catch (e) {
-    throw new Error(`[gateway] ${file} is not valid JSON (${e.message}). Refusing to start rather than ` +
-      `treat it as empty; restore it from a backup (a leftover ${path.basename(file)}.tmp may hold the last write).`);
-  }
-}
-function saveJson(file, obj) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = file + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
-  fs.renameSync(tmp, file);
-}
-
 // ---- tenant registry ----
-let tenants = loadJson(TENANTS_FILE, { tenants: {} });
-// Seed the demo tenant so the bundled Acme app works out of the box.
-if (!tenants.tenants["pk_demo"]) {
-  tenants.tenants["pk_demo"] = { name: "Demo", secret: DEMO_SECRET, origins: [], webhookUrl: process.env.DEMO_WEBHOOK_URL || null, createdAt: new Date().toISOString() };
-  saveJson(TENANTS_FILE, tenants);   // throws at boot if the data directory is not writable
-}
-// Keep the demo tenant's webhook in sync with env (so CAEP is demonstrable).
-if (tenants.tenants["pk_demo"] && process.env.DEMO_WEBHOOK_URL) tenants.tenants["pk_demo"].webhookUrl = process.env.DEMO_WEBHOOK_URL;
-// The demo is an organisation whose users can sign in to the extension: its sign-in page for the
-// extension (served by @continuum/node's link handler) and the extension's origin come from env.
-(function syncDemoTenant() {
+// The built-in tenants, at every start (boot() awaits this; a failed save stops the start).
+async function seedBuiltInTenants() {
+  // Seed the demo tenant so the bundled Acme app works out of the box.
+  if (!tenants.tenants["pk_demo"]) {
+    tenants.tenants["pk_demo"] = { name: "Demo", secret: DEMO_SECRET, origins: [], webhookUrl: process.env.DEMO_WEBHOOK_URL || null, createdAt: new Date().toISOString() };
+    await storage.saveTenant("pk_demo");
+  }
+  // Keep the demo tenant's webhook in sync with env (so CAEP is demonstrable).
+  if (tenants.tenants["pk_demo"] && process.env.DEMO_WEBHOOK_URL) tenants.tenants["pk_demo"].webhookUrl = process.env.DEMO_WEBHOOK_URL;
+  // The demo is an organisation whose users can sign in to the extension: its sign-in page for the
+  // extension (served by @continuum/node's link handler) and the extension's origin come from env.
   const demo = tenants.tenants["pk_demo"];
-  if (!demo) return;
-  let changed = false;
-  if (process.env.DEMO_SIGNIN_URL && demo.signInUrl !== process.env.DEMO_SIGNIN_URL) { demo.signInUrl = process.env.DEMO_SIGNIN_URL; changed = true; }
-  if (EXTENSION_ORIGIN && !(demo.origins || []).includes(EXTENSION_ORIGIN)) { demo.origins = (demo.origins || []).concat(EXTENSION_ORIGIN); demo.allowExtension = true; changed = true; }
-  if (changed) saveJson(TENANTS_FILE, tenants);
-})();
-// Seed the personal tenant. Its secret signs nothing a customer holds (its users sign in with a
-// Continuum account on this gateway), so it is random; its origins follow env at every boot.
-(function syncPersonalTenant() {
+  if (demo) {
+    let changed = false;
+    if (process.env.DEMO_SIGNIN_URL && demo.signInUrl !== process.env.DEMO_SIGNIN_URL) { demo.signInUrl = process.env.DEMO_SIGNIN_URL; changed = true; }
+    if (EXTENSION_ORIGIN && !(demo.origins || []).includes(EXTENSION_ORIGIN)) { demo.origins = (demo.origins || []).concat(EXTENSION_ORIGIN); demo.allowExtension = true; changed = true; }
+    if (changed) await storage.saveTenant("pk_demo");
+  }
+  // Seed the personal tenant. Its secret signs nothing a customer holds (its users sign in with a
+  // Continuum account on this gateway), so it is random; its origins follow env at every boot.
   let t = tenants.tenants[PERSONAL_KEY];
   if (!t) t = tenants.tenants[PERSONAL_KEY] = { name: "Continuum Personal", secret: crypto.randomBytes(24).toString("hex"), createdAt: new Date().toISOString() };
   const origins = [PUBLIC_ORIGIN, EXTENSION_ORIGIN].filter(Boolean);
   if (JSON.stringify(t.origins) !== JSON.stringify(origins) || t.status !== "active") {
     t.origins = origins; t.status = "active"; t.allowExtension = true;
-    saveJson(TENANTS_FILE, tenants);
+    await storage.saveTenant(PERSONAL_KEY);
   }
-})();
+}
 // A tenant signs sessions only while active. Tenants from before the status field have none and are
 // active; console sign-ups are "pending" until the operator approves them; "revoked" is final.
 const tenantActive = (t) => !!t && (!t.status || t.status === "active");
@@ -182,24 +159,30 @@ function verifyIdentity(secret, token) {
 // Now the HMAC is used ONLY to allocate an id the first time a (tenant, externalId) pair is
 // seen. After that the allocation is a stored fact. Rotating the secret therefore affects
 // nobody already registered — it only changes the seed for principals not yet allocated.
-let store = loadJson(IDENTITY_FILE, { users: {} });
 const statsCache = new Map();   // the console's per-tenant user counts (tenantStats), dropped when a tenant gains a user
-function userFor(siteKey, externalId) {
+async function userFor(siteKey, externalId) {
   const key = siteKey + "|" + externalId;
+  const username = (siteKey + "-" + externalId).slice(0, 48);
   const known = store.users[key];
-  if (known) return { userId: known.userId, username: (siteKey + "-" + externalId).slice(0, 48) };
+  if (known) return { userId: known.userId, username };
 
   // first sighting — allocate deterministically, then persist so it never moves again
   const h = crypto.createHmac("sha256", SESSION_SECRET).update(key).digest("hex");
   const userId = parseInt(h.slice(0, 13), 16); // stable id within JS safe-integer range
   store.users[key] = { userId, externalId, createdAt: new Date().toISOString() };
   statsCache.delete(siteKey);
-  try { saveJson(IDENTITY_FILE, store); } catch (e) {
+  try {
+    // Another gateway copy may have stored this key a moment ago: the stored record wins.
+    const stored = await storage.saveIdentity(key);
+    return { userId: stored.userId, username };
+  } catch (e) {
+    // Two keys with one user id would share a biometric profile: refuse the sign-in.
+    if (e.code === "conflict") { delete store.users[key]; throw e; }
     // The id is still right for this session (it is derived from the secret), so the sign-in goes
     // ahead; the next save retries the record. Say so loudly: an unsaved record is lost on restart.
     console.error(`[gateway] could not persist the id for ${key}: ${e.message}`);
+    return { userId, username };
   }
-  return { userId, username: (siteKey + "-" + externalId).slice(0, 48) };
 }
 
 // ---- Continuum accounts (email + passkey) ----
@@ -207,13 +190,6 @@ function userFor(siteKey, externalId) {
 // organisation's tenants. An account's principal is userFor(PERSONAL_KEY, "acct:<id>"), and its
 // passkey is registered there, so the same passkey signs in and answers step-ups.
 // `revoked` holds the jti of refresh tokens given up at sign-out, until they would have expired.
-let accounts = loadJson(ACCOUNTS_FILE, { accounts: {}, byEmail: {}, revoked: {} });
-accounts.revoked = accounts.revoked || {};
-function saveAccounts() {
-  const now = Math.floor(Date.now() / 1000);
-  for (const [jti, exp] of Object.entries(accounts.revoked)) if (exp < now) delete accounts.revoked[jti];
-  saveJson(ACCOUNTS_FILE, accounts);
-}
 const normEmail = (e) => String(e || "").trim().toLowerCase();
 const emailOk = (e) => e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 const accountPrincipal = (id) => userFor(PERSONAL_KEY, "acct:" + id);
@@ -270,16 +246,26 @@ const extSubject = (ext) => (typeof ext === "string" && ext.startsWith("id:") ? 
 // PUBLIC key from /.well-known/jwks.json using their framework's native JWT tooling
 // (no shared secret). Identity tokens (consumer→gateway) stay HMAC (client_secret).
 const ISSUER = process.env.GATEWAY_PUBLIC_URL || "http://localhost:8080";
+// A missing key is made on first start, with STORAGE=json only. With a shared database several gateway
+// copies run at once and must all sign with the same key, so none may make its own: the deployment
+// mounts the key (a secret) into DATA_DIR, and a missing one stops the start with how to make it.
+function loadOrMakeKey(name) {
+  const keyFile = path.join(DATA_DIR, name);
+  try { return fs.readFileSync(keyFile, "utf8"); }
+  catch (e) {
+    if (e.code !== "ENOENT") throw new Error(`[gateway] cannot read ${keyFile}: ${e.message}`);
+    if (STORAGE !== "json") {
+      throw new Error(`[gateway] ${keyFile} is missing. With STORAGE=${STORAGE} every gateway copy must sign with the same ` +
+        `key, so none makes its own: mount it as a secret. To make one: openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out ${name}`);
+    }
+    const kp = crypto.generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
+    try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(keyFile, kp.privateKey); } catch (_) {}
+    return kp.privateKey;
+  }
+}
 let rsaPrivateKey, verdictJwk, verdictKid;
 (function loadVerdictKeys() {
-  const keyFile = path.join(DATA_DIR, "gateway-verdict-key.pem");
-  let pem;
-  try { pem = fs.readFileSync(keyFile, "utf8"); }
-  catch (e) {
-    const kp = crypto.generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
-    pem = kp.privateKey;
-    try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(keyFile, pem); } catch (_) {}
-  }
+  const pem = loadOrMakeKey("gateway-verdict-key.pem");
   rsaPrivateKey = crypto.createPrivateKey(pem);
   const pub = crypto.createPublicKey(rsaPrivateKey).export({ format: "jwk" }); // { kty, n, e }
   verdictKid = crypto.createHash("sha256").update(pub.n).digest("hex").slice(0, 16);
@@ -301,14 +287,7 @@ let rsaPrivateKey, verdictJwk, verdictKid;
 // and ca-service is not reachable from the host, so a client cannot present one directly.
 let identityPrivateKey, identityJwk, identityKid;
 (function loadIdentityKeys() {
-  const keyFile = path.join(DATA_DIR, "gateway-identity-key.pem");
-  let pem;
-  try { pem = fs.readFileSync(keyFile, "utf8"); }
-  catch (e) {
-    const kp = crypto.generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
-    pem = kp.privateKey;
-    try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(keyFile, pem); } catch (_) {}
-  }
+  const pem = loadOrMakeKey("gateway-identity-key.pem");
   identityPrivateKey = crypto.createPrivateKey(pem);
   const pub = crypto.createPublicKey(identityPrivateKey).export({ format: "jwk" });
   identityKid = "id-" + crypto.createHash("sha256").update(pub.n).digest("hex").slice(0, 16);
@@ -388,7 +367,13 @@ app.use(express.urlencoded({ extended: false, limit: "16kb" }));   // the organi
 app.use((req, res, next) => (req.path === "/operator.html" && !operatorHost(req) ? res.status(404).type("text/plain").send("Not found") : next()));
 app.use(express.static(GATEWAY_PAGES));
 app.use(express.static(SDK_PUBLIC));
-app.get("/health", (req, res) => res.json({ ok: true, service: "gateway", tenants: Object.keys(tenants.tenants).length }));
+// Liveness: the process answers. Readiness: it can also reach its storage (with postgres, the database
+// and the change feed), so an orchestrator sends it traffic only then.
+app.get("/health", (req, res) => res.json({ ok: true, service: "gateway", tenants: Object.keys(tenants.tenants).length, storage: storage.kind }));
+app.get("/ready", async (req, res) => {
+  try { await storage.ready(); res.json({ ready: true, storage: storage.kind }); }
+  catch (e) { res.status(503).json({ ready: false, storage: storage.kind, error: e.message }); }
+});
 
 // ---- discovery + public keys (so ANY framework verifies verdicts with config, not code) ----
 app.get("/.well-known/jwks.json", (req, res) => res.json({ keys: [verdictJwk, identityJwk] }));
@@ -544,23 +529,13 @@ function adminGate(req, res, next) {
 // ---- activity log ----
 // One JSON line per change to a tenant or an account: who (the operator, or a console account), what,
 // on which tenant, when. Append-only; the console shows an account its own entries, the operator all.
-const AUDIT_FILE = path.join(DATA_DIR, "audit.jsonl");
+// Kept by storage.js (audit.jsonl, or a table) and written in the background: a change already saved is
+// not undone because its log line failed, but the failure is logged.
 function audit(actor, action, siteKey, detail) {
   const t = siteKey ? tenants.tenants[siteKey] : null;
   const e = { at: new Date().toISOString(), actor, action, siteKey: siteKey || null, name: t ? t.name : (detail && detail.name) || null };
   if (detail) e.detail = detail;
-  try { fs.appendFileSync(AUDIT_FILE, JSON.stringify(e) + "\n"); } catch (err) { console.error(`[gateway] activity log not written: ${err.message}`); }
-}
-function readAudit(keep, limit) {
-  let lines = [];
-  try { lines = fs.readFileSync(AUDIT_FILE, "utf8").split("\n"); } catch (e) { return []; }
-  const out = [];
-  for (let i = lines.length - 1; i >= 0 && out.length < limit; i--) {
-    if (!lines[i]) continue;
-    let e; try { e = JSON.parse(lines[i]); } catch (x) { continue; }
-    if (keep(e)) out.push(e);
-  }
-  return out;
+  storage.appendAudit(e).catch((err) => console.error(`[gateway] activity log not written: ${err.message}`));
 }
 const asOperator = { type: "operator" };
 const asAccount = (accountId) => ({ type: "account", email: (accounts.accounts[accountId] || {}).email || null });
@@ -658,12 +633,12 @@ function tenantFields(body, partial) {
   }
   return out;
 }
-function createTenant(fields, extra) {
+async function createTenant(fields, extra) {
   let siteKey;
   do { siteKey = "pk_" + crypto.randomBytes(9).toString("hex"); } while (tenants.tenants[siteKey]);
   const secret = crypto.randomBytes(24).toString("hex");
   tenants.tenants[siteKey] = { ...fields, secret, ...extra, createdAt: new Date().toISOString() };
-  try { saveJson(TENANTS_FILE, tenants); } catch (e) {
+  try { await storage.saveTenant(siteKey); } catch (e) {
     // Never hand out credentials that live only in memory and vanish on the next restart.
     delete tenants.tenants[siteKey];
     console.error(`[gateway] tenant registration not saved: ${e.message}`);
@@ -678,10 +653,10 @@ function tenantView(siteKey, t) {
     builtIn: siteKey === PERSONAL_KEY, serverManaged: SERVER_MANAGED.has(siteKey), createdAt: t.createdAt, secretRotatedAt: t.secretRotatedAt || null };
 }
 const NOTE_KEYS = "Put siteKey in the SDK <script data-site-key>, and secret in your backend CONTINUUM_SECRET.";
-app.post("/v1/tenants", adminGate, (req, res) => {
+app.post("/v1/tenants", adminGate, async (req, res) => {
   const f = tenantFields(req.body, false);
   if (f.error) return res.status(400).json(f);
-  const k = createTenant(f, { status: "active" });
+  const k = await createTenant(f, { status: "active" });
   if (!k) return res.status(500).json({ error: "tenant_registry_write_failed" });
   audit(asOperator, "organisation.created", k.siteKey);
   res.json({ ...k, ...f, status: "active", note: NOTE_KEYS });
@@ -691,7 +666,7 @@ app.get("/v1/tenants", adminGate, (req, res) => {
 });
 // The operator approves a console sign-up, or revokes a tenant. A revoked tenant's sessions stop at
 // once (auth() re-resolves the tenant on every call).
-app.post("/v1/tenants/:siteKey/status", adminGate, (req, res) => {
+app.post("/v1/tenants/:siteKey/status", adminGate, async (req, res) => {
   const t = tenants.tenants[req.params.siteKey];
   if (!t) return res.status(404).json({ error: "unknown_tenant" });
   if (req.params.siteKey === PERSONAL_KEY) return res.status(400).json({ error: "built_in_tenant" });
@@ -699,7 +674,7 @@ app.post("/v1/tenants/:siteKey/status", adminGate, (req, res) => {
   if (!["active", "revoked"].includes(status)) return res.status(400).json({ error: "bad_status", allowed: ["active", "revoked"] });
   const prev = t.status;
   t.status = status;
-  try { saveJson(TENANTS_FILE, tenants); } catch (e) { t.status = prev; return res.status(500).json({ error: "tenant_registry_write_failed" }); }
+  try { await storage.saveTenant(req.params.siteKey); } catch (e) { t.status = prev; return res.status(500).json({ error: "tenant_registry_write_failed" }); }
   if (prev !== status) audit(asOperator, status === "revoked" ? "organisation.revoked" : prev === "pending" ? "organisation.approved" : "organisation.reactivated", req.params.siteKey);
   res.json(tenantView(req.params.siteKey, t));
 });
@@ -708,18 +683,18 @@ app.get("/v1/admin/tenants/:siteKey/stats", adminGate, async (req, res) => {
   if (!tenants.tenants[req.params.siteKey]) return res.status(404).json({ error: "unknown_tenant" });
   res.json(await tenantStats(req.params.siteKey));
 });
-app.get("/v1/admin/activity", adminGate, (req, res) => res.json({ entries: readAudit(() => true, 300) }));
+app.get("/v1/admin/activity", adminGate, async (req, res) => res.json({ entries: await storage.readAudit(null, 300) }));
 
 // ---- settings: the operator's defaults and switches, and the whole environment read-only ----
-const SECRET_ENV = new Set(["GATEWAY_SESSION_SECRET", "GATEWAY_ADMIN_KEY", "CA_SIGNING_SECRET", "CONTINUUM_SECRET", "CA_API_KEY", "PASSKEY_API_KEY"]);
-const GATEWAY_ENV = ["GATEWAY_PUBLIC_URL", "PORT", "DATA_DIR", "CA_API_URL", "PASSKEY_API_URL", "GATEWAY_OPERATOR_HOSTS",
+const SECRET_ENV = new Set(["GATEWAY_SESSION_SECRET", "GATEWAY_ADMIN_KEY", "CA_SIGNING_SECRET", "CONTINUUM_SECRET", "CA_API_KEY", "PASSKEY_API_KEY", "DATABASE_URL"]);
+const GATEWAY_ENV = ["GATEWAY_PUBLIC_URL", "PORT", "DATA_DIR", "STORAGE", "DATABASE_POOL_MAX", "CA_API_URL", "PASSKEY_API_URL", "GATEWAY_OPERATOR_HOSTS",
   "CONTINUUM_EXTENSION_ID", "DEMO_SIGNIN_URL", "DEMO_WEBHOOK_URL", "IDENTITY_ASSERTION_TTL", "GATEWAY_USER_ID_BASE",
   "GATEWAY_SESSION_TTL_SEC", "GATEWAY_RISK_TTL_SEC", "GATEWAY_REFRESH_TTL_SEC", "GATEWAY_CONSOLE_TTL_SEC",
   "GATEWAY_AUTO_APPROVE_TENANTS", "GATEWAY_ALLOW_PRIVATE_WEBHOOKS", "ONBOARDING_MODE", "MONITOR_EXCLUDE_TYPES", "CONTINUUM_PANEL",
   "CONTINUUM_KEYSTROKE", "CONTINUUM_MOUSE", "ADAPTIVE_RETRAINING", "ADAPTIVE_MIN_GAP_HOURS", "KEYSTROKE_DECISION_WINDOWS", ...SECRET_ENV];
 const ENV_SETTING = Object.fromEntries([
-  ...Object.entries(settings.APP).map(([k, d]) => [d.env, "defaults." + k]),
-  ...Object.entries(settings.SERVER).map(([k, d]) => [d.env, "server." + k]),
+  ...Object.entries(createSettings.APP).map(([k, d]) => [d.env, "defaults." + k]),
+  ...Object.entries(createSettings.SERVER).map(([k, d]) => [d.env, "server." + k]),
   ["STUDY_LOGGING", "study.studyLogging"],
 ]);
 async function caSettings(method, body) {
@@ -741,7 +716,7 @@ app.get("/v1/admin/settings", adminGate, async (req, res) => res.json(await oper
 app.put("/v1/admin/settings", adminGate, async (req, res) => {
   const body = req.body || {};
   let changed = [];
-  try { changed = settings.updateOperator({ defaults: body.defaults, server: body.server }); }
+  try { changed = await settings.updateOperator({ defaults: body.defaults, server: body.server }); }
   catch (e) { return res.status(e.code === "store_write_failed" ? 500 : 400).json({ error: e.code || "bad_setting", note: e.message }); }
   if (body.study && Object.keys(body.study).length) {
     const r = await caSettings("PUT", body.study).catch(() => ({ status: 0, d: {} }));
@@ -753,7 +728,7 @@ app.put("/v1/admin/settings", adminGate, async (req, res) => {
 });
 // The operator gives an existing tenant (one registered by the operator, or the built-in demo) to a
 // Continuum account, so its owner manages it in the console. An empty email takes it back.
-app.post("/v1/admin/tenants/:siteKey/owner", adminGate, (req, res) => {
+app.post("/v1/admin/tenants/:siteKey/owner", adminGate, async (req, res) => {
   const t = tenants.tenants[req.params.siteKey];
   if (!t) return res.status(404).json({ error: "unknown_tenant" });
   if (req.params.siteKey === PERSONAL_KEY) return res.status(400).json({ error: "built_in_tenant" });
@@ -762,7 +737,7 @@ app.post("/v1/admin/tenants/:siteKey/owner", adminGate, (req, res) => {
   if (email && !accountId) return res.status(404).json({ error: "no_account" });
   const prev = t.owner;
   if (accountId) t.owner = accountId; else delete t.owner;
-  try { saveJson(TENANTS_FILE, tenants); } catch (e) { if (prev) t.owner = prev; else delete t.owner; return res.status(500).json({ error: "tenant_registry_write_failed" }); }
+  try { await storage.saveTenant(req.params.siteKey); } catch (e) { if (prev) t.owner = prev; else delete t.owner; return res.status(500).json({ error: "tenant_registry_write_failed" }); }
   if (prev !== t.owner) audit(asOperator, accountId ? "organisation.owner_set" : "organisation.owner_cleared", req.params.siteKey, accountId ? { email } : null);
   res.json(tenantView(req.params.siteKey, t));
 });
@@ -774,7 +749,7 @@ app.post("/v1/admin/tenants/:siteKey/owner", adminGate, (req, res) => {
 async function eraseTenantUsers(siteKey) {
   const keys = Object.keys(store.users).filter((k) => k.startsWith(siteKey + "|"));
   let i = 0;
-  const failed = [];
+  const failed = [], erased = [];
   async function worker() {
     while (i < keys.length) {
       const key = keys[i++], u = store.users[key];
@@ -788,11 +763,12 @@ async function eraseTenantUsers(siteKey) {
       } catch (e) { failed.push(key); continue; }
       pkCache.delete(u.userId); lastRisk.delete(u.userId);
       delete store.users[key];
+      erased.push(key);
     }
   }
   await Promise.all(Array.from({ length: 6 }, worker));
   statsCache.delete(siteKey);
-  if (keys.length) saveJson(IDENTITY_FILE, store);
+  await storage.deleteIdentities(erased);
   return { users: keys.length, failed: failed.length };
 }
 
@@ -802,7 +778,7 @@ app.post("/v1/admin/accounts/delete", adminGate, async (req, res) => {
   const email = normEmail(req.body.email);
   const accountId = accounts.byEmail[email];
   if (!accountId) return res.status(404).json({ error: "no_account" });
-  const u = accountPrincipal(accountId);
+  const u = await accountPrincipal(accountId);
   const steps = {};
   steps.passkeys = (await fwd(`${PASSKEY_URL}/v1/users/${u.userId}/reset`, "POST")).status;
   for (const m of ["keystroke", "mouse"]) {
@@ -810,10 +786,13 @@ app.post("/v1/admin/accounts/delete", adminGate, async (req, res) => {
   }
   pkCache.delete(u.userId);
   const owned = Object.keys(tenants.tenants).filter((k) => tenants.tenants[k].owner === accountId && !SERVER_MANAGED.has(k));
+  const touched = [...owned];
   for (const k of owned) { steps[k] = await eraseTenantUsers(k).catch((e) => ({ error: e.message })); delete tenants.tenants[k]; }
-  for (const k of SERVER_MANAGED) if (tenants.tenants[k] && tenants.tenants[k].owner === accountId) delete tenants.tenants[k].owner;   // detached, never deleted
+  for (const k of SERVER_MANAGED) {
+    if (tenants.tenants[k] && tenants.tenants[k].owner === accountId) { delete tenants.tenants[k].owner; touched.push(k); }   // detached, never deleted
+  }
   delete accounts.accounts[accountId]; delete accounts.byEmail[email];
-  try { saveJson(TENANTS_FILE, tenants); saveAccounts(); } catch (e) { return res.status(500).json({ error: "store_write_failed" }); }
+  try { await storage.saveTenants(touched); await storage.saveAccount(accountId); } catch (e) { return res.status(500).json({ error: "store_write_failed" }); }
   audit(asOperator, "account.deleted", null, { email, deletedTenants: owned });
   res.json({ ok: true, deletedTenants: owned, steps });
 });
@@ -850,7 +829,7 @@ app.post("/v1/accounts/register/options", ownPage, async (req, res) => {
   // Email is the account's name only: there is no mail server, so it is not verified. The passkey is
   // what proves the account; a production deployment would add an emailed confirmation.
   const accountId = "a_" + crypto.randomBytes(8).toString("hex");
-  const u = accountPrincipal(accountId);
+  const u = await accountPrincipal(accountId);
   const r = await fwd(`${PASSKEY_URL}/v1/register/options`, "POST", { userId: u.userId, username: email, rpId: PUBLIC_RP_ID, origin: PUBLIC_ORIGIN });
   if (r.status !== 200) return relay(res, r);
   res.json({ ceremonyId: putCeremony({ kind: "register", email, accountId, userId: u.userId, ...p }), options: JSON.parse(r.text) });
@@ -864,8 +843,10 @@ app.post("/v1/accounts/register/complete", ownPage, async (req, res) => {
   pkCache.delete(c.userId);
   accounts.accounts[c.accountId] = { email: c.email, createdAt: new Date().toISOString() };
   accounts.byEmail[c.email] = c.accountId;
-  try { saveAccounts(); } catch (e) {
+  try { await storage.saveAccount(c.accountId); } catch (e) {
     delete accounts.accounts[c.accountId]; delete accounts.byEmail[c.email];
+    // Another gateway copy registered this email a moment ago (the database refuses a second one).
+    if (e.code === "conflict") return res.status(409).json({ error: "email_taken" });
     console.error(`[gateway] account not saved: ${e.message}`);
     return res.status(500).json({ error: "account_store_write_failed" });
   }
@@ -877,7 +858,7 @@ app.post("/v1/accounts/login/options", ownPage, async (req, res) => {
   if (!accountId) return res.status(404).json({ error: "no_account" });
   const p = purposeOf(req.body);
   if (p.error) return res.status(400).json(p);
-  const u = accountPrincipal(accountId);
+  const u = await accountPrincipal(accountId);
   const r = await fwd(`${PASSKEY_URL}/v1/auth/options`, "POST", { userId: u.userId, rpId: PUBLIC_RP_ID });
   if (r.status !== 200) return relay(res, r);
   const options = JSON.parse(r.text);
@@ -916,47 +897,47 @@ app.get("/v1/console/me", consoleAuth, (req, res) => res.json({ email: accounts.
 app.get("/v1/console/tenants", consoleAuth, (req, res) => {
   res.json({ tenants: Object.entries(tenants.tenants).filter(([, t]) => t.owner === req.acct).map(([k, t]) => tenantView(k, t)) });
 });
-app.post("/v1/console/tenants", consoleAuth, (req, res) => {
+app.post("/v1/console/tenants", consoleAuth, async (req, res) => {
   const mine = Object.values(tenants.tenants).filter((t) => t.owner === req.acct && t.status !== "revoked").length;
   if (mine >= MAX_TENANTS_PER_ACCOUNT) return res.status(409).json({ error: "tenant_limit_reached", limit: MAX_TENANTS_PER_ACCOUNT });
   const f = tenantFields(req.body, false);
   if (f.error) return res.status(400).json(f);
   if (f.webhookUrl && !publicWebhook(f.webhookUrl)) return res.status(400).json({ error: "webhook_not_public" });
   const status = autoApprove() ? "active" : "pending";
-  const k = createTenant(f, { status, owner: req.acct });
+  const k = await createTenant(f, { status, owner: req.acct });
   if (!k) return res.status(500).json({ error: "tenant_registry_write_failed" });
   audit(asAccount(req.acct), "organisation.created", k.siteKey, { status });
   res.json({ ...k, ...tenantView(k.siteKey, tenants.tenants[k.siteKey]), note: NOTE_KEYS });
 });
-app.post("/v1/console/tenants/:siteKey", consoleAuth, ownTenant, (req, res) => {
+app.post("/v1/console/tenants/:siteKey", consoleAuth, ownTenant, async (req, res) => {
   const f = tenantFields(req.body, true);
   if (f.error) return res.status(400).json(f);
   if (f.webhookUrl && f.webhookUrl !== req.t.webhookUrl && !publicWebhook(f.webhookUrl)) return res.status(400).json({ error: "webhook_not_public" });
   const prev = { ...req.t };
   const changed = Object.keys(f).filter((k) => JSON.stringify(f[k]) !== JSON.stringify(prev[k]));
   Object.assign(req.t, f);
-  try { saveJson(TENANTS_FILE, tenants); } catch (e) { Object.assign(req.t, prev); return res.status(500).json({ error: "tenant_registry_write_failed" }); }
+  try { await storage.saveTenant(req.params.siteKey); } catch (e) { Object.assign(req.t, prev); return res.status(500).json({ error: "tenant_registry_write_failed" }); }
   if (changed.length) audit(asAccount(req.acct), "organisation.updated", req.params.siteKey, { changed });
   res.json(tenantView(req.params.siteKey, req.t));
 });
 app.get("/v1/console/tenants/:siteKey/stats", consoleAuth, ownTenantRead, async (req, res) => res.json(await tenantStats(req.params.siteKey)));
-app.get("/v1/console/activity", consoleAuth, (req, res) => {
-  const mine = new Set(Object.keys(tenants.tenants).filter((k) => tenants.tenants[k].owner === req.acct));
+app.get("/v1/console/activity", consoleAuth, async (req, res) => {
+  const mine = Object.keys(tenants.tenants).filter((k) => tenants.tenants[k].owner === req.acct);
   const email = (accounts.accounts[req.acct] || {}).email;
   // The account's own actions, and anything done to its tenants (an approval by the operator, say).
-  res.json({ entries: readAudit((e) => (e.siteKey && mine.has(e.siteKey)) || (e.actor && e.actor.type === "account" && e.actor.email === email), 200) });
+  res.json({ entries: await storage.readAudit({ siteKeys: mine, email }, 200) });
 });
 // The organisation's own settings for its apps (each falls back to the operator's default).
 app.get("/v1/console/tenants/:siteKey/settings", consoleAuth, ownTenantRead, (req, res) => {
   res.json({ settings: settings.describe(req.t), serverManaged: SERVER_MANAGED.has(req.params.siteKey) });
 });
-app.post("/v1/console/tenants/:siteKey/settings", consoleAuth, ownTenant, (req, res) => {
+app.post("/v1/console/tenants/:siteKey/settings", consoleAuth, ownTenant, async (req, res) => {
   let out;
   try { out = settings.updateTenant(req.t, req.body || {}); }
   catch (e) { return res.status(400).json({ error: e.code || "bad_setting", note: e.message }); }
   const prev = req.t.settings;
   if (Object.keys(out.settings).length) req.t.settings = out.settings; else delete req.t.settings;
-  try { saveJson(TENANTS_FILE, tenants); } catch (e) { if (prev) req.t.settings = prev; else delete req.t.settings; return res.status(500).json({ error: "tenant_registry_write_failed" }); }
+  try { await storage.saveTenant(req.params.siteKey); } catch (e) { if (prev) req.t.settings = prev; else delete req.t.settings; return res.status(500).json({ error: "tenant_registry_write_failed" }); }
   if (out.changed.length) audit(asAccount(req.acct), "organisation.settings_changed", req.params.siteKey, { changed: out.changed });
   res.json({ changed: out.changed, settings: settings.describe(req.t) });
 });
@@ -979,22 +960,23 @@ app.post("/v1/console/tenants/:siteKey/test-webhook", consoleAuth, ownTenant, as
 });
 // A new secret, shown once. The old one stops working at once: identity tokens the tenant's backend
 // already signed fail, so it should deploy the new secret right away.
-app.post("/v1/console/tenants/:siteKey/rotate", consoleAuth, ownTenant, (req, res) => {
+app.post("/v1/console/tenants/:siteKey/rotate", consoleAuth, ownTenant, async (req, res) => {
   if (SERVER_MANAGED.has(req.params.siteKey)) return res.status(409).json({ error: "server_managed_secret" });
-  const prev = req.t.secret;
+  const prev = req.t.secret, prevAt = req.t.secretRotatedAt;
   req.t.secret = crypto.randomBytes(24).toString("hex");
   req.t.secretRotatedAt = new Date().toISOString();
-  try { saveJson(TENANTS_FILE, tenants); } catch (e) { req.t.secret = prev; return res.status(500).json({ error: "tenant_registry_write_failed" }); }
+  try { await storage.saveTenant(req.params.siteKey); } catch (e) { req.t.secret = prev; req.t.secretRotatedAt = prevAt; return res.status(500).json({ error: "tenant_registry_write_failed" }); }
   audit(asAccount(req.acct), "secret.rotated", req.params.siteKey);
   res.json({ siteKey: req.params.siteKey, secret: req.t.secret });
 });
 // Revoking is final from the console, so the request must name the tenant exactly (the page asks the user
 // to type it), as GitHub and Auth0 do before deleting.
-app.post("/v1/console/tenants/:siteKey/revoke", consoleAuth, ownTenant, (req, res) => {
+app.post("/v1/console/tenants/:siteKey/revoke", consoleAuth, ownTenant, async (req, res) => {
   if (SERVER_MANAGED.has(req.params.siteKey)) return res.status(409).json({ error: "server_managed_tenant" });
   if (String(req.body.confirm || "") !== req.t.name) return res.status(400).json({ error: "confirm_name_mismatch" });
+  const prevStatus = req.t.status;
   req.t.status = "revoked";
-  try { saveJson(TENANTS_FILE, tenants); } catch (e) { return res.status(500).json({ error: "tenant_registry_write_failed" }); }
+  try { await storage.saveTenant(req.params.siteKey); } catch (e) { req.t.status = prevStatus; return res.status(500).json({ error: "tenant_registry_write_failed" }); }
   audit(asAccount(req.acct), "organisation.revoked", req.params.siteKey);
   res.json(tenantView(req.params.siteKey, req.t));
 });
@@ -1008,7 +990,7 @@ app.post("/v1/console/tenants/:siteKey/delete", consoleAuth, ownTenantRead, asyn
   if (String(req.body.confirm || "") !== t.name) return res.status(400).json({ error: "confirm_name_mismatch" });
   const prevStatus = t.status;
   t.status = "revoked";   // stop the key first, so no new user appears while the erase runs
-  try { saveJson(TENANTS_FILE, tenants); } catch (e) { t.status = prevStatus; return res.status(500).json({ error: "tenant_registry_write_failed" }); }
+  try { await storage.saveTenant(key); } catch (e) { t.status = prevStatus; return res.status(500).json({ error: "tenant_registry_write_failed" }); }
   const r = await eraseTenantUsers(key).catch(() => ({ users: 0, failed: 1 }));
   if (r.failed) {
     audit(asAccount(req.acct), "organisation.revoked", key, { reason: "delete_incomplete", failed: r.failed });
@@ -1016,7 +998,7 @@ app.post("/v1/console/tenants/:siteKey/delete", consoleAuth, ownTenantRead, asyn
   }
   const name = t.name;
   delete tenants.tenants[key];
-  try { saveJson(TENANTS_FILE, tenants); } catch (e) { return res.status(500).json({ error: "tenant_registry_write_failed" }); }
+  try { await storage.saveTenant(key); } catch (e) { return res.status(500).json({ error: "tenant_registry_write_failed" }); }
   audit(asAccount(req.acct), "organisation.deleted", key, { name, users: r.users });
   res.json({ ok: true, siteKey: key, users: r.users });
 });
@@ -1100,18 +1082,18 @@ app.post("/v1/link/token", async (req, res) => {
     const t = resolveTenant(l.siteKey);
     if (!t) return res.status(403).json({ error: "organisation_not_active" });
     if (!originAllowed(t, req)) return res.status(403).json({ error: "origin_not_allowed" });
-    const u = userFor(l.siteKey, l.externalId);
+    const u = await userFor(l.siteKey, l.externalId);
     res.json({ token: signSession(u, l.siteKey, l.externalId), refreshToken: signRefresh(u, l.siteKey, l.externalId), userId: u.userId,
       siteKey: l.siteKey, kind: l.siteKey === PERSONAL_KEY ? "personal" : "organisation", tenantName: t.name, label: l.label,
       onboarding: await onboardingFor(u.userId, l.siteKey) });
   } catch (e) { console.error("link/token:", e); res.status(500).json({ error: e.message }); }
 });
 // Sign-out: the refresh token stops working (until it would have expired anyway).
-app.post("/v1/link/revoke", (req, res) => {
+app.post("/v1/link/revoke", async (req, res) => {
   const pl = unjwt(SESSION_SECRET, String(req.body.refreshToken || ""));
   if (pl && pl.typ === "refresh" && pl.jti) {
     accounts.revoked[pl.jti] = pl.exp;
-    try { saveAccounts(); } catch (e) { return res.status(500).json({ error: "account_store_write_failed" }); }
+    try { await storage.saveRevoked(pl.jti); } catch (e) { delete accounts.revoked[pl.jti]; return res.status(500).json({ error: "account_store_write_failed" }); }
   }
   res.json({ ok: true });
 });
@@ -1145,7 +1127,7 @@ app.post("/v1/sdk/session", async (req, res) => {
       // example externalId "id:42" on pk_demo) and read, reset or re-enrol their profile.
       if (/^(id|acct):/i.test(externalId)) return res.status(400).json({ error: "reserved_external_id" });
     }
-    const u = userFor(siteKey, externalId);
+    const u = await userFor(siteKey, externalId);
     res.json({ token: signSession(u, siteKey, externalId), userId: u.userId, username: u.username, externalId, verified, onboarding: await onboardingFor(u.userId, siteKey), onboardingMode: settings.effective(tenants.tenants[siteKey]).values.onboarding });
   } catch (e) { console.error("session:", e); res.status(500).json({ error: e.message }); }
 });
@@ -1160,14 +1142,15 @@ app.post("/v1/sdk/session", async (req, res) => {
 //
 // Cross-tenant is cryptographically impossible: the siteKey selects which secret verifies the
 // token, so presenting another tenant's siteKey fails the signature check.
-app.post("/v1/assert", (req, res) => {
+app.post("/v1/assert", async (req, res) => {
   const siteKey = String(req.body.siteKey || "");
   const tenant = resolveTenant(siteKey);
   if (!tenant) return res.status(401).json({ error: "invalid_site_key" });
   if (tenant.status && tenant.status !== "active") return res.status(403).json({ error: "tenant_revoked" });
   const id = verifyIdentity(tenant.secret, req.body.identityToken);
   if (!id) return res.status(401).json({ error: "invalid_identity_token" });
-  const u = userFor(siteKey, "id:" + String(id.sub));
+  let u;
+  try { u = await userFor(siteKey, "id:" + String(id.sub)); } catch (e) { return res.status(409).json({ error: "identity_conflict" }); }
   const audience = String(req.body.audience || "ca-service");
   res.json({
     assertion: mintAssertion(siteKey, u.userId, audience),
@@ -1177,13 +1160,14 @@ app.post("/v1/assert", (req, res) => {
   });
 });
 
-app.post("/v1/resolve", (req, res) => {
+app.post("/v1/resolve", async (req, res) => {
   const siteKey = String(req.body.siteKey || "");
   const tenant = resolveTenant(siteKey);
   if (!tenant) return res.status(401).json({ error: "invalid_site_key" });
   const id = verifyIdentity(tenant.secret, req.body.identityToken);
   if (!id) return res.status(401).json({ error: "invalid_identity_token" });
-  const u = userFor(siteKey, "id:" + String(id.sub));
+  let u;
+  try { u = await userFor(siteKey, "id:" + String(id.sub)); } catch (e) { return res.status(409).json({ error: "identity_conflict" }); }
   res.json({ continuumUserId: u.userId, sub: id.sub });
 });
 
@@ -1289,4 +1273,28 @@ app.post("/v1/sdk/keystroke/adaptive/retrain", auth, async (req, res) => {
 app.get("/v1/sdk/lock/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/lock/status/${req.uid}`, "GET", undefined, caAssert(req))));
 app.get("/v1/sdk/passkey/status", auth, async (req, res) => res.json({ hasPasskey: await hasPasskey(req.uid) }));
 
-app.listen(PORT, () => console.log(`Continuum gateway on :${PORT} (tenants=${Object.keys(tenants.tenants).length})`));
+// ---- start ----
+// Storage first (records into memory), then the built-in tenants, then traffic. A failure here stops the
+// process with the reason, so an orchestrator restarts it instead of it serving with half its records.
+async function boot() {
+  storage = await openStorage({ kind: STORAGE, dataDir: DATA_DIR, databaseUrl: process.env.DATABASE_URL });
+  ({ tenants, identity: store, accounts } = storage.data);
+  settings = createSettings({ initial: storage.data.settings, persist: (doc) => storage.saveSettings(doc) });
+  // Changes made by another gateway copy (postgres): settings are taken over, counts recomputed.
+  storage.on("settings", (doc) => settings.replace(doc));
+  storage.on("identity", (key) => statsCache.delete(siteKeyOf(key)));
+  await seedBuiltInTenants();
+  const server = app.listen(PORT, () => console.log(`Continuum gateway on :${PORT} (tenants=${Object.keys(tenants.tenants).length}, storage=${storage.kind})`));
+  // A stop request (docker stop, a Kubernetes rollout) finishes the requests in flight, then closes storage.
+  let stopping = false;
+  for (const sig of ["SIGTERM", "SIGINT"]) {
+    process.on(sig, () => {
+      if (stopping) return;
+      stopping = true;
+      console.log(`[gateway] ${sig}: stopping`);
+      server.close(() => storage.close().finally(() => process.exit(0)));
+      setTimeout(() => process.exit(0), 10000).unref();
+    });
+  }
+}
+boot().catch((e) => { console.error(e.message || e); process.exit(1); });

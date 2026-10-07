@@ -164,6 +164,9 @@ services:
       # Where browsers reach the gateway (its console, operator and extension pages, and the
       # passkeys made on them), and the Continuum Guard extension's id.
       GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
+      # Where its records live: json files (DATA_DIR) or postgres (DATABASE_URL); see .env.example.
+      STORAGE: ${STORAGE:-json}
+      DATABASE_URL: ${DATABASE_URL:-}
       CONTINUUM_EXTENSION_ID: ${CONTINUUM_EXTENSION_ID:-}
       GATEWAY_ALLOW_PRIVATE_WEBHOOKS: ${GATEWAY_ALLOW_PRIVATE_WEBHOOKS:-0}
       GATEWAY_AUTO_APPROVE_TENANTS: ${GATEWAY_AUTO_APPROVE_TENANTS:-0}

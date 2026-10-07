@@ -185,6 +185,9 @@ services:
       # Where browsers reach the gateway: its pages (console, extension sign-in, study) and
       # every passkey made there belong to this origin.
       GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
+      # Where its records live: json files (DATA_DIR) or postgres (DATABASE_URL); see .env.example.
+      STORAGE: ${STORAGE:-json}
+      DATABASE_URL: ${DATABASE_URL:-}
       # Tenant registration by the operator, and approval of console sign-ups (X-Admin-Key).
       # Empty = open, with a warning in the log; set it in .env.
       GATEWAY_ADMIN_KEY: ${GATEWAY_ADMIN_KEY:-}

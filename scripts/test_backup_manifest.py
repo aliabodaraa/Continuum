@@ -17,6 +17,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import backup_manifest as bm  # noqa: E402
 
 
+def write(path, data, mode="w"):
+    with open(path, mode) as f:
+        f.write(data)
+
+
 def quiet(fn, *args):
     with redirect_stdout(io.StringIO()):
         return fn(*args)
@@ -48,15 +53,17 @@ class BackupManifestTest(unittest.TestCase):
 
     def test_an_untouched_backup_verifies(self):
         self.assertEqual(quiet(bm.verify, self.root), 0)
-        m = json.load(open(os.path.join(self.root, "MANIFEST.json")))
+        with open(os.path.join(self.root, "MANIFEST.json")) as f:
+            m = json.load(f)
         self.assertEqual(m["sqlite"]["services/ca-service/ca.db"]["tables"], {"samples": 3})
         self.assertEqual(m["sqlite"]["services/ca-service/ca.db"]["integrity"], "ok")
 
     def test_a_changed_byte_fails(self):
         p = os.path.join(self.root, "models", "u1", "model.bin")
-        data = bytearray(open(p, "rb").read())
+        with open(p, "rb") as f:
+            data = bytearray(f.read())
         data[100] ^= 0xFF
-        open(p, "wb").write(bytes(data))
+        write(p, bytes(data), "wb")
         self.assertEqual(quiet(bm.verify, self.root), 1)
 
     def test_a_lost_row_fails(self):
@@ -71,12 +78,12 @@ class BackupManifestTest(unittest.TestCase):
         self.assertEqual(quiet(bm.verify, self.root), 1)
 
     def test_an_unlisted_file_fails(self):
-        open(os.path.join(self.root, "stray.txt"), "w").write("x")
+        write(os.path.join(self.root, "stray.txt"), "x")
         self.assertEqual(quiet(bm.verify, self.root), 1)
 
     @unittest.skipUnless(shutil.which("openssl"), "openssl not installed")
     def test_a_key_that_does_not_load_fails(self):
-        open(os.path.join(self.root, "key.pem"), "w").write("-----BEGIN PRIVATE KEY-----\nbroken\n-----END PRIVATE KEY-----\n")
+        write(os.path.join(self.root, "key.pem"),"-----BEGIN PRIVATE KEY-----\nbroken\n-----END PRIVATE KEY-----\n")
         quiet(bm.build, self.root)   # even listed in the manifest, a broken key must not pass
         self.assertEqual(quiet(bm.verify, self.root), 1)
 

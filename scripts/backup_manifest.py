@@ -104,17 +104,19 @@ def verify(root):
         full = os.path.join(root, rel)
         if rel.endswith(".json"):
             try:
-                json.load(open(full, encoding="utf-8"))
+                with open(full, encoding="utf-8") as f:
+                    json.load(f)
             except Exception as e:
                 problems.append(f"{rel}: not valid JSON ({e})")
         elif rel.endswith(".jsonl"):
-            for i, line in enumerate(open(full, encoding="utf-8")):
-                if line.strip():
-                    try:
-                        json.loads(line)
-                    except Exception:
-                        problems.append(f"{rel}: line {i + 1} not valid JSON")
-                        break
+            with open(full, encoding="utf-8") as f:
+                for i, line in enumerate(f):
+                    if line.strip():
+                        try:
+                            json.loads(line)
+                        except Exception:
+                            problems.append(f"{rel}: line {i + 1} not valid JSON")
+                            break
         elif rel.endswith(".pem"):
             r = subprocess.run(["openssl", "pkey", "-in", full, "-noout"], capture_output=True)
             if r.returncode != 0:

@@ -27,16 +27,16 @@ test("built-in defaults apply when nothing is set", () => {
   assert.ok(Object.values(sources).every((src) => src === "default"));
 });
 
-test("precedence: organisation over operator over .env over built-in", () => {
+test("precedence: organisation over operator over .env over built-in", async () => {
   process.env.CONTINUUM_MOUSE = "off";
   try {
     const { s } = fresh();
     assert.deepEqual([s.effective(null).values.mouse, s.effective(null).sources.mouse], ["off", "env"]);
-    s.updateOperator({ defaults: { mouse: "on" } });
+    await s.updateOperator({ defaults: { mouse: "on" } });
     assert.deepEqual([s.effective(null).values.mouse, s.effective(null).sources.mouse], ["on", "operator"]);
     const tenant = { settings: s.updateTenant({ settings: {} }, { mouse: "off" }).settings };
     assert.deepEqual([s.effective(tenant).values.mouse, s.effective(tenant).sources.mouse], ["off", "organisation"]);
-    s.updateOperator({ defaults: { mouse: null } });   // clearing the operator value falls back to .env
+    await s.updateOperator({ defaults: { mouse: null } });   // clearing the operator value falls back to .env
     assert.equal(s.effective(null).sources.mouse, "env");
   } finally {
     delete process.env.CONTINUUM_MOUSE;
@@ -50,10 +50,10 @@ test("only the measured decision packets are accepted (6, 10, 20)", () => {
   assert.throws(() => s.updateTenant({ settings: {} }, { keystrokeDecisionWindows: 7 }), { code: "bad_setting" });
 });
 
-test("on-demand enrolment needs the panel", () => {
+test("on-demand enrolment needs the panel", async () => {
   const { s } = fresh();
   assert.throws(() => s.updateTenant({ settings: {} }, { panel: "hide", onboarding: "lazy" }), { code: "lazy_needs_panel" });
-  assert.throws(() => s.updateOperator({ defaults: { panel: "hide", onboarding: "lazy" } }), { code: "lazy_needs_panel" });
+  await assert.rejects(s.updateOperator({ defaults: { panel: "hide", onboarding: "lazy" } }), { code: "lazy_needs_panel" });
 });
 
 test("bad values and unknown settings are refused", () => {
@@ -64,9 +64,9 @@ test("bad values and unknown settings are refused", () => {
   assert.deepEqual(s.updateTenant({ settings: {} }, { excludeFieldTypes: "Email, hidden, email" }).settings.excludeFieldTypes, ["email", "hidden"]);
 });
 
-test("the signed claim carries the values and marks only explicit choices as managed", () => {
+test("the signed claim carries the values and marks only explicit choices as managed", async () => {
   const { s } = fresh();
-  s.updateOperator({ defaults: { adaptiveGapHours: 2.5 } });
+  await s.updateOperator({ defaults: { adaptiveGapHours: 2.5 } });
   const tenant = { settings: s.updateTenant({ settings: {} }, { panel: "hide", keystrokeDecisionWindows: 6 }).settings };
   const c = s.claim(tenant);
   assert.equal(c.panel, "hide");
@@ -75,9 +75,9 @@ test("the signed claim carries the values and marks only explicit choices as man
   assert.deepEqual(new Set(c.m), new Set(["panel", "keystrokeDecisionWindows", "adaptiveGapHours"]));
 });
 
-test("operator settings survive a restart (settings.json)", () => {
+test("operator settings survive a restart (settings.json)", async () => {
   const { dir, s } = fresh();
-  s.updateOperator({ defaults: { panel: "hide" }, server: { autoApproveTenants: true } });
+  await s.updateOperator({ defaults: { panel: "hide" }, server: { autoApproveTenants: true } });
   const again = createSettings(dir);
   assert.equal(again.effective(null).values.panel, "hide");
   assert.equal(again.server("autoApproveTenants"), true);
@@ -87,4 +87,18 @@ test("an unreadable settings.json stops start-up instead of silently resetting",
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gw-settings-"));
   fs.writeFileSync(path.join(dir, "settings.json"), "{ not json");
   assert.throws(() => createSettings(dir), /unreadable/);
+});
+
+test("a failed save keeps the previous settings and says so", async () => {
+  const s = createSettings({ initial: { defaults: { panel: "show" } }, persist: async () => { throw new Error("disk full"); } });
+  await assert.rejects(s.updateOperator({ defaults: { panel: "hide" } }), { code: "store_write_failed" });
+  assert.equal(s.effective(null).values.panel, "show");
+});
+
+test("settings changed by another gateway copy are taken over (replace)", () => {
+  const s = createSettings({ initial: {}, persist: async () => {} });
+  s.replace({ defaults: { keystrokeDecisionWindows: 6 }, server: { autoApproveTenants: true } });
+  assert.equal(s.effective(null).values.keystrokeDecisionWindows, 6);
+  assert.equal(s.effective(null).sources.keystrokeDecisionWindows, "operator");
+  assert.equal(s.server("autoApproveTenants"), true);
 });

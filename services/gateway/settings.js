@@ -11,8 +11,8 @@
  *
  * The effective values reach ca-service signed inside the identity assertion (claim `cfg`, see
  * ca-service lib/appSettings.js), so nothing has to be kept in sync between the two services.
- * Organisation values live in the tenant record (tenants.json, `settings`); the operator's in
- * settings.json in the gateway's data directory.
+ * Organisation values live in the tenant record (`settings`); the operator's are one document kept
+ * by storage.js (settings.json in the data directory, or a row in PostgreSQL).
  */
 const fs = require("fs");
 const path = require("path");
@@ -67,20 +67,31 @@ function fromEnv(def) {
   try { return normalise(def, def.number ? raw : def.list ? raw : raw, def.env); } catch (e) { return undefined; }
 }
 
-module.exports = function createSettings(dataDir) {
-  const FILE = path.join(dataDir, "settings.json");
+// source: a data directory (settings.json there), or { initial, persist } from storage.js, where
+// persist(doc) returns a promise that rejects when the document was not saved.
+function createSettings(source) {
   let store = { defaults: {}, server: {} };
-  try {
-    const raw = JSON.parse(fs.readFileSync(FILE, "utf8"));
-    store = { defaults: raw.defaults || {}, server: raw.server || {} };
-  } catch (e) {
-    if (e.code !== "ENOENT") throw new Error(`settings.json unreadable (${e.message}); refusing to start with unknown settings`);
+  let persist;
+  if (typeof source === "string") {
+    const FILE = path.join(source, "settings.json");
+    try {
+      const raw = JSON.parse(fs.readFileSync(FILE, "utf8"));
+      store = { defaults: raw.defaults || {}, server: raw.server || {} };
+    } catch (e) {
+      if (e.code !== "ENOENT") throw new Error(`settings.json unreadable (${e.message}); refusing to start with unknown settings`);
+    }
+    persist = async (doc) => {
+      const tmp = FILE + ".tmp";
+      fs.writeFileSync(tmp, JSON.stringify(doc, null, 2));
+      fs.renameSync(tmp, FILE);
+    };
+  } else {
+    const init = (source && source.initial) || {};
+    store = { defaults: init.defaults || {}, server: init.server || {} };
+    persist = source.persist;
   }
-  function save() {
-    const tmp = FILE + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(store, null, 2));
-    fs.renameSync(tmp, FILE);
-  }
+  // Another copy of the gateway changed the operator's settings (storage.js reloaded them).
+  function replace(doc) { store = { defaults: (doc && doc.defaults) || {}, server: (doc && doc.server) || {} }; }
 
   // ---- app settings ----
   function resolve(key, tenantSettings) {
@@ -161,8 +172,9 @@ module.exports = function createSettings(dataDir) {
     }));
   }
 
-  // body: { defaults: {key: v|null}, server: {key: v|null} }. Returns the changed keys, prefixed.
-  function updateOperator(body) {
+  // body: { defaults: {key: v|null}, server: {key: v|null} }. Resolves to the changed keys, prefixed;
+  // rejects with { code: bad_setting | unknown_setting | lazy_needs_panel | store_write_failed }.
+  async function updateOperator(body) {
     const d = applyApp(store.defaults, body.defaults, (n) => {
       const vals = {};
       for (const key of Object.keys(APP)) {
@@ -180,9 +192,13 @@ module.exports = function createSettings(dataDir) {
     }
     const prev = store;
     store = { defaults: d.next, server: srv };
-    try { save(); } catch (e) { store = prev; throw bad("store_write_failed", e.message); }
+    try { await persist(store); } catch (e) { store = prev; throw bad("store_write_failed", e.message); }
     return [...d.changed.map((k) => "defaults." + k), ...changedServer.map((k) => "server." + k)];
   }
 
-  return { APP, SERVER, effective, claim, describe, updateTenant, server, describeServer, updateOperator };
-};
+  return { APP, SERVER, effective, claim, describe, updateTenant, server, describeServer, updateOperator, replace };
+}
+
+module.exports = createSettings;
+module.exports.APP = APP;
+module.exports.SERVER = SERVER;

@@ -45,6 +45,14 @@ const DEMO_SECRET = process.env.CA_SIGNING_SECRET || "dev-continuum-risk-secret"
 const envFile = (() => { try { return fs.readFileSync(path.join(ROOT, ".env"), "utf8"); } catch { return ""; } })();
 const ADMIN_KEY = process.env.GATEWAY_ADMIN_KEY || (envFile.match(/^GATEWAY_ADMIN_KEY=(.*?)\s*$/m) || [])[1] || "";
 const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-connect-e2e-"));
+// The gateway's identity records: identity.json (STORAGE=json), or, when CONTINUUM_GATEWAY_PG names the
+// PostgreSQL container of a side-by-side stack (docker-compose.side-by-side.yml), its gw_identities table.
+const GW_PG = process.env.CONTINUUM_GATEWAY_PG || "";
+function identityKeys() {
+  if (!GW_PG) return Object.keys(JSON.parse(fs.readFileSync(path.join(ROOT, "services", "gateway", "identity.json"), "utf8")).users);
+  const out = execFileSync("docker", ["exec", GW_PG, "psql", "-U", "continuum", "-d", "continuum", "-tAc", "SELECT key FROM gw_identities"], { encoding: "utf8" });
+  return out.split("\n").map((s) => s.trim()).filter(Boolean);
+}
 
 let failures = 0;
 const check = (name, ok, detail) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${name}${detail ? " — " + detail : ""}`); if (!ok) failures++; };
@@ -480,7 +488,7 @@ try {
   check("the operator can hand an organisation to another account", given.status === 200 && (listB2.d.tenants || []).some((t) => t.siteKey === orgKey) && !(listA2.d.tenants || []).some((t) => t.siteKey === orgKey),
     `${given.status}, B has ${(listB2.d.tenants || []).length}, A has ${(listA2.d.tenants || []).length}`);
   // the new owner deletes it in Settings (a revoked organisation can still be deleted)
-  const usersBefore = Object.keys(JSON.parse(fs.readFileSync(path.join(ROOT, "services", "gateway", "identity.json"), "utf8")).users).filter((k) => k.startsWith(orgKey + "|")).length;
+  const usersBefore = identityKeys().filter((k) => k.startsWith(orgKey + "|")).length;
   const badDelete = await gw(`/v1/console/tenants/${orgKey}/delete`, { method: "POST", body: { confirm: "nope" }, headers: bearerB });
   check("deleting without typing the exact name does nothing", badDelete.status === 400 && badDelete.d.error === "confirm_name_mismatch", `${badDelete.status} ${badDelete.d.error}`);
   await evaluate(con, `location.hash = ${JSON.stringify("#/organisations/" + orgKey + "/settings")}; true`);
@@ -490,8 +498,7 @@ try {
   await evaluate(con, fill("#deleteConfirm", ORG_NAME));
   await evaluate(con, click("#deleteGo"));
   const backToList = await waitFor(con, "location.hash === '#/organisations' && !!document.getElementById('newOrgBtn')", 20000);
-  const idsAfter = JSON.parse(fs.readFileSync(path.join(ROOT, "services", "gateway", "identity.json"), "utf8")).users;
-  const usersAfter = Object.keys(idsAfter).filter((k) => k.startsWith(orgKey + "|")).length;
+  const usersAfter = identityKeys().filter((k) => k.startsWith(orgKey + "|")).length;
   const statsGone = await gw(`/v1/console/tenants/${orgKey}/stats`, { headers: bearerB });
   const sessGone = await http(GW + "/v1/sdk/session", { method: "POST", body: { siteKey: orgKey }, headers: orgO });
   check("deleting in Settings removes the organisation and its users", backToList && statsGone.status === 404 && sessGone.status >= 400 && usersBefore >= 1 && usersAfter === 0,

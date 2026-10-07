@@ -28,7 +28,7 @@ and extensible to a browser extension or desktop agent later.
 | **model-api** | 5000 | Python / TensorFlow | Serves the keystroke + mouse models; fine-tunes per-user models. Owns model/data storage (`ARTIFACTS_DIR`, `DATA_DIR`), confines every path. Reachable **only** from ca-service (the `model` Docker network) and requires `MODEL_API_KEY` on every route but `/health`. |
 | **ca-service** | 4100 | Node | The continuous-auth engine. Turns raw events into signed **verdicts**. Identity comes only from the gateway's assertion, never the request body. Owns behavioral DB (`ca.db`) — samples, profiles, the decision log, **the durable escalation counters**, and **the training-job queue**. The only service that may address model-api. |
 | **passkey-service** | 4000 | Node | FIDO2/WebAuthn registration + assertion (step-up). Owns `passkey.db`. Not published to the host; `PASSKEY_API_KEY` on every route but `/health` (called only by the gateway and the demo). |
-| **gateway** | 8080 | Node | Multi-tenant front door: resolves identity, signs verdicts (RS256) + exposes JWKS, pushes CAEP events, serves the SDK. Also the tenant registry (developer console, operator approval), Continuum accounts, and the browser extension's sign-in and step-up pages. The only public entry for the product bundle. |
+| **gateway** | 8080 | Node | Multi-tenant front door: resolves identity, signs verdicts (RS256) + exposes JWKS, pushes CAEP events, serves the SDK. Also the tenant registry (developer console, operator approval), Continuum accounts, and the browser extension's sign-in and step-up pages. Its records live in JSON files or PostgreSQL (`STORAGE`, §13b). The only public entry for the product bundle. |
 | **apps/demo** | 3000 | Node | Reference integration app (login as `ali`/`aiham`, dashboard, "write opinion"). |
 | **apps/acme** | 4200 | Node | A *separate* consumer on its own origin — adopts Continuum through nothing but the SDK + middleware. |
 
@@ -418,6 +418,37 @@ Implementation details:
 - `passkey.db` is now included: the server keeps only public keys, which move with the server.
   A passkey is bound to its domain (RP ID), so moving to a **new domain** still means users
   register again; on the same domain they keep working.
+
+## 13b. Gateway storage: JSON files or PostgreSQL (since 2026-10-07, branch `cloud-native`)
+- **`services/gateway/storage.js`**, chosen by `STORAGE`: `json` (default, unchanged: `tenants.json`,
+  `identity.json`, `accounts.json`, `settings.json`, `audit.jsonl` in `DATA_DIR`) or `postgres`
+  (`DATABASE_URL`; tables `gw_tenants`, `gw_identities`, `gw_accounts`, `gw_revoked_tokens`,
+  `gw_settings`, `gw_audit`, created on start).
+- **Reads stay in memory**, so a check costs no database round trip. Every change is written through
+  before the request answers; a failed write is refused and undone in memory (never "saved in memory
+  only"). With postgres each write also sends `NOTIFY gw_change`; the other gateway copies reload that
+  one record (measured ~0.1 s for a new organisation, a revocation, an operator setting). A copy that
+  loses the database keeps serving from memory, reports `/ready` 503 (`/health` stays 200), refuses
+  changes, reconnects with backoff and reloads everything; a user first seen during the outage is
+  saved once the database answers (the id is the same HMAC either way).
+- **The database settles races between copies:** a user first seen by two copies at once gets one
+  stored record (both answer with it); two users can never share a user id (`UNIQUE`, refused); one
+  email cannot make two accounts (`UNIQUE`, 409 `email_taken`).
+- **Signing keys stay files** (a mounted secret). With `STORAGE=postgres` a missing key stops the
+  start instead of each copy making its own.
+- **Migration:** `node services/gateway/migrate.js --from <data dir> --to <url> [--replace]` copies
+  everything in one transaction, refuses a database that already holds records, then reads it all
+  back and compares record by record. On a copy of the real data (2026-10-07): 9 tenants, 344
+  identities (every user id equal), 3 accounts, 116 revocations, settings, 257 activity entries:
+  identical. The files are only read, so going back is `STORAGE=json`.
+- **Proven side by side** (`docker-compose.side-by-side.yml`: a second full stack, project
+  `continuum-next`, gateway :18080, demo :13000, on a restored copy of the data): the extension's
+  end-to-end test (92 checks) passes with the new code on PostgreSQL and on JSON files; the gateway's
+  store checks (11) pass on JSON; storage contract tests run on both backends (`ci-local.sh` starts a
+  throwaway PostgreSQL).
+- **Not yet:** the running stack still uses JSON files; switching it needs the backup script to dump
+  PostgreSQL first. In-memory state (sign-in links, passkey ceremonies, the admin lockout counter,
+  caches) is still per copy: the Redis step.
 
 ## 14. Security model (summary)
 | Threat | Mitigation |
