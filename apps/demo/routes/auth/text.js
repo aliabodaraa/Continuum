@@ -56,7 +56,10 @@ router.get("/typing-status", requireAuth, async (req, res, next) => {
 // Adaptive retraining: the user retrains with the samples collected so far. The passkey must have been
 // verified moments ago (requireFreshPasskey), so samples added at an unlocked session never reach a model.
 router.post("/adaptive-retrain", requireAuth, requireFreshPasskey, async (req, res, next) => {
-  try { passthrough(res, await ca.keystrokeAdaptiveConfirm(req.session.userId)); } catch (e) { next(e); }
+  // Continuum checks the same thing on its side: the step-up token from that verification, used once.
+  const stepUpToken = req.session.stepUpToken;
+  delete req.session.stepUpToken;
+  try { passthrough(res, await ca.keystrokeAdaptiveConfirm(req.session.userId, stepUpToken)); } catch (e) { next(e); }
 });
 
 // Destructive: drops the trained typing profile and unmarks its training texts. Now also

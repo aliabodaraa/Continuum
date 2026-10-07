@@ -1,7 +1,7 @@
 // The gateway's storage (storage.js): the same contract for both backends. node --test
 //   json      always, in a throwaway directory
-//   postgres  when TEST_DATABASE_URL names a throwaway database (scripts/ci-local.sh and CI start one);
-//             its tables are emptied first, so never point it at a real deployment
+//   postgres  when TEST_DATABASE_URL names a throwaway server (scripts/ci-local.sh and CI start one); this
+//             file works in its own database there (test/pg.js), emptied before each test
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
@@ -9,7 +9,9 @@ const os = require("os");
 const path = require("path");
 const { openStorage } = require("../storage");
 
-const PG = process.env.TEST_DATABASE_URL || "";
+const { BASE, freshDatabase, emptyTables } = require("./pg");
+let PG = "";   // this file's own database, made before the tests run
+test.before(async () => { PG = await freshDatabase("storage"); });
 const quiet = () => {};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, ms = 3000) {
@@ -18,16 +20,7 @@ async function until(fn, ms = 3000) {
   return fn();
 }
 
-async function emptyPg() {
-  const { Client } = require("pg");
-  const c = new Client({ connectionString: PG });
-  await c.connect();
-  await c.query(`DO $$ BEGIN
-    IF to_regclass('gw_tenants') IS NOT NULL THEN
-      TRUNCATE gw_tenants, gw_identities, gw_accounts, gw_revoked_tokens, gw_settings, gw_audit RESTART IDENTITY;
-    END IF; END $$;`);
-  await c.end();
-}
+const emptyPg = () => emptyTables(PG);
 
 const backends = [{
   name: "json",
@@ -36,7 +29,7 @@ const backends = [{
     return { open: () => openStorage({ kind: "json", dataDir: dir, log: quiet }), dir };
   },
 }];
-if (PG) backends.push({
+if (BASE) backends.push({
   name: "postgres",
   async fresh() {
     await emptyPg();
@@ -124,7 +117,7 @@ test("an unknown STORAGE value is refused", async () => {
   await assert.rejects(openStorage({ kind: "mongo" }), /STORAGE must be json or postgres/);
 });
 
-test("postgres: two gateway copies see each other's changes", { skip: !PG && "TEST_DATABASE_URL not set" }, async () => {
+test("postgres: two gateway copies see each other's changes", { skip: !BASE && "TEST_DATABASE_URL not set" }, async () => {
   await emptyPg();
   const a = await openStorage({ kind: "postgres", databaseUrl: PG, log: quiet });
   const b = await openStorage({ kind: "postgres", databaseUrl: PG, log: quiet });
@@ -159,7 +152,7 @@ test("postgres: two gateway copies see each other's changes", { skip: !PG && "TE
   } finally { await a.close(); await b.close(); }
 });
 
-test("postgres: the database settles races between copies", { skip: !PG && "TEST_DATABASE_URL not set" }, async () => {
+test("postgres: the database settles races between copies", { skip: !BASE && "TEST_DATABASE_URL not set" }, async () => {
   await emptyPg();
   const a = await openStorage({ kind: "postgres", databaseUrl: PG, log: quiet });
   const b = await openStorage({ kind: "postgres", databaseUrl: PG, log: quiet });
@@ -189,7 +182,7 @@ test("postgres: the database settles races between copies", { skip: !PG && "TEST
   } finally { await a.close(); await b.close(); }
 });
 
-test("postgres: a user first seen while the database fails is saved once it is back", { skip: !PG && "TEST_DATABASE_URL not set" }, async () => {
+test("postgres: a user first seen while the database fails is saved once it is back", { skip: !BASE && "TEST_DATABASE_URL not set" }, async () => {
   await emptyPg();
   const s = await openStorage({ kind: "postgres", databaseUrl: PG, log: quiet });
   const { Client } = require("pg");
@@ -221,7 +214,7 @@ test("postgres: a user first seen while the database fails is saved once it is b
   }
 });
 
-test("postgres: ready() reports a lost database", { skip: !PG && "TEST_DATABASE_URL not set" }, async () => {
+test("postgres: ready() reports a lost database", { skip: !BASE && "TEST_DATABASE_URL not set" }, async () => {
   await emptyPg();
   const s = await openStorage({ kind: "postgres", databaseUrl: PG, log: quiet });
   await s.ready();

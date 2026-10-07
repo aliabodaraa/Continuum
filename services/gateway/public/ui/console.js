@@ -430,13 +430,15 @@
     "organisation.owner_set": ["Given to an account by the operator", "user", "ok"], "organisation.owner_cleared": ["Taken back by the operator", "user", ""],
     "organisation.deleted": ["Organisation deleted", "trash", "bad"],
     "organisation.settings_changed": ["Protection settings changed", "shieldCheck", ""],
+    "webhook.undeliverable": ["An alert could not be delivered", "send", "bad"],
   };
   function timeline(entries, showOrg) {
     if (!entries.length) return el("div.empty", [el("div.art", icon("history")), el("h3", "Nothing yet"), el("p", "Changes to your organisations will appear here.")]);
     return el("ul.timeline", entries.map(function (e) {
       var a = ACTIONS[e.action] || [e.action, "info", ""];
-      var who = e.actor && e.actor.type === "operator" ? "the operator" : (e.actor && e.actor.email) || "someone";
-      var extra = e.detail && e.detail.changed ? " (" + e.detail.changed.join(", ") + ")" : e.detail && e.action === "webhook.tested" ? (e.detail.ok ? " — delivered" : " — not delivered") : "";
+      var who = e.actor && e.actor.type === "operator" ? "the operator" : e.actor && e.actor.type === "system" ? "Continuum" : (e.actor && e.actor.email) || "someone";
+      var extra = e.detail && e.detail.changed ? " (" + e.detail.changed.join(", ") + ")" : e.detail && e.action === "webhook.tested" ? (e.detail.ok ? " — delivered" : " — not delivered")
+        : e.detail && e.action === "webhook.undeliverable" ? " — gave up after " + e.detail.attempts + " tries (" + e.detail.error + ")" : "";
       return el("li", [el("span.dot" + (a[2] ? "." + a[2] : ""), icon(a[1], "sm")), el("div", [el("div.what", a[0] + extra + (showOrg && e.name ? " · " + e.name : "")), el("div.when", { title: C.fullDate(e.at) }, "by " + who + " · " + C.when(e.at))])]);
     }));
   }

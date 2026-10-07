@@ -14,6 +14,12 @@
  * postgres each write also notifies the other copies (LISTEN/NOTIFY), which reload that one record;
  * a copy that loses its listening connection reloads everything once it is back.
  *
+ * Short-lived state lives here too, so that no request depends on which gateway copy it reaches:
+ * sign-in links of the extension, account passkey ceremonies, the operator lockout, and each user's last
+ * settled risk. With json it stays in this process's memory (one gateway, as before); with postgres it
+ * is in tables with an expiry time, changed in single atomic statements. With postgres a risk change
+ * also writes its webhook event to an outbox in the same transaction (webhooks.js delivers it).
+ *
  * The signing keys are not here on purpose: they are secrets, and a deployment mounts them from its
  * secret store (a Kubernetes Secret, say), never from the database.
  */
@@ -43,6 +49,55 @@ function auditMatch(filter) {
 function pruneRevoked(revoked) {
   const now = nowSec();
   for (const [jti, exp] of Object.entries(revoked)) if (exp < now) delete revoked[jti];
+}
+
+// ---------------------------------------------------------------- short-lived state in memory (json)
+// One gateway process: plain maps, as before. Expired entries read as absent and are swept.
+function memoryShortLived() {
+  const links = new Map(), ceremonies = new Map(), fails = new Map(), risk = new Map();
+  const live = (m, id) => {
+    const e = m.get(String(id || ""));
+    if (!e) return null;
+    if (e.exp <= Date.now()) { m.delete(String(id)); return null; }
+    return e;
+  };
+  return {
+    async putLink(id, doc, ttlMs) { links.set(id, { doc, exp: Date.now() + ttlMs }); },
+    async getLink(id) { const e = live(links, id); return e ? e.doc : null; },
+    async authorizeLink(id, siteKey, patch) {
+      const e = live(links, id);
+      if (!e || e.doc.status !== "pending" || e.doc.siteKey !== siteKey) return null;
+      Object.assign(e.doc, patch, { status: "authorized" });
+      return e.doc;
+    },
+    async takeLink(id) { const e = live(links, id); links.delete(String(id || "")); return e ? e.doc : null; },
+    async putCeremony(id, doc, ttlMs) { ceremonies.set(id, { doc, exp: Date.now() + ttlMs }); },
+    async takeCeremony(id) { const e = live(ceremonies, id); ceremonies.delete(String(id || "")); return e ? e.doc : null; },
+    async adminLockedUntil(who) { const f = fails.get(who); return f && f.until > Date.now() ? f.until : 0; },
+    async recordAdminFailure(who, { windowMs, limit, lockMs }) {
+      const now = Date.now();
+      let f = fails.get(who);
+      if (!f || now - f.first >= windowMs) f = { n: 0, first: now, until: 0 };
+      f.n += 1;
+      if (f.n >= limit) f.until = now + lockMs;
+      fails.set(who, f);
+      return { n: f.n, until: f.until };
+    },
+    async clearAdminFailures(who) { fails.delete(who); },
+    // json has no outbox: the caller sends the event itself (as before)
+    async riskTransition(key, value, makeEvent) {
+      const prev = risk.get(key);
+      if (prev === value) return { prev, changed: false };
+      risk.set(key, value);
+      return { prev, changed: true, event: makeEvent(prev) || null };
+    },
+    async deleteRiskState(key) { risk.delete(key); },
+    async sweep() {
+      const now = Date.now();
+      for (const m of [links, ceremonies]) for (const [id, e] of m) if (e.exp <= now) m.delete(id);
+      for (const [who, f] of fails) if (f.until <= now && now - f.first >= 3600000) fails.delete(who);
+    },
+  };
 }
 
 // ---------------------------------------------------------------- json: the files in DATA_DIR
@@ -93,6 +148,8 @@ function openJson(dataDir) {
   return {
     kind: "json",
     data,
+    outbox: false,
+    ...memoryShortLived(),
     async saveTenant() { saveJson(F.tenants, data.tenants); },
     async saveTenants() { saveJson(F.tenants, data.tenants); },
     async saveIdentity(key) { saveJson(F.identity, data.identity); return data.identity.users[key]; },
@@ -118,6 +175,7 @@ function openJson(dataDir) {
     },
     async ready() { fs.accessSync(dataDir, fs.constants.W_OK); },
     on() {},
+    async forget() {},   // one process: nothing to tell
     async close() {},
   };
 }
@@ -163,6 +221,45 @@ CREATE TABLE IF NOT EXISTS gw_audit (
 );
 CREATE INDEX IF NOT EXISTS gw_audit_site ON gw_audit (site_key, id DESC);
 CREATE INDEX IF NOT EXISTS gw_audit_actor ON gw_audit (actor_email, id DESC);
+-- Short-lived state, so a flow may continue on any gateway copy. Times are the database's (now()), so the
+-- copies' clocks do not matter.
+CREATE TABLE IF NOT EXISTS gw_links (
+  id         text PRIMARY KEY,
+  doc        jsonb NOT NULL,
+  expires_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS gw_ceremonies (
+  id         text PRIMARY KEY,
+  doc        jsonb NOT NULL,
+  expires_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS gw_admin_failures (
+  who      text PRIMARY KEY,
+  n        integer NOT NULL,
+  first_at timestamptz NOT NULL,
+  until_at timestamptz
+);
+-- Each user's last settled risk (genuine | suspicious), so a change is noticed whichever copy sees it.
+CREATE TABLE IF NOT EXISTS gw_risk_state (
+  key        text PRIMARY KEY,
+  risk       text,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+-- Risk-change events (signed SETs) for the tenants' webhooks, written in the same transaction as the risk
+-- change and delivered by webhooks.js: pending -> sent, or dead after the last attempt.
+CREATE TABLE IF NOT EXISTS gw_webhook_outbox (
+  id         bigserial PRIMARY KEY,
+  site_key   text NOT NULL,
+  url        text NOT NULL,
+  body       text NOT NULL,
+  status     text NOT NULL DEFAULT 'pending',
+  attempts   integer NOT NULL DEFAULT 0,
+  next_at    timestamptz NOT NULL DEFAULT now(),
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  done_at    timestamptz
+);
+CREATE INDEX IF NOT EXISTS gw_webhook_due ON gw_webhook_outbox (next_at) WHERE status = 'pending';
 `;
 const CHANNEL = "gw_change";
 const SCHEMA_LOCK = 4100417;   // pg_advisory_xact_lock: two copies starting together create the tables once
@@ -178,7 +275,7 @@ async function openPostgres(databaseUrl, log) {
   const instance = crypto.randomBytes(6).toString("hex");   // tells this copy's notifications from the others'
   const data = EMPTY();
   const pendingIdentities = new Map();   // key -> identity record not saved yet (the database was down)
-  const listeners = { tenant: [], identity: [], account: [], revoked: [], settings: [] };
+  const listeners = { tenant: [], identity: [], account: [], revoked: [], settings: [], forget: [] };
   const emit = (kind, key, value) => { for (const fn of listeners[kind]) { try { fn(key, value); } catch (e) { log(`[storage] ${kind} listener: ${e.message}`); } } };
 
   async function tx(fn) {
@@ -257,6 +354,8 @@ async function openPostgres(databaseUrl, log) {
     c.on("notification", (n) => {
       let m; try { m = JSON.parse(n.payload); } catch (e) { return; }
       if (!m || m.o === instance) return;
+      // "forget": another copy says a cached fact is out of date (nothing to reload here)
+      if (m.k === "forget") return emit("forget", m.id);
       reload(m.k, m.id).catch((e) => log(`[storage] reload ${m.k} ${m.id} failed: ${e.message}`));
     });
     try {
@@ -326,9 +425,95 @@ async function openPostgres(databaseUrl, log) {
       }
     }
   }
+  const ms = "($X::double precision * interval '1 millisecond')";
+  const dur = (n) => ms.replace("$X", "$" + n);
+  const shortLived = {
+    async putLink(id, doc, ttlMs) {
+      await pool.query(`INSERT INTO gw_links (id, doc, expires_at) VALUES ($1, $2, now() + ${dur(3)})`, [id, doc, ttlMs]);
+    },
+    async getLink(id) {
+      const r = await pool.query("SELECT doc FROM gw_links WHERE id = $1 AND expires_at > now()", [String(id || "")]);
+      return r.rows[0] ? r.rows[0].doc : null;
+    },
+    // One statement: two callbacks for one link cannot both authorize it.
+    async authorizeLink(id, siteKey, patch) {
+      const r = await pool.query(
+        `UPDATE gw_links SET doc = doc || $3::jsonb WHERE id = $1 AND expires_at > now() AND doc->>'status' = 'pending' AND doc->>'siteKey' = $2 RETURNING doc`,
+        [String(id || ""), siteKey, { ...patch, status: "authorized" }]);
+      return r.rows[0] ? r.rows[0].doc : null;
+    },
+    // Removed as it is read: a link's code gets one attempt, on whichever copy.
+    async takeLink(id) {
+      const r = await pool.query("DELETE FROM gw_links WHERE id = $1 RETURNING doc, expires_at > now() AS live", [String(id || "")]);
+      return r.rows[0] && r.rows[0].live ? r.rows[0].doc : null;
+    },
+    async putCeremony(id, doc, ttlMs) {
+      await pool.query(`INSERT INTO gw_ceremonies (id, doc, expires_at) VALUES ($1, $2, now() + ${dur(3)})`, [id, doc, ttlMs]);
+    },
+    async takeCeremony(id) {
+      const r = await pool.query("DELETE FROM gw_ceremonies WHERE id = $1 RETURNING doc, expires_at > now() AS live", [String(id || "")]);
+      return r.rows[0] && r.rows[0].live ? r.rows[0].doc : null;
+    },
+    async adminLockedUntil(who) {
+      const r = await pool.query("SELECT extract(epoch FROM until_at) * 1000 AS until FROM gw_admin_failures WHERE who = $1 AND until_at > now()", [who]);
+      return r.rows[0] ? Number(r.rows[0].until) : 0;
+    },
+    // One statement, so wrong keys sent to several copies at once are all counted.
+    async recordAdminFailure(who, { windowMs, limit, lockMs }) {
+      const fresh = `f.first_at <= now() - ${dur(2)}`;
+      const r = await pool.query(
+        `INSERT INTO gw_admin_failures AS f (who, n, first_at, until_at)
+           VALUES ($1, 1, now(), CASE WHEN 1 >= $3 THEN now() + ${dur(4)} END)
+         ON CONFLICT (who) DO UPDATE SET
+           n        = CASE WHEN ${fresh} THEN 1 ELSE f.n + 1 END,
+           first_at = CASE WHEN ${fresh} THEN now() ELSE f.first_at END,
+           until_at = CASE WHEN (CASE WHEN ${fresh} THEN 1 ELSE f.n + 1 END) >= $3 THEN now() + ${dur(4)} ELSE f.until_at END
+         RETURNING n, coalesce(extract(epoch FROM until_at) * 1000, 0) AS until`,
+        [who, windowMs, limit, lockMs]);
+      return { n: r.rows[0].n, until: Number(r.rows[0].until) };
+    },
+    async clearAdminFailures(who) { await pool.query("DELETE FROM gw_admin_failures WHERE who = $1", [who]); },
+    // The previous risk is read under a row lock, so of two copies seeing the same change at once only one
+    // records it (and queues its event). makeEvent(prev) returns { siteKey, url, body } or null.
+    riskTransition: (key, value, makeEvent) => tx(async (c) => {
+      await c.query("INSERT INTO gw_risk_state (key, risk) VALUES ($1, NULL) ON CONFLICT (key) DO NOTHING", [key]);
+      const prev = (await c.query("SELECT risk FROM gw_risk_state WHERE key = $1 FOR UPDATE", [key])).rows[0].risk || undefined;
+      if (prev === value) return { prev, changed: false };
+      await c.query("UPDATE gw_risk_state SET risk = $2, updated_at = now() WHERE key = $1", [key, value]);
+      const ev = makeEvent(prev);
+      if (ev) await c.query("INSERT INTO gw_webhook_outbox (site_key, url, body) VALUES ($1, $2, $3)", [ev.siteKey, ev.url, ev.body]);
+      return { prev, changed: true, queued: !!ev };
+    }),
+    async deleteRiskState(key) { await pool.query("DELETE FROM gw_risk_state WHERE key = $1", [key]); },
+    // Due events, leased for leaseMs (a copy that dies mid-delivery leaves them to the next one). The
+    // attempt is counted when claimed.
+    async claimWebhooks(limit, leaseMs) {
+      const r = await pool.query(
+        `UPDATE gw_webhook_outbox SET next_at = now() + ${dur(2)}, attempts = attempts + 1
+         WHERE id IN (SELECT id FROM gw_webhook_outbox WHERE status = 'pending' AND next_at <= now()
+                      ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED)
+         RETURNING id, site_key, url, body, attempts`, [limit, leaseMs]);
+      return r.rows.map((x) => ({ id: Number(x.id), siteKey: x.site_key, url: x.url, body: x.body, attempts: x.attempts }));
+    },
+    // { ok } | { error, retryInMs } | { error, dead: true }
+    async finishWebhook(id, out) {
+      if (out.ok) await pool.query("UPDATE gw_webhook_outbox SET status = 'sent', done_at = now(), last_error = NULL WHERE id = $1", [id]);
+      else if (out.dead) await pool.query("UPDATE gw_webhook_outbox SET status = 'dead', done_at = now(), last_error = $2 WHERE id = $1", [id, out.error]);
+      else await pool.query(`UPDATE gw_webhook_outbox SET next_at = now() + ${dur(3)}, last_error = $2 WHERE id = $1`, [id, out.error, out.retryInMs]);
+    },
+    // Expired entries, and finished webhook rows (sent after 7 days, dead after 30).
+    async sweep() {
+      await pool.query("DELETE FROM gw_links WHERE expires_at <= now()");
+      await pool.query("DELETE FROM gw_ceremonies WHERE expires_at <= now()");
+      await pool.query("DELETE FROM gw_admin_failures WHERE (until_at IS NULL OR until_at <= now()) AND first_at <= now() - interval '1 hour'");
+      await pool.query("DELETE FROM gw_webhook_outbox WHERE (status = 'sent' AND done_at < now() - interval '7 days') OR (status = 'dead' AND done_at < now() - interval '30 days')");
+    },
+  };
   return {
     kind: "postgres",
     data,
+    outbox: true,
+    ...shortLived,
     saveTenant: (siteKey) => tx((c) => upsertTenant(c, siteKey)),
     saveTenants: (keys) => tx(async (c) => { for (const k of keys) await upsertTenant(c, k); }),
     // First sighting of a user. Another copy may have stored the same key a moment ago: the stored
@@ -383,6 +568,8 @@ async function openPostgres(databaseUrl, log) {
     },
     async ready() { await pool.query("SELECT 1"); if (!listener) throw new Error("change feed down"); },
     on(kind, fn) { listeners[kind].push(fn); },
+    // Tell the other copies to drop a fact they may have cached (key: "<cache>:<id>").
+    async forget(key) { await pool.query("SELECT pg_notify($1, $2)", [CHANNEL, JSON.stringify({ o: instance, k: "forget", id: key })]); },
     async close() {
       closing = true;
       if (listener) await listener.end().catch(() => {});

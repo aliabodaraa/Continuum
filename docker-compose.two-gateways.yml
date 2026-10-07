@@ -1,0 +1,28 @@
+# Added on top of docker-compose.side-by-side.yml: TWO gateway copies sharing one PostgreSQL, behind a
+# balancer that sends each request to the next copy. Running the end-to-end suites through it proves the
+# gateway keeps no state of its own: a sign-in started on one copy finishes on the other.
+#
+#   docker compose -p continuum-next -f docker-compose.yml -f docker-compose.side-by-side.yml \
+#     -f docker-compose.two-gateways.yml --profile model up -d
+#
+# The balancer takes the gateway's port (http://localhost:18080); the copies publish none.
+services:
+  gateway:
+    deploy:
+      replicas: 2
+    ports: !reset []
+
+  gateway-lb:
+    image: node:24-bookworm-slim
+    command: ["node", "/lb/round-robin.js"]
+    environment:
+      UPSTREAM: gateway:8080
+      PORT: "8080"
+    volumes:
+      - ./scripts/dev/round-robin.js:/lb/round-robin.js:ro
+    networks: [edge]
+    depends_on:
+      gateway:
+        condition: service_healthy
+    ports:
+      - "18080:8080"

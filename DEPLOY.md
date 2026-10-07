@@ -8,7 +8,7 @@ Nothing is installed on the host except Docker.
 | Artifact | What it is | Who runs it |
 |---|---|---|
 | `docker-compose.bundle.yml` | **The product** — `gateway` + `ca-service` + `passkey-service` + `model-api`. Only the gateway is exposed. | A customer, next to their own app |
-| `docker-compose.prod.yml` | **The reference demo** — the same services + the demo web app (`web-demo`). | You, to showcase |
+| `docker-compose.prod.yml` | **The reference demo** — the bundle above (included as is) + the demo web app as an ordinary tenant that reaches Continuum only through the gateway. | You, to showcase |
 | `docker-compose.yml` | Dev stack (bind mounts, hot reload). | You, while developing |
 | `guard.js` (SDK) | Client script, served by the gateway. | Embedded in the customer's pages |
 | `@continuum/node`, `continuum-python` | Server middleware that verifies signed verdicts. | The customer's backend |
@@ -204,6 +204,32 @@ app.use(continuum.protect());   // blocks a suspicious/locked verdict
 ```
 Any language can verify via the gateway's JWKS (RS256); see `packages/continuum-python`
 for a stdlib-only reference.
+
+**Server, acting for a user (the tenant API, `/v1/server/*`)** — when the app's own backend runs
+Continuum's flows itself (its own passkey screens, its own checks, its own lock policy), as the demo app
+does. The reference is `apps/demo/services/continuumApi.js` (transport), `caClient.js` and
+`passkeyClient.js`. Every call carries the organisation's site key and an identity token, a standard
+HS256 JWT signed with the tenant secret, naming one of its own users and expiring within 10 minutes:
+```
+POST https://auth.example.com/v1/server/keystroke/check
+X-Continuum-Site-Key: YOUR_TENANT_KEY
+Authorization: Bearer <HS256 JWT {sub: "<your user id>", aud: "continuum-server", exp: now+120}>
+```
+Typing: `GET keystroke/config | keystroke/status | keystroke/history | keystroke/stats |
+keystroke/decisions | keystroke/decisions-all | keystroke/metrics`, `POST keystroke/enroll |
+keystroke/check | keystroke/contribute | keystroke/reset | keystroke/retrain |
+keystroke/adaptive/confirm`. Mouse: `GET mouse/status`, `POST mouse/enroll | mouse/check | mouse/reset |
+mouse/streak/reset`. Lock: `GET lock/status`, `POST lock/set | lock/clear`. `GET onboarding`.
+Passkeys: `GET passkey/status`, `POST passkey/reset | passkey/register/options |
+passkey/register/complete | passkey/auth/options | passkey/auth/complete` — each passkey call names
+`origin`, which must be one of the organisation's registered websites (the passkey's relying party).
+Checks come back with a signed `riskToken` and push risk changes to the organisation's webhook.
+`keystroke/adaptive/confirm` needs `stepUpToken`, returned by `passkey/auth/complete`: proof of a
+passkey verified through Continuum in the last 2 minutes, valid once. The app's backend never needs an
+address or key for an internal service; in the stacks it has none (it sits only on the `edge` network).
+The `aud` is required: the identity tokens an app gives its users' browsers for the SDK
+(`/continuum/identity`) have none, so a browser — or an impostor at an unlocked session — cannot use one
+here. Calls from browsers (any request with an `Origin` header) are refused outright.
 
 ---
 

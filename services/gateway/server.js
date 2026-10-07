@@ -66,10 +66,11 @@ const DATA_DIR = process.env.DATA_DIR || __dirname;
 // Where the records live (storage.js): "json" files in DATA_DIR, or "postgres" (DATABASE_URL).
 const STORAGE = (process.env.STORAGE || "json").toLowerCase();
 const { openStorage, siteKeyOf } = require("./storage");
+const { createDispatcher } = require("./webhooks");
 const createSettings = require("./settings");
 // Opened in boot(), before the server listens: storage, its records, and the operator defaults,
 // organisation settings and server switches (settings.js has the precedence).
-let storage, tenants, store, accounts, settings;
+let storage, tenants, store, accounts, settings, dispatcher;
 const SDK_PUBLIC = path.join(__dirname, "sdk-public");
 const GATEWAY_PAGES = path.join(__dirname, "public");
 // Where browsers reach this gateway. Its own pages (console, extension sign-in, study) live on
@@ -350,17 +351,21 @@ function signEvent(subject, risk, modality, event) {
   const data = header + "." + body;
   return data + "." + crypto.sign("RSA-SHA256", Buffer.from(data), rsaPrivateKey).toString("base64url");
 }
-const lastRisk = new Map(); // keyId (Continuum id) -> last SETTLED risk ("genuine" | "suspicious")
-function maybeFireRiskEvent(tenant, keyId, subject, risk, modality) {
+// Each user's last SETTLED risk ("genuine" | "suspicious") is kept by storage.js, so a change is noticed
+// whichever gateway copy sees it (it was a Map here: with two copies, each saw half the changes). With
+// postgres the event goes to the outbox in the same transaction and webhooks.js delivers it, with retries;
+// with json it is sent at once, as before. Called without waiting: the check's answer never waits for it.
+async function maybeFireRiskEvent(tenant, tenantKey, keyId, subject, risk, modality) {
   if (!tenant || !tenant.webhookUrl) return;
   if (risk !== "genuine" && risk !== "suspicious") return; // ignore warm-up (transient)
-  const prev = lastRisk.get(keyId);
-  if (prev === risk) return;                 // no transition
-  lastRisk.set(keyId, risk);
-  if (prev === undefined && risk === "genuine") return; // first-seen-genuine isn't an event
-  const set = signEvent(subject, risk, modality);
-  console.log(`[caep] risk-change user=${subject} ${prev || "?"}→${risk} → ${tenant.webhookUrl}`);
-  fetch(tenant.webhookUrl, { method: "POST", headers: { "Content-Type": "application/secevent+jwt" }, body: set }).catch((e) => console.error("[caep] delivery failed:", e.message));
+  const r = await storage.riskTransition(String(keyId), risk, (prev) => {
+    if (prev === undefined && risk === "genuine") return null; // first-seen-genuine isn't an event
+    return { siteKey: tenantKey, url: tenant.webhookUrl, body: signEvent(subject, risk, modality) };
+  });
+  if (!r.changed || (!r.event && !r.queued)) return;
+  console.log(`[caep] risk-change user=${subject} ${r.prev || "?"}→${risk} → ${tenant.webhookUrl}${r.queued ? " (queued)" : ""}`);
+  if (r.queued) return dispatcher.kick();
+  fetch(r.event.url, { method: "POST", headers: { "Content-Type": "application/secevent+jwt" }, body: r.event.body }).catch((e) => console.error("[caep] delivery failed:", e.message));
 }
 
 const app = express();
@@ -368,6 +373,10 @@ const app = express();
 // ---- CORS ----
 app.use((req, res, next) => {
   const origin = req.get("Origin");
+  // The tenant API (/v1/server/*) is server to server only. A browser always names the page it runs on
+  // (Origin) on such a call; a server does not. So a request with an Origin is refused before anything
+  // else, preflight included: no page can use these routes, whatever token it holds.
+  if (origin && req.path.startsWith("/v1/server/")) return res.status(403).json({ error: "browser_not_allowed", note: "The tenant API is for servers; browsers use /v1/sdk/*." });
   if (origin) { res.set("Access-Control-Allow-Origin", origin); res.set("Vary", "Origin"); }
   res.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Api-Key,X-Admin-Key");
@@ -468,12 +477,21 @@ function originAllowed(tenant, req) {
 }
 
 const pkCache = new Map();
+// A passkey registered or removed through one gateway copy: this copy forgets its cached answer, and so
+// does every other (storage.forget, over the database's change feed; within milliseconds). Without this,
+// another copy could keep answering "no passkey" and not ask an impostor for one.
+function passkeyChanged(uid) {
+  pkCache.delete(uid);
+  storage.forget("passkey:" + uid).catch((e) => console.error(`[gateway] could not tell the other copies about ${uid}'s passkey: ${e.message}`));
+}
 // Through fwd(), which sends PASSKEY_API_KEY. This used a bare fetch: since passkey-service began
 // enforcing the key (860b4d6), every lookup came back 401, `hasPasskey` read false for every user,
 // and so the gateway path never raised a keystroke or mouse step-up (found 2026-09-26 by the
 // user-study end-to-end test). A failed lookup is logged and not cached as "no passkey".
 async function hasPasskey(uid) {
-  const c = pkCache.get(uid); if (c && Date.now() - c.t < 60000) return c.v;
+  // "Has a passkey" is cached for a minute, "has none" for 5 s only: this cache is per gateway copy, and a
+  // passkey just registered through another copy must start counting (for step-ups) almost at once.
+  const c = pkCache.get(uid); if (c && Date.now() - c.t < (c.v ? 60000 : 5000)) return c.v;
   try {
     const r = await fwd(`${PASSKEY_URL}/v1/users/${uid}/passkeys`, "GET");
     if (r.status !== 200) { console.error(`[gateway] passkey lookup for user ${uid} failed: HTTP ${r.status}`); return false; }
@@ -521,23 +539,29 @@ function operatorHost(req) {
   return OPERATOR_HOSTS.includes(h);
 }
 const ADMIN_FAIL_LIMIT = 10, ADMIN_LOCK_MS = 15 * 60000;
-const adminFails = new Map();   // client address -> { n, first, until }
-function adminGate(req, res, next) {
+// The failure count per client address is kept by storage.js, so wrong keys spread over several gateway
+// copies are all counted.
+async function adminGate(req, res, next) {
   if (!operatorHost(req)) return res.status(404).json({ error: "not_found" });
   if (!ADMIN_KEY) return next();   // development: open (the boot log says so)
-  const who = req.ip || "?", now = Date.now(), f = adminFails.get(who);
-  if (f && f.until > now) {
-    const wait = Math.ceil((f.until - now) / 1000);
-    res.set("Retry-After", String(wait));
-    return res.status(429).json({ error: "too_many_attempts", retryAfterSec: wait });
+  const who = req.ip || "?";
+  try {
+    const until = await storage.adminLockedUntil(who);
+    if (until > Date.now()) {
+      const wait = Math.ceil((until - Date.now()) / 1000);
+      res.set("Retry-After", String(wait));
+      return res.status(429).json({ error: "too_many_attempts", retryAfterSec: wait });
+    }
+    const given = Buffer.from(String(req.get("X-Admin-Key") || "")), want = Buffer.from(ADMIN_KEY);
+    if (given.length === want.length && crypto.timingSafeEqual(given, want)) { await storage.clearAdminFailures(who); return next(); }
+    const r = await storage.recordAdminFailure(who, { windowMs: ADMIN_LOCK_MS, limit: ADMIN_FAIL_LIMIT, lockMs: ADMIN_LOCK_MS });
+    if (r.n === ADMIN_FAIL_LIMIT) audit({ type: "operator" }, "operator.locked_out", null, { after: r.n });
+    return res.status(401).json({ error: "invalid_admin_key", attemptsLeft: Math.max(0, ADMIN_FAIL_LIMIT - r.n) });
+  } catch (e) {
+    // Without the lockout record the gate cannot count: it refuses rather than letting guesses through.
+    console.error(`[gateway] operator gate: ${e.message}`);
+    return res.status(503).json({ error: "storage_unavailable" });
   }
-  const given = Buffer.from(String(req.get("X-Admin-Key") || "")), want = Buffer.from(ADMIN_KEY);
-  if (given.length === want.length && crypto.timingSafeEqual(given, want)) { adminFails.delete(who); return next(); }
-  const r = f && now - f.first < ADMIN_LOCK_MS ? f : { n: 0, first: now, until: 0 };
-  r.n += 1;
-  if (r.n >= ADMIN_FAIL_LIMIT) { r.until = now + ADMIN_LOCK_MS; audit({ type: "operator" }, "operator.locked_out", null, { after: r.n }); }
-  adminFails.set(who, r);
-  return res.status(401).json({ error: "invalid_admin_key", attemptsLeft: Math.max(0, ADMIN_FAIL_LIMIT - r.n) });
 }
 
 // ---- activity log ----
@@ -775,7 +799,7 @@ async function eraseTenantUsers(siteKey) {
         ]);
         if (r.some((x) => x.status !== 200)) { failed.push(key); continue; }
       } catch (e) { failed.push(key); continue; }
-      pkCache.delete(u.userId); lastRisk.delete(u.userId);
+      passkeyChanged(u.userId); storage.deleteRiskState(String(u.userId)).catch(() => {});
       delete store.users[key];
       erased.push(key);
     }
@@ -798,7 +822,7 @@ app.post("/v1/admin/accounts/delete", adminGate, async (req, res) => {
   for (const m of ["keystroke", "mouse"]) {
     steps[m] = (await fwd(`${CA_URL}/v1/${m}/reset`, "POST", { userId: u.userId }, mintAssertion(PERSONAL_KEY, u.userId, "ca-service"))).status;
   }
-  pkCache.delete(u.userId);
+  passkeyChanged(u.userId);
   const owned = Object.keys(tenants.tenants).filter((k) => tenants.tenants[k].owner === accountId && !SERVER_MANAGED.has(k));
   const touched = [...owned];
   for (const k of owned) { steps[k] = await eraseTenantUsers(k).catch((e) => ({ error: e.message })); delete tenants.tenants[k]; }
@@ -815,30 +839,32 @@ app.post("/v1/admin/accounts/delete", adminGate, async (req, res) => {
 // The account pages are the gateway's own, so their passkeys belong to THIS origin: the relying party
 // comes from config (never from the request), and a call from any other origin is refused.
 function ownPage(req, res, next) { if (req.get("Origin") !== PUBLIC_ORIGIN) return res.status(403).json({ error: "origin_not_allowed" }); next(); }
-const ceremonies = new Map();   // pending account passkey ceremonies, 5 minutes like the challenges
-function putCeremony(v) { const id = crypto.randomBytes(16).toString("hex"); ceremonies.set(id, { ...v, at: Date.now() }); return id; }
-function takeCeremony(id, kind) {
-  const c = ceremonies.get(String(id || "")); ceremonies.delete(String(id || ""));
-  return c && c.kind === kind && Date.now() - c.at < 5 * 60000 ? c : null;
+// Pending account passkey ceremonies, 5 minutes like the challenges; kept by storage.js so a ceremony
+// started on one gateway copy completes on any.
+const CEREMONY_TTL_MS = 5 * 60000;
+async function putCeremony(v) { const id = crypto.randomBytes(16).toString("hex"); await storage.putCeremony(id, { ...v, at: Date.now() }, CEREMONY_TTL_MS); return id; }
+async function takeCeremony(id, kind) {
+  const c = await storage.takeCeremony(String(id || ""));
+  return c && c.kind === kind ? c : null;
 }
 // Why the account signs in: "console" (manage tenants) or "link" (the extension, personal tenant).
-function purposeOf(body) {
+async function purposeOf(body) {
   if (body.purpose === "console") return { purpose: "console" };
-  const l = liveLink(body.linkId);
+  const l = await storage.getLink(String(body.linkId || ""));
   if (!l || l.status !== "pending" || l.siteKey !== PERSONAL_KEY) return { error: "link_expired" };
   return { purpose: "link", linkId: String(body.linkId) };
 }
-function signedIn(accountId, p) {
+async function signedIn(accountId, p) {
   const email = accounts.accounts[accountId].email;
   if (p.purpose === "console") return { consoleToken: signConsole(accountId), email };
-  const code = authorizeLink(p.linkId, PERSONAL_KEY, "acct:" + accountId, email);
+  const code = await authorizeLink(p.linkId, PERSONAL_KEY, "acct:" + accountId, email);
   return code ? { linkId: p.linkId, code, email } : { error: "link_expired" };
 }
 app.post("/v1/accounts/register/options", ownPage, async (req, res) => {
   const email = normEmail(req.body.email);
   if (!emailOk(email)) return res.status(400).json({ error: "bad_email" });
   if (accounts.byEmail[email]) return res.status(409).json({ error: "email_taken" });
-  const p = purposeOf(req.body);
+  const p = await purposeOf(req.body);
   if (p.error) return res.status(400).json(p);
   // Email is the account's name only: there is no mail server, so it is not verified. The passkey is
   // what proves the account; a production deployment would add an emailed confirmation.
@@ -846,15 +872,15 @@ app.post("/v1/accounts/register/options", ownPage, async (req, res) => {
   const u = await accountPrincipal(accountId);
   const r = await fwd(`${PASSKEY_URL}/v1/register/options`, "POST", { userId: u.userId, username: email, rpId: PUBLIC_RP_ID, origin: PUBLIC_ORIGIN });
   if (r.status !== 200) return relay(res, r);
-  res.json({ ceremonyId: putCeremony({ kind: "register", email, accountId, userId: u.userId, ...p }), options: JSON.parse(r.text) });
+  res.json({ ceremonyId: await putCeremony({ kind: "register", email, accountId, userId: u.userId, ...p }), options: JSON.parse(r.text) });
 });
 app.post("/v1/accounts/register/complete", ownPage, async (req, res) => {
-  const c = takeCeremony(req.body.ceremonyId, "register");
+  const c = await takeCeremony(req.body.ceremonyId, "register");
   if (!c) return res.status(400).json({ error: "ceremony_expired" });
   if (accounts.byEmail[c.email]) return res.status(409).json({ error: "email_taken" });
   const r = await fwd(`${PASSKEY_URL}/v1/register/complete`, "POST", { userId: c.userId, credential: req.body.credential, rpId: PUBLIC_RP_ID, origin: PUBLIC_ORIGIN });
   if (r.status !== 200) return relay(res, r);
-  pkCache.delete(c.userId);
+  passkeyChanged(c.userId);
   accounts.accounts[c.accountId] = { email: c.email, createdAt: new Date().toISOString() };
   accounts.byEmail[c.email] = c.accountId;
   try { await storage.saveAccount(c.accountId); } catch (e) {
@@ -865,25 +891,25 @@ app.post("/v1/accounts/register/complete", ownPage, async (req, res) => {
     return res.status(500).json({ error: "account_store_write_failed" });
   }
   audit(asAccount(c.accountId), "account.created", null, { via: c.purpose === "console" ? "console" : "extension" });
-  res.json(signedIn(c.accountId, c));
+  res.json(await signedIn(c.accountId, c));
 });
 app.post("/v1/accounts/login/options", ownPage, async (req, res) => {
   const accountId = accounts.byEmail[normEmail(req.body.email)];
   if (!accountId) return res.status(404).json({ error: "no_account" });
-  const p = purposeOf(req.body);
+  const p = await purposeOf(req.body);
   if (p.error) return res.status(400).json(p);
   const u = await accountPrincipal(accountId);
   const r = await fwd(`${PASSKEY_URL}/v1/auth/options`, "POST", { userId: u.userId, rpId: PUBLIC_RP_ID });
   if (r.status !== 200) return relay(res, r);
   const options = JSON.parse(r.text);
-  res.json({ ceremonyId: putCeremony({ kind: "login", accountId, userId: u.userId, challengeId: options.challengeId, ...p }), options });
+  res.json({ ceremonyId: await putCeremony({ kind: "login", accountId, userId: u.userId, challengeId: options.challengeId, ...p }), options });
 });
 app.post("/v1/accounts/login/complete", ownPage, async (req, res) => {
-  const c = takeCeremony(req.body.ceremonyId, "login");
+  const c = await takeCeremony(req.body.ceremonyId, "login");
   if (!c) return res.status(400).json({ error: "ceremony_expired" });
   const r = await fwd(`${PASSKEY_URL}/v1/auth/complete`, "POST", { userId: c.userId, challengeId: c.challengeId, assertion: req.body.assertion, rpId: PUBLIC_RP_ID, origin: PUBLIC_ORIGIN });
   if (r.status !== 200) return relay(res, r);
-  res.json(signedIn(c.accountId, c));
+  res.json(await signedIn(c.accountId, c));
 });
 
 // ---- developer console: an account manages its own tenants ----
@@ -1030,27 +1056,17 @@ app.post("/v1/console/tenants/:siteKey/delete", consoleAuth, ownTenantRead, asyn
 //     relays it; the service worker accepts it only from /connect.html);
 //  4. the extension redeems the code with its verifier at /v1/link/token and keeps the refresh token.
 // Only the extension that started the flow holds the verifier, so a code seen by anyone else is useless.
-const links = new Map();   // linkId -> { siteKey, challenge, at, status: pending|authorized, code, codeAt, externalId, label }
+// A link (linkId -> { siteKey, challenge, at, status: pending|authorized, code, codeAt, externalId, label })
+// is kept by storage.js, so each step of a sign-in may reach a different gateway copy. Authorizing is one
+// atomic change of a pending link, and redeeming removes the link as it is read (one attempt).
 const LINK_TTL_MS = 10 * 60000, CODE_TTL_MS = 2 * 60000;
-function liveLink(id) {
-  const l = links.get(String(id || ""));
-  if (l && Date.now() - l.at < LINK_TTL_MS) return l;
-  links.delete(String(id || ""));
-  return null;
+async function authorizeLink(linkId, siteKey, externalId, label) {
+  const l = await storage.authorizeLink(String(linkId || ""), siteKey,
+    { externalId, label, code: crypto.randomBytes(24).toString("base64url"), codeAt: Date.now() });
+  return l ? l.code : null;
 }
-function authorizeLink(linkId, siteKey, externalId, label) {
-  const l = liveLink(linkId);
-  if (!l || l.status !== "pending" || l.siteKey !== siteKey) return null;
-  Object.assign(l, { status: "authorized", externalId, label, code: crypto.randomBytes(24).toString("base64url"), codeAt: Date.now() });
-  return l.code;
-}
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, l] of links) if (now - l.at >= LINK_TTL_MS) links.delete(id);
-  for (const [id, c] of ceremonies) if (now - c.at >= 5 * 60000) ceremonies.delete(id);
-}, 60000).unref();
 
-app.post("/v1/link/start", ownPage, (req, res) => {
+app.post("/v1/link/start", ownPage, async (req, res) => {
   const siteKey = String(req.body.siteKey || "").trim();
   const t = tenants.tenants[siteKey];
   if (!t) return res.status(404).json({ error: "unknown_organisation" });
@@ -1062,16 +1078,16 @@ app.post("/v1/link/start", ownPage, (req, res) => {
     return res.status(409).json({ error: "extension_not_allowed", note: "This organisation does not allow the browser extension." });
   }
   const linkId = crypto.randomBytes(16).toString("hex");
-  links.set(linkId, { siteKey, challenge: String(req.body.codeChallenge), at: Date.now(), status: "pending" });
+  await storage.putLink(linkId, { siteKey, challenge: String(req.body.codeChallenge), at: Date.now(), status: "pending" }, LINK_TTL_MS);
   const signInUrl = personal ? null : t.signInUrl + (t.signInUrl.includes("?") ? "&" : "?") + "continuum_link=" + linkId;
   res.json({ linkId, kind: personal ? "personal" : "organisation", tenantName: t.name, signInUrl });
 });
 // The organisation's sign-in form-posts here: the link id and an identity token signed with its tenant
 // secret, carrying `link` (this link id, so it cannot be replayed on another) and a short expiry.
-app.post("/v1/link/callback", (req, res) => {
+app.post("/v1/link/callback", async (req, res) => {
   const linkId = String(req.body.link || "");
   const fail = (why) => res.redirect(303, "/connect.html?mode=error&why=" + encodeURIComponent(why));
-  const l = liveLink(linkId);
+  const l = await storage.getLink(linkId);
   if (!l || l.status !== "pending" || l.siteKey === PERSONAL_KEY) return fail("link_expired");
   const t = resolveTenant(l.siteKey);
   if (!t) return fail("organisation_not_active");
@@ -1079,19 +1095,18 @@ app.post("/v1/link/callback", (req, res) => {
   const now = Math.floor(Date.now() / 1000);
   if (!tok || tok.link !== linkId || !tok.exp || tok.exp - now > 600) return fail("invalid_identity_token");
   const label = tok.name ? String(tok.name).slice(0, 80) : String(tok.sub);
-  const code = authorizeLink(linkId, l.siteKey, "id:" + String(tok.sub), label);
+  const code = await authorizeLink(linkId, l.siteKey, "id:" + String(tok.sub), label);
   if (!code) return fail("link_expired");
   res.redirect(303, "/connect.html?mode=done&link=" + linkId + "&code=" + code);
 });
 app.post("/v1/link/token", async (req, res) => {
   try {
     const linkId = String(req.body.linkId || "");
-    const l = liveLink(linkId);
+    const l = await storage.takeLink(linkId);   // one attempt: a wrong verifier burns the code
     const code = String(req.body.code || ""), verifier = String(req.body.codeVerifier || "");
     const good = l && l.status === "authorized" && Date.now() - l.codeAt < CODE_TTL_MS && code.length === l.code.length
       && crypto.timingSafeEqual(Buffer.from(code), Buffer.from(l.code))
       && /^[A-Za-z0-9._~-]{43,128}$/.test(verifier) && crypto.createHash("sha256").update(verifier).digest("base64url") === l.challenge;
-    links.delete(linkId);   // one attempt: a wrong verifier burns the code
     if (!good) return res.status(400).json({ error: "invalid_grant" });
     const t = resolveTenant(l.siteKey);
     if (!t) return res.status(403).json({ error: "organisation_not_active" });
@@ -1220,7 +1235,7 @@ app.post("/v1/sdk/keystroke/check", auth, async (req, res) => {
   if (d && d.checked) {
     const rk = riskLevel(d.warmup, d.isSuspicious);
     d.riskToken = signRiskRS256(req.uid, rk, "keystroke");
-    maybeFireRiskEvent(req.tenant, req.uid, req.esub || req.uid, rk, "keystroke"); // push on transition
+    maybeFireRiskEvent(req.tenant, req.tenantKey, req.uid, req.esub || req.uid, rk, "keystroke").catch((e) => console.error(`[caep] ${e.message}`)); // push on transition
   }
   res.status(r.status).json(d);
 });
@@ -1254,14 +1269,14 @@ app.post("/v1/sdk/mouse/check", auth, async (req, res) => {
   }
   const mrk = riskLevel(d.warmup, d.isSuspicious);
   d.riskToken = signRiskRS256(req.uid, mrk, "mouse");
-  maybeFireRiskEvent(req.tenant, req.uid, req.esub || req.uid, mrk, "mouse"); // push on transition
+  maybeFireRiskEvent(req.tenant, req.tenantKey, req.uid, req.esub || req.uid, mrk, "mouse").catch((e) => console.error(`[caep] ${e.message}`)); // push on transition
   res.status(r.status).json({ ...d, ok: !passkeyTriggered, suspiciousStreak: streak, strikesToLock: MOUSE_STRIKES_TO_LOCK, requiresPasskeyChallenge: passkeyTriggered });
 });
 app.get("/v1/sdk/mouse/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/mouse/status/${req.uid}`, "GET", undefined, caAssert(req))));
 
 // passkey (origin/rpId bind to the HOST app's origin)
 app.post("/v1/sdk/passkey/register/options", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/register/options`, "POST", { userId: req.uid, username: req.uname, rpId: rpFromOrigin(req), origin: originOf(req) })));
-app.post("/v1/sdk/passkey/register/complete", auth, async (req, res) => { const r = await fwd(`${PASSKEY_URL}/v1/register/complete`, "POST", { userId: req.uid, credential: req.body.credential, rpId: rpFromOrigin(req), origin: originOf(req) }); pkCache.delete(req.uid); relay(res, r); });
+app.post("/v1/sdk/passkey/register/complete", auth, async (req, res) => { const r = await fwd(`${PASSKEY_URL}/v1/register/complete`, "POST", { userId: req.uid, credential: req.body.credential, rpId: rpFromOrigin(req), origin: originOf(req) }); passkeyChanged(req.uid); relay(res, r); });
 app.post("/v1/sdk/passkey/auth/options", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/auth/options`, "POST", { userId: req.uid, rpId: rpFromOrigin(req) })));
 app.post("/v1/sdk/passkey/auth/complete", auth, async (req, res) => {
   const r = await fwd(`${PASSKEY_URL}/v1/auth/complete`, "POST", { userId: req.uid, challengeId: req.body.challengeId, assertion: req.body.assertion, rpId: rpFromOrigin(req), origin: originOf(req) });
@@ -1287,6 +1302,143 @@ app.post("/v1/sdk/keystroke/adaptive/retrain", auth, async (req, res) => {
 app.get("/v1/sdk/lock/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/lock/status/${req.uid}`, "GET", undefined, caAssert(req))));
 app.get("/v1/sdk/passkey/status", auth, async (req, res) => res.json({ hasPasskey: await hasPasskey(req.uid) }));
 
+// ---- TENANT BACKEND API (/v1/server/*) ----
+// What a tenant's own SERVER calls, acting for one of its users with no browser in between (the demo
+// app's backend is the reference: apps/demo/services/caClient.js and passkeyClient.js). It proves itself
+// with its site key (X-Continuum-Site-Key) and an identity token, a standard HS256 JWT signed with its
+// tenant secret, naming its own user (sub), expiring within 10 minutes, and made FOR THIS API
+// (aud "continuum-server"). The audience matters: the identity tokens a tenant hands to its users'
+// browsers (/continuum/identity, for the SDK) carry none, so an impostor at an unlocked session who takes
+// one cannot use it here to clear the lock or replace the passkey. Requests from browsers are refused
+// before this (the CORS middleware). The gateway
+// resolves that user, then calls ca-service or passkey-service with its own assertion and keys: a tenant
+// never needs, and never gets, a route to an internal service. Only the operations below exist here;
+// ca-service's operator routes do not.
+//
+// Policy stays with the tenant's backend, as it would in any app: these routes pass a check's result
+// back and do not lock anyone themselves (the SDK routes above do that for apps without a backend).
+// Two things the gateway keeps regardless of the integration: signed verdicts with risk-change pushes
+// (CAEP), and adaptive retraining only behind a passkey verified through Continuum moments before.
+const SERVER_TOKEN_MAX_SEC = 600;
+const SERVER_AUDIENCE = "continuum-server";
+const STEPUP_TTL_MS = 2 * 60000;
+const forServer = (aud) => (Array.isArray(aud) ? aud.includes(SERVER_AUDIENCE) : aud === SERVER_AUDIENCE);
+async function serverAuth(req, res, next) {
+  const siteKey = String(req.get("X-Continuum-Site-Key") || "");
+  const known = tenants.tenants[siteKey];
+  if (known && !tenantActive(known)) return res.status(403).json({ error: known.status === "pending" ? "tenant_pending_approval" : "tenant_revoked" });
+  const tenant = resolveTenant(siteKey);
+  if (!tenant) return res.status(401).json({ error: "invalid_site_key" });
+  const h = req.get("Authorization") || "";
+  const id = verifyIdentity(tenant.secret, h.startsWith("Bearer ") ? h.slice(7) : "");
+  const now = Math.floor(Date.now() / 1000);
+  // Made for this API, short-lived (a leaked token is soon useless), and never bound to an extension sign-in.
+  if (!id || id.link || !id.exp || id.exp - now > SERVER_TOKEN_MAX_SEC) return res.status(401).json({ error: "invalid_identity_token" });
+  if (!forServer(id.aud)) return res.status(401).json({ error: "wrong_audience", note: `A tenant API token must carry aud "${SERVER_AUDIENCE}".` });
+  try {
+    const u = await userFor(siteKey, "id:" + String(id.sub));
+    req.uid = u.userId; req.uname = u.username;
+  } catch (e) { return res.status(409).json({ error: "identity_conflict" }); }
+  req.tenant = tenant; req.tenantKey = siteKey; req.esub = String(id.sub);
+  next();
+}
+const serverRoute = (fn) => (req, res) => fn(req, res).catch((e) => { console.error(`[server-api] ${req.path}: ${e.message}`); res.status(500).json({ error: "internal_error" }); });
+
+// [method, path under /v1/server, ca-service path] — the body (POST) is passed on with the resolved user.
+const SERVER_CA_ROUTES = [
+  ["get", "/keystroke/config", () => "/v1/keystroke/config"],
+  ["get", "/onboarding", (r) => `/v1/users/${r.uid}/onboarding`],
+  ["get", "/keystroke/status", (r) => `/v1/keystroke/status/${r.uid}`],
+  ["post", "/keystroke/enroll", () => "/v1/keystroke/enroll"],
+  ["post", "/keystroke/contribute", () => "/v1/keystroke/contribute"],
+  ["post", "/keystroke/reset", () => "/v1/keystroke/reset"],
+  ["post", "/keystroke/retrain", () => "/v1/keystroke/retrain"],
+  ["post", "/keystroke/maybe-retrain-impostors", () => "/v1/keystroke/maybe-retrain-impostors"],
+  ["get", "/keystroke/history", (r) => `/v1/keystroke/history/${r.uid}`],
+  ["get", "/keystroke/stats", (r) => `/v1/keystroke/stats/${r.uid}`],
+  ["get", "/keystroke/decisions", (r) => `/v1/keystroke/decisions/${r.uid}`],
+  // tenant-wide reads: ca-service scopes them to the caller's tenant (from the assertion)
+  ["get", "/keystroke/decisions-all", () => "/v1/keystroke/decisions-all"],
+  ["get", "/keystroke/metrics", () => "/v1/keystroke/metrics"],
+  ["post", "/mouse/enroll", () => "/v1/mouse/enroll"],
+  ["post", "/mouse/reset", () => "/v1/mouse/reset"],
+  ["post", "/mouse/streak/reset", () => "/v1/mouse/streak/reset"],
+  ["get", "/mouse/status", (r) => `/v1/mouse/status/${r.uid}`],
+  ["post", "/lock/set", () => "/v1/lock/set"],
+  ["post", "/lock/clear", () => "/v1/lock/clear"],
+  ["get", "/lock/status", (r) => `/v1/lock/status/${r.uid}`],
+];
+for (const [method, p, target] of SERVER_CA_ROUTES) {
+  app[method]("/v1/server" + p, serverAuth, serverRoute(async (req, res) => {
+    relay(res, await fwd(`${CA_URL}${target(req)}`, method.toUpperCase(), method === "post" ? { ...(req.body || {}), userId: req.uid } : undefined, caAssert(req)));
+  }));
+}
+// Checks: the verdict comes back signed (RS256, as on the SDK routes), and a settled change of risk is
+// pushed to the tenant's webhook. hasPasskey is the gateway's own answer, not the caller's.
+for (const modality of ["keystroke", "mouse"]) {
+  app.post(`/v1/server/${modality}/check`, serverAuth, serverRoute(async (req, res) => {
+    const body = { ...(req.body || {}), userId: req.uid };
+    if (modality === "keystroke") body.hasPasskey = await hasPasskey(req.uid);
+    const r = await fwd(`${CA_URL}/v1/${modality}/check`, "POST", body, caAssert(req));
+    let d; try { d = JSON.parse(r.text); } catch (e) { return relay(res, r); }
+    if (d && d.checked) {
+      const rk = riskLevel(d.warmup, d.isSuspicious);
+      d.riskToken = signRiskRS256(req.uid, rk, modality);
+      maybeFireRiskEvent(req.tenant, req.tenantKey, req.uid, req.esub, rk, modality).catch((e) => console.error(`[caep] ${e.message}`));
+    }
+    res.status(r.status).json(d);
+  }));
+}
+// Adaptive retraining turns the pending samples into training samples: only with a step-up token from a
+// passkey verified through /v1/server/passkey/auth/complete in the last 2 minutes, used once (as the SDK
+// route requires the passkey in the same request).
+app.post("/v1/server/keystroke/adaptive/confirm", serverAuth, serverRoute(async (req, res) => {
+  const c = await storage.takeCeremony(String((req.body || {}).stepUpToken || ""));
+  if (!c || c.kind !== "stepup" || String(c.uid) !== String(req.uid)) {
+    return res.status(403).json({ error: "passkey_required", note: "Verify the user's passkey through /v1/server/passkey/auth/* and pass its stepUpToken (2 minutes, once)." });
+  }
+  relay(res, await fwd(`${CA_URL}/v1/keystroke/adaptive/confirm`, "POST", {}, caAssert(req)));
+}));
+
+// Passkeys. The relying party is the tenant's own website: `origin` must be one of its registered
+// origins, and the RP ID is that origin's host, so a tenant can only make passkeys for its own sites.
+function tenantWebsite(req) {
+  const o = String((req.body || {}).origin || "");
+  if (!/^https?:\/\//.test(o) || !(req.tenant.origins || []).includes(o)) return null;
+  return { origin: o, rpId: new URL(o).hostname };
+}
+const notTenantWebsite = (res) => res.status(400).json({ error: "origin_not_allowed", note: "origin must be one of the organisation's registered websites" });
+app.get("/v1/server/passkey/status", serverAuth, serverRoute(async (req, res) => res.json({ hasPasskey: await hasPasskey(req.uid) })));
+app.post("/v1/server/passkey/reset", serverAuth, serverRoute(async (req, res) => {
+  const r = await fwd(`${PASSKEY_URL}/v1/users/${req.uid}/reset`, "POST");
+  passkeyChanged(req.uid);
+  relay(res, r);
+}));
+app.post("/v1/server/passkey/register/options", serverAuth, serverRoute(async (req, res) => {
+  const w = tenantWebsite(req); if (!w) return notTenantWebsite(res);
+  const username = String((req.body || {}).username || req.uname).slice(0, 64);
+  relay(res, await fwd(`${PASSKEY_URL}/v1/register/options`, "POST", { userId: req.uid, username, rpId: w.rpId, origin: w.origin }));
+}));
+app.post("/v1/server/passkey/register/complete", serverAuth, serverRoute(async (req, res) => {
+  const w = tenantWebsite(req); if (!w) return notTenantWebsite(res);
+  const r = await fwd(`${PASSKEY_URL}/v1/register/complete`, "POST", { userId: req.uid, credential: req.body.credential, rpId: w.rpId, origin: w.origin });
+  passkeyChanged(req.uid);
+  relay(res, r);
+}));
+app.post("/v1/server/passkey/auth/options", serverAuth, serverRoute(async (req, res) => {
+  const w = tenantWebsite(req); if (!w) return notTenantWebsite(res);
+  relay(res, await fwd(`${PASSKEY_URL}/v1/auth/options`, "POST", { userId: req.uid, rpId: w.rpId }));
+}));
+app.post("/v1/server/passkey/auth/complete", serverAuth, serverRoute(async (req, res) => {
+  const w = tenantWebsite(req); if (!w) return notTenantWebsite(res);
+  const r = await fwd(`${PASSKEY_URL}/v1/auth/complete`, "POST", { userId: req.uid, challengeId: req.body.challengeId, assertion: req.body.assertion, rpId: w.rpId, origin: w.origin });
+  if (r.status !== 200) return relay(res, r);
+  let d = {}; try { d = JSON.parse(r.text); } catch (e) {}
+  const stepUpToken = crypto.randomBytes(24).toString("base64url");
+  await storage.putCeremony(stepUpToken, { kind: "stepup", uid: req.uid, at: Date.now() }, STEPUP_TTL_MS);
+  res.json({ ...d, stepUpToken });
+}));
+
 // ---- start ----
 // Storage first (records into memory), then the built-in tenants, then traffic. A failure here stops the
 // process with the reason, so an orchestrator restarts it instead of it serving with half its records.
@@ -1297,7 +1449,19 @@ async function boot() {
   // Changes made by another gateway copy (postgres): settings are taken over, counts recomputed.
   storage.on("settings", (doc) => settings.replace(doc));
   storage.on("identity", (key) => statsCache.delete(siteKeyOf(key)));
+  // another copy saw a passkey registered or removed: drop the cached answer
+  storage.on("forget", (key) => { if (key.startsWith("passkey:")) { const id = key.slice(8); pkCache.delete(id); pkCache.delete(Number(id)); } });
   await seedBuiltInTenants();
+  // Expired links, ceremonies and lockouts, and old delivered webhook events: once a minute, on every copy.
+  setInterval(() => storage.sweep().catch((e) => console.error(`[storage] sweep: ${e.message}`)), 60000).unref();
+  // With postgres, risk-change events leave through the outbox (webhooks.js); every copy delivers.
+  if (storage.outbox) {
+    dispatcher = createDispatcher({
+      storage,
+      onDead: (row, error) => audit({ type: "system" }, "webhook.undeliverable", row.siteKey, { attempts: row.attempts, error }),
+    });
+    dispatcher.start();
+  }
   const server = app.listen(PORT, () => console.log(`Continuum gateway on :${PORT} (tenants=${Object.keys(tenants.tenants).length}, storage=${storage.kind})`));
   // A stop request (docker stop, a Kubernetes rollout) finishes the requests in flight, then closes storage.
   let stopping = false;
@@ -1306,6 +1470,7 @@ async function boot() {
       if (stopping) return;
       stopping = true;
       console.log(`[gateway] ${sig}: stopping`);
+      if (dispatcher) dispatcher.stop();
       server.close(() => storage.close().finally(() => process.exit(0)));
       setTimeout(() => process.exit(0), 10000).unref();
     });

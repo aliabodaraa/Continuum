@@ -96,7 +96,9 @@ router.post("/auth/complete", async (req, res) => {
       return res.status(400).json({ error: "userId, challengeId, and assertion required" });
     }
 
-    await passkey.authComplete(userId, challengeId, assertion);
+    const verified = await passkey.authComplete(userId, challengeId, assertion);
+    // Continuum's proof of this verification (2 minutes, once): adaptive retraining needs it.
+    req.session.stepUpToken = verified.stepUpToken;
 
     // App-side outcome: record the verification + lift the risk lock for a
     // matching in-session user (both keystroke and mouse guards read this).

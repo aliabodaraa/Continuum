@@ -1,112 +1,21 @@
-# Continuum — production / portable deployment. Everything is baked into the
-# images (no bind mounts), so this runs identically on any machine with Docker —
-# `docker compose -f docker-compose.prod.yml up -d` and nothing else. Only
-# runtime STATE lives on named volumes so it survives restarts and image rebuilds.
+# The reference DEMO on its own machine: the Continuum product (docker-compose.bundle.yml: gateway,
+# ca-service, passkey-service, model-api) and, next to it, the demo web app as an ordinary TENANT.
+# The demo reaches Continuum only through the gateway's public API (its browser pages through the SDK,
+# its backend through the tenant API /v1/server/*), exactly as any organisation's app would. It has no
+# address or key for an internal service and sits only on the public `edge` network.
 #
-# Config is env-driven (see .env.example). To serve on a real domain, set
-# PUBLIC_ORIGIN + RP_ID to that domain (WebAuthn passkeys are bound to it).
+#   docker compose -f docker-compose.prod.yml up -d
 #
-# NETWORK SEGMENTATION. Only the gateway is published, but publishing was the ONLY thing
-# separating the tiers — every container shared one default bridge, so any of them could
-# address model-api and score, train or roll back any user's biometric model. The `model`
-# network now contains ca-service and model-api and nothing else, so the scoring oracle is
-# reachable only from the service that holds a gateway-verified identity assertion.
+# Everything is baked into the images (no bind mounts); runtime state lives on named volumes. Set the
+# bundle's required secrets in .env (see .env.example), plus SESSION_SECRET for the demo. For the demo's
+# sign-in to the browser extension and its risk-change pushes, also set in .env:
+#   DEMO_SIGNIN_URL=http://localhost:3000/continuum/link
+#   DEMO_WEBHOOK_URL=http://web:3000/continuum/events
+# To serve on a real domain, set PUBLIC_ORIGIN (and GATEWAY_PUBLIC_URL) to it: passkeys are bound to it.
+include:
+  - docker-compose.bundle.yml
+
 services:
-  model-api:
-    build:
-      context: .
-      dockerfile: services/model-api/Dockerfile.model.prod
-    image: ${REGISTRY:-continuum}/model-api:${TAG:-latest}
-    restart: unless-stopped
-    environment:
-      MODEL_HOST: 0.0.0.0
-      MODEL_PORT: 5000
-      MODEL_DEBUG: "0"
-      MODEL_UNITS: ${MODEL_UNITS:-32}
-      MODEL_PATH: ${MODEL_PATH:-/app/artifacts/ws50-gru/final_model}
-      # REQUIRED — see docker-compose.bundle.yml. Generate: openssl rand -hex 32
-      MODEL_API_KEY: ${MODEL_API_KEY:?Set MODEL_API_KEY in .env (openssl rand -hex 32)}
-    expose:
-      - "5000"
-    networks: [model]
-    healthcheck:
-      # TensorFlow needs tens of seconds to load; dependants must wait for READY, not
-      # merely for the container to exist. /health is the one unauthenticated route.
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/health',timeout=3).status==200 else 1)\""]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 90s
-    volumes:
-      # Per-user models (keystroke + mouse) are generated at enrollment time and
-      # must persist across restarts/rebuilds. Base models stay baked in the image.
-      - continuum_user_models:/app/artifacts/users
-
-  passkey-service:
-    build:
-      context: ./services/passkey-service
-      dockerfile: Dockerfile
-    image: ${REGISTRY:-continuum}/passkey-service:${TAG:-latest}
-    restart: unless-stopped
-    environment:
-      PORT: 4000
-      # WebAuthn identity — must match the web app's public origin/domain.
-      RP_ID: ${RP_ID:-localhost}
-      ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
-      DB_PATH: /app/data/passkey.db
-      # Shared secret between web and passkey service (set in .env for prod).
-      PASSKEY_API_KEY: ${PASSKEY_API_KEY:-}
-    expose:
-      - "4000"
-    networks: [internal]
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
-    volumes:
-      - continuum_passkey_db:/app/data   # credentials + challenges (persistent)
-
-  ca-service:
-    build:
-      context: ./services/ca-service
-      dockerfile: Dockerfile
-    image: ${REGISTRY:-continuum}/ca-service:${TAG:-latest}
-    restart: unless-stopped
-    depends_on:
-      model-api:
-        condition: service_healthy
-    environment:
-      PORT: 4100
-      MODEL_API_URL: http://model-api:5000
-      # Must equal model-api's MODEL_API_KEY — the credential for that hop.
-      MODEL_API_KEY: ${MODEL_API_KEY:?Set MODEL_API_KEY in .env (openssl rand -hex 32)}
-      MODEL_INFER_TIMEOUT_MS: ${MODEL_INFER_TIMEOUT_MS:-5000}
-      MODEL_TRAIN_TIMEOUT_MS: ${MODEL_TRAIN_TIMEOUT_MS:-600000}
-      DB_PATH: /app/data/ca.db
-      CA_API_KEY: ${CA_API_KEY:-}
-      # Signs behavioral risk verdicts; the app's CONTINUUM_SECRET must match.
-      # REQUIRED — no shared fallback. Generate: openssl rand -hex 32
-      CA_SIGNING_SECRET: ${CA_SIGNING_SECRET:?Set CA_SIGNING_SECRET in .env (openssl rand -hex 32)}
-      # User-study logging (lib/studyLog.js, docs/recovery/user_study/LOGGING_SPEC.md): off unless 1.
-      # When on, requests that carry a study context are logged in the study_* tables, and model
-      # folders are hashed through the read-only /model-store mount below.
-      STUDY_LOGGING: ${STUDY_LOGGING:-0}
-    expose:
-      - "4100"
-    # The only service on both networks — the sole path to the model.
-    networks: [internal, model]
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
-    volumes:
-      - continuum_ca_db:/app/data   # behavioral data (persistent)
-      - continuum_user_models:/model-store:ro   # model hashes for the study log only
-
   web:
     build:
       context: ./apps/demo
@@ -117,46 +26,36 @@ services:
     image: ${REGISTRY:-continuum}/web-demo:${TAG:-latest}
     restart: unless-stopped
     depends_on:
-      passkey-service:
-        condition: service_healthy
-      ca-service:
+      gateway:
         condition: service_healthy
     environment:
       PORT: 3000
-      # Public-facing identity. Override for a real domain (must match the URL
-      # the browser uses, or passkeys will be rejected).
+      # This app's website: the relying party of its users' passkeys. Must match the URL the browser
+      # uses, and be one of the demo organisation's origins.
       ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
       RP_ID: ${RP_ID:-localhost}
       COOKIE_SECURE: ${COOKIE_SECURE:-0}
       # REQUIRED — signs session cookies. Generate: openssl rand -hex 32
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env (openssl rand -hex 32)}
-      # MODEL_API_URL removed: the demo never called the model (its only model code is the
-      # unused local TFJS adapter), so this advertised a path that should not exist — and
-      # the `model` network now makes that path unreachable regardless.
-      PASSKEY_API_URL: http://passkey-service:4000
-      PASSKEY_API_KEY: ${PASSKEY_API_KEY:-}
-      CA_API_URL: http://ca-service:4100
-      CA_API_KEY: ${CA_API_KEY:-}
-      # Verifies signed risk tokens (@continuum/node middleware) — must equal CA_SIGNING_SECRET.
-      CONTINUUM_SECRET: ${CA_SIGNING_SECRET:-dev-continuum-risk-secret}
+      # Continuum's public API for this app's backend, and as browsers reach it.
+      GATEWAY_URL: http://gateway:8080
+      CONTINUUM_GATEWAY_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
+      # The demo organisation: its site key and its tenant secret (the gateway seeds pk_demo with
+      # CA_SIGNING_SECRET). Identity tokens are signed with it; verdicts are checked against the JWKS.
+      CONTINUUM_SITE_KEY: pk_demo
+      CONTINUUM_SECRET: ${CA_SIGNING_SECRET:?Set CA_SIGNING_SECRET in .env (openssl rand -hex 32)}
+      CONTINUUM_JWKS_URI: http://gateway:8080/.well-known/jwks.json
+      ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
+      LOG_FORMAT: ${LOG_FORMAT:-}
       # SQLite lives on a volume (NOT in /app/db, which holds source).
       DB_PATH: /app/data/continuum.db
     ports:
       - "${WEB_PORT:-3000}:3000"
-    # `edge` for the browser, `internal` for its CA/passkey calls. Never `model`.
-    networks: [edge, internal]
+    networks: [edge]
     volumes:
-      - continuum_db:/app/data                 # SQLite: users, mouse_samples…
+      - continuum_db:/app/data                 # SQLite: the demo's own users
       - continuum_uploads:/app/public/uploads  # profile photos
 
-networks:
-  edge:
-  internal:
-  model:
-
 volumes:
-  continuum_user_models:
   continuum_db:
-  continuum_passkey_db:
-  continuum_ca_db:
   continuum_uploads:

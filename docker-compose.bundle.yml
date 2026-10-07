@@ -171,6 +171,10 @@ services:
       STORAGE: ${STORAGE:-json}
       DATABASE_URL: ${DATABASE_URL:-}
       CONTINUUM_EXTENSION_ID: ${CONTINUUM_EXTENSION_ID:-}
+      # Only when the demo app runs as a tenant next to the bundle (docker-compose.prod.yml): its sign-in
+      # page for the extension and its risk-change receiver. Empty for a plain product install.
+      DEMO_SIGNIN_URL: ${DEMO_SIGNIN_URL:-}
+      DEMO_WEBHOOK_URL: ${DEMO_WEBHOOK_URL:-}
       GATEWAY_ALLOW_PRIVATE_WEBHOOKS: ${GATEWAY_ALLOW_PRIVATE_WEBHOOKS:-0}
       GATEWAY_AUTO_APPROVE_TENANTS: ${GATEWAY_AUTO_APPROVE_TENANTS:-0}
       # Comma-separated tenant API keys (blank = open, for local dev only).

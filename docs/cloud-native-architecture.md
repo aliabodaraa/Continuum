@@ -147,6 +147,11 @@ personal account through the browser extension.
   model). Target: the trainer returns `{version, sha256, metrics}`; ca-service stores them.
 - **The demo app calls ca-service and passkey-service directly** (`apps/demo/services/caClient.js`,
   `passkeyClient.js`). A customer app must use only the public gateway API and the host middleware.
+  **Done (step 3b):** the gateway's tenant API (`/v1/server/*`) gives a tenant's backend everything the
+  demo's backend did, authenticated with the tenant's own credentials; the demo's client files call it
+  and nothing else, and the demo sits only on the public network. Its passkeys, once stored under its
+  own user numbers, are re-keyed to the Continuum user ids (`passkey-service/scripts/rekey-users.js`,
+  verified, idempotent). The demo's pages and routes, its mouse code included, did not change.
 - **Research code ships inside the model image** (dozens of experiment scripts in
   `services/model-api/`). Target: `research/`, never copied into an image.
 - **The model service runs Flask's development server.** Target: gunicorn.
@@ -171,11 +176,11 @@ personal account through the browser extension.
 | | **gateway** | **ca-service** | **passkey-service** | **model-inference** | **model-trainer** |
 |---|---|---|---|---|---|
 | Responsibility | identity & tenancy authority; public API; sessions; signed verdicts (RS256, JWKS); CAEP delivery; console and extension sign-in pages; SDK assets | continuous-authentication decisions; samples, profiles, escalation, lock, adaptive cycle; study log | WebAuthn registration and assertion | score windows against base or per-user models | train / roll back per-user models |
-| Owned data | tenants, identities, accounts, revoked tokens, operator settings, audit log, sign-in links, ceremonies, admin lockouts, webhook outbox | samples, profiles, decisions, escalation state, locks, adaptive state, training jobs, study log, model version pointers | credentials, challenges | none (cache only) | model artifacts (object storage) |
+| Owned data | tenants, identities, accounts, revoked tokens, operator settings, audit log, sign-in links, ceremonies, admin lockouts, last settled risk per user, webhook outbox | samples, profiles, decisions, escalation state, locks, adaptive state, training jobs, study log, model version pointers | credentials, challenges | none (cache only) | model artifacts (object storage) |
 | Database | PostgreSQL `gateway` | PostgreSQL `ca` | PostgreSQL `passkey` | — | bucket `continuum-models` (write) |
-| Public API | `/v1/sdk/*`, `/v1/sdk/session`, `/v1/link/*`, `/v1/accounts/*`, `/v1/console/*`, `/v1/assert`, `/v1/resolve`, `/.well-known/*`, pages, SDK | none | none | none | none |
+| Public API | `/v1/sdk/*` (browser SDK), `/v1/server/*` (tenant backends), `/v1/sdk/session`, `/v1/link/*`, `/v1/accounts/*`, `/v1/console/*`, `/v1/assert`, `/v1/resolve`, `/.well-known/*`, pages, SDK | none | none | none | none |
 | Internal API | operator: `/v1/tenants*`, `/v1/admin/*` (internal listener only) | `/v1/keystroke/*`, `/v1/mouse/*`, `/v1/lock/*`, `/v1/users/:id/onboarding`, `/v1/admin/settings` | `/v1/register/*`, `/v1/auth/*`, `/v1/users/:id/*` | `POST /v1/score` | `POST /v1/train`, `POST /v1/rollback` |
-| Events produced | risk-change SET to tenants (outbox) | training jobs (own queue); risk transitions (in its replies) | — | — | — |
+| Events produced | risk-change SET to tenants (outbox) | training jobs (own queue) | — | — | — |
 | Events consumed | — | — | — | — | — |
 | Calls | ca, passkey, tenant webhooks | inference (sync), trainer (from its job runner) | — | object storage (read) | object storage (write) |
 | Scaling | HPA 2–6 on CPU | HPA 2–6 on CPU | 2 fixed | HPA 2–8 on CPU | 1–2 fixed; the queue absorbs peaks |
@@ -263,7 +268,7 @@ flowchart TB
 | **Probes** | liveness `/health` (process answers); readiness `/ready` (its database and dependencies are reachable; **done** for the gateway); startupProbe on model pods (~90 s warm-up) so liveness does not kill them while loading. |
 | **PodDisruptionBudgets** | `minAvailable: 1` for gateway, ca-service, model-inference, passkey-service. |
 | **Rolling updates** | `maxUnavailable: 0`, `maxSurge: 1`, `preStop` sleep 5 s so endpoints drain before SIGTERM. |
-| **NetworkPolicies** | default deny. Allow: edge → gateway; gateway → ca, passkey; ca → inference, trainer; services → their database; models → storage; gateway → internet:443 (webhooks); DNS. Enforced only where the network plugin supports it (managed clouds; Calico/Cilium). Docker Desktop's built-in Kubernetes may not enforce them (it depends on its network plugin; to be checked with a deny-all test), so they are proven in staging. |
+| **NetworkPolicies** | default deny. Allow: edge → gateway; gateway → ca, passkey; ca → inference, trainer; services → their database; models → storage; gateway → internet:443 (webhooks); DNS. The demo (namespace `continuum-demo`) reaches the gateway only, like any tenant. Enforced only where the network plugin supports it (managed clouds; Calico/Cilium). Docker Desktop's built-in Kubernetes may not enforce them (it depends on its network plugin; to be checked with a deny-all test), so they are proven in staging. |
 | **ServiceAccounts / RBAC** | one per service, `automountServiceAccountToken: false` (no service calls the Kubernetes API). Cloud identity (bucket, secret access) through Workload Identity / IRSA annotations in the overlays. CI's deploy identity is limited to its namespace. |
 
 Single-instance components: the PostgreSQL primary (replicas only for failover). Everything else runs
@@ -385,7 +390,7 @@ flowchart TB
 | Flow | Design |
 |---|---|
 | **Training** | `training_jobs` in ca-service's database (exists, durable, survives reloads). Any ca-service pod claims work with `SELECT … FOR UPDATE SKIP LOCKED` and calls `model-trainer` with the job id as **idempotency key**: the trainer writes the version derived from it, so a retry never makes two models. Backoff between attempts; after N attempts the job is `failed` (the dead-letter state, visible and re-queueable). Orphans are recovered at start (exists). |
-| **Risk-change webhooks (CAEP)** | ca-service owns the decision state, so it computes the settled-risk **transition** and returns it in the check reply (this replaces the gateway's in-memory `lastRisk`, which breaks with two gateway copies). The gateway inserts a row into `webhook_outbox` before answering. Dispatchers in every gateway pod claim rows with `SKIP LOCKED`, sign the SET and POST with exponential backoff and jitter; after N attempts the row becomes `dead` and shows in the console. Each SET carries a unique `jti` for **receiver idempotency** (at-least-once delivery), plus `event` and a schema version for **event versioning**. Ordering is per user by row id; receivers act on the latest `iat`. |
+| **Risk-change webhooks (CAEP)** | The gateway keeps each user's last settled risk in its own database (`gw_risk_state`) and reads it under a row lock, so whichever copy sees a change records it once (this replaces the in-memory `lastRisk`, which with two copies saw half the changes). The event goes into `gw_webhook_outbox` **in the same transaction** (a real transactional outbox: no change without its event, no event without its change). *Refined during step 3: an earlier draft had ca-service compute the transition; keeping it in the gateway, which owns tenants and their webhooks, is equally correct across copies and leaves ca-service's decision code (shared with the mouse work) untouched.* Dispatchers in every gateway pod claim rows with `SKIP LOCKED`, sign the SET and POST with exponential backoff and jitter; after N attempts the row becomes `dead` and shows in the console. Each SET carries a unique `jti` for **receiver idempotency** (at-least-once delivery), plus `event` and a schema version for **event versioning**. Ordering is per user by row id; receivers act on the latest `iat`. |
 
 **Why no broker:** both flows are point-to-point work queues at modest volume (a few trainings per
 minute; webhooks only on transitions). PostgreSQL already gives durability, transactional enqueue,
@@ -682,7 +687,8 @@ continuum/
 | 0 | Safety net: tag `pre-cloud-v1`, full backups with restore drill, CI | restore identical | **done** |
 | 1 | Gateway records → PostgreSQL behind `STORAGE` | migration identical on real data; e2e 92/92 on both backends; two copies in sync; outage recovery | **done** (cb9575d) |
 | 2 | Foundations, no behaviour change: Node 24; lockfiles + `npm ci`; multi-stage non-root images; `node server.js`; SIGTERM + `/ready` in all services; JSON logs; startup config validation (research code out of the model image moves to step 6, with the model image) | ci-local, e2e suites unchanged | **done** for the Node services |
-| 3 | Gateway fully stateless: sign-in links, ceremonies, lockouts → PostgreSQL; CAEP transitions from ca-service; webhook outbox; the demo apps use only the public API | e2e connect/study; two copies | |
+| 3 | Gateway fully stateless: sign-in links, ceremonies, lockouts, last risk per user → PostgreSQL; webhook outbox with retries | e2e connect 92/92 with every request alternating between **two gateway copies**; study suite through both copies with webhooks delivered | **done** |
+| 3b | The demo app's backend uses only the public tenant API (`/v1/server/*`); passkeys re-keyed to Continuum user ids; the demo leaves the internal network; the production compose becomes bundle + demo tenant | new e2e `e2e_headless_demo_backend.mjs` 14/14; re-key verified and idempotent on a copy of the real data; connect 92/92, enrol-reload 10/10 | **done** |
 | 4 | passkey-service → PostgreSQL (the same switch + migrate + verify pattern) | credential counts and hashes identical; passkey sign-in e2e | |
 | 5 | ca-service → PostgreSQL (23 tables, ~880k rows); queue claims with `SKIP LOCKED`; `/model-store` mount removed (trainer returns version + hash) | per-table counts and checksums; **decision replay: 0 differences**; study e2e 29/29 | |
 | 6 | Model service: gunicorn; inference and trainer roles; models in object storage as versions; ca-service passes the version | scores identical for the same windows; training via queue e2e | |

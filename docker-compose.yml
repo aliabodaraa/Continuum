@@ -236,37 +236,29 @@ services:
       additional_contexts:
         sdk: ./sdk
     depends_on:
-      passkey-service:
-        condition: service_healthy
-      ca-service:
+      gateway:
         condition: service_healthy
     environment:
       PORT: 3000
+      # This app's website: the relying party of its users' passkeys (one of pk_demo's origins).
       ORIGIN: http://localhost:3000
       RP_ID: localhost
-      # The demo NEVER talks to the model-api directly — behavioral calls go
-      # through the CA service (proper layering).
-      PASSKEY_API_URL: http://passkey-service:4000
-      CA_API_URL: http://ca-service:4100
       # Must match ca-service ONBOARDING_MODE: in lazy mode the gate stops
       # blocking unenrolled users (enrollment is per-toggle in the SDK).
       ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
       # Verify verdicts via the gateway's public keys (RS256/JWKS) — no shared secret.
       CONTINUUM_JWKS_URI: http://gateway:8080/.well-known/jwks.json
-      # Resolve the unified Continuum id for the app's own CA calls (identity unification).
+      # Continuum's public API, as this app's backend reaches it (services/continuumApi.js). It is the
+      # app's ONLY way into Continuum: it has no address or key for an internal service.
       GATEWAY_URL: http://gateway:8080
       # The gateway as BROWSERS reach it: /continuum/link sends the user back there after
       # signing in to the extension.
       CONTINUUM_GATEWAY_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
-      # caClient.js / passkeyClient.js already send these as X-Api-Key when set.
-      CA_API_KEY: ${CA_API_KEY:-dev-ca-service-key}
-      PASSKEY_API_KEY: ${PASSKEY_API_KEY:-dev-passkey-service-key}
     ports:
       - "3000:3000"
-    # `edge` for the browser, `internal` for its own CA/passkey calls. Deliberately NOT
-    # on `model`: the demo talks to the CA, never to the model. That was already the
-    # stated design — now it is enforced rather than trusted.
-    networks: [edge, internal]
+    # `edge` only, like any organisation's app: it reaches the gateway and nothing behind it. It used to
+    # be on `internal` too and called ca-service and passkey-service directly, which no tenant can do.
+    networks: [edge]
     volumes:
       - ./apps/demo:/app
       - web_node_modules_node24:/app/node_modules

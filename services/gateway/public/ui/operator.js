@@ -138,6 +138,7 @@
     "organisation.owner_set": ["Owner set", "user", "ok"], "organisation.owner_cleared": ["Owner removed", "user", ""],
     "organisation.deleted": ["Organisation deleted", "trash", "bad"],
     "organisation.settings_changed": ["Protection settings changed", "shieldCheck", ""], "settings.changed": ["Server settings changed", "sliders", ""],
+    "webhook.undeliverable": ["An alert could not be delivered", "send", "bad"],
   };
   function renderActivity() {
     setNav("activity");
@@ -148,8 +149,9 @@
       if (!d.entries.length) { box.appendChild(el("div.empty", [el("div.art", icon("history")), el("h3", "Nothing yet")])); return; }
       box.appendChild(el("ul.timeline", d.entries.map(function (e) {
         var a = ACT[e.action] || [e.action, "info", ""];
-        var who = e.actor && e.actor.type === "operator" ? "operator" : (e.actor && e.actor.email) || "someone";
-        var extra = e.detail && e.detail.email ? " (" + e.detail.email + ")" : e.detail && e.detail.changed ? " (" + e.detail.changed.join(", ") + ")" : "";
+        var who = e.actor && e.actor.type === "operator" ? "operator" : e.actor && e.actor.type === "system" ? "Continuum" : (e.actor && e.actor.email) || "someone";
+        var extra = e.detail && e.detail.email ? " (" + e.detail.email + ")" : e.detail && e.detail.changed ? " (" + e.detail.changed.join(", ") + ")"
+          : e.detail && e.action === "webhook.undeliverable" ? " — gave up after " + e.detail.attempts + " tries (" + e.detail.error + ")" : "";
         return el("li", [el("span.dot" + (a[2] ? "." + a[2] : ""), icon(a[1], "sm")), el("div", [el("div.what", a[0] + extra + (e.name ? " · " + e.name : "")), el("div.when", { title: C.fullDate(e.at) }, "by " + who + " · " + C.when(e.at))])]);
       })));
     }).catch(function (e) { C.clear(box).appendChild(el("div.callout.bad", [icon("alert"), el("div", C.explain(e))])); });

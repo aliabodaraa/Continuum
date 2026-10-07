@@ -461,9 +461,42 @@ Implementation details:
   end-to-end test (92 checks) passes with the new code on PostgreSQL and on JSON files; the gateway's
   store checks (11) pass on JSON; storage contract tests run on both backends (`ci-local.sh` starts a
   throwaway PostgreSQL).
+- **Short-lived state (step 3):** the extension's sign-in links, account passkey ceremonies, the
+  operator lockout and each user's last settled risk are kept by `storage.js` too: in memory with json
+  (one gateway, as before), in tables with an expiry with postgres, changed in single atomic statements
+  (a link is authorized once and redeemed once whichever copies the requests reach; wrong admin keys
+  sent to several copies are all counted). No Redis was needed. Per-copy caches remain where they are
+  safe: console counts (60 s), and the passkey lookup ("yes" 60 s, "no" 5 s), which a copy that sees a
+  passkey registered or removed also clears on every other copy through the change feed
+  (`storage.forget`; found by the study suite through two copies: a copy that had cached "no passkey"
+  kept saying so right after the participant registered one, which would have skipped a step-up).
+- **Risk-change webhooks (CAEP) with postgres:** the risk change and its signed event are written in one
+  transaction (`gw_risk_state`, `gw_webhook_outbox`); `webhooks.js` in every copy claims due events
+  (`SKIP LOCKED` with a 30 s lease), posts them with a 5 s timeout, retries with exponential backoff and
+  jitter (5 s doubling to an hour), and after 8 attempts marks them dead and writes
+  `webhook.undeliverable` to the tenant's activity log (console and operator pages show it). Delivery is
+  at least once; receivers drop repeats by `jti`. With json, events are sent at once, as before.
+- **Proven with two copies** (`docker-compose.two-gateways.yml`: two gateway replicas behind a
+  balancer that sends each request to the other copy): the extension's e2e suite 92/92 (88 requests to
+  each copy); a tenant changed directly in the database was taken over by both copies within a second.
+- **The tenant API (`/v1/server/*`, step 3b):** what an organisation's own backend calls, acting for one
+  of its users: its site key plus an identity token (HS256, its tenant secret, at most 10 minutes, made
+  for this API: `aud` "continuum-server"). The audience and a refusal of every browser request (an
+  `Origin` header) keep the identity tokens that browsers get for the SDK out of it: found in review,
+  before commit, an impostor at an unlocked session could otherwise have fetched one and cleared the
+  lock or replaced the passkey. The
+  gateway resolves the user and passes a whitelisted operation to ca-service or passkey-service with its
+  own assertion and keys (ca-service's operator routes are not reachable). Checks return a signed
+  `riskToken` and push risk changes (CAEP); passkey calls are limited to the organisation's own websites;
+  adaptive retraining needs a `stepUpToken` from a passkey verified through Continuum within 2 minutes,
+  used once. Policy (locks, gates) stays with the tenant's backend. The demo app is the reference: its
+  backend uses this API only (`apps/demo/services/continuumApi.js`), has no address or key for an
+  internal service, and sits on `edge` only; `docker-compose.prod.yml` is now the bundle plus the demo as
+  a tenant. Its passkeys, once stored under the demo's own user numbers, move to the Continuum ids with
+  `apps/demo/scripts/continuum-ids.js` + `services/passkey-service/scripts/rekey-users.js` (dry run first;
+  the move and its proof in one transaction).
 - **Not yet:** the running stack still uses JSON files; switching it needs the backup script to dump
-  PostgreSQL first. In-memory state (sign-in links, passkey ceremonies, the admin lockout counter,
-  caches) is still per copy: the Redis step.
+  PostgreSQL first.
 
 ## 14. Security model (summary)
 | Threat | Mitigation |

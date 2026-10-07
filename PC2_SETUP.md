@@ -86,6 +86,11 @@ build entirely — the images already bake in the base models and mouse dataset:
 REGISTRY=<your-dockerhub-user> TAG=<version> docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
+Since 2026-10 this file is the product bundle (gateway, ca-service, passkey-service, model-api) plus
+the demo as a tenant, so `.env` needs the bundle's secrets too (`CA_SIGNING_SECRET`,
+`GATEWAY_SESSION_SECRET`, `GATEWAY_ADMIN_KEY`, `MODEL_API_KEY`, and `SESSION_SECRET` for the demo), and,
+for the demo's extension sign-in and risk pushes, `DEMO_SIGNIN_URL=http://localhost:3000/continuum/link`
+and `DEMO_WEBHOOK_URL=http://web:3000/continuum/events`.
 
 ## Troubleshooting
 - **`CA_SIGNING_SECRET ... is missing`** — you didn't set `.env` (step 3).

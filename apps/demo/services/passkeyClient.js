@@ -1,33 +1,29 @@
-// Thin client for the standalone passkey microservice. This is the ONLY place
-// the demo app talks to FIDO2 — credentials + WebAuthn crypto live entirely in
-// that service. The app keeps session/authorization; it just calls these.
-const PASSKEY_API_URL = process.env.PASSKEY_API_URL || "http://localhost:4000";
-const API_KEY = process.env.PASSKEY_API_KEY || "";
+// Passkeys (FIDO2/WebAuthn), as this app's backend uses them: registration, verification and step-up,
+// through Continuum's tenant API (services/continuumApi.js). Credentials and WebAuthn crypto live in
+// Continuum; the app keeps its session and its authorisation ("may THIS session act for this user?").
+//
+// The relying party is this app's own website (ORIGIN, one of the organisation's registered origins), so
+// the passkeys belong to its domain. `userId` is always this app's own users.id.
+const { request } = require("./continuumApi");
 
-async function call(method, path, body) {
-  const headers = { "Content-Type": "application/json" };
-  if (API_KEY) headers["X-Api-Key"] = API_KEY;
-  const res = await fetch(`${PASSKEY_API_URL}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(data.error || `passkey-service ${path} failed`);
-    err.status = res.status;
+const ORIGIN = (process.env.ORIGIN || "http://localhost:3000").replace(/\/+$/, "");
+
+async function call(method, path, userId, body) {
+  const r = await request(method, path, userId, body);
+  if (!r.ok) {
+    const err = new Error(r.data.error || `passkey ${path} failed`);
+    err.status = r.status;
     throw err;
   }
-  return data;
+  return r.data;
 }
 
 // --- lookups ---
 async function hasPasskey(userId) {
   try {
-    const d = await call("GET", `/v1/users/${Number(userId)}/passkeys`);
-    return !!d.hasPasskey;
+    return !!(await call("GET", "/passkey/status", userId)).hasPasskey;
   } catch (e) {
-    // Fail SAFE for a gate check: if the service is unreachable we treat the
+    // Fail SAFE for a gate check: if Continuum is unreachable we treat the
     // user as NOT having a passkey (forces setup) rather than silently granting.
     console.error("passkeyClient.hasPasskey:", e.message);
     return false;
@@ -45,23 +41,25 @@ async function ensureHasPasskey(req) {
 }
 
 async function reset(userId) {
-  return call("POST", `/v1/users/${Number(userId)}/reset`);
+  return call("POST", "/passkey/reset", userId, {});
 }
 
 // --- registration ---
 async function registerOptions(userId, username) {
-  return call("POST", "/v1/register/options", { userId, username });
+  return call("POST", "/passkey/register/options", userId, { username, origin: ORIGIN });
 }
 async function registerComplete(userId, credential) {
-  return call("POST", "/v1/register/complete", { userId, credential });
+  return call("POST", "/passkey/register/complete", userId, { credential, origin: ORIGIN });
 }
 
 // --- authentication / step-up ---
 async function authOptions(userId) {
-  return call("POST", "/v1/auth/options", { userId });
+  return call("POST", "/passkey/auth/options", userId, { origin: ORIGIN });
 }
+// Resolves to { ok, ..., stepUpToken }: the token proves this verification to Continuum for 2 minutes,
+// once (adaptive retraining asks for it).
 async function authComplete(userId, challengeId, assertion) {
-  return call("POST", "/v1/auth/complete", { userId, challengeId, assertion });
+  return call("POST", "/passkey/auth/complete", userId, { challengeId, assertion, origin: ORIGIN });
 }
 
 module.exports = {
