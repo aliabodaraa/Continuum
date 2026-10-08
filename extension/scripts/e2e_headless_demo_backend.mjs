@@ -55,8 +55,14 @@ async function server(method, p, demoUserId, body, tokenOpts, { token, origin } 
   let d = {}; try { d = await r.json(); } catch {}
   return { status: r.status, d };
 }
-// What the passkey service holds for a user id (read-only, inside its own container).
+// What the passkey service holds for a user id (read-only): its SQLite file, inside its own container, or,
+// when CONTINUUM_PASSKEY_PG names the PostgreSQL container of a side-by-side stack, its `passkey` database.
+const PASSKEY_PG = process.env.CONTINUUM_PASSKEY_PG || "";
 function credentialsOf(userId) {
+  if (PASSKEY_PG) {
+    return Number(execFileSync("docker", ["exec", PASSKEY_PG, "psql", "-U", "passkey", "-d", "passkey", "-tAc",
+      `SELECT count(*) FROM passkey_credentials WHERE user_id = ${Number(userId)}`], { encoding: "utf8" }).trim());
+  }
   const out = execFileSync("docker", ["exec", "-w", "/app", `${PREFIX}-passkey-service-1`, "node", "-e",
     `const db=require('better-sqlite3')(process.env.DB_PATH||'/app/passkey.db',{readonly:true});console.log(db.prepare('SELECT count(*) n FROM passkey_credentials WHERE user_id=?').get(${Number(userId)}).n)`],
     { encoding: "utf8", env: { ...process.env, MSYS_NO_PATHCONV: "1" } });

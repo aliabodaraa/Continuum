@@ -14,7 +14,10 @@ const {
   verifyAuthenticationResponse,
 } = require("@simplewebauthn/server");
 const { isoBase64URL } = require("@simplewebauthn/server/helpers");
-const db = require("./db");
+const { openStore } = require("./store");
+// Opened in boot(): sqlite (one file, DB_PATH) or postgres (DATABASE_URL), see store.js.
+const STORAGE = (process.env.STORAGE || "sqlite").toLowerCase();
+let store;
 
 const PORT = Number(process.env.PORT || 4000);
 const RP_NAME = process.env.RP_NAME || "Continuum";
@@ -80,42 +83,34 @@ function parseTransports(value) {
   }
 }
 
-function getUserCredentials(userId) {
-  return db.prepare("SELECT * FROM passkey_credentials WHERE user_id = ?").all(userId);
-}
-
-function saveChallenge(userId, challenge, type) {
-  const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS).toISOString();
-  const result = db
-    .prepare(
-      "INSERT INTO webauthn_challenges (user_id, challenge, challenge_type, expires_at) VALUES (?, ?, ?, ?)",
-    )
-    .run(userId, challenge, type, expiresAt);
-  return result.lastInsertRowid;
-}
-
 // ---- health ----
-app.get("/health", (req, res) => res.json({ ok: true, service: "passkey" }));
+app.get("/health", (req, res) => res.json({ ok: true, service: "passkey", storage: STORAGE }));
 // Readiness: the credential store answers.
-app.get("/ready", (req, res) => {
-  try { db.prepare("SELECT 1").get(); res.json({ ready: true, service: "passkey" }); }
+app.get("/ready", async (req, res) => {
+  try { await store.ready(); res.json({ ready: true, service: "passkey", storage: store.kind }); }
   catch (e) { res.status(503).json({ ready: false, service: "passkey", error: e.message }); }
 });
 
 // ---- lightweight lookups the app uses on hot paths ----
-app.get("/v1/users/:userId/passkeys", (req, res) => {
-  const userId = Number(req.params.userId);
-  const count = db
-    .prepare("SELECT COUNT(*) AS n FROM passkey_credentials WHERE user_id = ?")
-    .get(userId).n;
-  res.json({ userId, count, hasPasskey: count > 0 });
+app.get("/v1/users/:userId/passkeys", async (req, res) => {
+  try {
+    const userId = Number(req.params.userId);
+    const count = await store.countCredentials(userId);
+    res.json({ userId, count, hasPasskey: count > 0 });
+  } catch (err) {
+    console.error("passkeys:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post("/v1/users/:userId/reset", (req, res) => {
-  const userId = Number(req.params.userId);
-  db.prepare("DELETE FROM passkey_credentials WHERE user_id = ?").run(userId);
-  db.prepare("DELETE FROM webauthn_challenges WHERE user_id = ?").run(userId);
-  res.json({ ok: true, message: "Stored passkeys cleared" });
+app.post("/v1/users/:userId/reset", async (req, res) => {
+  try {
+    await store.resetUser(Number(req.params.userId));
+    res.json({ ok: true, message: "Stored passkeys cleared" });
+  } catch (err) {
+    console.error("reset:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---- registration ----
@@ -148,7 +143,7 @@ app.post("/v1/register/options", async (req, res) => {
     });
     // Challenge lives in this service's store (not a session), so the service
     // stays stateless and horizontally scalable.
-    saveChallenge(userId, options.challenge, "registration");
+    await store.saveChallenge(userId, options.challenge, "registration", CHALLENGE_TTL_MS);
     res.json(options);
   } catch (err) {
     console.error("register/options:", err);
@@ -164,14 +159,11 @@ app.post("/v1/register/complete", async (req, res) => {
       return res.status(400).json({ error: "userId and credential required" });
     }
 
-    const chal = db
-      .prepare(
-        `SELECT * FROM webauthn_challenges
-         WHERE user_id = ? AND challenge_type = 'registration' AND used = 0
-         ORDER BY id DESC LIMIT 1`,
-      )
-      .get(userId);
+    // Taken (used) as it is read: one challenge, one registration. It also expires now, as the sign-in
+    // challenge always did (a registration challenge used to stay valid for ever).
+    const chal = await store.takeChallenge({ userId, type: "registration" });
     if (!chal) return res.status(400).json({ error: "No pending registration challenge" });
+    if (chal.expired) return res.status(400).json({ error: "Challenge expired" });
 
     const verification = await verifyRegistrationResponse({
       response: credential,
@@ -185,18 +177,17 @@ app.post("/v1/register/complete", async (req, res) => {
     }
 
     const { credentialID, credentialPublicKey, counter } = verification.registrationInfo;
-    db.prepare(
-      "INSERT INTO passkey_credentials (user_id, credential_id, public_key, counter, transports) VALUES (?, ?, ?, ?, ?)",
-    ).run(
-      userId,
-      isoBase64URL.fromBuffer(credentialID),
-      isoBase64URL.fromBuffer(credentialPublicKey),
-      counter,
-      credential.response && credential.response.transports
-        ? JSON.stringify(credential.response.transports)
-        : null,
-    );
-    db.prepare("UPDATE webauthn_challenges SET used = 1 WHERE id = ?").run(chal.id);
+    try {
+      await store.addCredential(userId, {
+        credentialId: isoBase64URL.fromBuffer(credentialID),
+        publicKey: isoBase64URL.fromBuffer(credentialPublicKey),
+        counter,
+        transports: credential.response && credential.response.transports ? JSON.stringify(credential.response.transports) : null,
+      });
+    } catch (e) {
+      if (e.code === "conflict") return res.status(409).json({ error: "This passkey is already registered" });
+      throw e;
+    }
     res.json({ ok: true, message: "Passkey registered successfully" });
   } catch (err) {
     console.error("register/complete:", err);
@@ -210,7 +201,7 @@ app.post("/v1/auth/options", async (req, res) => {
     const userId = Number(req.body.userId);
     if (!userId) return res.status(400).json({ error: "userId required" });
 
-    const credentials = getUserCredentials(userId);
+    const credentials = await store.listCredentials(userId);
     if (credentials.length === 0) {
       return res.status(400).json({ error: "No passkeys registered for this user" });
     }
@@ -226,7 +217,7 @@ app.post("/v1/auth/options", async (req, res) => {
         transports: parseTransports(c.transports),
       })),
     });
-    const challengeId = saveChallenge(userId, options.challenge, "authentication");
+    const challengeId = await store.saveChallenge(userId, options.challenge, "authentication", CHALLENGE_TTL_MS);
     res.json({ ...options, challengeId });
   } catch (err) {
     console.error("auth/options:", err);
@@ -242,23 +233,16 @@ app.post("/v1/auth/complete", async (req, res) => {
       return res.status(400).json({ error: "userId, challengeId, and assertion required" });
     }
 
-    const challenge = db
-      .prepare("SELECT * FROM webauthn_challenges WHERE id = ? AND user_id = ? AND used = 0")
-      .get(challengeId, userId);
+    // Taken (used) as it is read, in one statement: two requests carrying one challenge (a replay, or
+    // the same answer sent to two copies of this service) cannot both pass. It used to be read, then
+    // marked used after the check, which left that window open.
+    const challenge = await store.takeChallenge({ id: challengeId, userId, type: "authentication" });
     if (!challenge) return res.status(400).json({ error: "Invalid or expired challenge" });
-
-    if (new Date(challenge.expires_at) < new Date()) {
-      db.prepare("UPDATE webauthn_challenges SET used = 1 WHERE id = ?").run(challengeId);
-      return res.status(400).json({ error: "Challenge expired" });
-    }
+    if (challenge.expired) return res.status(400).json({ error: "Challenge expired" });
 
     const credentialId = assertion.id;
     const legacyCredentialId = browserCredentialIdToLegacyHex(credentialId);
-    const credential = db
-      .prepare(
-        "SELECT * FROM passkey_credentials WHERE user_id = ? AND credential_id IN (?, ?)",
-      )
-      .get(userId, credentialId, legacyCredentialId);
+    const credential = await store.findCredential(userId, [credentialId, legacyCredentialId]);
     if (!credential) return res.status(400).json({ error: "Credential not found" });
 
     const verification = await verifyAuthenticationResponse({
@@ -276,15 +260,10 @@ app.post("/v1/auth/complete", async (req, res) => {
     });
 
     if (!verification.verified) {
-      db.prepare("UPDATE webauthn_challenges SET used = 1 WHERE id = ?").run(challengeId);
       return res.status(400).json({ error: "Authentication verification failed" });
     }
 
-    db.prepare("UPDATE passkey_credentials SET counter = ? WHERE id = ?").run(
-      verification.authenticationInfo.newCounter,
-      credential.id,
-    );
-    db.prepare("UPDATE webauthn_challenges SET used = 1 WHERE id = ?").run(challengeId);
+    await store.updateCounter(credential.id, verification.authenticationInfo.newCounter);
     res.json({ ok: true, verified: true, message: "Passkey authentication successful" });
   } catch (err) {
     console.error("auth/complete:", err);
@@ -292,17 +271,23 @@ app.post("/v1/auth/complete", async (req, res) => {
   }
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`Passkey service on http://localhost:${PORT} (rpID=${DEFAULT_RP_ID})`);
-});
-// A stop request (docker stop, a Kubernetes rollout): finish the requests in flight, close the database.
-let stopping = false;
-for (const sig of ["SIGTERM", "SIGINT"]) {
-  process.on(sig, () => {
-    if (stopping) return;
-    stopping = true;
-    console.log(`[passkey] ${sig}: stopping`);
-    server.close(() => { try { db.close(); } catch (_) {} process.exit(0); });
-    setTimeout(() => process.exit(0), 10000).unref();
+// ---- start: the store first, then traffic. A failure stops the process with the reason. ----
+async function boot() {
+  store = await openStore({ kind: STORAGE, dbPath: process.env.DB_PATH, databaseUrl: process.env.DATABASE_URL });
+  setInterval(() => store.sweep().catch((e) => console.error(`[passkey] sweep: ${e.message}`)), 3600000).unref();
+  const server = app.listen(PORT, () => {
+    console.log(`Passkey service on http://localhost:${PORT} (rpID=${DEFAULT_RP_ID}, storage=${store.kind})`);
   });
+  // A stop request (docker stop, a Kubernetes rollout): finish the requests in flight, close the store.
+  let stopping = false;
+  for (const sig of ["SIGTERM", "SIGINT"]) {
+    process.on(sig, () => {
+      if (stopping) return;
+      stopping = true;
+      console.log(`[passkey] ${sig}: stopping`);
+      server.close(() => { store.close().catch(() => {}).finally(() => process.exit(0)); });
+      setTimeout(() => process.exit(0), 10000).unref();
+    });
+  }
 }
+boot().catch((e) => { console.error(e.message || e); process.exit(1); });

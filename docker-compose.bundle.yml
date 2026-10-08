@@ -105,6 +105,9 @@ services:
       RP_ID: ${RP_ID:-localhost}
       ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
       DB_PATH: /app/data/passkey.db
+      # sqlite = the file above; postgres = its own database (DATABASE_URL); see .env.example.
+      STORAGE: ${PASSKEY_STORAGE:-sqlite}
+      DATABASE_URL: ${PASSKEY_DATABASE_URL:-}
       LOG_FORMAT: ${LOG_FORMAT:-}   # json = one JSON object per log line (for a log collector)
       PASSKEY_API_KEY: ${PASSKEY_API_KEY:-}
     expose: ["4000"]
@@ -168,8 +171,8 @@ services:
       # passkeys made on them), and the Continuum Guard extension's id.
       GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
       # Where its records live: json files (DATA_DIR) or postgres (DATABASE_URL); see .env.example.
-      STORAGE: ${STORAGE:-json}
-      DATABASE_URL: ${DATABASE_URL:-}
+      STORAGE: ${GATEWAY_STORAGE:-json}
+      DATABASE_URL: ${GATEWAY_DATABASE_URL:-}
       CONTINUUM_EXTENSION_ID: ${CONTINUUM_EXTENSION_ID:-}
       # Only when the demo app runs as a tenant next to the bundle (docker-compose.prod.yml): its sign-in
       # page for the extension and its risk-change receiver. Empty for a plain product install.

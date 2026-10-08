@@ -5,7 +5,9 @@
 #
 #   docker compose -p continuum-next -f docker-compose.yml -f docker-compose.side-by-side.yml up -d postgres
 #   docker compose -p continuum-next -f docker-compose.yml -f docker-compose.side-by-side.yml run --rm --no-deps \
-#     gateway node migrate.js --from /app --to postgres://continuum:continuum@postgres:5432/continuum
+#     gateway node migrate.js --from /app --to postgres://gateway:gateway@postgres:5432/gateway
+#   (passkeys: ... run --rm --no-deps passkey-service node migrate.js --from /app/passkey.db \
+#     --to postgres://passkey:passkey@postgres:5432/passkey)
 #   docker compose -p continuum-next -f docker-compose.yml -f docker-compose.side-by-side.yml up -d gateway web
 #
 # Gateway http://localhost:18080, demo http://localhost:13000. The gateway keeps its records in PostgreSQL.
@@ -25,11 +27,13 @@ services:
       retries: 20
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # a database and a login per service (gateway, passkey), each closed to the others
+      - ./deploy/postgres/init-local.sql:/docker-entrypoint-initdb.d/10-databases.sql:ro
 
   gateway:
     environment:
       STORAGE: ${SIDE_BY_SIDE_STORAGE:-postgres}   # json runs the same code on this copy's files
-      DATABASE_URL: postgres://continuum:continuum@postgres:5432/continuum
+      DATABASE_URL: postgres://gateway:gateway@postgres:5432/gateway
       GATEWAY_PUBLIC_URL: http://localhost:18080
       DEMO_SIGNIN_URL: http://localhost:13000/continuum/link
       # An unpacked extension's id follows its folder, so the copy in this checkout has its own: give it
@@ -51,6 +55,11 @@ services:
   passkey-service:
     environment:
       ORIGIN: http://localhost:13000
+      STORAGE: ${SIDE_BY_SIDE_PASSKEY_STORAGE:-postgres}   # sqlite runs the same code on this copy's file
+      DATABASE_URL: postgres://passkey:passkey@postgres:5432/passkey
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   acme:
     ports: !override

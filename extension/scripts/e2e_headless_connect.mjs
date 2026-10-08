@@ -51,9 +51,10 @@ const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-connect-e2e-"));
 // (project continuum-next) set CONTINUUM_CONTAINER_PREFIX=continuum-next.
 const PREFIX = process.env.CONTINUUM_CONTAINER_PREFIX || "continuum";
 const GW_PG = process.env.CONTINUUM_GATEWAY_PG || "";
+const GW_PG_DB = process.env.CONTINUUM_GATEWAY_PG_DB || "gateway";   // the gateway's own database (and login)
 function identityKeys() {
   if (!GW_PG) return Object.keys(JSON.parse(fs.readFileSync(path.join(ROOT, "services", "gateway", "identity.json"), "utf8")).users);
-  const out = execFileSync("docker", ["exec", GW_PG, "psql", "-U", "continuum", "-d", "continuum", "-tAc", "SELECT key FROM gw_identities"], { encoding: "utf8" });
+  const out = execFileSync("docker", ["exec", GW_PG, "psql", "-U", GW_PG_DB, "-d", GW_PG_DB, "-tAc", "SELECT key FROM gw_identities"], { encoding: "utf8" });
   return out.split("\n").map((s) => s.trim()).filter(Boolean);
 }
 

@@ -1,0 +1,31 @@
+# Added on top of docker-compose.side-by-side.yml: TWO passkey-service copies sharing their PostgreSQL
+# database, behind a balancer that sends each request to the next copy (scripts/dev/round-robin.js). The
+# gateway reaches them through it, so a ceremony's options and its answer land on different copies:
+# running the end-to-end suites through it proves the passkey service keeps no state of its own.
+#
+#   docker compose -p continuum-next -f docker-compose.yml -f docker-compose.side-by-side.yml \
+#     -f docker-compose.two-passkeys.yml --profile model up -d
+services:
+  passkey-service:
+    deploy:
+      replicas: 2
+
+  passkey-lb:
+    image: node:24-bookworm-slim
+    command: ["node", "/lb/round-robin.js"]
+    environment:
+      UPSTREAM: passkey-service:4000
+      PORT: "4000"
+    volumes:
+      - ./scripts/dev/round-robin.js:/lb/round-robin.js:ro
+    networks: [internal]
+    depends_on:
+      passkey-service:
+        condition: service_healthy
+
+  gateway:
+    environment:
+      PASSKEY_API_URL: http://passkey-lb:4000
+    depends_on:
+      passkey-lb:
+        condition: service_started

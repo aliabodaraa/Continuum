@@ -56,6 +56,7 @@ services:
     volumes:
       - .:/app
     command: python services/model-api/api.py
+    restart: unless-stopped
 
   passkey-service:
     build:
@@ -63,6 +64,9 @@ services:
       dockerfile: Dockerfile
       target: dev   # the runtime stage is for deployments (non-root, no source mount)
     environment:
+      # Where its passkeys live: sqlite (one file) or postgres (DATABASE_URL); see .env.example.
+      STORAGE: ${PASSKEY_STORAGE:-sqlite}
+      DATABASE_URL: ${PASSKEY_DATABASE_URL:-}
       PORT: 4000
       RP_ID: localhost
       ORIGIN: http://localhost:3000
@@ -85,6 +89,7 @@ services:
       - ./services/passkey-service:/app
       - passkey_node_modules_node24:/app/node_modules
     command: npm start
+    restart: unless-stopped
 
   ca-service:
     build:
@@ -145,6 +150,7 @@ services:
       # model-api's per-user model store, read-only, for the study log's model hashes only.
       - ./artifacts/users:/model-store:ro
     command: npm start
+    restart: unless-stopped
 
   gateway:
     build:
@@ -189,8 +195,8 @@ services:
       # every passkey made there belong to this origin.
       GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
       # Where its records live: json files (DATA_DIR) or postgres (DATABASE_URL); see .env.example.
-      STORAGE: ${STORAGE:-json}
-      DATABASE_URL: ${DATABASE_URL:-}
+      STORAGE: ${GATEWAY_STORAGE:-json}
+      DATABASE_URL: ${GATEWAY_DATABASE_URL:-}
       # Tenant registration by the operator, and approval of console sign-ups (X-Admin-Key).
       # Empty = open, with a warning in the log; set it in .env.
       GATEWAY_ADMIN_KEY: ${GATEWAY_ADMIN_KEY:-}
@@ -225,6 +231,7 @@ services:
       # The customer-facing SDK lives in its own top-level sdk/ (not the demo).
       - ./sdk:/app/sdk-public:ro
     command: npm start
+    restart: unless-stopped
 
   web:
     build:
@@ -265,6 +272,7 @@ services:
       # The demo pages also use the shared SDK libs (served from the same sdk/).
       - ./sdk:/app/sdk-assets:ro
     command: npm start
+    restart: unless-stopped
 
   # A genuinely SEPARATE host app (its own origin :4200). It adopts Continuum
   # through nothing but the SDK (loaded from the gateway) + the @continuum/node
@@ -292,6 +300,7 @@ services:
       - ./apps/acme:/app
       - acme_node_modules_node24:/app/node_modules
     command: npm start
+    restart: unless-stopped
 
   trainer:
     build:

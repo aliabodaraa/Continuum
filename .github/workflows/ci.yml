@@ -68,14 +68,14 @@ jobs:
             docker compose -f "$f" config -q && echo "$f: valid"
           done
 
-      - name: Install dependencies (ca-service, gateway)
+      - name: Install dependencies (ca-service, gateway, passkey-service)
         run: |
-          for d in services/ca-service services/gateway; do (cd "$d" && npm ci --omit=dev --no-audit --no-fund); done
+          for d in services/ca-service services/gateway services/passkey-service; do (cd "$d" && npm ci --omit=dev --no-audit --no-fund); done
 
       - name: Unit tests (gateway settings and storage, both backends; ca-service rules and training queue)
         env:
           TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/ci
-        run: node --test services/gateway/test/*.test.js services/ca-service/test/*.test.js
+        run: node --test services/gateway/test/*.test.js services/ca-service/test/*.test.js services/passkey-service/test/*.test.js
 
       - name: Unit tests (backup manifest)
         run: python -m unittest discover -s scripts -p "test_*.py" -v

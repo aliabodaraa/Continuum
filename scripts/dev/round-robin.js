@@ -24,5 +24,5 @@ http.createServer(async (req, res) => {
   req.pipe(up);
 }).listen(Number(process.env.PORT || 8080), () => console.log(`round-robin over every "${HOST}" replica`));
 
-setInterval(() => console.log("requests per gateway copy:", JSON.stringify(Object.fromEntries(served))), 10000).unref();
+setInterval(() => console.log(`requests per "${HOST}" copy:`, JSON.stringify(Object.fromEntries(served))), 10000).unref();
 process.on("SIGTERM", () => process.exit(0));

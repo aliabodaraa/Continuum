@@ -241,7 +241,7 @@ State lives on named volumes — back these up:
 | `continuum_gateway_data` | Tenant registry, user-id allocations, the gateway's signing keys |
 | `continuum_user_models` | Per-user keystroke/mouse models |
 | `continuum_ca_db` | Behavioral profiles + decisions |
-| `continuum_passkey_db` | Registered passkeys + challenges |
+| `continuum_passkey_db` | Registered passkeys + challenges (with `PASSKEY_STORAGE=postgres` they live in the passkey service's own database instead) |
 | `continuum_db` (demo only) | Demo users |
 
 ### Upgrading an install made before the Node 24 images (2026-10)

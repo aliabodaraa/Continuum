@@ -27,7 +27,7 @@ and extensible to a browser extension or desktop agent later.
 |---|---|---|---|
 | **model-api** | 5000 | Python / TensorFlow | Serves the keystroke + mouse models; fine-tunes per-user models. Owns model/data storage (`ARTIFACTS_DIR`, `DATA_DIR`), confines every path. Reachable **only** from ca-service (the `model` Docker network) and requires `MODEL_API_KEY` on every route but `/health`. |
 | **ca-service** | 4100 | Node | The continuous-auth engine. Turns raw events into signed **verdicts**. Identity comes only from the gateway's assertion, never the request body. Owns behavioral DB (`ca.db`) — samples, profiles, the decision log, **the durable escalation counters**, and **the training-job queue**. The only service that may address model-api. |
-| **passkey-service** | 4000 | Node | FIDO2/WebAuthn registration + assertion (step-up). Owns `passkey.db`. Not published to the host; `PASSKEY_API_KEY` on every route but `/health` (called only by the gateway and the demo). |
+| **passkey-service** | 4000 | Node | FIDO2/WebAuthn registration + assertion (step-up). Owns its store: `passkey.db`, or its own PostgreSQL database (§13c). Not published to the host; `PASSKEY_API_KEY` on every route but `/health` (called only by the gateway and the demo). |
 | **gateway** | 8080 | Node | Multi-tenant front door: resolves identity, signs verdicts (RS256) + exposes JWKS, pushes CAEP events, serves the SDK. Also the tenant registry (developer console, operator approval), Continuum accounts, and the browser extension's sign-in and step-up pages. Its records live in JSON files or PostgreSQL (`STORAGE`, §13b). The only public entry for the product bundle. |
 | **apps/demo** | 3000 | Node | Reference integration app (login as `ali`/`aiham`, dashboard, "write opinion"). |
 | **apps/acme** | 4200 | Node | A *separate* consumer on its own origin — adopts Continuum through nothing but the SDK + middleware. |
@@ -497,6 +497,30 @@ Implementation details:
   the move and its proof in one transaction).
 - **Not yet:** the running stack still uses JSON files; switching it needs the backup script to dump
   PostgreSQL first.
+
+## 13c. Passkey service storage: SQLite or PostgreSQL (since 2026-10-08, branch `cloud-native`)
+- **`services/passkey-service/store.js`**, chosen by `STORAGE`: `sqlite` (default, the file in `DB_PATH`, as
+  before) or `postgres` (`DATABASE_URL`; the same two tables). The service is otherwise unchanged: same
+  routes, same answers.
+- **A challenge is taken in one atomic statement** (marked used as it is read, only while unused and
+  unexpired). It used to be read, verified, then marked used, so two requests carrying one challenge (a
+  replayed answer, or the same answer sent to two copies) could both pass; many synced passkeys keep their
+  signature counter at 0, so the counter would not have stopped it. **Registration challenges now expire**
+  (5 minutes, as sign-in challenges always did; they never expired). A credential registered twice → 409.
+- **Migration:** `node services/passkey-service/migrate.js --from <passkey.db> --to <url> [--replace]`: one
+  transaction, refuses a database that already has credentials, reads everything back and compares user,
+  credential id, public key, counter and transports. On the copy of the real data: 28 credentials of 22
+  users, identical. Challenges are not copied (five minutes).
+- **A database and a login per service:** the compose variables are per service
+  (`GATEWAY_STORAGE`/`GATEWAY_DATABASE_URL`, `PASSKEY_STORAGE`/`PASSKEY_DATABASE_URL`); locally one
+  PostgreSQL holds databases `gateway` and `passkey` with logins of the same names
+  (`deploy/postgres/init-local.sql`), CONNECT revoked from PUBLIC: checked that each login can open only
+  its own database.
+- **Proven:** unit tests on both backends (10 parallel takes of one challenge from two copies: one
+  succeeds; the migration run for real); end-to-end suites on PostgreSQL, on SQLite, and with two passkey
+  copies behind the alternating balancer (`docker-compose.two-passkeys.yml`).
+- **Order at the switch-over of the running stack:** the demo's passkey re-key (step 3b) runs on the SQLite
+  file first, then `migrate.js` copies the re-keyed credentials.
 
 ## 14. Security model (summary)
 | Threat | Mitigation |
