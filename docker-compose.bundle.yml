@@ -35,6 +35,12 @@ services:
       # REQUIRED. Without it the scoring/training endpoints are unauthenticated and anything
       # that can reach the container is a biometric oracle. Generate: openssl rand -hex 32
       MODEL_API_KEY: ${MODEL_API_KEY:?Set MODEL_API_KEY in .env (openssl rand -hex 32)}
+      # Per-user model versions: fs = the volume below; s3 = object storage (see .env.example).
+      MODEL_STORE: ${MODEL_STORE:-fs}
+      MODEL_S3_ENDPOINT: ${MODEL_S3_ENDPOINT:-}
+      MODEL_S3_BUCKET: ${MODEL_S3_BUCKET:-models}
+      MODEL_S3_ACCESS_KEY: ${MODEL_S3_ACCESS_KEY:-}
+      MODEL_S3_SECRET_KEY: ${MODEL_S3_SECRET_KEY:-}
     expose: ["5000"]
     networks: [model]
     healthcheck:

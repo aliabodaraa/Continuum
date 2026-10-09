@@ -41,6 +41,8 @@ try:
 except Exception:
     loso = None
 
+import model_store
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -167,7 +169,7 @@ _user_model_locks_guard = threading.Lock()
 # same model. Now one load runs per model and later callers wait for it, the server loads the
 # models of recently active users in the background at boot, and a model is loaded again as soon
 # as training or a rollback replaces it.
-_LIVE_MODEL = re.compile(r"(^|[/\\])users[/\\]user-[^/\\]+[/\\](final_model|mouse_model)$")
+_LIVE_MODEL = re.compile(r"(^|[/\\])users[/\\]user-[^/\\]+[/\\](final_model|mouse_model)(-\d{8}T\d{6}Z-[0-9a-f]{6})?$")
 LAST_USED_FILE = os.path.join(ARTIFACTS_DIR, "users", ".last_used.json")
 WARM_DAYS = float(os.getenv("MODEL_WARM_DAYS", "14"))
 WARM_MAX = int(os.getenv("MODEL_WARM_MAX", "8"))
@@ -181,7 +183,11 @@ def _model_lock(path):
         return _user_model_locks.setdefault(path, threading.Lock())
 
 
+_cache_used = {}   # path -> when a cached model was last used (sweep_superseded)
+
+
 def get_user_model(path):
+    _cache_used[path] = time.time()
     cached = _user_model_cache.get(path)
     if cached is not None:
         return cached
@@ -190,6 +196,77 @@ def get_user_model(path):
             _user_model_cache[path] = load_model(path)
             print(f"[cache] Loaded user model: {path}")
         return _user_model_cache[path]
+
+
+CACHE_IDLE_S = float(os.getenv("MODEL_CACHE_IDLE_S", "600"))
+
+
+def sweep_superseded():
+    """Versions are never changed, so a cached model never goes stale, but a retrain adds a new one and
+    the old one would stay in memory for good. Per user and kind, keep the most recently used cached model;
+    drop the others once they have been idle CACHE_IDLE_S (a version the validation gate rejected is never
+    used again; the one it kept goes on being used and stays)."""
+    now, by_family = time.time(), {}
+    for path in list(_user_model_cache) + list(_user_action_models):
+        by_family.setdefault(model_store.family(model_store.unit(path)), []).append(path)
+    for paths in by_family.values():
+        if len(paths) < 2:
+            continue
+        newest = max(paths, key=lambda p: _cache_used.get(p, 0))
+        for p in paths:
+            if p != newest and now - _cache_used.get(p, 0) > CACHE_IDLE_S:
+                invalidate_user_model_cache(p)
+                _user_action_models.pop(p, None)
+                _cache_used.pop(p, None)
+
+
+FEED_POLL_S = float(os.getenv("MODEL_FEED_POLL_S", "5"))
+
+
+def follow_new_versions():
+    """Scoring copies: load every newly trained version in the background (model_store.announce), so the
+    user's next check finds it loaded; at start, the versions announced in the last WARM_DAYS (newest
+    WARM_MAX). Also sweeps superseded versions from memory."""
+    def warm(path):
+        try:
+            if model_store.ensure_local(model_store.unit(path)):
+                if path.endswith(".joblib"):
+                    return
+                load_live_model(path)
+        except Exception as exc:                      # a failed warm-up must never break serving
+            print(f"[cache] Warm-up of {path} failed: {exc}")
+
+    def run():
+        # Every poll re-reads the last two minutes and skips what it has seen, so an entry written in
+        # the same second as one already read (or by a trainer whose clock is a little behind) is not lost.
+        seen = set()
+        try:
+            first = model_store.feed_after("", since_s=WARM_DAYS * 86400)
+            seen.update(e for e, _ in first)
+            recent = list(dict.fromkeys(p for _, p in reversed(first)))[:WARM_MAX]
+            for p in recent:
+                warm(p)
+            print(f"[cache] {len(recent)} recently trained models loaded from the feed")
+        except Exception as exc:
+            print(f"[cache] Could not read the new-version feed: {exc}")
+        last_sweep = time.time()
+        while True:
+            time.sleep(FEED_POLL_S)
+            try:
+                window = model_store.feed_after("", since_s=120)
+                for entry, p in window:
+                    if entry not in seen:
+                        seen.add(entry)
+                        warm(p)
+                        print(f"[cache] Loaded new version from the feed: {p}")
+                if len(seen) > 1000:
+                    seen.intersection_update(e for e, _ in window)
+            except Exception as exc:
+                print(f"[cache] Could not read the new-version feed: {exc}")
+            if time.time() - last_sweep > 60:
+                last_sweep = time.time()
+                sweep_superseded()
+    threading.Thread(target=run, daemon=True).start()
 
 
 def invalidate_user_model_cache(path):
@@ -260,8 +337,9 @@ def warm_recent_user_models():
     try:
         root = os.path.join(ARTIFACTS_DIR, "users")
         for user in os.listdir(root) if os.path.isdir(root) else []:
-            for leaf in ("final_model", "mouse_model"):
-                p = os.path.join(root, user, leaf)
+            udir = os.path.join(root, user)
+            for name in os.listdir(udir) if os.path.isdir(udir) else []:
+                p = os.path.join(udir, name)
                 if _LIVE_MODEL.search(p) and os.path.isdir(p):
                     latest[p] = os.path.getmtime(p)
         if os.path.exists(LAST_USED_FILE):
@@ -373,16 +451,24 @@ def dataset_negative_status(path=None):
     return _dataset_negative_errors.get(path or NEGATIVE_DATASET_PATH)
 
 
+# The keystroke negatives ca-service sends with every training (its KEYSTROKE_NEGATIVES_PATH, same default).
+KEYSTROKE_NEGATIVES_PATH = os.getenv("KEYSTROKE_NEGATIVES_PATH", os.path.join(DATA_DIR, "aalto_neg_A200.h5"))
+
+
 def preflight_negatives():
-    """Check the configured negatives dataset at STARTUP, so a misconfigured path
-    is caught at boot rather than silently degrading the next retrain."""
-    path = NEGATIVE_DATASET_PATH
-    if not os.path.exists(path):
-        print(f"PREFLIGHT FAIL: negatives dataset missing: {path}")
-        _dataset_negative_errors[path] = f"file does not exist: {path}"
-        return False
-    print(f"PREFLIGHT OK: negatives dataset present: {path}")
-    return True
+    """At STARTUP (trainer): the negatives files the deployed training recipes read must be there, so a
+    misconfigured path is caught at boot rather than at the next retrain. It used to check
+    NEGATIVE_DATASET_PATH (Rand_WS50.h5), which no live training reads: the production image, which
+    leaves that file out, reported a failure while the files it needs went unchecked. Logs only; a
+    training without its negatives still fails on its own (and is rolled back)."""
+    ok = True
+    for label, path in (("keystroke (Aalto)", KEYSTROKE_NEGATIVES_PATH), ("mouse", MOUSE_NEG_DATASET_PATH)):
+        if os.path.exists(path):
+            print(f"PREFLIGHT OK: {label} negatives present: {path}")
+        else:
+            print(f"PREFLIGHT FAIL: {label} negatives missing: {path}")
+            ok = False
+    return ok
 
 
 def init_model():
@@ -436,10 +522,17 @@ def predict_payload(payload):
 
 
 def user_model_path(user_id, modality="keystroke"):
-    """THE per-user model location — derived from (userId, modality), owned here."""
+    """THE per-user model location — derived from (userId, modality), owned here. Since the model
+    versions (model_store.py) this is the family a user's versions are named after, and the folder of
+    a model trained before them."""
     safe_user_id = str(user_id).replace("/", "").replace("\\", "")
     leaf = "mouse_model" if modality == "mouse" else "final_model"
     return os.path.join(ARTIFACTS_DIR, "users", f"user-{safe_user_id}", leaf)
+
+
+def new_model_version_path(user_id, modality="keystroke"):
+    """A new folder for one training's model; it is never changed after the training (model_store.py)."""
+    return model_store.new_version(user_model_path(user_id, modality))
 
 
 # ---- ACTION-BASED mouse path (Antal & Egyed-Zsigmond, IET Biometrics 2019) --
@@ -465,6 +558,12 @@ _action_negatives_cache = {}
 def user_action_model_path(user_id):
     safe = str(user_id).replace("/", "").replace("\\", "")
     return os.path.join(ARTIFACTS_DIR, "users", f"user-{safe}", "mouse_action_model.joblib")
+
+
+def new_action_version_path(user_id):
+    """The action model of one training: the file inside a new version folder (model_store.py)."""
+    family = os.path.splitext(user_action_model_path(user_id))[0]
+    return os.path.join(model_store.new_version(family), "mouse_action_model.joblib")
 
 
 def to_action_array(value):
@@ -530,7 +629,7 @@ def train_user_actions_payload(payload):
                                  random_state=13, n_jobs=-1)
     clf.fit(X, y)
 
-    path = user_action_model_path(payload["userId"])
+    path = new_action_version_path(payload["userId"])
     os.makedirs(os.path.dirname(path), exist_ok=True)
     dump(clf, path)
     _user_action_models.pop(path, None)
@@ -539,7 +638,7 @@ def train_user_actions_payload(payload):
     # reported so a caller can see the fit did something, never as a metric.
     train_acc = float(clf.score(X, y))
     return {
-        "ok": True, "userId": payload["userId"], "modelPath": path,
+        "ok": True, "userId": payload["userId"], "modelPath": path, "versioned": True,
         "actionCount": int(len(pos)), "negativeActionCount": int(len(neg)),
         "negativeSource": neg_source, "trees": MOUSE_ACTION_TREES,
         "setSize": MOUSE_ACTION_SET_SIZE, "trainAccuracy": train_acc,
@@ -562,10 +661,12 @@ def predict_user_actions_payload(payload):
         return {"error": str(exc)}, 400
 
     path = confine_path(payload.get("modelPath")) or user_action_model_path(payload["userId"])
+    model_store.ensure_local(model_store.unit(path))
     if not os.path.exists(path):
         return {"error": "no action model for this user", "modelPath": path}, 404
     if path not in _user_action_models:
         _user_action_models[path] = load(path)
+    _cache_used[path] = time.time()
     clf = _user_action_models[path]
 
     scores = clf.predict_proba(acts)[:, 1].astype(float)
@@ -771,7 +872,8 @@ def train_user_payload(payload):
         modality = payload.get("modality") or "keystroke"
         is_mouse = modality == "mouse"
         scaler_path = confine_path(payload.get("scalerPath")) or (MOUSE_SCALER_PATH if is_mouse else SCALER_PATH)
-        save_path = confine_path(payload.get("modelPath")) or user_model_path(payload["userId"], modality)
+        explicit_path = confine_path(payload.get("modelPath"))
+        save_path = explicit_path or new_model_version_path(payload["userId"], modality)
         neg_dataset_path = confine_path(payload.get("negativeDatasetPath")) or (MOUSE_NEG_DATASET_PATH if is_mouse else None)
         try:
             base_model_path = confine_path(payload.get("baseModelPath")) or (MOUSE_BASE_MODEL_PATH if is_mouse else MODEL_PATH)
@@ -1004,12 +1106,12 @@ def train_user_payload(payload):
 
         path = save_path
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        # Snapshot the current live model before overwriting so the caller can
-        # run a held-out validation gate and ROLL BACK if the new (stochastic)
-        # fit is worse than what it replaces.
+        # A folder named by the caller (scripts) is overwritten: snapshot it first so the caller can
+        # run a held-out validation gate and ROLL BACK if the new (stochastic) fit is worse. A new
+        # version replaces nothing: the caller still has the previous one (model_store.py).
         prev_path = path + "_prev"
         previous_model_available = False
-        if os.path.exists(path):
+        if explicit_path and os.path.exists(path):
             import shutil
             if os.path.exists(prev_path):
                 shutil.rmtree(prev_path)
@@ -1063,6 +1165,7 @@ def train_user_payload(payload):
             "balancedAccuracy": balanced_accuracy,
             "epochsTrained": len(history.history.get("loss", [])),
             "previousModelPath": prev_path if previous_model_available else None,
+            "versioned": not explicit_path,
         }, 200
     except Exception as exc:
         return {"error": str(exc)}, 500
@@ -1098,7 +1201,8 @@ def train_user_loso_payload(payload):
     try:
         positives = to_window_array(payload["positiveWindows"])
         modality = payload.get("modality") or "keystroke"
-        final_path = confine_path(payload.get("modelPath")) or user_model_path(payload["userId"], modality)
+        explicit_path = confine_path(payload.get("modelPath"))
+        final_path = explicit_path or new_model_version_path(payload["userId"], modality)
     except ValueError as exc:
         return {"error": str(exc)}, 400
     n = len(positives)
@@ -1145,6 +1249,7 @@ def train_user_loso_payload(payload):
     if code != 200:
         return res, code
     res.update({
+        "versioned": not explicit_path,
         "thresholdScheme": "leave-one-sample-out",
         "losoSamples": samples,
         "losoSampleWindows": loso.SAMPLE,
@@ -1252,6 +1357,7 @@ def _f2_fit(P, neg):
 
 def _f2_head(path):
     """A user's F2 head, cached with the per-user networks (invalidate_user_model_cache evicts it)."""
+    _cache_used[path] = time.time()
     cached = _user_model_cache.get(path)
     if cached is not None:
         return cached
@@ -1300,7 +1406,8 @@ def train_user_f2_payload(payload):
         return {"error": f"sampleWindows must be {loso.SAMPLE}, the evaluated sample size"}, 400
     try:
         positives = to_window_array(payload["positiveWindows"])
-        path = confine_path(payload.get("modelPath")) or user_model_path(payload["userId"], "mouse")
+        explicit_path = confine_path(payload.get("modelPath"))
+        path = explicit_path or new_model_version_path(payload["userId"], "mouse")
     except ValueError as exc:
         return {"error": str(exc)}, 400
     n = len(positives)
@@ -1360,6 +1467,7 @@ def train_user_f2_payload(payload):
 
     return {
         "ok": True, "userId": payload["userId"], "modelPath": path, "modality": "mouse",
+        "versioned": not explicit_path,
         "headScheme": "f2", "thresholdScheme": "leave-one-sample-out",
         "positiveWindowCount": n, "negativeWindowCount": int(len(neg)),
         "losoSamples": samples, "losoSampleWindows": loso.SAMPLE,
@@ -1453,10 +1561,41 @@ def _trained_paths(body, result):
     return paths
 
 
+def finish_training(body, payload, status):
+    """A finished training's version: its fingerprint (returned, so ca-service records it without reading
+    model files), stored for every copy (model_store.publish), and the user's older versions of that kind
+    removed, keeping the caller's current one (currentModelPath) and the newest few."""
+    if status != 200 or not isinstance(payload, dict) or not payload.get("modelPath"):
+        return payload, status
+    unit = model_store.unit(payload["modelPath"])
+    try:
+        payload["modelSha256"] = model_store.publish(unit)
+    except Exception as exc:                          # not stored = not usable by other copies: fail it
+        model_store.delete(unit) if model_store.is_version(unit) else None
+        return {"error": f"the trained model could not be stored: {exc}"}, 503
+    try:
+        model_store.announce(payload["modelPath"])
+    except Exception as exc:                          # only a warm-up hint: the model is stored
+        print(f"[store] could not announce {unit}: {exc}")
+    if payload.get("versioned") and model_store.is_version(unit):
+        keep = [unit]
+        try:
+            current = confine_path((body or {}).get("currentModelPath"))
+            if current:
+                keep.append(model_store.unit(current))
+        except ValueError:
+            pass
+        removed = model_store.prune(model_store.family(unit), keep=keep)
+        for p in removed:
+            invalidate_user_model_cache(p)
+            _user_action_models.pop(os.path.join(p, "mouse_action_model.joblib"), None)
+    return payload, status
+
+
 def train_isolated(body):
     """/api/user/train in a child process (see above)."""
     if not TRAIN_IN_CHILD:
-        return dispatch_train(body)
+        return finish_training(body, *dispatch_train(body))
     import multiprocessing as mp
 
     ctx = mp.get_context("spawn")
@@ -1483,15 +1622,31 @@ def train_isolated(body):
     for path in _trained_paths(body or {}, payload):
         invalidate_user_model_cache(path)
         invalidate_user_model_cache(path + "_prev")
-        if status == 200:
+        if status == 200 and ROLE != "trainer":
             warm_user_model_async(path)
-    return payload, status
+    return finish_training(body, payload, status)
 
 
 def rollback_user_payload(payload):
-    """Restore the pre-retrain model snapshot (validation-gate rollback)."""
+    """The validation gate rejected a retrain. With versions (modelPath = the rejected version) that
+    version is discarded and the caller keeps the one it had; without, the pre-retrain snapshot of the
+    fixed folder is restored (models trained before versions)."""
     if not payload or "userId" not in payload:
         return {"error": "userId is required"}, 400
+    if payload.get("modelPath"):
+        try:
+            path = confine_path(payload["modelPath"])
+        except ValueError as exc:
+            return {"error": str(exc)}, 400
+        unit = model_store.unit(path)
+        family = model_store.family(unit)
+        mine = (user_model_path(payload["userId"], payload.get("modality") or "keystroke"),
+                os.path.splitext(user_action_model_path(payload["userId"]))[0])
+        if not model_store.is_version(unit) or family not in mine:
+            return {"error": "modelPath is not a version of this user's models"}, 400
+        model_store.delete(unit)
+        invalidate_user_model_cache(unit)
+        return {"ok": True, "userId": payload["userId"], "discarded": unit, "rolledBack": True}, 200
     import shutil
 
     path = user_model_path(payload["userId"], payload.get("modality") or "keystroke")
@@ -1515,10 +1670,19 @@ def predict_user_payload(payload):
 
     modality = payload.get("modality") or "keystroke"
     try:
-        path = confine_path(payload.get("modelPath")) or user_model_path(payload["userId"], modality)
+        named = confine_path(payload.get("modelPath"))
+        path = named or user_model_path(payload["userId"], modality)
         req_scaler = confine_path(payload.get("scalerPath")) or (MOUSE_SCALER_PATH if modality == "mouse" else None)
     except ValueError as exc:
         return {"error": str(exc)}, 400
+    try:
+        model_store.ensure_local(path)
+    except Exception as exc:
+        return {"error": f"model store unavailable: {exc}"}, 503
+    # The caller named the model it has on record: if it is not there, say so. Scoring with the shared
+    # base model instead would be a verdict from a model that is not this user's.
+    if named and not os.path.exists(path):
+        return {"error": "model not found", "modelPath": path}, 404
     if modality == "mouse" and is_f2_profile(path):
         if payload.get("scalerPath"):
             return {"error": "F2 profiles use the deployed scaler"}, 400
@@ -1569,6 +1733,35 @@ def health_payload():
     }
 
 
+# One image, three roles (MODEL_ROLE): "inference" scores, "trainer" trains and discards, "all" (the
+# default, one container) does both. A training then never slows anyone's checks, and scoring scales on
+# its own. ca-service sends each kind of request to its role (MODEL_INFER_URL, MODEL_TRAIN_URL).
+ROLE = os.getenv("MODEL_ROLE", "all").lower()
+if ROLE not in ("all", "inference", "trainer"):
+    raise SystemExit(f"MODEL_ROLE must be all, inference or trainer (got {ROLE})")
+SCORES = ROLE in ("all", "inference")
+TRAINS = ROLE in ("all", "trainer")
+
+
+def start_server_state():
+    """What a serving process loads before its first request, by role."""
+    print(f"[model-api] role {ROLE}, model store {model_store.KIND}")
+    model_store.ensure_bucket()
+    if SCORES:
+        init_model()
+    if TRAINS:
+        preflight_negatives()
+    if SCORES:
+        warm_recent_user_models()
+        follow_new_versions()
+
+
+def create_server_app():
+    """The production entry point (wsgi.py, under gunicorn)."""
+    start_server_state()
+    return create_flask_app()
+
+
 def create_flask_app():
     app = Flask(__name__)
 
@@ -1584,12 +1777,29 @@ def create_flask_app():
             return jsonify({"error": "invalid_or_missing_api_key"}), 401
         return None
 
-    @app.route("/api/predict", methods=["POST"])
+    if not SCORES and not TRAINS:
+        return app
+
+    def scoring(f):
+        return app.route(f.__route__, methods=["POST"])(f) if SCORES else f
+
+    def training(f):
+        return app.route(f.__route__, methods=["POST"])(f) if TRAINS else f
+
+    def route(path):
+        def mark(f):
+            f.__route__ = path
+            return f
+        return mark
+
+    @scoring
+    @route("/api/predict")
     def predict():
         payload, status = predict_payload(request.get_json())
         return jsonify(payload), status
 
-    @app.route("/api/user/train", methods=["POST"])
+    @training
+    @route("/api/user/train")
     def train_user():
         # An `actions` field selects the action-based mouse path; `windows`
         # keeps the original window path. Dispatching on the payload rather
@@ -1599,7 +1809,8 @@ def create_flask_app():
         payload, status = train_isolated(request.get_json())
         return jsonify(payload), status
 
-    @app.route("/api/user/predict", methods=["POST"])
+    @scoring
+    @route("/api/user/predict")
     def predict_user():
         body = request.get_json()
         if body and body.get("actions") is not None:
@@ -1608,14 +1819,15 @@ def create_flask_app():
             payload, status = predict_user_payload(body)
         return jsonify(payload), status
 
-    @app.route("/api/user/rollback", methods=["POST"])
+    @training
+    @route("/api/user/rollback")
     def rollback_user():
         payload, status = rollback_user_payload(request.get_json())
         return jsonify(payload), status
 
     @app.route("/health", methods=["GET"])
     def health():
-        return jsonify(health_payload())
+        return jsonify({**health_payload(), "role": ROLE, "store": model_store.KIND})
 
     return app
 
@@ -1669,11 +1881,11 @@ class ContinuumHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    init_model()
-    preflight_negatives()
-    warm_recent_user_models()
+    # Development only; deployments run wsgi.py under gunicorn. Flask's debugger stays off unless asked
+    # for (MODEL_DEBUG=1): it would let anyone who reaches this port run code.
+    start_server_state()
     if Flask is not None:
-        debug = os.getenv("MODEL_DEBUG", "1") == "1"
+        debug = os.getenv("MODEL_DEBUG", "0") == "1"
         print(f"Starting Flask model API on http://localhost:{PORT} (debug={debug})")
         create_flask_app().run(host=HOST, port=PORT, debug=debug)
     else:

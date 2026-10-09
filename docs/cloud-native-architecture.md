@@ -122,7 +122,7 @@ personal account through the browser extension.
 | gateway | JSON files + in-memory sign-in links, ceremonies, lockout counter, `lastRisk` | stateless: records in PostgreSQL (**done**, `STORAGE=postgres`); ephemeral state in PostgreSQL tables with expiry; transitions computed by ca-service |
 | ca-service | SQLite file | stateless: PostgreSQL (**done**, `STORAGE=postgres`) |
 | passkey-service | SQLite file (challenges already in the DB) | stateless: PostgreSQL (**done**, `STORAGE=postgres`) |
-| model | files on a volume; in-process model cache | stateless: immutable model versions in object storage; the cache is only a cache |
+| model | files on a volume; in-process model cache | stateless: immutable model versions in object storage; the cache is only a cache (**done**, `MODEL_STORE=s3`) |
 | PostgreSQL, object storage | — | the only stateful components (managed or operator-run) |
 
 ### 1.6 External dependencies
@@ -144,7 +144,8 @@ personal account through the browser extension.
 
 ### 1.8 Couplings found in the current code (to remove)
 - **ca-service reads model files directly** (`/model-store` mount, `lib/studyLog.js`, to hash the
-  model). Target: the trainer returns `{version, sha256, metrics}`; ca-service stores them.
+  model). Target: the trainer returns `{version, sha256, metrics}`; ca-service stores them. **Done
+  (step 6):** the trainer returns `modelSha256`; the mount is gone.
 - **The demo app calls ca-service and passkey-service directly** (`apps/demo/services/caClient.js`,
   `passkeyClient.js`). A customer app must use only the public gateway API and the host middleware.
   **Done (step 3b):** the gateway's tenant API (`/v1/server/*`) gives a tenant's backend everything the
@@ -153,8 +154,10 @@ personal account through the browser extension.
   own user numbers, are re-keyed to the Continuum user ids (`passkey-service/scripts/rekey-users.js`,
   verified, idempotent). The demo's pages and routes, its mouse code included, did not change.
 - **Research code ships inside the model image** (dozens of experiment scripts in
-  `services/model-api/`). Target: `research/`, never copied into an image.
-- **The model service runs Flask's development server.** Target: gunicorn.
+  `services/model-api/`). Target: `research/`, never copied into an image. **Done (step 6), refined
+  (OWNER):** the scripts stay where the thesis records name them; the production image copies only the
+  serving files (checked by `ci-local --images`).
+- **The model service runs Flask's development server.** Target: gunicorn. **Done (step 6).**
 
 ---
 
@@ -691,7 +694,7 @@ continuum/
 | 3b | The demo app's backend uses only the public tenant API (`/v1/server/*`); passkeys re-keyed to Continuum user ids; the demo leaves the internal network; the production compose becomes bundle + demo tenant | new e2e `e2e_headless_demo_backend.mjs` 14/14; re-key verified and idempotent on a copy of the real data; connect 92/92, enrol-reload 10/10 | **done** |
 | 4 | passkey-service → PostgreSQL (`STORAGE=sqlite|postgres`, `migrate.js` verifies every credential); a database and a login per service, each closed to the others (`deploy/postgres/init-local.sql`); challenges taken atomically (a replay or a double answer cannot pass twice) and registration challenges expire | 28 credentials of 22 users identical; demo-backend 18/18, connect 92/92, enrol-reload 10/10, study pass, on PostgreSQL, on SQLite, and through **two passkey copies** | **done** |
 | 5 | ca-service → PostgreSQL (`STORAGE=sqlite|postgres`, one async data layer, `migrate.js` verifies every table); queue leases and claims with `SKIP LOCKED`; ties in sorts broken by id; database `ca` with byte-order collation | 23 tables / 911,431 rows identical; study export identical across old code, new code on SQLite and on PostgreSQL; **decision replay: 0 differences** (243); connect, study, enrol-reload, demo-backend on PostgreSQL, on SQLite and through **two ca-service copies** | **done** |
-| 6 | Model service: gunicorn; inference and trainer roles; models in object storage as versions; ca-service passes the version; the `/model-store` mount goes (the trainer returns version + hash) | scores identical for the same windows; training via queue e2e | |
+| 6 | Model service: gunicorn; inference and trainer roles; models in object storage as versions (`model_store.py`, SeaweedFS locally) with a feed so scoring copies load new versions early; ca-service passes the version; the `/model-store` mount goes (the trainer returns the fingerprint); production image = serving files + base models, non-root | every model in use scores identically (89 models, 2,136 scores) on one container and through two scoring copies fed from object storage; `validate_f2` max difference 0; e2e_mouse_a5, connect, study, enrol-reload, demo-backend through one trainer and **two scoring copies** | **done** |
 | 7 | Kubernetes locally: Kustomize base/overlays, Tiltfile, Envoy Gateway, CloudNativePG, SeaweedFS, NetworkPolicies, Pod Security, HPA/PDB in namespace `continuum` | all e2e suites against the cluster on the usual URLs | |
 | 8 | Observability: OTel in all services, grafana/otel-lgtm, dashboards and alerts | a traced check end to end | |
 | 9 | Cutover on this PC: final backup → migrate → run the cluster → full e2e + replay → switch; Compose stack stopped, not deleted, for a rollback window | the same proofs on the real data | |

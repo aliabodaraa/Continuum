@@ -101,7 +101,7 @@ const studyLog = require("../lib/studyLog");
     modelPath: "/app/artifacts/users/user-1/mouse_model", windowCount: 440, thresholdScores: [0.123456789012345, 0.9] });
   const pr = await db.get("SELECT threshold_scores, model_sha256 FROM study_profiles WHERE user_id = ? ORDER BY id DESC LIMIT 1", mu.user_id);
   assert(JSON.parse(pr.threshold_scores)[0] === 0.123456789012345, "profile threshold scores stored at full precision",
-    `model hash ${pr.model_sha256 ? pr.model_sha256.slice(0, 12) : "null (no /model-store mount here)"}`);
+    `model hash ${pr.model_sha256 ? pr.model_sha256.slice(0, 12) : "null (this test passes no fingerprint)"}`);
   console.log(process.exitCode ? "\nSOME CHECKS FAILED" : "\nALL STUDY-LOG CHECKS PASSED");
   await db.close();
 })().catch((e) => { console.error(e); process.exitCode = 1; });

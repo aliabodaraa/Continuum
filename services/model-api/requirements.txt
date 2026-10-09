@@ -6,5 +6,7 @@ h5py==3.11.0
 scikit-learn==1.5.0
 tensorflow-cpu==2.15.0
 flask==3.0.3
+gunicorn==23.0.0
+boto3==1.40.0
 python-dotenv
 matplotlib

@@ -8,7 +8,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     MODEL_HOST=0.0.0.0 \
     MODEL_PORT=5000 \
     MODEL_DEBUG=0 \
-    MODEL_PATH=/app/artifacts/ws50-gru/final_model
+    MODEL_PATH=/app/artifacts/ws50-gru/final_model \
+    ARTIFACTS_DIR=/app/artifacts \
+    DATA_DIR=/app/data \
+    HOME=/tmp
 
 WORKDIR /app
 
@@ -27,17 +30,20 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       flask==3.0.3 \
       python-dotenv \
       matplotlib \
-    && python -m pip install --default-timeout=300 --retries=20 tensorflow-cpu==2.15.0
+    && python -m pip install --default-timeout=300 --retries=20 tensorflow-cpu==2.15.0 \
+    && python -m pip install --default-timeout=300 --retries=20 gunicorn==23.0.0 boto3==1.40.0
 
-# Application code (all scripts the API + per-user training path use). Build
-# context is the continuum root; keep the services/model-api/ prefix so the dev
-# (bind-mounted) and prod (baked) runtime layouts match.
-COPY services/model-api/ ./services/model-api/
+# Only the files that serve requests. The ~90 research and evaluation scripts in services/model-api stay
+# in the repository (the thesis records name them there) and never enter this image. Build context is
+# the continuum root; the services/model-api/ prefix keeps the dev (bind-mounted) layout.
+COPY services/model-api/api.py services/model-api/model.py services/model-api/preprocessing.py \
+     services/model-api/loso.py services/model-api/model_store.py services/model-api/wsgi.py \
+     services/model-api/gunicorn.conf.py ./services/model-api/
 
-# Base models (keystroke + mouse) — .dockerignore keeps artifacts/users out, so
-# only the shared base artifacts are baked. If the mouse base isn't built yet,
-# it's simply absent and enrollment falls back to from-scratch (handled in code).
-COPY artifacts/ ./artifacts/
+# The two base models and what comes with them: the keystroke base (ws50-gru: network and scaler) and
+# the mouse base (mouse-fcn-a5: network, scaler, F2 cohort). Research outputs under artifacts/ stay out.
+COPY artifacts/ws50-gru/ ./artifacts/ws50-gru/
+COPY artifacts/mouse-fcn-a5/ ./artifacts/mouse-fcn-a5/
 
 # Mouse enrollment's negative pool: the (|dx|, |dy|) windows of the 100 SapiMouse base users
 # (train_mouse_fcn.py), api.py's MOUSE_NEG_DATASET_PATH default.
@@ -46,6 +52,12 @@ COPY data/mouse_only/Mouse_A5_W50_base.h5 ./data/mouse_only/Mouse_A5_W50_base.h5
 # ca-service sends (KEYSTROKE_NEGATIVES_PATH default).
 COPY data/aalto_neg_A200.h5 ./data/aalto_neg_A200.h5
 
+# Not root: numeric (Kubernetes runAsNonRoot can check it), the only writable folder the per-user models
+# (a new volume takes this owner; one made by an older image needs a one-time chown, DEPLOY.md).
+RUN mkdir -p /app/artifacts/users && chown 1000:1000 /app/artifacts/users
+USER 1000:1000
+
 EXPOSE 5000
 
-CMD ["python", "services/model-api/api.py"]
+WORKDIR /app/services/model-api
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "wsgi:app"]

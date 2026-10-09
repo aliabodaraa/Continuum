@@ -251,13 +251,22 @@ service cannot write to it (`EACCES` in its log). Give those volumes to user 100
 stopped:
 ```bash
 docker compose -f docker-compose.bundle.yml down
-for v in continuum_gateway_data continuum_ca_db continuum_passkey_db; do
+for v in continuum_gateway_data continuum_ca_db continuum_passkey_db continuum_user_models; do
   docker run --rm -v "$v:/v" alpine chown -R 1000:1000 /v
 done
 docker compose -f docker-compose.bundle.yml up -d
 ```
-(model-api still runs as root until its own move; its volume needs nothing.) In Kubernetes the pod's
+(The model-api image runs as user 1000 too since the model versions, 2026-10.) In Kubernetes the pod's
 `fsGroup` does this.
+
+### Per-user models: versions, and where they are stored (2026-10)
+Every training now writes a new model version (`users/user-<id>/<kind>-<UTC time>-<hex>`) and never
+changes it; ca-service keeps which one each user is on, a rejected retrain is discarded, and only the
+newest few per user and kind are kept. Models trained before stay where they are and keep working.
+`MODEL_STORE=fs` (default) keeps them on the `continuum_user_models` volume; `MODEL_STORE=s3` keeps them
+in object storage (`MODEL_S3_*` in `.env`), so several model-service copies serve the same models. To
+move to s3, upload the existing ones once: `docker compose ... exec model-api python model_store.py
+publish-all`. The production model image now carries only the serving code and the two base models.
 
 ### Logs
 `LOG_FORMAT=json` in `.env` makes every service log one JSON object per line (time, level, service,

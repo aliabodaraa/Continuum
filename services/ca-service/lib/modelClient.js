@@ -58,6 +58,10 @@
  */
 
 const MODEL_API_URL = process.env.MODEL_API_URL || "http://localhost:5000";
+// The model service's two roles (services/model-api, MODEL_ROLE): scoring and training. Both default to
+// MODEL_API_URL, where one container does both.
+const MODEL_INFER_URL = process.env.MODEL_INFER_URL || MODEL_API_URL;
+const MODEL_TRAIN_URL = process.env.MODEL_TRAIN_URL || MODEL_API_URL;
 // Service credential. When unset the header is simply omitted — model-api's own check is
 // likewise inactive when ITS key is unset, so local development without a key still works
 // while any deployment that sets one is enforced end to end.
@@ -71,6 +75,8 @@ const INFER_TIMEOUT_MS = Number(process.env.MODEL_INFER_TIMEOUT_MS || 5000);
 const TRAIN_TIMEOUT_MS = Number(process.env.MODEL_TRAIN_TIMEOUT_MS || 600000);
 
 const TRAINING_PATHS = new Set(["/api/user/train"]);
+// Sent to the trainer role: training, and discarding a version the validation gate rejected.
+const TRAINER_PATHS = new Set(["/api/user/train", "/api/user/rollback"]);
 
 class ModelUnavailableError extends Error {
   constructor(message, cause) {
@@ -92,7 +98,7 @@ function isConnectionError(err) {
 async function attempt(path, body, timeoutMs) {
   const headers = { "Content-Type": "application/json" };
   if (MODEL_API_KEY) headers["X-Api-Key"] = MODEL_API_KEY;
-  const r = await fetch(`${MODEL_API_URL}${path}`, {
+  const r = await fetch(`${TRAINER_PATHS.has(path) ? MODEL_TRAIN_URL : MODEL_INFER_URL}${path}`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -105,6 +111,9 @@ async function attempt(path, body, timeoutMs) {
     throw new ModelUnavailableError("model-api rejected the service credential");
   }
   const data = await r.json();
+  // 503: the model service cannot serve this now (TensorFlow not loaded, its model store unreachable).
+  // That is an outage, not an answer, so the route issues no verdict.
+  if (r.status === 503) throw new ModelUnavailableError(`model-api ${path}: ${data.error || "unavailable"}`);
   if (!r.ok) throw new Error(data.error || `model-api ${path} failed`);
   return data;
 }
@@ -146,4 +155,4 @@ async function postModelApi(path, body) {
   }
 }
 
-module.exports = { postModelApi, ModelUnavailableError, MODEL_API_URL };
+module.exports = { postModelApi, ModelUnavailableError, MODEL_API_URL, MODEL_INFER_URL, MODEL_TRAIN_URL };

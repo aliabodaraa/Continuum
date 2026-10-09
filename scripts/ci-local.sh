@@ -101,7 +101,8 @@ python_checks() {
     mkdir -p /w && cd /w && tar -xf - || exit 1
     python -m compileall -q services/model-api scripts tools || exit 1
     echo "Python syntax: ok"
-    python -m unittest discover -s scripts -p "test_*.py"
+    python -m unittest discover -s scripts -p "test_*.py" || exit 1
+    python -m unittest discover -s services/model-api/tests
   '
 }
 
@@ -116,7 +117,7 @@ compose_checks() {
 }
 
 DOCKERFILES=(services/ca-service/Dockerfile services/passkey-service/Dockerfile services/gateway/Dockerfile
-             apps/demo/Dockerfile services/model-api/Dockerfile.model)
+             apps/demo/Dockerfile services/model-api/Dockerfile.model services/model-api/Dockerfile.model.prod)
 hadolint_checks() {
   # Fails on errors only (.hadolint.yaml); warnings are printed.
   docker run --rm -v "$ROOT_D:/repo:ro" -w /repo hadolint/hadolint hadolint --no-color --config .hadolint.yaml "${DOCKERFILES[@]}" \
@@ -136,6 +137,12 @@ IMAGE_SPECS=(
   "web-demo|apps/demo|apps/demo/Dockerfile|sdk|nonroot"
   "model-api|.|services/model-api/Dockerfile.model||"
 )
+# The production model image bakes two datasets that are not in git (so GitHub cannot build it); built
+# here when they are present: not root, and only the serving files of services/model-api inside.
+MODEL_SERVING_FILES="api.py gunicorn.conf.py loso.py model.py model_store.py preprocessing.py wsgi.py"
+if [ -f data/mouse_only/Mouse_A5_W50_base.h5 ] && [ -f data/aalto_neg_A200.h5 ]; then
+  IMAGE_SPECS+=("model-api-prod|.|services/model-api/Dockerfile.model.prod||nonroot")
+fi
 image_checks() {
   local spec name ctx file sdk nonroot tag leaked user rc=0
   for spec in "${IMAGE_SPECS[@]}"; do
@@ -158,6 +165,12 @@ image_checks() {
     if [ -n "$nonroot" ]; then
       user=$(docker run --rm --entrypoint id "$tag" -u 2>/dev/null)
       if [ -z "$user" ] || [ "$user" = 0 ]; then echo "   runs as root (uid ${user:-?}): FAILED"; rc=1; else echo "   runs as uid $user, not root"; fi
+    fi
+    if [ "$name" = model-api-prod ]; then
+      local inside
+      inside=$(docker run --rm --entrypoint sh "$tag" -c 'cd /app/services/model-api && ls | sort | tr "\n" " "' | sed 's/ $//')
+      if [ "$inside" = "$MODEL_SERVING_FILES" ]; then echo "   only the serving files: $inside"
+      else echo "   unexpected files in services/model-api: $inside: FAILED"; rc=1; fi
     fi
     if [ "$SCAN" = 1 ]; then
       docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v continuum-trivy-cache:/root/.cache \

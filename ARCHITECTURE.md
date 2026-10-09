@@ -558,6 +558,43 @@ Implementation details:
 - **Not yet (step 6):** the study log still hashes model folders through the read-only `/model-store`
   mount; it goes when the model service keeps versioned models and returns their hash.
 
+## 13e. Model service: versions, object storage, two roles (since 2026-10-09, branch `cloud-native`)
+- **Versions** (`services/model-api/model_store.py`): every training writes a new folder,
+  `users/user-<id>/<kind>-<UTC time>-<6 hex>`, and never changes it. ca-service already stored the model
+  path each training returned and now passes it with every scoring request (the mouse and mouse-action
+  checks did not, and relied on one fixed folder per user). A retrain therefore never changes what another
+  copy is serving, and the in-memory model cache needs no invalidation. The validation gate compares the
+  new version with the one the profile points at, and a rejected version is discarded
+  (`/api/user/rollback` with its path); the newest three per user and kind are kept, plus the current one.
+  Folders made before versions keep working as they are. **A model the caller names but that is missing is
+  now an error (404); it used to be scored silently with the shared base model**: on the copy of the real
+  data two old keystroke profiles (format 2, never served, no decisions) point at folders that do not exist.
+- **Object storage** (`MODEL_STORE=s3`, any S3 API; SeaweedFS locally): after a training the trainer uploads
+  the version, then a marker with its file list and fingerprint; a copy asked for a version it lacks
+  downloads it, checks the fingerprint and only then moves it into place. `fs` (default) keeps the
+  versions in the model folder. `model_store.py publish-all` uploads the models made before.
+- **Two roles from one image** (`MODEL_ROLE`): `inference` scores, `trainer` trains and discards, `all` (default,
+  one container) does both; ca-service sends each to its URL (`MODEL_INFER_URL`, `MODEL_TRAIN_URL`, both
+  defaulting to `MODEL_API_URL`). A 503 from the model service is "no verdict", like a timeout.
+- **The fingerprint comes from the trainer** (`modelSha256`, the same definition the study log always
+  used: checked equal on 5 real model folders and pinned by a unit test), so ca-service no longer mounts
+  or reads the model folder.
+- **gunicorn** (`wsgi.py`, one process with threads: its model cache serves every request), instead of
+  Flask's development server, whose debugger was on by default in the dev stack (now only with
+  `MODEL_DEBUG=1`). The production image copies only the 7 serving files and the two base models (no
+  research scripts, ~170 MB of research outputs no longer baked), runs as user 1000, and sets its own
+  storage folders: the bundle never set them, so per-user models went inside the container instead of the
+  volume and the mouse base model was not found (the running stack, on the dev compose, was not affected).
+  The trainer's start-up check reads the two negatives files the live recipes use (it checked a file none
+  reads, and the production image reported a false failure at every start).
+- **Proven:** every model in use scores the same fixed windows **bit-identically** before and after (89
+  models, 2,136 scores), also through two scoring copies that started empty and fetched every model from
+  object storage; the F2 mouse serving code still reproduces the frozen analysis exactly
+  (`validate_f2.py`, max difference 0); the end-to-end suites and `e2e_mouse_a5` with one trainer and two
+  scoring copies behind the alternating balancer (`docker-compose.split-models.yml`), and in the default
+  single container. The feed of new versions took the first check after a retrain from no verdict (five
+  5-second timeouts across two copies) to none.
+
 ## 14. Security model (summary)
 | Threat | Mitigation |
 |---|---|

@@ -77,8 +77,10 @@ jobs:
           TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/ci
         run: node --test services/gateway/test/*.test.js services/ca-service/test/*.test.js services/passkey-service/test/*.test.js
 
-      - name: Unit tests (backup manifest)
-        run: python -m unittest discover -s scripts -p "test_*.py" -v
+      - name: Unit tests (backup manifest; model store)
+        run: |
+          python -m unittest discover -s scripts -p "test_*.py" -v
+          python -m unittest discover -s services/model-api/tests -v
 
   images:
     name: Lint, build and scan images

@@ -9,17 +9,13 @@
  *
  * Nothing here can change a verdict: every function swallows its own errors.
  */
-const crypto = require("crypto");
-const fs = require("fs");
-const path = require("path");
 const db = require("../db");
 
 // The switch is STUDY_LOGGING in the environment, overridable at run time from the operator page
 // (lib/runtimeSettings.js), so it is read on every call rather than once at start.
 const enabled = () => require("./runtimeSettings").get("studyLogging");
-// model-api's paths as it reports them, and where ca-service sees the same store (read-only mount).
-const MODEL_STORE_REMOTE = process.env.MODEL_STORE_REMOTE || "/app/artifacts/users";
-const MODEL_STORE_DIR = process.env.MODEL_STORE_DIR || "/model-store";
+// The model's fingerprint (model_sha256) comes from the model service with each training (the trainer
+// returns modelSha256, model_store.py): this service never reads model files.
 
 const PSEUDONYM = /^[A-Za-z0-9_-]{1,32}$/;
 const SESSION = /^[A-Za-z0-9_-]{8,64}$/;
@@ -128,31 +124,6 @@ async function recordCheck(userId, ctx, d) {
   }
 }
 
-/** sha256 over a model directory (sorted relative paths and bytes), read through the mount. */
-function modelSha256(modelPath) {
-  try {
-    if (!modelPath || !String(modelPath).startsWith(MODEL_STORE_REMOTE)) return null;
-    const local = path.join(MODEL_STORE_DIR, String(modelPath).slice(MODEL_STORE_REMOTE.length));
-    if (!fs.existsSync(local)) return null;
-    const files = [];
-    (function walk(dir) {
-      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        const p = path.join(dir, e.name);
-        if (e.isDirectory()) walk(p); else if (e.isFile()) files.push(p);
-      }
-    })(fs.statSync(local).isDirectory() ? local : path.dirname(local));
-    const h = crypto.createHash("sha256");
-    for (const f of files.sort()) {
-      h.update(path.relative(local, f).split(path.sep).join("/") + "\0");
-      h.update(fs.readFileSync(f));
-    }
-    return h.digest("hex");
-  } catch (e) {
-    console.error("[study] model hash failed:", e.message);
-    return null;
-  }
-}
-
 /** A (re)training of a study participant's profile, with all its threshold-source scores. */
 async function recordProfile(userId, p) {
   if (!(await isParticipant(userId))) return;
@@ -161,7 +132,7 @@ async function recordProfile(userId, p) {
       `INSERT INTO study_profiles (user_id, channel, rule_version, threshold, threshold_source, model_path,
          model_sha256, window_count, threshold_scores) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       userId, p.channel, p.ruleVersion, p.threshold, p.thresholdSource, p.modelPath || null,
-      modelSha256(p.modelPath), p.windowCount, JSON.stringify((p.thresholdScores || []).map(Number)));
+      p.modelSha256 || null, p.windowCount, JSON.stringify((p.thresholdScores || []).map(Number)));
   } catch (e) {
     console.error("[study] recordProfile failed:", e.message);
   }
@@ -186,5 +157,5 @@ async function recordPrompt(userId, ctx, p) {
   }
 }
 
-module.exports = { parseContext, participantContext, register, isParticipant, recordCheck, recordProfile, recordPrompt, modelSha256 };
+module.exports = { parseContext, participantContext, register, isParticipant, recordCheck, recordProfile, recordPrompt };
 Object.defineProperty(module.exports, "ENABLED", { enumerable: true, get: enabled });

@@ -4,7 +4,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     MODEL_HOST=0.0.0.0 \
     MODEL_PORT=5000 \
-    MODEL_PATH=/app/artifacts/ws50/final_model
+    MODEL_PATH=/app/artifacts/ws50/final_model \
+    ARTIFACTS_DIR=/app/artifacts \
+    DATA_DIR=/app/data
 
 WORKDIR /app
 
@@ -28,8 +30,14 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install --default-timeout=300 --retries=20 tensorflow-cpu==2.15.0
 
+# The production web server, and the S3 client for MODEL_STORE=s3 (a layer of its own, so adding them
+# did not invalidate the TensorFlow layer above).
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install --default-timeout=300 --retries=20 gunicorn==23.0.0 boto3==1.40.0
+
 COPY services/model-api/ ./services/model-api/
 
 EXPOSE 5000
 
-CMD ["python", "services/model-api/api.py"]
+WORKDIR /app/services/model-api
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "wsgi:app"]

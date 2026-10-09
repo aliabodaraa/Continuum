@@ -113,6 +113,7 @@ async function checkMouseActions(userId, actions) {
   const result = await postModelApi("/api/user/predict", {
     userId,
     actions: recent,
+    modelPath: profile.model_path,   // the version this profile was trained as (model versions)
     setSize: ACTION_SET_SIZE,
     threshold: ACTION_DECISION_THRESHOLD,
   });

@@ -34,6 +34,10 @@ services:
       # (userId, modality); this service derives + confines every path.
       ARTIFACTS_DIR: /app/artifacts
       DATA_DIR: /app/data
+      # all = scores and trains in one container; inference / trainer split them (docker-compose.split-models.yml).
+      MODEL_ROLE: ${MODEL_ROLE:-all}
+      # fs = per-user model versions in ./artifacts/users; s3 = in object storage (services/model-api/model_store.py).
+      MODEL_STORE: ${MODEL_STORE:-fs}
     # NOT published to the host. Only ca-service calls this service, over the
     # internal Docker network. When it was published on :5000 an unauthenticated
     # host client could score arbitrary windows against any user's model — a
@@ -55,7 +59,8 @@ services:
       start_period: 90s
     volumes:
       - .:/app
-    command: python services/model-api/api.py
+    working_dir: /app/services/model-api
+    command: ["gunicorn", "-c", "gunicorn.conf.py", "wsgi:app"]
     restart: unless-stopped
 
   passkey-service:
@@ -127,8 +132,8 @@ services:
       #   lazy            — passkey only; each modality enrolls when its toggle is enabled
       ONBOARDING_MODE: ${ONBOARDING_MODE:-eager}
       # User-study logging (lib/studyLog.js, docs/recovery/user_study/LOGGING_SPEC.md): off unless 1.
-      # When on, requests that carry a study context are logged in the study_* tables, and model
-      # folders are hashed through the read-only /model-store mount below.
+      # When on, requests that carry a study context are logged in the study_* tables, with each
+      # model's fingerprint as the model service reports it.
       STUDY_LOGGING: ${STUDY_LOGGING:-0}
       # Defaults for every organisation's protection (each one can change them in its console, and the
       # operator on the operator page; see services/gateway/settings.js). panel: show|hide;
@@ -150,8 +155,6 @@ services:
     volumes:
       - ./services/ca-service:/app
       - ca_node_modules_node24:/app/node_modules
-      # model-api's per-user model store, read-only, for the study log's model hashes only.
-      - ./artifacts/users:/model-store:ro
     command: npm start
     restart: unless-stopped
 

@@ -656,7 +656,15 @@ async function trainUserTypingProfile(userId, db) {
     modality: "keystroke",
     epochs: 25,
     batchSize: 16,
+    // the version in use: the model service keeps it when it removes old versions
+    currentModelPath: previous ? previous.modelPath : null,
   });
+  // A model service with versions (model_store.py) returns a new version and keeps every older one as
+  // it was: the previous model is the one this profile points at, and a rejected fit is discarded. One
+  // without versions overwrote the folder, kept a snapshot (previousModelPath) and restores it.
+  const previousPath = result && result.versioned ? (previous ? previous.modelPath : null) : result && result.previousModelPath;
+  const discardNew = () => postModelApi("/api/user/rollback",
+    result.versioned ? { userId, modelPath: result.modelPath } : { userId });
 
   // A degraded negative pool produces a weak model that still trains "successfully".
   // It used to pass unremarked; surface it so a broken dataset path is visible in
@@ -669,7 +677,7 @@ async function trainUserTypingProfile(userId, db) {
       `[train] DEGRADED NEGATIVES user=${userId} source=${result.negativeSource} ` +
         `reason=${result.datasetNegativeError || "no dataset negatives available"}`,
     );
-    if (result.previousModelPath) await postModelApi("/api/user/rollback", { userId });
+    if (result.versioned || result.previousModelPath) await discardNew();
     throw new Error(`keystroke training needs the ${NEGATIVES_SOURCE} negatives: ` +
       `${result.datasetNegativeError || `got ${result.negativeSource}`}`);
   }
@@ -691,13 +699,13 @@ async function trainUserTypingProfile(userId, db) {
       `${NEGATIVES_SOURCE}: recipe change, gate skipped`);
   }
   try {
-    if (result.previousModelPath && !migrating) {
+    if (previousPath && !migrating) {
       const heldOut = await getHeldOutWindows(userId, db);
       if (heldOut.length >= 30) {
         const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
         const lows = (a) => a.filter((v) => v < DEFAULT_CNN_THRESHOLD).length;
         const newScores = await scoreWindowsWithModel(userId, heldOut, result.modelPath);
-        const prevScores = await scoreWindowsWithModel(userId, heldOut, result.previousModelPath);
+        const prevScores = await scoreWindowsWithModel(userId, heldOut, previousPath);
         const newMean = mean(newScores);
         const prevMean = mean(prevScores);
         const regressed =
@@ -707,7 +715,7 @@ async function trainUserTypingProfile(userId, db) {
           `[retrain-gate] user=${userId} heldOut=${heldOut.length} prevMean=${prevMean.toFixed(3)} newMean=${newMean.toFixed(3)} prevLows=${lows(prevScores)} newLows=${lows(newScores)} → ${regressed ? "ROLLBACK" : "accept"}`,
         );
         if (regressed) {
-          await postModelApi("/api/user/rollback", { userId });
+          await discardNew();
           // Keep serving the proven model — but CONSUME the retrain trigger by
           // re-saving the existing profile (bumps trained_at). Otherwise
           // adaptiveSamplesSinceRetrain stays stuck ≥ RETRAIN_EVERY forever:
@@ -747,7 +755,7 @@ async function trainUserTypingProfile(userId, db) {
   // validation (held-out genuine) scores model-api computed for this model.
   await studyLog.recordProfile(userId, {
     channel: "keystroke", ruleVersion: `${RULE_VERSION};${NEGATIVES_SOURCE}`, threshold: WINDOW_DECISION_THRESHOLD,
-    thresholdSource: "fixed-0.50; scores = validation genuine", modelPath: result.modelPath,
+    thresholdSource: "fixed-0.50; scores = validation genuine", modelPath: result.modelPath, modelSha256: result.modelSha256,
     windowCount: result.positiveWindowCount, thresholdScores: result.validationGenuineScores,
   });
   return profile;

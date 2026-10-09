@@ -263,7 +263,7 @@ async function retrainMouse(userId, extra = {}) {
   // User study: all 440 leave-one-sample-out scores, the source of the threshold.
   await studyLog.recordProfile(userId, {
     channel: "mouse", ruleVersion: MOUSE_DECISION_VERSION, threshold,
-    thresholdSource: `loso-p${THRESHOLD_PERCENTILE}`, modelPath: result.modelPath,
+    thresholdSource: `loso-p${THRESHOLD_PERCENTILE}`, modelPath: result.modelPath, modelSha256: result.modelSha256,
     windowCount: positiveWindows.length, thresholdScores: result.losoScores,
   });
 
@@ -334,6 +334,7 @@ async function checkMouse(userId, windows, study = null) {
     userId,
     windows: recent,
     modality: "mouse",
+    modelPath: profile.model_path,   // the version this profile was trained as (model versions)
     threshold: userThreshold,
   });
   const scores = (result.prediction || []).map((p) => Number(p[1]));
