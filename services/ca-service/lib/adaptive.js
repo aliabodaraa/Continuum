@@ -13,24 +13,19 @@
  * The passkey makes injected samples useless to someone at an unlocked session: they can add pending
  * samples, but cannot turn them into a model.
  */
-const db = require("../db");
-
-db.exec(`CREATE TABLE IF NOT EXISTS adaptive_state (
-  user_id INTEGER PRIMARY KEY,
-  last_retrain_at TEXT
-)`);
+const db = require("../db");   // table adaptive_state: see db.js
 
 const PENDING = "adaptive-pending";
 const OVERLAP_LIMIT = 0.05;   // share of a new sample's key presses that may coincide with an earlier sample's
 
-function pendingIds(userId) {
-  return db.prepare(`SELECT id FROM keystroke_texts WHERE user_id = ? AND sample_purpose = ? ORDER BY id`)
-    .all(userId, PENDING).map((r) => r.id);
+async function pendingIds(userId) {
+  return (await db.all(`SELECT id FROM keystroke_texts WHERE user_id = ? AND sample_purpose = ? ORDER BY id`, userId, PENDING))
+    .map((r) => r.id);
 }
-function pendingCount(userId) { return pendingIds(userId).length; }
+async function pendingCount(userId) { return (await pendingIds(userId)).length; }
 
-function lastRetrainAt(userId) {
-  const row = db.prepare(`SELECT last_retrain_at AS at FROM adaptive_state WHERE user_id = ?`).get(userId);
+async function lastRetrainAt(userId) {
+  const row = await db.get(`SELECT last_retrain_at AS at FROM adaptive_state WHERE user_id = ?`, userId);
   return row ? row.at : null;
 }
 
@@ -41,17 +36,18 @@ function keyMarks(events) {
     .filter((e) => e && e.eventType === "keydown")
     .map((e) => `${Number(e.timestampRelative)}|${Number(e.keyCode)}`);
 }
-function overlapShare(userId, events) {
+async function overlapShare(userId, events) {
   const marks = keyMarks(events);
   if (!marks.length) return 0;
-  const ids = pendingIds(userId).concat(
-    db.prepare(`SELECT id FROM keystroke_texts WHERE user_id = ? AND sample_purpose = 'adaptive' ORDER BY id DESC LIMIT 3`)
-      .all(userId).map((r) => r.id));
+  const ids = (await pendingIds(userId)).concat(
+    (await db.all(`SELECT id FROM keystroke_texts WHERE user_id = ? AND sample_purpose = 'adaptive' ORDER BY id DESC LIMIT 3`, userId))
+      .map((r) => r.id));
   if (!ids.length) return 0;
-  const prior = new Set(db.prepare(
+  const prior = new Set((await db.all(
     `SELECT timestamp_relative AS t, key_code AS k FROM keystroke_events
       WHERE event_type = 'keydown' AND keystroke_text_id IN (${ids.map(() => "?").join(",")})`,
-  ).all(...ids).map((r) => `${Number(r.t)}|${Number(r.k)}`));
+    ...ids,
+  )).map((r) => `${Number(r.t)}|${Number(r.k)}`));
   return marks.filter((m) => prior.has(m)).length / marks.length;
 }
 
@@ -63,28 +59,29 @@ function keySequence(events) {
 }
 
 /** The pending samples become training samples and the pause starts. Returns how many. */
-function confirm(userId) {
-  const ids = pendingIds(userId);
-  if (!ids.length) return 0;
-  const tx = db.transaction(() => {
-    db.prepare(`UPDATE keystroke_texts SET sample_purpose = 'adaptive', is_training = 1
-                 WHERE id IN (${ids.map(() => "?").join(",")})`).run(...ids);
-    db.prepare(`INSERT INTO adaptive_state (user_id, last_retrain_at) VALUES (?, datetime('now'))
-                 ON CONFLICT(user_id) DO UPDATE SET last_retrain_at = excluded.last_retrain_at`).run(userId);
+async function confirm(userId) {
+  return db.tx(async () => {
+    const ids = await pendingIds(userId);
+    if (!ids.length) return 0;
+    await db.run(`UPDATE keystroke_texts SET sample_purpose = 'adaptive', is_training = 1
+                   WHERE id IN (${ids.map(() => "?").join(",")})`, ...ids);
+    await db.run(`INSERT INTO adaptive_state (user_id, last_retrain_at) VALUES (?, datetime('now'))
+                   ON CONFLICT(user_id) DO UPDATE SET last_retrain_at = excluded.last_retrain_at`, userId);
+    return ids.length;
   });
-  tx();
-  return ids.length;
 }
 
 /** A profile reset forgets pending samples and the pause with it. */
-function forget(userId) {
-  const ids = pendingIds(userId);
-  if (ids.length) {   // keystroke_events has no cascading key: remove a pending sample's events with it
-    const list = ids.map(() => "?").join(",");
-    db.prepare(`DELETE FROM keystroke_events WHERE keystroke_text_id IN (${list})`).run(...ids);
-    db.prepare(`DELETE FROM keystroke_texts WHERE id IN (${list})`).run(...ids);
-  }
-  db.prepare(`DELETE FROM adaptive_state WHERE user_id = ?`).run(userId);
+async function forget(userId) {
+  await db.tx(async () => {
+    const ids = await pendingIds(userId);
+    if (ids.length) {   // keystroke_events has no cascading key: remove a pending sample's events with it
+      const list = ids.map(() => "?").join(",");
+      await db.run(`DELETE FROM keystroke_events WHERE keystroke_text_id IN (${list})`, ...ids);
+      await db.run(`DELETE FROM keystroke_texts WHERE id IN (${list})`, ...ids);
+    }
+    await db.run(`DELETE FROM adaptive_state WHERE user_id = ?`, userId);
+  });
 }
 
 module.exports = { PENDING, OVERLAP_LIMIT, pendingCount, lastRetrainAt, overlapShare, keySequence, confirm, forget };

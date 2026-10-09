@@ -240,7 +240,7 @@ State lives on named volumes — back these up:
 |---|---|
 | `continuum_gateway_data` | Tenant registry, user-id allocations, the gateway's signing keys |
 | `continuum_user_models` | Per-user keystroke/mouse models |
-| `continuum_ca_db` | Behavioral profiles + decisions |
+| `continuum_ca_db` | Behavioral profiles + decisions (with `CA_STORAGE=postgres` they live in the CA service's own database instead) |
 | `continuum_passkey_db` | Registered passkeys + challenges (with `PASSKEY_STORAGE=postgres` they live in the passkey service's own database instead) |
 | `continuum_db` (demo only) | Demo users |
 

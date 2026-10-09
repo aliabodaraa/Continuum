@@ -120,8 +120,8 @@ personal account through the browser extension.
 | Component | Today | Target |
 |---|---|---|
 | gateway | JSON files + in-memory sign-in links, ceremonies, lockout counter, `lastRisk` | stateless: records in PostgreSQL (**done**, `STORAGE=postgres`); ephemeral state in PostgreSQL tables with expiry; transitions computed by ca-service |
-| ca-service | SQLite file | stateless: PostgreSQL |
-| passkey-service | SQLite file (challenges already in the DB) | stateless: PostgreSQL |
+| ca-service | SQLite file | stateless: PostgreSQL (**done**, `STORAGE=postgres`) |
+| passkey-service | SQLite file (challenges already in the DB) | stateless: PostgreSQL (**done**, `STORAGE=postgres`) |
 | model | files on a volume; in-process model cache | stateless: immutable model versions in object storage; the cache is only a cache |
 | PostgreSQL, object storage | — | the only stateful components (managed or operator-run) |
 
@@ -690,8 +690,8 @@ continuum/
 | 3 | Gateway fully stateless: sign-in links, ceremonies, lockouts, last risk per user → PostgreSQL; webhook outbox with retries | e2e connect 92/92 with every request alternating between **two gateway copies**; study suite through both copies with webhooks delivered | **done** |
 | 3b | The demo app's backend uses only the public tenant API (`/v1/server/*`); passkeys re-keyed to Continuum user ids; the demo leaves the internal network; the production compose becomes bundle + demo tenant | new e2e `e2e_headless_demo_backend.mjs` 14/14; re-key verified and idempotent on a copy of the real data; connect 92/92, enrol-reload 10/10 | **done** |
 | 4 | passkey-service → PostgreSQL (`STORAGE=sqlite|postgres`, `migrate.js` verifies every credential); a database and a login per service, each closed to the others (`deploy/postgres/init-local.sql`); challenges taken atomically (a replay or a double answer cannot pass twice) and registration challenges expire | 28 credentials of 22 users identical; demo-backend 18/18, connect 92/92, enrol-reload 10/10, study pass, on PostgreSQL, on SQLite, and through **two passkey copies** | **done** |
-| 5 | ca-service → PostgreSQL (23 tables, ~880k rows); queue claims with `SKIP LOCKED`; `/model-store` mount removed (trainer returns version + hash) | per-table counts and checksums; **decision replay: 0 differences**; study e2e 29/29 | |
-| 6 | Model service: gunicorn; inference and trainer roles; models in object storage as versions; ca-service passes the version | scores identical for the same windows; training via queue e2e | |
+| 5 | ca-service → PostgreSQL (`STORAGE=sqlite|postgres`, one async data layer, `migrate.js` verifies every table); queue leases and claims with `SKIP LOCKED`; ties in sorts broken by id; database `ca` with byte-order collation | 23 tables / 911,431 rows identical; study export identical across old code, new code on SQLite and on PostgreSQL; **decision replay: 0 differences** (243); connect, study, enrol-reload, demo-backend on PostgreSQL, on SQLite and through **two ca-service copies** | **done** |
+| 6 | Model service: gunicorn; inference and trainer roles; models in object storage as versions; ca-service passes the version; the `/model-store` mount goes (the trainer returns version + hash) | scores identical for the same windows; training via queue e2e | |
 | 7 | Kubernetes locally: Kustomize base/overlays, Tiltfile, Envoy Gateway, CloudNativePG, SeaweedFS, NetworkPolicies, Pod Security, HPA/PDB in namespace `continuum` | all e2e suites against the cluster on the usual URLs | |
 | 8 | Observability: OTel in all services, grafana/otel-lgtm, dashboards and alerts | a traced check end to end | |
 | 9 | Cutover on this PC: final backup → migrate → run the cluster → full e2e + replay → switch; Compose stack stopped, not deleted, for a rollback window | the same proofs on the real data | |

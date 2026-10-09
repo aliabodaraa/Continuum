@@ -19,23 +19,21 @@ function convertWindow(w) {
 }
 
 (async () => {
-  const rows = db.prepare("SELECT id, user_id, windows FROM mouse_samples ORDER BY id").all();
+  const rows = await db.all("SELECT id, user_id, windows FROM mouse_samples ORDER BY id");
   let converted = 0;
   for (const r of rows) {
     const w = JSON.parse(r.windows);
     if (!w.length || w[0][0].length !== 7) continue;          // already migrated
     const out = w.map(convertWindow);
-    if (!dry) db.prepare("UPDATE mouse_samples SET windows = ? WHERE id = ?").run(JSON.stringify(out), r.id);
+    if (!dry) await db.run("UPDATE mouse_samples SET windows = ? WHERE id = ?", JSON.stringify(out), r.id);
     converted++;
   }
   console.log(`${dry ? "[dry run] would convert" : "converted"} ${converted} of ${rows.length} stored sessions`);
 
-  const users = db
-    .prepare("SELECT user_id, COUNT(*) AS sessions, SUM(window_count) AS total FROM mouse_samples GROUP BY user_id")
-    .all();
+  const users = await db.all("SELECT user_id, COUNT(*) AS sessions, SUM(window_count) AS total FROM mouse_samples GROUP BY user_id");
   for (const u of users) {
     if (u.total < mouse.MIN_ENROLL_WINDOWS) {
-      if (!dry) db.prepare("UPDATE mouse_profiles SET feature_version = NULL WHERE user_id = ?").run(u.user_id);
+      if (!dry) await db.run("UPDATE mouse_profiles SET feature_version = NULL WHERE user_id = ?", u.user_id);
       console.log(`user ${u.user_id}: ${u.total} windows over ${u.sessions} sessions — below ${mouse.MIN_ENROLL_WINDOWS}; needs one more enrolment session`);
       continue;
     }
@@ -46,4 +44,5 @@ function convertWindow(w) {
     const res = await mouse.retrainMouse(u.user_id, { migrated: true });
     console.log(`user ${u.user_id}: ${u.total} windows -> ${res.status} ${res.body.trained ? `trained, threshold ${res.body.threshold.toFixed(4)}` : res.body.error}`);
   }
+  await db.close();
 })().catch((e) => { console.error(e); process.exit(1); });

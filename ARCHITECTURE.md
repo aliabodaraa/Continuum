@@ -522,6 +522,42 @@ Implementation details:
 - **Order at the switch-over of the running stack:** the demo's passkey re-key (step 3b) runs on the SQLite
   file first, then `migrate.js` copies the re-keyed credentials.
 
+## 13d. CA service storage: SQLite or PostgreSQL (since 2026-10-09, branch `cloud-native`)
+- **`services/ca-service/db.js`**, chosen by `STORAGE`: `sqlite` (default, the file in `DB_PATH`, as before)
+  or `postgres` (`DATABASE_URL`). One asynchronous interface for both (`get`, `all`, `run`, `insert`,
+  `tx`); every module of the service uses it (keystroke, mouse, decision state, locks, adaptive cycle,
+  training queue, study log, settings). The SQL is written once; on PostgreSQL the few differences are
+  translated (placeholders, the time functions, camelCase result names), and every value keeps SQLite's
+  form: timestamps as UTC text `YYYY-MM-DD HH:MM:SS`, JSON as text, 0/1 flags, user ids up to 2^52 exact.
+  So stored data reads back unchanged and past decisions replay identically.
+- **Transactions hold what is inside them and nothing else.** A call made inside `db.tx` by any module
+  runs on the transaction's connection (AsyncLocalStorage); a call from another request never joins it
+  (on SQLite it waits for the transaction to end). The decision history's read-modify-write takes a row
+  lock, so two checks of one user at once cannot lose an update.
+- **Several copies can run side by side:** the training queue has leases (`locked_by`, `lease_until`,
+  renewed while a job trains); a job is recovered only when its lease has run out; at most one pending job
+  per user and kind (a unique index); the operator's run-time settings are re-read every 10 s.
+- **Same results, by construction and by test:** sorts that could tie now say how ties break (`id`, the
+  order rows were written in), which is the order SQLite already returned: checked on the real data, no
+  result changes (2,540 samples, 160 users, the decision lists, the metrics). The `ca` database sorts text
+  byte by byte (`LC_COLLATE 'C'`), as SQLite compares.
+- **The identity seed tables** (`tenants`, `principals`, `principal_aliases`, `retired_identities`, written
+  once in 2026-09) are part of the schema, because the tenant-wide reports still read
+  `principal_aliases`. Known gap, unchanged here: nothing has added to it since, so those two reports miss
+  every user who arrived later.
+- **Migration:** stop the service, then `node services/ca-service/migrate.js --from <ca.db> --to <url>
+  [--replace]`: one transaction; every table and column as stored, ids included, each id counter continuing
+  where SQLite's did (an id of a deleted row is never given again); a table or column it does not know is
+  refused, not skipped; then every table is read back and compared row by row (count and checksum). On the
+  copy of the real data: 23 tables, 911,431 rows, identical, in about 20 s.
+- **Proven:** 35 node tests (the data layer's 9 and the queue's 7 cases on each backend, the migration's 3); the study export from
+  PostgreSQL identical to the one from SQLite, and that from the code before this change; the decision
+  replay reproduces all 243 logged verdicts; end-to-end suites (connect, study, enrol-reload, demo-backend)
+  with the service on PostgreSQL, on SQLite, and with two copies behind the alternating balancer
+  (`docker-compose.two-cas.yml`).
+- **Not yet (step 6):** the study log still hashes model folders through the read-only `/model-store`
+  mount; it goes when the model service keeps versioned models and returns their hash.
+
 ## 14. Security model (summary)
 | Threat | Mitigation |
 |---|---|

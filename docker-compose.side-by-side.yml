@@ -8,6 +8,8 @@
 #     gateway node migrate.js --from /app --to postgres://gateway:gateway@postgres:5432/gateway
 #   (passkeys: ... run --rm --no-deps passkey-service node migrate.js --from /app/passkey.db \
 #     --to postgres://passkey:passkey@postgres:5432/passkey)
+#   (behavioural data: ... run --rm --no-deps ca-service node migrate.js --from /app/ca.db \
+#     --to postgres://ca:ca@postgres:5432/ca)
 #   docker compose -p continuum-next -f docker-compose.yml -f docker-compose.side-by-side.yml up -d gateway web
 #
 # Gateway http://localhost:18080, demo http://localhost:13000. The gateway keeps its records in PostgreSQL.
@@ -57,6 +59,14 @@ services:
       ORIGIN: http://localhost:13000
       STORAGE: ${SIDE_BY_SIDE_PASSKEY_STORAGE:-postgres}   # sqlite runs the same code on this copy's file
       DATABASE_URL: postgres://passkey:passkey@postgres:5432/passkey
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ca-service:
+    environment:
+      STORAGE: ${SIDE_BY_SIDE_CA_STORAGE:-postgres}   # sqlite runs the same code on this copy's file
+      DATABASE_URL: postgres://ca:ca@postgres:5432/ca
     depends_on:
       postgres:
         condition: service_healthy

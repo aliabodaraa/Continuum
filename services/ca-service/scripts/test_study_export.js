@@ -3,7 +3,10 @@
 // catch them. Never run it on the live database.
 //   docker exec continuum-ca-service-1 node -e "require('better-sqlite3')('/app/ca.db',{readonly:true}).backup('/tmp/study_test.db')"
 //   docker exec -e DB_PATH=/tmp/study_test.db -e STUDY_LOGGING=1 -w /app continuum-ca-service-1 node scripts/test_study_export.js
-if (!process.env.DB_PATH || process.env.DB_PATH.endsWith("/app/ca.db")) { console.error("Refusing: set DB_PATH to a copy of ca.db"); process.exit(2); }
+const pgCopy = process.env.STORAGE === "postgres" && /\/[A-Za-z0-9_]+$/.test(process.env.DATABASE_URL || "") && !/\/ca$/.test(process.env.DATABASE_URL);
+if (!pgCopy && (process.env.STORAGE === "postgres" || !process.env.DB_PATH || process.env.DB_PATH.endsWith("/app/ca.db"))) {
+  console.error("Refusing: set DB_PATH to a copy of ca.db (or STORAGE=postgres with DATABASE_URL naming a copy, not the database ca)"); process.exit(2);
+}
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 const db = require("../db");
@@ -16,24 +19,24 @@ const run = (script, flag, dir) => { try { return { code: 0, out: execFileSync("
 
 (async () => {
   // a participant with a mouse profile: three overlapping checks, genuine then impostor
-  const mu = db.prepare("SELECT user_id FROM mouse_profiles WHERE decision_version = ? LIMIT 1").get(mouse.MOUSE_DECISION_VERSION).user_id;
-  studyLog.register(mu, studyLog.parseContext({ participant: "ZZTEST1", sessionId: "sess-zz-0001", condition: "genuine" }));
-  studyLog.recordProfile(mu, { channel: "mouse", ruleVersion: mouse.MOUSE_DECISION_VERSION, threshold: 0.95, thresholdSource: "loso-p20",
+  const mu = (await db.get("SELECT user_id FROM mouse_profiles WHERE decision_version = ? ORDER BY user_id LIMIT 1", mouse.MOUSE_DECISION_VERSION)).user_id;
+  await studyLog.register(mu, studyLog.parseContext({ participant: "ZZTEST1", sessionId: "sess-zz-0001", condition: "genuine" }));
+  await studyLog.recordProfile(mu, { channel: "mouse", ruleVersion: mouse.MOUSE_DECISION_VERSION, threshold: 0.95, thresholdSource: "loso-p20",
     modelPath: "/app/artifacts/users/user-1/mouse_model", windowCount: 440, thresholdScores: Array.from({ length: 440 }, (_, i) => i / 440) });
-  const own = db.prepare("SELECT windows FROM mouse_samples WHERE user_id = ? ORDER BY id DESC LIMIT 3").all(mu).flatMap((r) => JSON.parse(r.windows));
-  const other = db.prepare("SELECT windows FROM mouse_samples WHERE user_id <> ? ORDER BY id DESC LIMIT 3").all(mu).flatMap((r) => JSON.parse(r.windows));
+  const own = (await db.all("SELECT windows FROM mouse_samples WHERE user_id = ? ORDER BY id DESC LIMIT 3", mu)).flatMap((r) => JSON.parse(r.windows));
+  const other = (await db.all("SELECT windows FROM mouse_samples WHERE user_id <> ? ORDER BY id DESC LIMIT 3", mu)).flatMap((r) => JSON.parse(r.windows));
   for (const [start, cond, src, sess] of [[0, "genuine", own, "sess-zz-0001"], [10, "genuine", own, "sess-zz-0001"], [0, "impostor:ZZTEST2", other, "sess-zz-0002"]]) {
     const w = src.slice(start, start + 60);
     await mouse.checkMouse(mu, w, { participant: "ZZTEST1", sessionId: sess, condition: cond, clientTs: start, windowKeys: w.map((_, i) => String(start + i)) });
   }
   // a keystroke decision with the route's inputs (the route itself is exercised end to end in part 4)
   const scores = Array.from({ length: 20 }, (_, i) => (i < 12 ? 0.2 : 0.9));
-  studyLog.recordCheck(mu, studyLog.parseContext({ participant: "ZZTEST1", sessionId: "sess-zz-0001", condition: "genuine" }), {
+  await studyLog.recordCheck(mu, studyLog.parseContext({ participant: "ZZTEST1", sessionId: "sess-zz-0001", condition: "genuine" }), {
     channel: "keystroke", ruleVersion: ks.RULE_VERSION, threshold: 0.5, scores, keys: scores.map((_, i) => `${i * 10}-${i * 10 + 500}`),
     lowWindows: 12, verdict: "suspicious", promptRequired: false,
     details: { packetSuspicious: true, windowTotal: 40, overwhelmingImpostor: false, unverifiable: false, pastePolicy: false, degenerateInput: false,
       recentSuspicious: 1, hasPasskey: true, modelAvailable: true, suspiciousWindow: 3, suspiciousMin: 2 } });
-  studyLog.recordPrompt(mu, studyLog.parseContext({ participant: "ZZTEST1", sessionId: "sess-zz-0002", condition: "impostor:ZZTEST2", clientTs: 99 }),
+  await studyLog.recordPrompt(mu, studyLog.parseContext({ participant: "ZZTEST1", sessionId: "sess-zz-0002", condition: "impostor:ZZTEST2", clientTs: 99 }),
     { channel: "mouse", decisionId: 1, event: "shown" });
 
   fs.rmSync("/tmp/zz_export", { recursive: true, force: true });
@@ -54,10 +57,11 @@ const run = (script, flag, dir) => { try { return { code: 0, out: execFileSync("
   const rp2 = run("scripts/study_replay.js", "--in", "/tmp/zz_export");
   ok(rp2.code === 1 && /MISMATCH/.test(rp2.out), "replay catches a tampered verdict");
   // privacy: a URL in the database must fail the export's scan
-  db.prepare("UPDATE study_decisions SET condition = 'genuine https://example.com' WHERE id = (SELECT MAX(id) FROM study_decisions)").run();
+  await db.run("UPDATE study_decisions SET condition = 'genuine https://example.com' WHERE id = (SELECT MAX(id) FROM study_decisions)");
   const ex2 = run("scripts/study_export.js", "--out", "/tmp/zz_export2");
   ok(ex2.code === 1 && /PRIVACY/.test(ex2.out), "privacy scan catches a URL");
   const ex3 = run("scripts/study_export.js", "--out", "/app/study_out");
   ok(ex3.code === 2, "export refuses an output directory inside the repository mount");
   console.log(process.exitCode ? "\nSOME CHECKS FAILED" : "\nALL EXPORT/REPLAY CHECKS PASSED");
+  await db.close();
 })().catch((e) => { console.error(e); process.exitCode = 1; });

@@ -11,6 +11,10 @@ SELECT 'CREATE ROLE gateway LOGIN PASSWORD ''gateway''' WHERE NOT EXISTS (SELECT
 SELECT 'CREATE DATABASE gateway OWNER gateway' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'gateway') \gexec
 SELECT 'CREATE ROLE passkey LOGIN PASSWORD ''passkey''' WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'passkey') \gexec
 SELECT 'CREATE DATABASE passkey OWNER passkey' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'passkey') \gexec
+-- ca-service compares and sorts text byte by byte, as SQLite did (timestamps, pseudonyms): collation C.
+SELECT 'CREATE ROLE ca LOGIN PASSWORD ''ca''' WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ca') \gexec
+SELECT 'CREATE DATABASE ca OWNER ca TEMPLATE template0 ENCODING ''UTF8'' LC_COLLATE ''C'' LC_CTYPE ''C''' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'ca') \gexec
 REVOKE CONNECT ON DATABASE gateway FROM PUBLIC;
 REVOKE CONNECT ON DATABASE passkey FROM PUBLIC;
+REVOKE CONNECT ON DATABASE ca FROM PUBLIC;
 REVOKE CONNECT ON DATABASE continuum FROM PUBLIC;

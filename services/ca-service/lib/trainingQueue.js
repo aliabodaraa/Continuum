@@ -27,16 +27,29 @@
  *
  * CONCURRENCY
  * -----------
- * One job at a time, deliberately. Training is CPU-bound TensorFlow work sharing a host
- * with live inference; running two at once lengthens both and starves the authentication
- * path, which is the one thing that must stay fast. Claiming is a single UPDATE guarded by
- * `state = 'queued'`, so even if that assumption is relaxed later, two workers can never
- * claim one row (better-sqlite3 serialises writes).
+ * One job at a time per copy of the service, deliberately. Training is CPU-bound TensorFlow work
+ * sharing a host with live inference; running two at once lengthens both and starves the
+ * authentication path, which is the one thing that must stay fast. Claiming is one statement
+ * (with postgres, SKIP LOCKED), so two copies can never claim one row.
+ *
+ * SEVERAL COPIES
+ * --------------
+ * A claimed job carries a LEASE (locked_by, lease_until) that its worker renews every
+ * HEARTBEAT_MS while the training runs. A copy recovers a "running" job only once its lease has
+ * run out: the copy that held it is gone (a crash, an OOM kill). It used to requeue every running
+ * job at start, which with two copies would have taken the other copy's live work. A worker that
+ * finishes after losing its lease records nothing (the job is someone else's now).
  */
+const crypto = require("crypto");
 const db = require("../db");
 
 const POLL_MS = Number(process.env.TRAINING_POLL_MS || 5000);
 const MAX_ATTEMPTS = Number(process.env.TRAINING_MAX_ATTEMPTS || 3);
+const LEASE_MS = Number(process.env.TRAINING_LEASE_MS || 120000);
+const HEARTBEAT_MS = Math.max(1000, Math.floor(LEASE_MS / 4));
+const INSTANCE = crypto.randomBytes(6).toString("hex");
+// Timestamps in the store's text format ("YYYY-MM-DD HH:MM:SS", UTC), so they compare as text.
+const at = (ms) => new Date(ms).toISOString().slice(0, 19).replace("T", " ");
 
 // modality -> async (userId) => any. Registered by server.js so this module stays free of
 // any dependency on the training implementations (and stays testable with a fake handler).
@@ -54,42 +67,41 @@ function registerHandler(modality, fn) {
  * in-memory `Set`, and it means callers can enqueue on every eligible submission without
  * having to reason about whether one is already pending.
  */
-function enqueue(userId, modality = "keystroke", reason = null) {
-  const existing = db
-    .prepare(
-      `SELECT id, state FROM training_jobs
-       WHERE user_id = ? AND modality = ? AND state IN ('queued','running')
-       ORDER BY id LIMIT 1`,
-    )
-    .get(userId, modality);
+const pendingOf = (userId, modality) => db.get(
+  `SELECT id, state FROM training_jobs
+   WHERE user_id = ? AND modality = ? AND state IN ('queued','running')
+   ORDER BY id LIMIT 1`, userId, modality);
+
+async function enqueue(userId, modality = "keystroke", reason = null) {
+  const existing = await pendingOf(userId, modality);
   if (existing) return { ...existing, deduped: true };
-
-  const r = db
-    .prepare("INSERT INTO training_jobs (user_id, modality, reason) VALUES (?, ?, ?)")
-    .run(userId, modality, reason);
-  console.log(`[training] queued job ${r.lastInsertRowid} user=${userId} modality=${modality} reason=${reason || "-"}`);
-  return { id: r.lastInsertRowid, state: "queued", deduped: false };
+  // The unique index on pending jobs (db.js) settles two copies enqueueing the same work at once.
+  const r = await db.get("INSERT INTO training_jobs (user_id, modality, reason) VALUES (?, ?, ?) ON CONFLICT DO NOTHING RETURNING id",
+    userId, modality, reason);
+  if (!r) return { ...(await pendingOf(userId, modality)), deduped: true };
+  console.log(`[training] queued job ${r.id} user=${userId} modality=${modality} reason=${reason || "-"}`);
+  return { id: r.id, state: "queued", deduped: false };
 }
 
-/** Claim the oldest queued job, or null. The UPDATE's WHERE clause is the lock. */
-function claimNext() {
-  const row = db.prepare("SELECT * FROM training_jobs WHERE state = 'queued' ORDER BY id LIMIT 1").get();
-  if (!row) return null;
-  const claimed = db
-    .prepare(
-      `UPDATE training_jobs
-       SET state = 'running', attempts = attempts + 1, started_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND state = 'queued'`,
-    )
-    .run(row.id);
-  if (claimed.changes === 0) return null; // someone else took it
-  return { ...row, attempts: row.attempts + 1 };
+/** Claim the oldest queued job for this copy, with a lease, or null. One statement: one claimer. */
+async function claimNext() {
+  const pick = `SELECT id FROM training_jobs WHERE state = 'queued' ORDER BY id LIMIT 1${db.kind === "postgres" ? " FOR UPDATE SKIP LOCKED" : ""}`;
+  const row = await db.get(
+    `UPDATE training_jobs
+     SET state = 'running', attempts = attempts + 1, started_at = CURRENT_TIMESTAMP, locked_by = ?, lease_until = ?
+     WHERE id = (${pick}) AND state = 'queued'
+     RETURNING *`, INSTANCE, at(Date.now() + LEASE_MS));
+  return row || null;
 }
 
-function finish(id, state, lastError = null) {
-  db.prepare(
-    "UPDATE training_jobs SET state = ?, last_error = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?",
-  ).run(state, lastError, id);
+// Records the outcome only while this copy still holds the job (its lease may have run out and the job
+// been taken over); returns whether it did.
+async function finish(id, state, lastError = null) {
+  const r = await db.run(
+    `UPDATE training_jobs SET state = ?, last_error = ?, finished_at = CURRENT_TIMESTAMP, locked_by = NULL, lease_until = NULL
+     WHERE id = ? AND locked_by = ?`, state, lastError, id, INSTANCE);
+  if (!r.changes) console.warn(`[training] job ${id}: lease lost before it finished; its outcome (${state}) is not recorded`);
+  return r.changes > 0;
 }
 
 /**
@@ -98,40 +110,56 @@ function finish(id, state, lastError = null) {
  * is more likely to be poison than unlucky, and retrying it forever would crash-loop the
  * worker on every boot.
  */
-function recoverOrphans() {
-  const orphans = db.prepare("SELECT id, user_id, attempts FROM training_jobs WHERE state = 'running'").all();
-  if (!orphans.length) return 0;
+// Jobs left `running` whose lease ran out (no lease at all: from before leases). Each is taken in one
+// statement guarded by its state and lease, so two copies recovering at once do it once.
+async function recoverOrphans() {
+  const now = at(Date.now());
+  const orphans = await db.all(
+    "SELECT id, user_id, attempts FROM training_jobs WHERE state = 'running' AND (lease_until IS NULL OR lease_until < ?)", now);
+  let n = 0;
   for (const j of orphans) {
-    if (j.attempts >= MAX_ATTEMPTS) {
-      finish(j.id, "failed", `abandoned after ${j.attempts} attempts (service restarted mid-run)`);
-      console.warn(`[training] job ${j.id} (user=${j.user_id}) failed — exhausted attempts across restarts`);
-    } else {
-      db.prepare("UPDATE training_jobs SET state = 'queued', started_at = NULL WHERE id = ?").run(j.id);
-      console.log(`[training] job ${j.id} (user=${j.user_id}) requeued after restart`);
-    }
+    const terminal = j.attempts >= MAX_ATTEMPTS;
+    const r = await db.run(
+      `UPDATE training_jobs SET state = ?, started_at = CASE WHEN ? = 'queued' THEN NULL ELSE started_at END,
+         finished_at = CASE WHEN ? = 'failed' THEN CURRENT_TIMESTAMP ELSE finished_at END,
+         last_error = CASE WHEN ? = 'failed' THEN ? ELSE last_error END, locked_by = NULL, lease_until = NULL
+       WHERE id = ? AND state = 'running' AND (lease_until IS NULL OR lease_until < ?)`,
+      terminal ? "failed" : "queued", terminal ? "failed" : "queued", terminal ? "failed" : "queued", terminal ? "failed" : "queued",
+      `abandoned after ${j.attempts} attempts (service restarted mid-run)`, j.id, now);
+    if (!r.changes) continue;
+    n += 1;
+    if (terminal) console.warn(`[training] job ${j.id} (user=${j.user_id}) failed — exhausted attempts across restarts`);
+    else console.log(`[training] job ${j.id} (user=${j.user_id}) requeued after its worker was lost`);
   }
-  return orphans.length;
+  return n;
 }
 
 async function runOne() {
-  const job = claimNext();
+  const job = await claimNext();
   if (!job) return false;
 
   const handler = handlers.get(job.modality);
   if (!handler) {
-    finish(job.id, "failed", `no handler registered for modality "${job.modality}"`);
+    await finish(job.id, "failed", `no handler registered for modality "${job.modality}"`);
     console.error(`[training] job ${job.id}: no handler for modality ${job.modality}`);
     return true;
   }
 
+  // Keep the lease while the training runs (it can take minutes).
+  const beat = setInterval(() => {
+    db.run("UPDATE training_jobs SET lease_until = ? WHERE id = ? AND locked_by = ?", at(Date.now() + LEASE_MS), job.id, INSTANCE)
+      .catch((e) => console.error(`[training] job ${job.id}: lease not renewed: ${e.message}`));
+  }, HEARTBEAT_MS);
+  beat.unref();
   const started = Date.now();
   try {
     await handler(job.user_id, job);
-    finish(job.id, "done");
-    console.log(`[training] job ${job.id} done user=${job.user_id} in ${Date.now() - started}ms`);
+    clearInterval(beat);
+    if (await finish(job.id, "done")) console.log(`[training] job ${job.id} done user=${job.user_id} in ${Date.now() - started}ms`);
   } catch (err) {
+    clearInterval(beat);
     const terminal = job.attempts >= MAX_ATTEMPTS;
-    finish(job.id, terminal ? "failed" : "queued", err.message);
+    await finish(job.id, terminal ? "failed" : "queued", err.message);
     console.error(
       `[training] job ${job.id} ${terminal ? "FAILED permanently" : "will retry"} ` +
         `(attempt ${job.attempts}/${MAX_ATTEMPTS}) user=${job.user_id}: ${err.message}`,
@@ -148,6 +176,7 @@ async function tick() {
   if (draining) return;
   draining = true;
   try {
+    await recoverOrphans();   // a job whose copy died is picked up by whichever copy polls next
     // Loop so a backlog clears in one pass instead of one job per poll interval.
     while (await runOne()) { /* keep going until the queue is empty */ }
   } catch (err) {
@@ -158,12 +187,10 @@ async function tick() {
 }
 
 function start() {
-  const recovered = recoverOrphans();
-  if (recovered) console.log(`[training] recovered ${recovered} interrupted job(s) from the previous run`);
   timer = setInterval(tick, POLL_MS);
   if (timer.unref) timer.unref(); // never hold the process open just to poll
-  setImmediate(tick);             // don't wait a full interval for a backlog
-  console.log(`[training] worker started (poll=${POLL_MS}ms, maxAttempts=${MAX_ATTEMPTS})`);
+  setImmediate(tick);             // don't wait a full interval for a backlog (tick recovers orphans first)
+  console.log(`[training] worker ${INSTANCE} started (poll=${POLL_MS}ms, maxAttempts=${MAX_ATTEMPTS}, lease=${LEASE_MS}ms)`);
 }
 
 function stop() {
@@ -171,12 +198,12 @@ function stop() {
   timer = null;
 }
 
-function statusFor(userId, modality = null) {
+async function statusFor(userId, modality = null) {
   const rows = modality
-    ? db.prepare("SELECT * FROM training_jobs WHERE user_id = ? AND modality = ? ORDER BY id DESC LIMIT 20").all(userId, modality)
-    : db.prepare("SELECT * FROM training_jobs WHERE user_id = ? ORDER BY id DESC LIMIT 20").all(userId);
+    ? await db.all("SELECT * FROM training_jobs WHERE user_id = ? AND modality = ? ORDER BY id DESC LIMIT 20", userId, modality)
+    : await db.all("SELECT * FROM training_jobs WHERE user_id = ? ORDER BY id DESC LIMIT 20", userId);
   const pending = rows.find((r) => r.state === "queued" || r.state === "running") || null;
   return { pending, jobs: rows };
 }
 
-module.exports = { registerHandler, enqueue, start, stop, statusFor, recoverOrphans, tick, MAX_ATTEMPTS };
+module.exports = { registerHandler, enqueue, start, stop, statusFor, recoverOrphans, tick, MAX_ATTEMPTS, INSTANCE, LEASE_MS };

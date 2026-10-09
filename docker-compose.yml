@@ -103,6 +103,9 @@ services:
         required: false
     environment:
       PORT: 4100
+      # Where its data lives: sqlite (one file) or postgres (DATABASE_URL); see .env.example.
+      STORAGE: ${CA_STORAGE:-sqlite}
+      DATABASE_URL: ${CA_DATABASE_URL:-}
       MODEL_API_URL: http://model-api:5000
       # Service credential for the ca -> model hop; model-api rejects requests without it.
       # It answers "is this ca-service?". WHICH user the request may act for was settled one

@@ -19,6 +19,8 @@ const ks = require("/app/lib/keystrokeSecurity.js");
 
 const DB_PATH = "/app/ca.db";
 const db = new Database(DB_PATH, { readonly: true });
+// the library functions take the database in the service's async interface
+const { wrapSqlite } = require("/app/db.js");
 
 let failures = 0;
 function check(name, ok, detail) {
@@ -87,6 +89,7 @@ check(
 // strongest possible negative — identical content, different rhythm, so the model cannot win
 // on vocabulary. What must never appear is a negative from the SAME person under another id,
 // which is exactly the majority-overlap condition the alias rule tests.
+(async () => {
 console.log("\nCHECK 4 — no genuine user's samples in their own negative pool");
 const profiled = db.prepare("SELECT DISTINCT user_id u FROM user_typing_profiles").all().map((r) => r.u);
 console.log(`    ${profiled.length} users with a trained profile`);
@@ -95,7 +98,7 @@ let sharedPassages = 0;
 for (const u of profiled) {
   const own = new Set(longTexts(u));
   if (own.size === 0) continue;
-  const negRows = ks.negativeSampleRows(u, db);
+  const negRows = await ks.negativeSampleRows(u, wrapSqlite(db));
   const byUser = new Map();
   for (const row of negRows) {
     if (!byUser.has(row.user_id)) byUser.set(row.user_id, []);
@@ -144,7 +147,7 @@ check("live cutoff is the fixed 0.50", ks.WINDOW_DECISION_THRESHOLD === 0.5);
 check("calibrated threshold is a distinct value (would change verdicts if used)",
   Math.abs(prof.threshold - 0.5) > 0.01, `${prof.threshold}`);
 
-(async () => {
+{
   const scratch = "/tmp/ca_threshold_test.db";
   fs.copyFileSync(DB_PATH, scratch);
   const wdb = new Database(scratch);
@@ -165,7 +168,7 @@ check("calibrated threshold is a distinct value (would change verdicts if used)"
     const row = JSON.parse(wdb.prepare("SELECT model_json FROM user_typing_profiles WHERE user_id=1").get().model_json);
     row.threshold = t;
     wdb.prepare("UPDATE user_typing_profiles SET model_json=? WHERE user_id=1").run(JSON.stringify(row));
-    const r = await ks.evaluateKeystrokes({ events, userId: 1, db: wdb });
+    const r = await ks.evaluateKeystrokes({ events, userId: 1, db: wrapSqlite(wdb) });
     return { suspicious: r.isSuspicious, conf: r.modelConfidence, windows: r.windowCount };
   };
   const lo = await at(0.01);
@@ -181,4 +184,5 @@ check("calibrated threshold is a distinct value (would change verdicts if used)"
 
   console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : failures + " CHECK(S) FAILED"}`);
   process.exit(failures === 0 ? 0 : 1);
-})();
+}
+})().catch((e) => { console.error(e); process.exit(1); });

@@ -43,8 +43,11 @@ const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-study-e2e-"));
 let failures = 0;
 const check = (name, ok, detail) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${name}${detail ? " — " + detail : ""}`); if (!ok) failures++; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const caNode = (code, dbWrite = false) => execFileSync("docker", ["exec", "-w", "/app", CA, "node", "-e",
-  `const db=require('better-sqlite3')('/app/ca.db'${dbWrite ? "" : ",{readonly:true}"});${code}`], { encoding: "utf8", maxBuffer: 1 << 28 });
+// Runs `code` (it may await) in the ca-service container with `db` = the service's own data layer (db.js), so
+// the test reads and writes whichever store the service uses: its SQLite file or its PostgreSQL database.
+const caNode = (code) => execFileSync("docker", ["exec", "-w", "/app", CA, "node", "-e",
+  `const db=require('/app/db');(async()=>{${code}})().then(()=>db.close(),(e)=>{console.error(e);process.exitCode=1;return db.close();})`],
+  { encoding: "utf8", maxBuffer: 1 << 28 });
 const caScript = (...args) => { try { return { code: 0, out: execFileSync("docker", ["exec", "-w", "/app", CA, "node", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) }; }
   catch (e) { return { code: e.status, out: (e.stdout || "") + (e.stderr || "") }; } };
 
@@ -67,8 +70,9 @@ async function gw(p, body, method = "POST") {
 }
 
 // ---------- test data ----------
-const textsOf = (uid) => JSON.parse(caNode(`const ids=db.prepare('SELECT id FROM keystroke_texts WHERE user_id=? AND is_training=1 ORDER BY id').all(${uid});
-  console.log(JSON.stringify(ids.map(r=>db.prepare('SELECT key_code k, event_type e, timestamp_relative t FROM keystroke_events WHERE keystroke_text_id=? ORDER BY timestamp_relative').all(r.id))))`));
+const textsOf = (uid) => JSON.parse(caNode(`const ids=await db.all('SELECT id FROM keystroke_texts WHERE user_id=? AND is_training=1 ORDER BY id', ${uid});
+  const out=[];for(const r of ids)out.push(await db.all('SELECT key_code k, event_type e, timestamp_relative t FROM keystroke_events WHERE keystroke_text_id=? ORDER BY timestamp_relative, id', r.id));
+  console.log(JSON.stringify(out))`));
 const genuineTexts = textsOf(KS_GENUINE), impostorTexts = textsOf(KS_IMPOSTOR);
 const printable = (k) => k === 32 || (k >= 48 && k <= 57) || (k >= 65 && k <= 90) || (k >= 96 && k <= 111) || (k >= 186 && k <= 192) || (k >= 219 && k <= 222);
 const sapi = (u, s) => fs.readFileSync(path.join(ROOT, "data", "sapimouse", u, s), "utf8").trim().split(/\r?\n/).slice(1)
@@ -256,7 +260,7 @@ try {
   await typeReplay(page, genuineTexts.slice(10, 14));
   await sleep(4000);
   const genLocked = await locked();
-  const gen = JSON.parse(caNode(`console.log(JSON.stringify(db.prepare("SELECT channel, verdict, COUNT(*) n FROM study_decisions WHERE user_id=? AND condition='genuine' GROUP BY channel, verdict").all(${userId})))`));
+  const gen = JSON.parse(caNode(`console.log(JSON.stringify(await db.all("SELECT channel, verdict, COUNT(*) n FROM study_decisions WHERE user_id=? AND condition='genuine' GROUP BY channel, verdict", ${userId})))`));
   console.log(`    genuine session (${((Date.now() - tg) / 1000).toFixed(0)} s): ${JSON.stringify(gen)}; locked: ${genLocked}`);
   check("genuine typing is scored by the server and logged, with verdicts past warm-up", gen.some((r) => r.channel === "keystroke" && r.verdict !== "warmup"));
   check("genuine movement is scored by the server and logged", gen.some((r) => r.channel === "mouse" && r.verdict !== "warmup"));
@@ -296,8 +300,8 @@ try {
   await sleep(2000);
 
   // ---- 4. privacy: the participant's pause, and password fields ----
-  const decisionCount = () => Number(caNode(`console.log(db.prepare('SELECT COUNT(*) n FROM study_decisions WHERE user_id=?').get(${userId}).n)`).trim());
-  const maxDecision = () => Number(caNode(`console.log(db.prepare('SELECT COALESCE(MAX(id),0) m FROM study_decisions WHERE user_id=?').get(${userId}).m)`).trim());
+  const decisionCount = () => Number(caNode(`console.log((await db.get('SELECT COUNT(*) n FROM study_decisions WHERE user_id=?', ${userId})).n)`).trim());
+  const maxDecision = () => Number(caNode(`console.log((await db.get('SELECT COALESCE(MAX(id),0) m FROM study_decisions WHERE user_id=?', ${userId})).m)`).trim());
   await setStudy("genuine");
   await setPaused(true);
   await sleep(800);
@@ -317,7 +321,7 @@ try {
   await evaluate(page, "document.getElementById('t').focus(); true");
   await typeReplay(page, genuineTexts.slice(17, 19), locked);
   await sleep(4000);
-  const after = JSON.parse(caNode(`console.log(JSON.stringify(db.prepare("SELECT w.window_key k FROM study_windows w JOIN study_decisions d ON d.id=w.decision_id WHERE d.user_id=? AND d.id>? AND d.channel='keystroke'").all(${userId}, ${lastBefore}).map(r=>r.k)))`));
+  const after = JSON.parse(caNode(`console.log(JSON.stringify((await db.all("SELECT w.window_key k FROM study_windows w JOIN study_decisions d ON d.id=w.decision_id WHERE d.user_id=? AND d.id>? AND d.channel='keystroke'", ${userId}, ${lastBefore})).map(r=>r.k)))`));
   const earliest = Math.min(...after.map((k) => Number(k.split("-")[0])));
   check("after resume, checks resume, and every scored window starts after the resume", after.length > 0 && earliest >= resumedAt - 1500,
     `${after.length} window(s), earliest start ${earliest.toFixed(0)} ms vs resume at ${resumedAt.toFixed(0)} ms (page clock)`);
@@ -367,10 +371,10 @@ try {
       }
     }
     // a server lock left by an interrupted run would outlive the test user's reset
-    if (userId) caNode(`db.prepare('DELETE FROM session_locks WHERE user_id=?').run(${userId}); console.log('lock cleared')`, true);
+    if (userId) caNode(`await db.run('DELETE FROM session_locks WHERE user_id=?', ${userId}); console.log('lock cleared')`);
     // the test passkey, cleared from inside the gateway container (its service key stays there)
     if (userId) execFileSync("docker", ["exec", GW_CONTAINER, "node", "-e", `fetch(process.env.PASSKEY_API_URL+'/v1/users/${userId}/reset',{method:'POST',headers:{'X-Api-Key':process.env.PASSKEY_API_KEY||''}}).then(r=>console.log('passkey reset',r.status))`], { encoding: "utf8" });
-    if (userId) caNode(`for (const t of ['study_windows','study_decisions','study_prompts','study_profiles','study_participants']) db.prepare('DELETE FROM '+t+' WHERE user_id=?').run(${userId}); console.log('cleaned')`, true);
+    if (userId) caNode(`for (const t of ['study_windows','study_decisions','study_prompts','study_profiles','study_participants']) await db.run('DELETE FROM '+t+' WHERE user_id=?', ${userId}); console.log('cleaned')`);
     caScript("-e", "require('fs').rmSync('/tmp/e2e_study_export',{recursive:true,force:true})");
   } catch (e) { console.log("  cleanup: " + e.message); }
   try { ws.close(); } catch {}

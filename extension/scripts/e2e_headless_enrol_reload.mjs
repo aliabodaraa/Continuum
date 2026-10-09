@@ -129,7 +129,8 @@ try {
   try {
     if (token) for (const p of ["/v1/sdk/keystroke/reset", "/v1/sdk/mouse/reset"]) await gw(p);
     if (userId) execFileSync("docker", ["exec", GW_CONTAINER, "node", "-e", `fetch(process.env.PASSKEY_API_URL+'/v1/users/${userId}/reset',{method:'POST',headers:{'X-Api-Key':process.env.PASSKEY_API_KEY}}).then(r=>console.log('passkey reset',r.status))`], { encoding: "utf8" });
-    if (userId) execFileSync("docker", ["exec", "-w", "/app", CA, "node", "-e", `const db=require('better-sqlite3')('/app/ca.db');db.prepare('DELETE FROM session_locks WHERE user_id=?').run(${userId});`]);
+    // through the service's own data layer, so it reaches whichever store the service uses (SQLite or PostgreSQL)
+    if (userId) execFileSync("docker", ["exec", "-w", "/app", CA, "node", "-e", `const db=require('/app/db');db.run('DELETE FROM session_locks WHERE user_id=?', ${userId}).finally(()=>db.close());`]);
     console.log("  cleanup done");
   } catch (e) { console.log("  cleanup: " + e.message); }
   ws.close(); chrome.kill(); await sleep(400); try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}

@@ -24,7 +24,7 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 async function waitTrained(timeoutMs = 600000) {
   const t0 = Date.now();
   for (;;) {
-    const st = mouse.mouseStatus(TEST_USER);
+    const st = await mouse.mouseStatus(TEST_USER);
     const secs = Math.round((Date.now() - t0) / 1000);
     if (st.enrolled || st.trainingError || !st.training) return { st, secs };
     if (Date.now() - t0 > timeoutMs) return { st, secs, timedOut: true };
@@ -36,11 +36,11 @@ let raw = "";
 process.stdin.on("data", (c) => { raw += c; });
 process.stdin.on("end", async () => {
   const d = JSON.parse(raw);
-  mouse.resetMouseProfile(TEST_USER);
-  db.prepare("DELETE FROM training_jobs WHERE user_id = ? AND modality = 'mouse'").run(TEST_USER);
+  await mouse.resetMouseProfile(TEST_USER);
+  await db.run("DELETE FROM training_jobs WHERE user_id = ? AND modality = 'mouse'", TEST_USER);
   try {
     let r = await mouse.enrollMouse(TEST_USER, d.enrolA.slice(0, 40));
-    check("session below 55 windows is refused, nothing stored", r.status === 422 && mouse.mouseStatus(TEST_USER).sessions === 0, `${r.status}`);
+    check("session below 55 windows is refused, nothing stored", r.status === 422 && (await mouse.mouseStatus(TEST_USER)).sessions === 0, `${r.status}`);
 
     const uniform = Array.from({ length: 80 }, () => Array.from({ length: 50 }, () => [6, 6]));
     r = await mouse.enrollMouse(TEST_USER, uniform);
@@ -52,7 +52,7 @@ process.stdin.on("end", async () => {
 
     r = await mouse.enrollMouse(TEST_USER, d.enrolA);
     check("first real session (200 windows) is stored, no model yet", r.status === 202 && r.body.trained === false && !r.body.training && r.body.totalWindows === 200, `${r.status} ${r.body.message}`);
-    const st0 = mouse.mouseStatus(TEST_USER);
+    const st0 = await mouse.mouseStatus(TEST_USER);
     check("status reports enrolment in samples (3 of 8 after 200 windows)", st0.samplesOnFile === 3 && st0.samplesRequired === 8 && st0.sampleWindows === 55 && !st0.enrolled && !st0.training, JSON.stringify({ on: st0.samplesOnFile, req: st0.samplesRequired }));
 
     r = await mouse.enrollMouse(TEST_USER, d.enrolB);
@@ -60,12 +60,12 @@ process.stdin.on("end", async () => {
 
     r = await mouse.enrollMouse(TEST_USER, d.enrolC);
     check("the session reaching 440 queues training instead of training in the request", r.status === 202 && r.body.training === true && r.body.trained === false && !!r.body.jobId, `${r.status} ${r.body.message}`);
-    const job = db.prepare("SELECT state, reason FROM training_jobs WHERE id = ?").get(r.body.jobId);
+    const job = await db.get("SELECT state, reason FROM training_jobs WHERE id = ?", r.body.jobId);
     check("the job is recorded durably in training_jobs", !!job && ["queued", "running"].includes(job.state) && job.reason === "enrol", JSON.stringify(job));
 
     let w = await waitTrained();
     check(`the ca-service worker trains the profile (${mouse.MOUSE_DECISION_VERSION}: 8 leave-one-sample-out folds + the final head)`, w.st.enrolled, `${w.secs} s${w.timedOut ? " (timed out)" : ""}${w.st.trainingError ? " error: " + w.st.trainingError : ""}`);
-    const prof = db.prepare("SELECT threshold, sample_windows, loso_percentiles, enrol_percentiles, decision_version, feature_version FROM mouse_profiles WHERE user_id = ?").get(TEST_USER) || {};
+    const prof = (await db.get("SELECT threshold, sample_windows, loso_percentiles, enrol_percentiles, decision_version, feature_version FROM mouse_profiles WHERE user_id = ?", TEST_USER)) || {};
     const loso = JSON.parse(prof.loso_percentiles || "{}");
     const insample = JSON.parse(prof.enrol_percentiles || "{}");
     check("threshold = 20th percentile of the leave-one-sample-out scores; both tables stored",
@@ -77,7 +77,7 @@ process.stdin.on("end", async () => {
 
     r = await mouse.checkMouse(TEST_USER, d.genuine);
     check("genuine check returns a verdict with the 33-of-60 rule", r.status === 200 && r.body.checked && !r.body.warmup && r.body.bufferMax === 60 && r.body.lockAt === 33, `low ${r.body.lowWindows}/60, suspicious ${r.body.isSuspicious}`);
-    check("every scored check is written to the decision log", db.prepare("SELECT COUNT(*) AS n FROM mouse_decisions WHERE user_id = ? AND vote_k = 33").get(TEST_USER).n === 1);
+    check("every scored check is written to the decision log", (await db.get("SELECT COUNT(*) AS n FROM mouse_decisions WHERE user_id = ? AND vote_k = 33", TEST_USER)).n === 1);
     const gLow = r.body.lowWindows;
     r = await mouse.checkMouse(TEST_USER, d.impostor);
     const iLow = r.body.lowWindows;
@@ -85,13 +85,13 @@ process.stdin.on("end", async () => {
     check("impostor windows score lower than the genuine user's", iLow > gLow, `${iLow} vs ${gLow}`);
 
     // A profile from an earlier decision rule (what every S1 profile is after the F2 upgrade).
-    db.prepare("UPDATE mouse_profiles SET decision_version = NULL WHERE user_id = ?").run(TEST_USER);
+    await db.run("UPDATE mouse_profiles SET decision_version = NULL WHERE user_id = ?", TEST_USER);
     r = await mouse.checkMouse(TEST_USER, d.genuine);
     check("a profile from an earlier decision rule is not scored, and its rebuild is queued", r.status === 422 && r.body.retrain === true && r.body.training === true && r.body.enrolled === false, `${r.status} ${r.body.error}`);
-    const st1 = mouse.mouseStatus(TEST_USER);
+    const st1 = await mouse.mouseStatus(TEST_USER);
     check("status reports it as rebuilding, not enrolled", !st1.enrolled && st1.training && st1.needsRetrain, JSON.stringify({ enrolled: st1.enrolled, training: st1.training }));
     w = await waitTrained();
-    const again = db.prepare("SELECT threshold, decision_version FROM mouse_profiles WHERE user_id = ?").get(TEST_USER) || {};
+    const again = (await db.get("SELECT threshold, decision_version FROM mouse_profiles WHERE user_id = ?", TEST_USER)) || {};
     check("the rebuild restores a current profile", w.st.enrolled && again.decision_version === mouse.MOUSE_DECISION_VERSION, `${w.secs} s`);
     check("training is deterministic: the rebuild reproduces the same threshold",
       Number.isFinite(again.threshold) && again.threshold === prof.threshold, `${again.threshold} vs ${prof.threshold}`);
@@ -99,12 +99,13 @@ process.stdin.on("end", async () => {
     r = await mouse.checkMouse(TEST_USER, seven.slice(0, 20));
     check("live check refuses 7-column windows", r.status === 400, `${r.status}`);
   } finally {
-    const gone = mouse.resetMouseProfile(TEST_USER);
-    db.prepare("DELETE FROM mouse_profiles WHERE user_id = ?").run(TEST_USER);
-    db.prepare("DELETE FROM mouse_decisions WHERE user_id = ?").run(TEST_USER);
-    db.prepare("DELETE FROM training_jobs WHERE user_id = ? AND modality = 'mouse' AND state NOT IN ('queued', 'running')").run(TEST_USER);
+    const gone = await mouse.resetMouseProfile(TEST_USER);
+    await db.run("DELETE FROM mouse_profiles WHERE user_id = ?", TEST_USER);
+    await db.run("DELETE FROM mouse_decisions WHERE user_id = ?", TEST_USER);
+    await db.run("DELETE FROM training_jobs WHERE user_id = ? AND modality = 'mouse' AND state NOT IN ('queued', 'running')", TEST_USER);
     console.log(`  cleanup: removed ${gone.removedSessions} test sessions, the test profile and its finished jobs`);
   }
   console.log(`\n${failures === 0 ? "ALL MOUSE CHECKS PASSED" : failures + " CHECK(S) FAILED"}`);
+  await db.close();
   process.exit(failures === 0 ? 0 : 1);
 });

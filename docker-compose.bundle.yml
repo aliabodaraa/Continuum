@@ -66,6 +66,9 @@ services:
       MODEL_INFER_TIMEOUT_MS: ${MODEL_INFER_TIMEOUT_MS:-5000}
       MODEL_TRAIN_TIMEOUT_MS: ${MODEL_TRAIN_TIMEOUT_MS:-600000}
       DB_PATH: /app/data/ca.db
+      # sqlite = the file above; postgres = its own database (DATABASE_URL); see .env.example.
+      STORAGE: ${CA_STORAGE:-sqlite}
+      DATABASE_URL: ${CA_DATABASE_URL:-}
       LOG_FORMAT: ${LOG_FORMAT:-}   # json = one JSON object per log line (for a log collector)
       CA_API_KEY: ${CA_API_KEY:-}
       # Signs the risk verdicts; the host's @continuum/node uses the SAME value.

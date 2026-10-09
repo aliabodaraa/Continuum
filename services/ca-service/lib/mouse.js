@@ -137,16 +137,12 @@ async function enrollMouse(userId, windows) {
     };
   }
 
-  db.prepare(
+  await db.run(
     "INSERT INTO mouse_samples (user_id, windows, window_count) VALUES (?, ?, ?)",
-  ).run(userId, JSON.stringify(windows), windows.length);
+    userId, JSON.stringify(windows), windows.length);
 
-  const total = db
-    .prepare("SELECT COALESCE(SUM(window_count), 0) AS n FROM mouse_samples WHERE user_id = ?")
-    .get(userId).n;
-  const rows = db
-    .prepare("SELECT windows FROM mouse_samples WHERE user_id = ? ORDER BY id DESC")
-    .all(userId);
+  const total = (await db.get("SELECT COALESCE(SUM(window_count), 0) AS n FROM mouse_samples WHERE user_id = ?", userId)).n;
+  const rows = await db.all("SELECT windows FROM mouse_samples WHERE user_id = ? ORDER BY id DESC", userId);
   const sessionCount = rows.length;
   if (total < MIN_ENROLL_WINDOWS) {
     // Stored and counted, but not enough yet for a model that meets the measured plateau.
@@ -173,8 +169,8 @@ async function enrollMouse(userId, windows) {
   // request. F2 embeds the windows once and fits nine logistic heads (8 folds + the final one) in
   // seconds; S1's nine networks took 145-158 s. Clients poll /status, which reports `training` until
   // the profile is stored.
-  const wasEnrolled = mouseEnrolled(userId);
-  const job = trainingQueue.enqueue(userId, "mouse", wasEnrolled ? "extra-sample" : "enrol");
+  const wasEnrolled = await mouseEnrolled(userId);
+  const job = await trainingQueue.enqueue(userId, "mouse", wasEnrolled ? "extra-sample" : "enrol");
   return {
     status: 202,
     body: {
@@ -201,9 +197,7 @@ async function enrollMouse(userId, windows) {
 // and the one-off migration of profiles built on the retired representation
 // (scripts/migrate_mouse_a5.js), so every path goes through the same code.
 async function retrainMouse(userId, extra = {}) {
-  const rows = db
-    .prepare("SELECT id, windows, window_count FROM mouse_samples WHERE user_id = ? ORDER BY id DESC")
-    .all(userId);
+  const rows = await db.all("SELECT id, windows, window_count FROM mouse_samples WHERE user_id = ? ORDER BY id DESC", userId);
   const total = rows.reduce((a, r) => a + r.window_count, 0);
   if (total < MIN_ENROLL_WINDOWS) {
     return { status: 409, body: { ok: false, error: `only ${total} of ${MIN_ENROLL_WINDOWS} windows stored`, totalWindows: total } };
@@ -245,16 +239,15 @@ async function retrainMouse(userId, extra = {}) {
   }
   // A reset during training deletes the samples this model was built from. Storing the profile
   // then would bring back an enrolment the user asked to discard.
-  const stillThere = db
-    .prepare(`SELECT COUNT(*) AS n FROM mouse_samples WHERE user_id = ? AND id IN (${usedIds.map(() => "?").join(",")})`)
-    .get(userId, ...usedIds).n;
+  const stillThere = (await db.get(`SELECT COUNT(*) AS n FROM mouse_samples WHERE user_id = ? AND id IN (${usedIds.map(() => "?").join(",")})`,
+    userId, ...usedIds)).n;
   if (stillThere !== usedIds.length) {
     return { status: 409, body: { ok: false, error: "mouse samples changed during training (reset); profile not stored" } };
   }
 
   // Both percentile tables are kept with the profile (out-of-sample, which the threshold uses, and
   // the in-sample one it replaced), so an operating-point change needs no retraining.
-  db.prepare(
+  await db.run(
     `INSERT INTO mouse_profiles (user_id, model_path, sample_windows, balanced_accuracy, threshold, feature_version,
        enrol_percentiles, loso_percentiles, decision_version, trained_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -264,11 +257,11 @@ async function retrainMouse(userId, extra = {}) {
        feature_version=excluded.feature_version, enrol_percentiles=excluded.enrol_percentiles,
        loso_percentiles=excluded.loso_percentiles, decision_version=excluded.decision_version,
        trained_at=CURRENT_TIMESTAMP`,
-  ).run(userId, result.modelPath, positiveWindows.length, result.balancedAccuracy ?? null,
-        threshold, MOUSE_FEATURE_VERSION, JSON.stringify(result.enrolScorePercentiles || {}),
-        JSON.stringify(loso), MOUSE_DECISION_VERSION);
+    userId, result.modelPath, positiveWindows.length, result.balancedAccuracy ?? null,
+    threshold, MOUSE_FEATURE_VERSION, JSON.stringify(result.enrolScorePercentiles || {}),
+    JSON.stringify(loso), MOUSE_DECISION_VERSION);
   // User study: all 440 leave-one-sample-out scores, the source of the threshold.
-  studyLog.recordProfile(userId, {
+  await studyLog.recordProfile(userId, {
     channel: "mouse", ruleVersion: MOUSE_DECISION_VERSION, threshold,
     thresholdSource: `loso-p${THRESHOLD_PERCENTILE}`, modelPath: result.modelPath,
     windowCount: positiveWindows.length, thresholdScores: result.losoScores,
@@ -295,9 +288,9 @@ async function retrainMouse(userId, extra = {}) {
 // A user with enough samples but no current profile is owed a model: an enrolment whose job was
 // lost, or a profile trained under an earlier decision rule. Record that (enqueue is idempotent)
 // unless the last attempt failed: that needs a person, and retrying on every status poll would spin.
-function ensureModelOwed(userId, totalWindows, current) {
+async function ensureModelOwed(userId, totalWindows, current) {
   if (current || totalWindows < MIN_ENROLL_WINDOWS) return null;
-  const { pending, jobs } = trainingQueue.statusFor(userId, "mouse");
+  const { pending, jobs } = await trainingQueue.statusFor(userId, "mouse");
   if (pending) return pending;
   if (jobs.length && jobs[0].state === "failed") return null;
   return trainingQueue.enqueue(userId, "mouse", "owed");
@@ -312,9 +305,7 @@ async function checkMouse(userId, windows, study = null) {
   if (!validWindows(windows)) {
     return { status: 200, body: { ok: true, checked: false, message: "Need more mouse movement." } };
   }
-  const profile = db
-    .prepare("SELECT model_path, threshold, feature_version, decision_version FROM mouse_profiles WHERE user_id = ?")
-    .get(userId);
+  const profile = await db.get("SELECT model_path, threshold, feature_version, decision_version FROM mouse_profiles WHERE user_id = ?", userId);
   if (!profile) {
     return { status: 422, body: { ok: false, error: "No mouse model — enroll first.", enrolled: false } };
   }
@@ -325,8 +316,8 @@ async function checkMouse(userId, windows, study = null) {
   if (profile.decision_version !== MOUSE_DECISION_VERSION) {
     // Trained under an earlier decision rule: its threshold does not belong with this vote. The
     // stored samples are enough to rebuild it, so the rebuild is queued rather than asked for.
-    const total = db.prepare("SELECT COALESCE(SUM(window_count), 0) AS n FROM mouse_samples WHERE user_id = ?").get(userId).n;
-    const owed = ensureModelOwed(userId, total, false);
+    const total = (await db.get("SELECT COALESCE(SUM(window_count), 0) AS n FROM mouse_samples WHERE user_id = ?", userId)).n;
+    const owed = await ensureModelOwed(userId, total, false);
     return {
       status: 422,
       body: { ok: false, enrolled: false, retrain: true, training: !!owed,
@@ -366,19 +357,19 @@ async function checkMouse(userId, windows, study = null) {
   // mid-escalation and the two callers could disagree about the same user. Callers still
   // own their strike THRESHOLD (gateway and demo both 1, the measured operating point); they no
   // longer own the count. Warm-up packets carry no verdict and neither raise nor clear it.
-  const suspiciousStreak = decisionState.updateMouseStreak(userId, { isSuspicious, warmup: isWarmup });
+  const suspiciousStreak = await decisionState.updateMouseStreak(userId, { isSuspicious, warmup: isWarmup });
   // Every scored check is logged, so a user's report ("it keeps asking me") can be checked against
   // what the model actually saw: scores, threshold, how many were low, and the verdict.
   try {
-    db.prepare(
+    await db.run(
       `INSERT INTO mouse_decisions (user_id, window_count, threshold, low_windows, vote_k, vote_n, warmup, suspicious, scores)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(userId, scores.length, userThreshold, lows, VOTE_K, VOTE_N, isWarmup ? 1 : 0, isSuspicious ? 1 : 0,
-          JSON.stringify(scores));   // full precision: EER/AUC are computed from these offline
+      userId, scores.length, userThreshold, lows, VOTE_K, VOTE_N, isWarmup ? 1 : 0, isSuspicious ? 1 : 0,
+      JSON.stringify(scores));   // full precision: EER/AUC are computed from these offline
   } catch (e) { /* logging must never block a verdict */ }
   // User study (lib/studyLog.js; a no-op outside it). The client numbers its windows per session.
   const studyCtx = studyLog.parseContext(study);
-  const studyDecisionId = studyCtx ? studyLog.recordCheck(userId, studyCtx, {
+  const studyDecisionId = studyCtx ? await studyLog.recordCheck(userId, studyCtx, {
     channel: "mouse", ruleVersion: MOUSE_DECISION_VERSION, threshold: userThreshold,
     scores: buffer, keys: Array.isArray(study.windowKeys) ? study.windowKeys.slice(-MOUSE_SUSTAIN_WINDOW).slice(-buffer.length) : null,
     lowWindows: lows, verdict: isWarmup ? "warmup" : isSuspicious ? "suspicious" : "ok", promptRequired: false,
@@ -411,20 +402,16 @@ async function checkMouse(userId, windows, study = null) {
   };
 }
 
-function mouseStatus(userId) {
-  const row = db
-    .prepare("SELECT sample_windows, balanced_accuracy, threshold, feature_version, decision_version, trained_at FROM mouse_profiles WHERE user_id = ?")
-    .get(userId);
-  const agg = db
-    .prepare("SELECT COUNT(*) AS sessions, COALESCE(SUM(window_count),0) AS totalWindows FROM mouse_samples WHERE user_id = ?")
-    .get(userId);
+async function mouseStatus(userId) {
+  const row = await db.get("SELECT sample_windows, balanced_accuracy, threshold, feature_version, decision_version, trained_at FROM mouse_profiles WHERE user_id = ?", userId);
+  const agg = await db.get("SELECT COUNT(*) AS sessions, COALESCE(SUM(window_count),0) AS totalWindows FROM mouse_samples WHERE user_id = ?", userId);
   const current = !!row && row.feature_version === MOUSE_FEATURE_VERSION && row.decision_version === MOUSE_DECISION_VERSION;
   const totalWindows = agg ? agg.totalWindows : 0;
   // Training runs from the queue, so a client that has sent the last sample polls here: `training`
   // while a job is queued or running, `enrolled` once the profile is stored, `trainingError` if the
   // last job failed without leaving a current profile.
-  const owed = ensureModelOwed(userId, totalWindows, current);
-  const { pending, jobs } = trainingQueue.statusFor(userId, "mouse");
+  const owed = await ensureModelOwed(userId, totalWindows, current);
+  const { pending, jobs } = await trainingQueue.statusFor(userId, "mouse");
   const failed = !current && !pending && jobs.length && jobs[0].state === "failed" ? jobs[0].last_error || "training failed" : null;
   return {
     enrolled: current,
@@ -447,10 +434,9 @@ function mouseStatus(userId) {
   };
 }
 
-function mouseEnrolled(userId) {
-  return !!db
-    .prepare("SELECT 1 FROM mouse_profiles WHERE user_id = ? AND feature_version = ? AND decision_version = ?")
-    .get(userId, MOUSE_FEATURE_VERSION, MOUSE_DECISION_VERSION);
+async function mouseEnrolled(userId) {
+  return !!(await db.get("SELECT 1 FROM mouse_profiles WHERE user_id = ? AND feature_version = ? AND decision_version = ?",
+    userId, MOUSE_FEATURE_VERSION, MOUSE_DECISION_VERSION));
 }
 
 // Delete this user's mouse enrollment: the trained profile AND the raw sessions it was built
@@ -458,16 +444,14 @@ function mouseEnrolled(userId) {
 // the user asked to discard. Mirrors ks.resetUserTypingProfile. Destructive and irreversible,
 // which is why the caller gates it behind a completed passkey verification.
 // Scoped strictly to one user_id — another account's data is never touched.
-function resetMouseProfile(userId) {
-  const before = db
-    .prepare("SELECT COUNT(*) AS n FROM mouse_samples WHERE user_id = ?")
-    .get(userId);
-  db.prepare("DELETE FROM mouse_profiles WHERE user_id = ?").run(userId);
-  db.prepare("DELETE FROM mouse_samples WHERE user_id = ?").run(userId);
+async function resetMouseProfile(userId) {
+  const before = await db.get("SELECT COUNT(*) AS n FROM mouse_samples WHERE user_id = ?", userId);
+  await db.run("DELETE FROM mouse_profiles WHERE user_id = ?", userId);
+  await db.run("DELETE FROM mouse_samples WHERE user_id = ?", userId);
   // The streak counted strikes against a model that no longer exists. Leaving it would
   // carry stale evidence into the next enrollment and could step the user up on their
   // first packet after re-enrolling.
-  decisionState.resetMouseStreak(userId);
+  await decisionState.resetMouseStreak(userId);
   return { removedSessions: before ? before.n : 0 };
 }
 

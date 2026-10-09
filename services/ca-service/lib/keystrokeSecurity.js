@@ -440,15 +440,16 @@ function typingQuality(textContent, events, knownLength = null) {
   };
 }
 
-function getSampleEvents(textId, db) {
-  return db
-    .prepare(
+// Ties (equal timestamps, about a third of the samples have some) are broken by id, the order the
+// events were stored in. SQLite already returned them in that order; saying so makes PostgreSQL return
+// the same windows (checked on the real data: no sample's result changes).
+async function getSampleEvents(textId, db) {
+  return (await db.all(
       `SELECT key_code, event_type, timestamp_relative, field_name, field_type
        FROM keystroke_events
        WHERE keystroke_text_id = ?
-       ORDER BY timestamp_relative ASC`,
-    )
-    .all(textId)
+       ORDER BY timestamp_relative ASC, id ASC`,
+      textId))
     .map((row) => ({
       keyCode: row.key_code,
       eventType: row.event_type,
@@ -458,24 +459,23 @@ function getSampleEvents(textId, db) {
     }));
 }
 
-function getTrainingSampleRows(userId, db) {
+async function getTrainingSampleRows(userId, db) {
   // Uses ALL training samples (enrollment + adaptive), newest first. We tested
   // capping the adaptive share to 2× enrollment to counter template narrowing,
   // but a held-out validation (80 genuine activity windows) showed the capped
   // model scored WORSE (mean 0.74 vs 0.92, 21 vs 3 windows below 0.5): the cap
   // starves the positive class and over-weights months-old enrollment typing.
   // More genuine data — even if skewed clean — beats less-but-balanced here.
-  return db
-    .prepare(
+  // Samples stored in the same second are ordered by id, as SQLite already did.
+  return db.all(
       `SELECT id
        FROM keystroke_texts
        WHERE user_id = ?
          AND is_training = 1
          AND is_suspicious = 0
-       ORDER BY submitted_at DESC
+       ORDER BY submitted_at DESC, id ASC
        LIMIT ?`,
-    )
-    .all(userId, MAX_TRAINING_SAMPLES);
+      userId, MAX_TRAINING_SAMPLES);
 }
 
 // Windows slide with an 80% overlap, so two windows from the SAME sample share
@@ -483,12 +483,12 @@ function getTrainingSampleRows(userId, db) {
 // from, or its train/validation split puts near-duplicates on both sides and
 // every validation figure — including the calibrated threshold — is measured
 // against data the model already saw. So carry the sample id alongside.
-function getTrainingWindowsGrouped(userId, db) {
-  const rows = getTrainingSampleRows(userId, db);
+async function getTrainingWindowsGrouped(userId, db) {
+  const rows = await getTrainingSampleRows(userId, db);
   const windows = [];
   const groups = [];
   for (const row of rows) {
-    for (const w of eventsToFeatureWindows(getSampleEvents(row.id, db))) {
+    for (const w of eventsToFeatureWindows(await getSampleEvents(row.id, db))) {
       windows.push(w);
       groups.push(row.id);
     }
@@ -496,8 +496,8 @@ function getTrainingWindowsGrouped(userId, db) {
   return { windows, groups };
 }
 
-function getTrainingWindows(userId, db) {
-  return getTrainingWindowsGrouped(userId, db).windows;
+async function getTrainingWindows(userId, db) {
+  return (await getTrainingWindowsGrouped(userId, db)).windows;
 }
 
 // A user may exist under more than one id — a demo account id and a hashed CA
@@ -513,30 +513,24 @@ function getTrainingWindows(userId, db) {
 const ALIAS_TEXT_OVERLAP = 0.5;   // >50% of a candidate's own texts are the target's
 const ALIAS_MIN_TEXTS = 4;        // below this, overlap is not evidence either way
 
-function aliasUserIds(userId, db) {
+async function aliasUserIds(userId, db) {
   const own = new Set(
-    db
-      .prepare(
+    (await db.all(
         "SELECT DISTINCT text_hash t FROM keystroke_texts WHERE user_id = ? AND text_hash IS NOT NULL AND char_count > 40",
-      )
-      .all(userId)
+        userId))
       .map((r) => r.t),
   );
   if (own.size === 0) return new Set();
-  const candidates = db
-    .prepare(
+  const candidates = (await db.all(
       `SELECT DISTINCT user_id u FROM keystroke_texts
        WHERE user_id <> ? AND is_training = 1 AND is_suspicious = 0`,
-    )
-    .all(userId)
+      userId))
     .map((r) => r.u);
   const aliases = new Set();
   for (const u of candidates) {
-    const texts = db
-      .prepare(
+    const texts = (await db.all(
         "SELECT DISTINCT text_hash t FROM keystroke_texts WHERE user_id = ? AND text_hash IS NOT NULL AND char_count > 40",
-      )
-      .all(u)
+        u))
       .map((r) => r.t);
     if (texts.length < ALIAS_MIN_TEXTS) continue;
     const shared = texts.filter((t) => own.has(t)).length;
@@ -553,19 +547,17 @@ function aliasUserIds(userId, db) {
 // THE definition of which samples may serve as negatives for a user. Exported for
 // validation so a test asserts against the shipped selection rather than a copy of
 // the query that could drift away from it.
-function negativeSampleRows(userId, db) {
-  const aliases = aliasUserIds(userId, db);
-  return db
-    .prepare(
+async function negativeSampleRows(userId, db) {
+  const aliases = await aliasUserIds(userId, db);
+  return (await db.all(
       `SELECT id, user_id, text_hash
        FROM keystroke_texts
        WHERE user_id <> ?
          AND is_training = 1
          AND is_suspicious = 0
-       ORDER BY submitted_at DESC
+       ORDER BY submitted_at DESC, id ASC
        LIMIT ?`,
-    )
-    .all(userId, MAX_TRAINING_SAMPLES)
+      userId, MAX_TRAINING_SAMPLES))
     .filter((r) => !aliases.has(r.user_id));
 }
 
@@ -573,8 +565,8 @@ function negativeSampleRows(userId, db) {
 // is retrained once (server.js activity path and the login hook below). This replaces the old
 // pool-growth refresh: negatives no longer come from other app users, so new enrolments do not
 // change what a retrain would learn from.
-function needsNegativesRefresh(userId, db) {
-  const profile = getUserTypingProfile(userId, db);
+async function needsNegativesRefresh(userId, db) {
+  const profile = await getUserTypingProfile(userId, db);
   return isServedProfile(profile) && profile.negatives !== NEGATIVES_SOURCE;
 }
 
@@ -599,33 +591,31 @@ function ruleVersion(packet) {
 }
 const RULE_VERSION = ruleVersion(RECENT_WINDOW_COUNT);
 
-function saveProfile(userId, db, profile) {
-  db.prepare(
+async function saveProfile(userId, db, profile) {
+  await db.run(
     `INSERT INTO user_typing_profiles (user_id, model_json, sample_count, trained_at)
      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
      ON CONFLICT(user_id) DO UPDATE SET
        model_json = excluded.model_json,
        sample_count = excluded.sample_count,
        trained_at = CURRENT_TIMESTAMP`,
-  ).run(userId, JSON.stringify(profile), profile.sampleCount);
+    userId, JSON.stringify(profile), profile.sampleCount);
 }
 
 // Held-out genuine windows for the model-update acceptance test: recent
 // ACTIVITY samples (is_training = 0) were typed by the real user but are never
 // part of the training set, so they measure how a model handles the user's
 // NORMAL typing, not just the clean samples it was fitted on.
-function getHeldOutWindows(userId, db, maxSamples = 12, maxWindows = 120) {
-  const rows = db
-    .prepare(
+async function getHeldOutWindows(userId, db, maxSamples = 12, maxWindows = 120) {
+  const rows = await db.all(
       `SELECT id FROM keystroke_texts
        WHERE user_id = ? AND is_training = 0 AND is_suspicious = 0
          AND sample_purpose = 'activity'
        ORDER BY id DESC LIMIT ?`,
-    )
-    .all(userId, maxSamples);
+      userId, maxSamples);
   let windows = [];
   for (const row of rows) {
-    windows = windows.concat(eventsToFeatureWindows(getSampleEvents(row.id, db)));
+    windows = windows.concat(eventsToFeatureWindows(await getSampleEvents(row.id, db)));
     if (windows.length >= maxWindows) break;
   }
   return windows.slice(0, maxWindows);
@@ -642,14 +632,14 @@ async function scoreWindowsWithModel(userId, windows, modelPath) {
 }
 
 async function trainUserTypingProfile(userId, db) {
-  const sampleCount = getTrainingSampleRows(userId, db).length;
-  const positive = getTrainingWindowsGrouped(userId, db);
+  const sampleCount = (await getTrainingSampleRows(userId, db)).length;
+  const positive = await getTrainingWindowsGrouped(userId, db);
   const positiveWindows = positive.windows;
   if (sampleCount < MIN_TRAINING_SAMPLES || positiveWindows.length < MIN_POSITIVE_WINDOWS) {
     return null;
   }
 
-  const previous = getUserTypingProfile(userId, db);
+  const previous = await getUserTypingProfile(userId, db);
   const result = await postModelApi("/api/user/train", {
     userId,
     positiveWindows,
@@ -702,7 +692,7 @@ async function trainUserTypingProfile(userId, db) {
   }
   try {
     if (result.previousModelPath && !migrating) {
-      const heldOut = getHeldOutWindows(userId, db);
+      const heldOut = await getHeldOutWindows(userId, db);
       if (heldOut.length >= 30) {
         const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
         const lows = (a) => a.filter((v) => v < DEFAULT_CNN_THRESHOLD).length;
@@ -724,8 +714,8 @@ async function trainUserTypingProfile(userId, db) {
           // the UI shows "retraining now" indefinitely, its poll keeps setting
           // _retrainInProgress, and the contribute panel never reappears. The
           // samples themselves stay in the training pool for the next attempt.
-          const existing = getUserTypingProfile(userId, db);
-          if (existing) saveProfile(userId, db, existing);
+          const existing = await getUserTypingProfile(userId, db);
+          if (existing) await saveProfile(userId, db, existing);
           return existing;
         }
       }
@@ -752,10 +742,10 @@ async function trainUserTypingProfile(userId, db) {
     trainedAt: new Date().toISOString(),
   };
 
-  saveProfile(userId, db, profile);
+  await saveProfile(userId, db, profile);
   // User study: the live cutoff is the fixed 0.50, so the threshold-source scores are the per-user
   // validation (held-out genuine) scores model-api computed for this model.
-  studyLog.recordProfile(userId, {
+  await studyLog.recordProfile(userId, {
     channel: "keystroke", ruleVersion: `${RULE_VERSION};${NEGATIVES_SOURCE}`, threshold: WINDOW_DECISION_THRESHOLD,
     thresholdSource: "fixed-0.50; scores = validation genuine", modelPath: result.modelPath,
     windowCount: result.positiveWindowCount, thresholdScores: result.validationGenuineScores,
@@ -763,11 +753,9 @@ async function trainUserTypingProfile(userId, db) {
   return profile;
 }
 
-function getUserTypingProfile(userId, db) {
+async function getUserTypingProfile(userId, db) {
   if (!userId || !db) return null;
-  const row = db
-    .prepare("SELECT model_json, sample_count, trained_at FROM user_typing_profiles WHERE user_id = ?")
-    .get(userId);
+  const row = await db.get("SELECT model_json, sample_count, trained_at FROM user_typing_profiles WHERE user_id = ?", userId);
 
   if (!row) return null;
 
@@ -781,15 +769,15 @@ function getUserTypingProfile(userId, db) {
   }
 }
 
-function resetUserTypingProfile(userId, db) {
+async function resetUserTypingProfile(userId, db) {
   if (!userId || !db) return;
-  db.prepare("DELETE FROM user_typing_profiles WHERE user_id = ?").run(userId);
+  await db.run("DELETE FROM user_typing_profiles WHERE user_id = ?", userId);
 }
 
-function getUserTypingStatus(userId, db) {
-  const sampleCount = getTrainingSampleRows(userId, db).length;
-  const positiveWindowCount = getTrainingWindows(userId, db).length;
-  const profile = getUserTypingProfile(userId, db);
+async function getUserTypingStatus(userId, db) {
+  const sampleCount = (await getTrainingSampleRows(userId, db)).length;
+  const positiveWindowCount = (await getTrainingWindows(userId, db)).length;
+  const profile = await getUserTypingProfile(userId, db);
   const trained =
     !!profile &&
     profile.type === "per-user-cnn-lstm" &&
@@ -812,8 +800,8 @@ function getUserTypingStatus(userId, db) {
   };
 }
 
-function getUserTypingBaseline(userId, db) {
-  const profile = getUserTypingProfile(userId, db);
+async function getUserTypingBaseline(userId, db) {
+  const profile = await getUserTypingProfile(userId, db);
   if (!profile) return null;
   return {
     sampleCount: profile.sampleCount,
@@ -841,7 +829,7 @@ async function evaluateKeystrokes({ events, timings, userId, db, packetWindows }
   // when a stretch of typing is clean enough to offer as an adaptive-learning sample.
   const windows = allWindows.slice(-SCORED_WINDOW_COUNT);
   const windowKeys = allKeys.slice(-SCORED_WINDOW_COUNT);
-  const profile = getUserTypingProfile(userId, db);
+  const profile = await getUserTypingProfile(userId, db);
 
   if (
     !profile ||
@@ -855,7 +843,7 @@ async function evaluateKeystrokes({ events, timings, userId, db, packetWindows }
       modelAvailable: false,
       modelType: "per-user-cnn-lstm",
       metrics,
-      baseline: getUserTypingBaseline(userId, db),
+      baseline: await getUserTypingBaseline(userId, db),
       profile,
       windowCount: allWindows.length,
     };
@@ -878,7 +866,7 @@ async function evaluateKeystrokes({ events, timings, userId, db, packetWindows }
       modelAvailable: true,
       modelType: "per-user-cnn-lstm",
       metrics,
-      baseline: getUserTypingBaseline(userId, db),
+      baseline: await getUserTypingBaseline(userId, db),
       profile,
       windowCount: 0,
     };
@@ -949,7 +937,7 @@ async function evaluateKeystrokes({ events, timings, userId, db, packetWindows }
       modelAvailable: true,
       modelType: "per-user-cnn-lstm",
       metrics,
-      baseline: getUserTypingBaseline(userId, db),
+      baseline: await getUserTypingBaseline(userId, db),
       profile,
       windowCount: allWindows.length,
       recentWindowScores: perWindowScores,
@@ -964,7 +952,7 @@ async function evaluateKeystrokes({ events, timings, userId, db, packetWindows }
       modelAvailable: false,
       modelType: "per-user-cnn-lstm",
       metrics,
-      baseline: getUserTypingBaseline(userId, db),
+      baseline: await getUserTypingBaseline(userId, db),
       profile,
       windowCount: allWindows.length,
       modelError: err.message,
@@ -982,14 +970,13 @@ function verdictFromEvaluation(evaluation) {
   return evaluation.isSuspicious ? "suspicious" : "genuine";
 }
 
-function logAuthDecision(userId, db, { source, evaluation, passkeyTriggered = false, passkeyOutcome = null }) {
+async function logAuthDecision(userId, db, { source, evaluation, passkeyTriggered = false, passkeyOutcome = null }) {
   try {
     const scores = evaluation.recentWindowScores;
-    db.prepare(
+    await db.run(
       `INSERT INTO auth_decisions
          (user_id, source, window_count, mean_score, threshold, verdict, passkey_triggered, passkey_outcome, per_window_scores)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
       userId,
       source,
       evaluation.windowCount != null ? evaluation.windowCount : 0,
@@ -1020,8 +1007,8 @@ const trainingQueue = require("./trainingQueue");
 // the run itself, and the guard that stopped it being started twice — and nothing recorded
 // that the work had been owed. Now it records a row and returns; the worker in
 // lib/trainingQueue.js does the work and re-queues it if the service dies mid-run.
-function maybeRetrainForNewImpostors(userId, db) {
-  if (!needsNegativesRefresh(userId, db)) return null;
+async function maybeRetrainForNewImpostors(userId, db) {
+  if (!(await needsNegativesRefresh(userId, db))) return null;
   return trainingQueue.enqueue(userId, "keystroke", "negatives-refresh");
 }
 

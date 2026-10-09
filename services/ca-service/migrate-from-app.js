@@ -1,8 +1,7 @@
 // One-time migration: copy behavioral data from the demo app's old bundled DB
 // into this CA service's DB, so existing enrollments/models/history survive the
-// split. Run once:  node migrate-from-app.js /path/to/old-app.db
+// split. Run once:  node migrate-from-app.js /path/to/old-app.db   (into the SQLite file: STORAGE=sqlite)
 const Database = require("better-sqlite3");
-const dst = require("./db");
 
 const srcPath = process.argv[2];
 if (!srcPath) {
@@ -26,6 +25,8 @@ function tableExists(dbh, name) {
   return !!dbh.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
 }
 
+(async () => {
+const dst = await require("./db").sqliteHandle();
 for (const [table, cols] of Object.entries(TABLES)) {
   if (!tableExists(src, table)) { console.log(`- ${table}: not in source, skipped`); continue; }
   const rows = src.prepare(`SELECT ${cols.join(",")} FROM ${table}`).all();
@@ -39,3 +40,4 @@ for (const [table, cols] of Object.entries(TABLES)) {
   console.log(`  ${table}: migrated ${many(rows)} / ${rows.length}`);
 }
 console.log("done");
+})().catch((e) => { console.error(e); process.exit(1); });

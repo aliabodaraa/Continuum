@@ -1,0 +1,32 @@
+# Added on top of docker-compose.side-by-side.yml: TWO ca-service copies sharing their PostgreSQL database,
+# behind a balancer that sends each request to the next copy (scripts/dev/round-robin.js). The gateway reaches
+# them through it, so consecutive checks of one user land on different copies, and both copies' training
+# workers poll the same queue: running the end-to-end suites through it proves the escalation state, the
+# locks, the adaptive cycle and the training queue live in the database, not in a process.
+#
+#   docker compose -p continuum-next -f docker-compose.yml -f docker-compose.side-by-side.yml \
+#     -f docker-compose.two-cas.yml --profile model up -d
+services:
+  ca-service:
+    deploy:
+      replicas: 2
+
+  ca-lb:
+    image: node:24-bookworm-slim
+    command: ["node", "/lb/round-robin.js"]
+    environment:
+      UPSTREAM: ca-service:4100
+      PORT: "4100"
+    volumes:
+      - ./scripts/dev/round-robin.js:/lb/round-robin.js:ro
+    networks: [internal]
+    depends_on:
+      ca-service:
+        condition: service_healthy
+
+  gateway:
+    environment:
+      CA_API_URL: http://ca-lb:4100
+    depends_on:
+      ca-lb:
+        condition: service_started

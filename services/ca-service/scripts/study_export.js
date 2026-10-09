@@ -46,14 +46,15 @@ const line = (type, obj) => {
   return JSON.stringify(o);
 };
 
-const participants = db.prepare("SELECT user_id, pseudonym FROM study_participants ORDER BY pseudonym").all();
+(async () => {
+const participants = await db.all("SELECT user_id, pseudonym FROM study_participants ORDER BY pseudonym");
 let maxRescoreDiff = 0;
 let rescoreConflicts = 0;
 const summary = [];
 
 for (const p of participants) {
   const out = [];
-  const profiles = db.prepare("SELECT * FROM study_profiles WHERE user_id = ? ORDER BY id").all(p.user_id);
+  const profiles = await db.all("SELECT * FROM study_profiles WHERE user_id = ? ORDER BY id", p.user_id);
   // The profile in force at a check: the latest one of that channel trained at or before it.
   const profileAt = (channel, checkedAt) => {
     let id = null;
@@ -68,12 +69,11 @@ for (const p of participants) {
     }));
   }
 
-  const decisions = db.prepare("SELECT * FROM study_decisions WHERE user_id = ? ORDER BY id").all(p.user_id);
-  const winStmt = db.prepare("SELECT window_key, score, condition, day_since_enrolment FROM study_windows WHERE decision_id = ? ORDER BY id");
+  const decisions = await db.all("SELECT * FROM study_decisions WHERE user_id = ? ORDER BY id", p.user_id);
   const windows = new Map();   // session|channel|key|profile -> window record
   const decisionLines = [];
   for (const d of decisions) {
-    const rows = winStmt.all(d.id);
+    const rows = await db.all("SELECT window_key, score, condition, day_since_enrolment FROM study_windows WHERE decision_id = ? ORDER BY id", d.id);
     const profileId = profileAt(d.channel, d.checked_at);
     for (const r of rows) {
       const k = `${d.session_id}|${d.channel}|${r.window_key}|${profileId}`;
@@ -98,7 +98,7 @@ for (const p of participants) {
   for (const w of windows.values()) out.push(line("window", w));
   out.push(...decisionLines);
 
-  const prompts = db.prepare("SELECT * FROM study_prompts WHERE user_id = ? ORDER BY id").all(p.user_id);
+  const prompts = await db.all("SELECT * FROM study_prompts WHERE user_id = ? ORDER BY id", p.user_id);
   for (const q of prompts) {
     out.push(line("prompt", { sessionId: q.session_id, channel: q.channel, decisionId: q.decision_id, event: q.event,
       clientTs: q.client_ts, loggedAt: toIso(q.logged_at) }));
@@ -136,3 +136,5 @@ console.log(`re-scored windows: max |diff| ${maxRescoreDiff.toExponential(2)}, $
 console.log(`privacy scan: ${violations} violation(s)`);
 console.log(`wrote ${participants.length} file(s) to ${OUT}`);
 process.exitCode = violations || rescoreConflicts ? 1 : 0;
+await db.close();
+})().catch((e) => { console.error(e); process.exitCode = 1; });

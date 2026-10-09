@@ -6,8 +6,7 @@
 // waiting forever on a socket nobody would answer. Progress is therefore flushed after every
 // account and a watchdog bounds each training call.
 const fs = require("fs");
-const Database = require("better-sqlite3");
-const db = new Database("/app/ca.db");
+const db = require("/app/db.js");
 const ks = require("/app/lib/keystrokeSecurity.js");
 const map = JSON.parse(fs.readFileSync("/app/idmap.json", "utf8"));
 
@@ -19,7 +18,7 @@ const withTimeout = (p, label) =>
   ]);
 
 (async () => {
-  const trained = new Set(db.prepare("SELECT user_id FROM user_typing_profiles").all().map((r) => r.user_id));
+  const trained = new Set((await db.all("SELECT user_id FROM user_typing_profiles")).map((r) => r.user_id));
   const todo = Object.entries(map).filter(([, id]) => !trained.has(id));
   console.log(`${trained.size} already trained; ${todo.length} to do`);
   let ok = 0, fail = 0;
@@ -40,4 +39,5 @@ const withTimeout = (p, label) =>
     }
   }
   console.log(`\ntrained ${ok}, failed ${fail}`);
+  await db.close();
 })();

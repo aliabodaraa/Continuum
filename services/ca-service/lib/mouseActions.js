@@ -48,14 +48,12 @@ async function enrollMouseActions(userId, actions) {
     return { status: 400, body: { ok: false, error: `actions must be (n, ${ACTION_FEATURES}) finite numbers` } };
   }
 
-  db.prepare(
+  await db.run(
     "INSERT INTO mouse_action_samples (user_id, actions, action_count) VALUES (?, ?, ?)",
-  ).run(userId, JSON.stringify(actions), actions.length);
+    userId, JSON.stringify(actions), actions.length);
 
   // Accumulate across enrollment sessions, newest first, capped.
-  const rows = db
-    .prepare("SELECT actions FROM mouse_action_samples WHERE user_id = ? ORDER BY id DESC")
-    .all(userId);
+  const rows = await db.all("SELECT actions FROM mouse_action_samples WHERE user_id = ? ORDER BY id DESC", userId);
   let positives = [];
   for (const row of rows) {
     const a = JSON.parse(row.actions);
@@ -83,13 +81,13 @@ async function enrollMouseActions(userId, actions) {
     minActions: MIN_ENROLL_ACTIONS,
   });
 
-  db.prepare(
+  await db.run(
     `INSERT INTO mouse_action_profiles (user_id, model_path, sample_actions, trained_at)
      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
      ON CONFLICT(user_id) DO UPDATE SET
        model_path=excluded.model_path, sample_actions=excluded.sample_actions,
        trained_at=CURRENT_TIMESTAMP`,
-  ).run(userId, result.modelPath, positives.length);
+    userId, result.modelPath, positives.length);
 
   return {
     status: 200,
@@ -102,9 +100,7 @@ async function enrollMouseActions(userId, actions) {
 }
 
 async function checkMouseActions(userId, actions) {
-  const profile = db
-    .prepare("SELECT model_path FROM mouse_action_profiles WHERE user_id = ?")
-    .get(userId);
+  const profile = await db.get("SELECT model_path FROM mouse_action_profiles WHERE user_id = ?", userId);
   if (!profile) {
     return { status: 200, body: { ok: true, checked: false, enrolled: false } };
   }
@@ -130,7 +126,7 @@ async function checkMouseActions(userId, actions) {
   // Same persisted counter as the window path (lib/mouse.js) — one user has one mouse
   // streak regardless of which pipeline scored them, so the two arms of the comparison
   // cannot disagree about how close the session is to a step-up.
-  const suspiciousStreak = decisionState.updateMouseStreak(userId, { isSuspicious, warmup });
+  const suspiciousStreak = await decisionState.updateMouseStreak(userId, { isSuspicious, warmup });
 
   return {
     status: 200,
@@ -148,19 +144,13 @@ async function checkMouseActions(userId, actions) {
   };
 }
 
-function mouseActionsEnrolled(userId) {
-  return !!db
-    .prepare("SELECT 1 FROM mouse_action_profiles WHERE user_id = ?")
-    .get(userId);
+async function mouseActionsEnrolled(userId) {
+  return !!(await db.get("SELECT 1 FROM mouse_action_profiles WHERE user_id = ?", userId));
 }
 
-function mouseActionsStatus(userId) {
-  const p = db
-    .prepare("SELECT model_path, sample_actions, trained_at FROM mouse_action_profiles WHERE user_id = ?")
-    .get(userId);
-  const collected = db
-    .prepare("SELECT COALESCE(SUM(action_count), 0) AS n FROM mouse_action_samples WHERE user_id = ?")
-    .get(userId);
+async function mouseActionsStatus(userId) {
+  const p = await db.get("SELECT model_path, sample_actions, trained_at FROM mouse_action_profiles WHERE user_id = ?", userId);
+  const collected = await db.get("SELECT COALESCE(SUM(action_count), 0) AS n FROM mouse_action_samples WHERE user_id = ?", userId);
   return {
     enrolled: !!p,
     trainedAt: p ? p.trained_at : null,
@@ -171,10 +161,10 @@ function mouseActionsStatus(userId) {
   };
 }
 
-function resetMouseActionProfile(userId) {
-  db.prepare("DELETE FROM mouse_action_profiles WHERE user_id = ?").run(userId);
-  db.prepare("DELETE FROM mouse_action_samples WHERE user_id = ?").run(userId);
-  decisionState.resetMouseStreak(userId); // strikes against a model that no longer exists
+async function resetMouseActionProfile(userId) {
+  await db.run("DELETE FROM mouse_action_profiles WHERE user_id = ?", userId);
+  await db.run("DELETE FROM mouse_action_samples WHERE user_id = ?", userId);
+  await decisionState.resetMouseStreak(userId); // strikes against a model that no longer exists
   return { status: 200, body: { ok: true, reset: true } };
 }
 
