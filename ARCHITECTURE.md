@@ -598,15 +598,31 @@ Implementation details:
 ## 13f. Kubernetes on this PC (since 2026-10-10, branch `cloud-native`)
 - **Where:** Docker Desktop's own cluster, three namespaces of Continuum's own (`continuum`, `continuum-storage`,
   `continuum-demo`), nothing else touched; no tool installed on the PC (OWNER): `kubectl` (with Kustomize) and
-  `scripts/k8s-local.sh` (`platform`, `secrets`, `build`, `deploy`, `up`, `seed-ca`, `status`, `logs`, `down`).
+  `scripts/k8s-local.sh` (`platform`, `secrets`, `build`, `deploy`, `up`, `seed-ca`, `operator`, `status`, `logs`,
+  `down`).
 - **Platform** (`deploy/platform/install.sh`, pinned): metrics-server 0.9.0, CloudNativePG 1.30.1 (PostgreSQL 16.15),
   Envoy Gateway 1.9.2 with the GatewayClass `envoy`.
 - **Manifests** (`deploy/k8s`): `base/continuum` (the five services as Deployments with probes, a graceful stop, HPA
   and PDB; one PostgreSQL cluster with a database and login per service, each login limited to its own database;
-  NetworkPolicies; the Gateway and the API route), `base/storage` (SeaweedFS), `base/demo` (the reference tenant and
-  its route), `overlays/local` (one copy each, images `:local`, the API on `localhost:28080` and the demo on
-  `localhost:23000`, secrets from a git-ignored folder). Every namespace enforces Pod Security `restricted`: no pod
-  runs as root, escalates privileges, keeps a capability or writes its root filesystem.
+  NetworkPolicies; the Gateway and the API route), `base/storage` (SeaweedFS), `base/demo` (the two reference
+  integrations, the demo and Acme, and their routes), `overlays/local` (one copy each, images `:local`, the API on
+  `localhost:28080`, the demo on `:23000`, Acme on `:24200`, secrets from a git-ignored folder) and `overlays/live`
+  (the same on the usual addresses 8080 / 3000 / 4200, for the main checkout's extension: the switch-over, step 9).
+  Every namespace enforces Pod Security `restricted`: no pod runs as root, escalates privileges, keeps a capability
+  or writes its root filesystem.
+- **Data in and out** (step 9): `scripts/k8s-import.sh <checkout>` copies a stopped Compose stack's data in, each
+  part verified, and ends with its own proof (all organisations served from PostgreSQL; the study log replays to
+  every logged verdict; the study export equals the source's). `scripts/k8s-backup.sh` backs everything up online:
+  each database by `pg_dump` with per-table row counts and content hashes taken **in the dump's own snapshot**
+  (`scripts/pg-checksums.sql`), the demo's users, every model from the object store checked against its
+  fingerprint (`model_store.py export-all`), the secrets, the paper sources. `scripts/k8s-restore.sh --verify-only`
+  restores the databases into a throwaway PostgreSQL and compares every table; `--restore` replaces the cluster's
+  data (each database in one transaction, then compared again). Runbook: `docs/cutover-runbook.md`.
+- **The demo's risk events inside the cluster:** the gateway pushes each demo user's risk changes to the demo
+  (CAEP; the demo then blocks a protected action for a pushed "suspicious" user). Under Compose that address was
+  `http://web:3000/...`, a name the cluster does not have: `DEMO_WEBHOOK_URL` is now set to the demo's service
+  across namespaces, and the demo's ingress rule admits the gateway. The demo suite checks that the gateway reaches
+  the receiver and that it refuses a forged event.
 - **Found on the way:** a fresh gateway seeded the demo tenant with no website, so passkeys from the demo were refused
   (`origin_not_allowed`); the gateway now adds the site of `DEMO_SIGNIN_URL` (its sign-in page is on it). Kustomize's
   `images:` cannot be used next to CloudNativePG's `Database` (its text field `template`), so the overlay tags the

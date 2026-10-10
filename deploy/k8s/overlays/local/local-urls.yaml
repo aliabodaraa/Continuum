@@ -11,6 +11,8 @@ data:
   PASSKEY_ORIGIN: http://localhost:23000
   CONTINUUM_EXTENSION_ID: gkadjaldkpkahhbcdkghjgghnhdcdmlc
   DEMO_SIGNIN_URL: http://localhost:23000/continuum/link
+  # where the gateway pushes the demo's risk changes (CAEP): the demo's own service, across namespaces
+  DEMO_WEBHOOK_URL: http://web.continuum-demo:3000/continuum/events
   STUDY_LOGGING: "1"
 ---
 apiVersion: v1

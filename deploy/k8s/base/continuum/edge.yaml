@@ -1,7 +1,8 @@
-# The public entry point (Gateway API, served by Envoy Gateway: deploy/platform). Two listeners: the API (the
-# gateway service: SDK, extension, console, operator pages, tenant API) and the demo tenant's site (its route
-# lives in namespace continuum-demo). Here plain HTTP with a hostname each; TLS (cert-manager) is added with
-# a real domain. The local overlay replaces the listeners with two localhost ports.
+# The public entry point (Gateway API, served by Envoy Gateway: deploy/platform). Three listeners: the API (the
+# gateway service: SDK, extension, console, operator pages, tenant API) and the sites of the two reference
+# integrations, the demo and Acme (their routes live in namespace continuum-demo). Here plain HTTP with a
+# hostname each; TLS (cert-manager) is added with a real domain. The local overlays replace the listeners
+# with localhost ports.
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
@@ -19,6 +20,15 @@ spec:
       protocol: HTTP
       port: 80
       hostname: demo.example.com
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels: { kubernetes.io/metadata.name: continuum-demo }
+    - name: acme
+      protocol: HTTP
+      port: 80
+      hostname: acme.example.com
       allowedRoutes:
         namespaces:
           from: Selector

@@ -1,0 +1,20 @@
+# This PC on the usual addresses, where the Compose stack answered before the move (step 9): the API on
+# http://localhost:8080, the demo on http://localhost:3000 and Acme on http://localhost:4200, for the Continuum
+# Guard extension loaded from the main checkout. Everything else is overlays/local: the same images, the same
+# secrets (overlays/local/secrets). Only one of the two runs at a time: they are the same namespaces.
+#   K8S_OVERLAY=live scripts/k8s-local.sh deploy        (kubectl apply -k deploy/k8s/overlays/live)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../local
+
+patches:
+  - path: live-urls.yaml
+  - target: { kind: Gateway, name: continuum }
+    patch: |-
+      - { op: test, path: /spec/listeners/0/name, value: api }
+      - { op: replace, path: /spec/listeners/0/port, value: 8080 }
+      - { op: test, path: /spec/listeners/1/name, value: demo }
+      - { op: replace, path: /spec/listeners/1/port, value: 3000 }
+      - { op: test, path: /spec/listeners/2/name, value: acme }
+      - { op: replace, path: /spec/listeners/2/port, value: 4200 }

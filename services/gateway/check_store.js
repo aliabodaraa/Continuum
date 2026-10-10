@@ -1,7 +1,8 @@
 // Check the gateway's tenant-registry storage (TODO §1) on a scratch instance, never the live one.
 // Starts server.js with DATA_DIR in /tmp on port 8099, then: a fresh boot seeds pk_demo; a
-// registration is saved atomically; a failed save returns 500 and keeps nothing; a corrupt
-// tenants.json stops the boot with a clear message. Run inside the gateway container:
+// registration is saved atomically; a failed save returns 500 and keeps nothing; a new CA_SIGNING_SECRET
+// reaches the stored demo tenant at the next start; a corrupt tenants.json stops the boot with a clear
+// message. Run inside the gateway container:
 //   docker exec -w /app continuum-gateway-1 node check_store.js
 const { spawn } = require("child_process");
 const fs = require("fs");
@@ -18,8 +19,8 @@ const check = (name, ok, detail = "") => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function start() {
-  const env = { ...process.env, DATA_DIR: DATA, PORT: String(PORT), GATEWAY_ADMIN_KEY: "" };
+function start(extra = {}) {
+  const env = { ...process.env, DATA_DIR: DATA, PORT: String(PORT), GATEWAY_ADMIN_KEY: "", ...extra };
   const child = spawn("node", ["/app/server.js"], { env, stdio: ["ignore", "pipe", "pipe"] });
   child.out = "";
   child.stdout.on("data", (d) => (child.out += d));
@@ -62,6 +63,20 @@ const register = (name) => fetch(URL + "/v1/tenants", {
     check("the unsaved tenant is not kept in memory", !list.tenants.some((t) => t.name === "unsaved"));
     check("the registry on disk is intact", !!JSON.parse(fs.readFileSync(TFILE, "utf8")).tenants[b1.siteKey]);
     fs.rmdirSync(TFILE + ".tmp");
+  } finally {
+    gw.kill("SIGTERM");
+    await gw.exited;
+  }
+
+  // The demo tenant's secret follows the server's CA_SIGNING_SECRET (a rotation, or leaving the dev default).
+  const before = JSON.parse(fs.readFileSync(TFILE, "utf8")).tenants.pk_demo.secret;
+  gw = start({ CA_SIGNING_SECRET: "rotated-signing-secret-for-the-check" });
+  try {
+    check("the gateway restarts with a new signing secret", await up());
+    const demo = JSON.parse(fs.readFileSync(TFILE, "utf8")).tenants.pk_demo;
+    check("the stored demo tenant takes the new secret", demo.secret === "rotated-signing-secret-for-the-check" && before !== demo.secret
+      && !!demo.secretRotatedAt, demo.secretRotatedAt || "not rotated");
+    check("the other tenants keep theirs", Object.keys(JSON.parse(fs.readFileSync(TFILE, "utf8")).tenants).length >= 2);
   } finally {
     gw.kill("SIGTERM");
     await gw.exited;

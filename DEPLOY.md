@@ -274,9 +274,10 @@ message) for a log collector; empty keeps readable text. Each service also answe
 storage reachable) next to `/health` (the process is up), and stops cleanly on `docker stop`.
 
 ## Kubernetes on this PC (Docker Desktop's cluster, 2026-10)
-The same services run in Kubernetes from `deploy/k8s` (base + `overlays/local`), in namespaces of their own
+The same services run in Kubernetes from `deploy/k8s` (base + an overlay), in namespaces of their own
 (`continuum`, `continuum-storage`, `continuum-demo`); nothing else in the cluster is touched and no tool is
-installed on the PC beyond Docker Desktop (whose `kubectl` includes Kustomize).
+installed on the PC beyond Docker Desktop (whose `kubectl` includes Kustomize). Moving the live system from
+Compose into it: [docs/cutover-runbook.md](docs/cutover-runbook.md).
 
 ```bash
 scripts/k8s-local.sh platform     # once: metrics-server, CloudNativePG (PostgreSQL), Envoy Gateway
@@ -286,13 +287,40 @@ scripts/k8s-local.sh up           # build the images (:local), deploy, wait unti
 scripts/k8s-local.sh status
 ```
 
-The API is on **http://localhost:28080** and the demo on **http://localhost:23000** (Envoy). The operator
-page and the admin API are **never routed by the edge** (they answer "Not found" there, even with the key):
-reach them through a private port-forward, the Kubernetes form of the SSH tunnel above:
+Two overlays, the same system on different addresses (one at a time: they share the namespaces):
+
+| Overlay | API | demo | Acme | extension |
+|---|---|---|---|---|
+| `local` (default) | http://localhost:28080 | :23000 | :24200 | this checkout's (beside the Compose stack) |
+| `live` (`K8S_OVERLAY=live`) | http://localhost:8080 | :3000 | :4200 | the main checkout's (in place of the Compose stack) |
+
+Both use the secrets in `deploy/k8s/overlays/local/secrets`. The operator page and the admin API are
+**never routed by the edge** (they answer "Not found" there, even with the key): reach them through a
+private port-forward, the Kubernetes form of the SSH tunnel above. It follows the gateway to a new pod by
+itself:
 
 ```bash
 scripts/k8s-local.sh operator     # then open http://localhost:28081/operator.html
 ```
+
+Data in and out:
+
+```bash
+scripts/k8s-import.sh ../continuum                    # a Compose checkout's data into the cluster, each part
+                                                      # verified (replaces what the cluster held; the source
+                                                      # is only read; its stack must be stopped)
+BACKUP_PASSPHRASE=... scripts/k8s-backup.sh           # everything, online: pg_dump per database with its
+                                                      # checksums from the same snapshot, the demo's users,
+                                                      # every model from the object store, secrets, paper/
+scripts/k8s-restore.sh <backup> --verify-only         # restore drill touching nothing (throwaway PostgreSQL)
+scripts/k8s-restore.sh <backup> --restore             # into the cluster, compared table by table afterwards
+scripts/k8s-restore.sh <backup> --secrets             # a new PC: the secrets first, then k8s-local.sh deploy
+```
+
+The end-to-end suites run against the cluster with `CONTINUUM_K8S_CONTEXT=docker-desktop
+CONTINUUM_NETPOL_UNENFORCED=1 CONTINUUM_GATEWAY=<API> CONTINUUM_DEMO=<demo> CONTINUUM_OPERATOR=http://localhost:28081`
+and `CA_SIGNING_SECRET` from the secrets file (the operator forward running); on `overlays/live` also
+`CONTINUUM_EXTENSION_DIR=../continuum/extension`, the extension that gateway admits.
 
 Docker Desktop's Kubernetes does not enforce NetworkPolicies, so on this PC the internal services are
 kept apart by their service keys alone (every internal route refuses a caller without its key); the

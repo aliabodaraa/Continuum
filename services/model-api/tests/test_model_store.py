@@ -1,6 +1,9 @@
 """model_store.py on the file store (MODEL_STORE=fs): version names, the fingerprint, pruning, deleting.
 Runs without NumPy, TensorFlow or boto3:  python -m unittest discover -s services/model-api/tests
-(the object store itself is exercised end to end by docker-compose.split-models.yml)."""
+(the object store itself is exercised end to end by docker-compose.split-models.yml; its backup commands
+here against an in-memory stand-in for the S3 calls they make)."""
+import io
+import json
 import os
 import sys
 import tempfile
@@ -93,6 +96,79 @@ class Feed(unittest.TestCase):
         self.assertEqual([os.path.realpath(p) for _, p in got], [os.path.realpath(v1), os.path.realpath(v2)])
         self.assertEqual([p for _, p in ms.feed_after(got[0][0])], [got[1][1]], "only what came after the cursor")
         self.assertNotIn("20200101T000000Z-00000000", os.listdir(feed), "expired entries are removed")
+
+
+class MemoryS3:
+    """The S3 calls model_store makes, kept in a dict (one bucket)."""
+    def __init__(self):
+        self.objects = {}
+
+    def upload_file(self, src, bucket, key):
+        with open(src, "rb") as f:
+            self.objects[key] = f.read()
+
+    def download_file(self, bucket, key, dst):
+        with open(dst, "wb") as f:
+            f.write(self.objects[key])
+
+    def put_object(self, Bucket, Key, Body, **_):
+        self.objects[Key] = Body
+
+    def get_object(self, Bucket, Key):
+        return {"Body": io.BytesIO(self.objects[Key])}
+
+    def head_object(self, Bucket, Key):
+        if Key not in self.objects:
+            raise KeyError(Key)
+
+    def head_bucket(self, Bucket):
+        pass
+
+    def get_paginator(self, _name):
+        objects = self.objects
+
+        class Pages:
+            def paginate(self, Bucket, Prefix="", StartAfter=""):
+                yield {"Contents": [{"Key": k} for k in sorted(objects) if k.startswith(Prefix) and k > StartAfter]}
+        return Pages()
+
+
+class Backup(unittest.TestCase):
+    def setUp(self):
+        self.s3 = MemoryS3()
+        self.saved = (ms.KIND, ms._client)
+        ms.KIND, ms._client = "s3", self.s3
+        self.model = ms.new_version(os.path.join(ROOT, "users", "user-21", "final_model"))
+        write(os.path.join(self.model, "saved_model.pb"), "graph")
+        write(os.path.join(self.model, "variables", "variables.index"), bytes([7, 8, 9]))
+        self.action = ms.new_version(os.path.join(ROOT, "users", "user-21", "mouse_action_model"))
+        write(os.path.join(self.action, "mouse_action_model.joblib"), "trees")
+        self.prints = {ms._key(p): ms.publish(p) for p in (self.model, self.action)}
+
+    def tearDown(self):
+        ms.KIND, ms._client = self.saved
+
+    def test_export_downloads_every_stored_model_with_its_fingerprint(self):
+        dest = tempfile.mkdtemp(prefix="model-export-")
+        self.assertEqual(ms.export_all(dest), 2)
+        with open(os.path.join(dest, "models.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f), self.prints)
+        for key, digest in self.prints.items():
+            self.assertEqual(ms.sha256(os.path.join(dest, *key.split("/"))), digest)
+        self.assertEqual(ms.check_stored(self.prints), [], "every exported model is stored as it was")
+
+    def test_a_damaged_stored_model_fails_the_export(self):
+        self.s3.objects[ms._key(self.model) + "/saved_model.pb"] = b"damaged"
+        dest = tempfile.mkdtemp(prefix="model-export-")
+        with self.assertRaises(RuntimeError):
+            ms.export_all(dest)
+        self.assertFalse(any(n.startswith("final_model") for n in os.listdir(os.path.join(dest, "users", "user-21"))),
+                         "nothing half-downloaded is left in place")
+
+    def test_check_names_a_model_missing_or_different_after_a_restore(self):
+        del self.s3.objects[ms._key(self.action) + ".complete"]
+        changed = dict(self.prints, **{ms._key(self.model): "0" * 64})
+        self.assertEqual(ms.check_stored(changed), sorted(self.prints))
 
 
 if __name__ == "__main__":

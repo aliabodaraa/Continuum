@@ -1,0 +1,21 @@
+# Where browsers reach this PC's live system, and the extension of the main checkout (an unpacked extension's
+# id follows its folder: ../continuum/extension).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: continuum-urls
+  namespace: continuum
+data:
+  GATEWAY_PUBLIC_URL: http://localhost:8080
+  PASSKEY_ORIGIN: http://localhost:3000
+  CONTINUUM_EXTENSION_ID: okobbjajoajdpfemdbkbjbigonkecdfl
+  DEMO_SIGNIN_URL: http://localhost:3000/continuum/link
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-config
+  namespace: continuum-demo
+data:
+  ORIGIN: http://localhost:3000
+  CONTINUUM_GATEWAY_URL: http://localhost:8080

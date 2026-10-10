@@ -1,6 +1,6 @@
 """Manifest for a Continuum backup: what is in it, and proof that a restore got it back intact.
 
-    python scripts/backup_manifest.py build  <staging-dir>   # writes <staging-dir>/MANIFEST.json
+    python scripts/backup_manifest.py build  <staging-dir> [note]   # writes <staging-dir>/MANIFEST.json
     python scripts/backup_manifest.py verify <restored-dir>  # exit 0 only if everything checks
 
 The manifest records, for every file, its size and SHA-256; for every SQLite database, the result
@@ -54,7 +54,7 @@ def git(*args):
         return None
 
 
-def build(root):
+def build(root, note="Restore with scripts/data-import.sh; verify first with --verify-only."):
     files, dbs = {}, {}
     for rel, full in sorted(files_under(root)):
         files[rel] = {"bytes": os.path.getsize(full), "sha256": sha256(full)}
@@ -65,7 +65,7 @@ def build(root):
         "code": {"commit": git("rev-parse", "HEAD"), "describe": git("describe", "--tags", "--always", "--dirty")},
         "files": files,
         "sqlite": dbs,
-        "note": "Restore with scripts/data-import.sh; verify first with --verify-only.",
+        "note": note,
     }
     with open(os.path.join(root, "MANIFEST.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
@@ -131,6 +131,6 @@ def verify(root):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[1] not in ("build", "verify"):
+    if not (len(sys.argv) == 3 or (len(sys.argv) == 4 and sys.argv[1] == "build")) or sys.argv[1] not in ("build", "verify"):
         sys.exit(__doc__)
-    sys.exit(build(sys.argv[2]) if sys.argv[1] == "build" else verify(sys.argv[2]))
+    sys.exit(build(*sys.argv[2:]) if sys.argv[1] == "build" else verify(sys.argv[2]))

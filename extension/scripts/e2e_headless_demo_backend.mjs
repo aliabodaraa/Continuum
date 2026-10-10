@@ -11,7 +11,8 @@
 //   3b. an impostor at the unlocked session: the browser's own identity token (/continuum/identity, for
 //      the SDK) is refused by the tenant API, and so is every call from a browser page; the lock and
 //      the passkey stay as they were
-//   4. the demo container cannot reach ca-service or passkey-service at all
+//   4. the demo container cannot reach ca-service or passkey-service at all; the gateway reaches the demo's
+//      risk-event receiver (CAEP pushes), which refuses an unsigned event
 //   5. a passkey reset through the demo removes the user's credentials
 // Everything the test made is removed (the demo user, its passkeys).
 //
@@ -201,6 +202,12 @@ try {
     `Promise.all(${JSON.stringify(guarded)}.map(u=>fetch(u,{signal:AbortSignal.timeout(4000)}).then(r=>r.status,e=>(e.cause&&e.cause.code)||e.name||e.message))).then(r=>console.log(JSON.stringify(r)))`]).trim());
   check("an internal service refuses the demo without its service key (or cannot be reached at all)",
     refused.every((s) => s !== 200 && !(typeof s === "number" && s < 400)), refused.join(", "));
+  // The other direction: the gateway pushes each demo user's risk changes to the demo (the demo then blocks a
+  // protected action for a pushed "suspicious" user, whatever the page sends). Its address must reach the
+  // demo from where the gateway runs; the demo answers a forged event 400, a signed one 202.
+  const pushed = inService("gateway", ["node", "-e",
+    `const u=process.env.DEMO_WEBHOOK_URL;if(!u){console.log("unset");process.exit(0)}fetch(u,{method:"POST",headers:{"Content-Type":"application/secevent+jwt"},body:"forged.event.token",signal:AbortSignal.timeout(4000)}).then(async r=>console.log(r.status+" "+(await r.text()).slice(0,60)),e=>console.log((e.cause&&e.cause.code)||e.name||e.message))`]).trim();
+  check("the gateway reaches the demo's risk-event receiver, which refuses a forged event", /^400 .*invalid_set/.test(pushed), pushed);
 
   console.log("5. reset");
   const reset = await pageFetch(pg, "/api/webauthn/register/reset", "POST", {});

@@ -110,6 +110,10 @@ async function seedBuiltInTenants() {
   const demo = tenants.tenants["pk_demo"];
   if (demo) {
     let changed = false;
+    // Its secret comes from this server's settings (CA_SIGNING_SECRET): a new value there (a rotation, or a
+    // move away from the development default) must reach the stored tenant, or the demo's identity tokens
+    // would be refused. It was copied only at the first start.
+    if (demo.secret !== DEMO_SECRET) { demo.secret = DEMO_SECRET; demo.secretRotatedAt = new Date().toISOString(); changed = true; }
     if (process.env.DEMO_SIGNIN_URL && demo.signInUrl !== process.env.DEMO_SIGNIN_URL) { demo.signInUrl = process.env.DEMO_SIGNIN_URL; changed = true; }
     // The sign-in page is on the demo's own site, so that site is one of its websites (passkeys and the SDK
     // are allowed there). A fresh install (the bundle, Kubernetes) has no other way to know it.

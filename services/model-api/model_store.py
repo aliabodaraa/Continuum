@@ -171,24 +171,30 @@ def ensure_local(path):
             if code in ("NoSuchKey", "404", "NotFound"):
                 return False                          # never published: the caller answers "not found"
             raise
-        tmp = f"{path}.part-{secrets.token_hex(4)}"
-        try:
-            for rel in marker["files"]:
-                dst = tmp if rel == "" else os.path.join(tmp, *rel.split("/"))
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                c.download_file(BUCKET, key if rel == "" else f"{key}/{rel}", dst)
-            if marker["kind"] == "dir":
-                os.makedirs(tmp, exist_ok=True)
-            got = sha256(tmp)
-            if got != marker["sha256"]:
-                raise RuntimeError(f"downloaded model {key} does not match its fingerprint")
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            os.replace(tmp, path)
-            print(f"[store] fetched {key} ({len(marker['files'])} files)")
-            return True
-        finally:
-            if os.path.exists(tmp):
-                shutil.rmtree(tmp, ignore_errors=True) if os.path.isdir(tmp) else os.remove(tmp)
+        _fetch(c, key, marker, path)
+        print(f"[store] fetched {key} ({len(marker['files'])} files)")
+        return True
+
+
+def _fetch(c, key, marker, path):
+    """Download the stored model `key` to `path`: into a temporary name, checked against its marker's
+    fingerprint, and only then moved into place."""
+    tmp = f"{path}.part-{secrets.token_hex(4)}"
+    try:
+        for rel in marker["files"]:
+            dst = tmp if rel == "" else os.path.join(tmp, *rel.split("/"))
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            c.download_file(BUCKET, key if rel == "" else f"{key}/{rel}", dst)
+        if marker["kind"] == "dir":
+            os.makedirs(tmp, exist_ok=True)
+        got = sha256(tmp)
+        if got != marker["sha256"]:
+            raise RuntimeError(f"downloaded model {key} does not match its fingerprint")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            shutil.rmtree(tmp, ignore_errors=True) if os.path.isdir(tmp) else os.remove(tmp)
 
 
 def _remove_local(path):
@@ -318,12 +324,55 @@ def publish_all():
     return done, skipped
 
 
+def _stored():
+    """{key: marker} of every per-user model in the object store."""
+    c, out = _s3(), {}
+    for page in c.get_paginator("list_objects_v2").paginate(Bucket=BUCKET, Prefix="users/"):
+        for o in page.get("Contents", []):
+            if o["Key"].endswith(".complete"):
+                out[o["Key"][: -len(".complete")]] = json.loads(c.get_object(Bucket=BUCKET, Key=o["Key"])["Body"].read())
+    return out
+
+
+def export_all(dest):
+    """A backup of the object store: every stored per-user model downloaded to dest/<key>, each checked
+    against its fingerprint, and dest/models.json ({key: fingerprint}). Returns the number of models."""
+    c, prints = _s3(), {}
+    for key, marker in sorted(_stored().items()):
+        _fetch(c, key, marker, os.path.join(dest, *key.split("/")))
+        prints[key] = marker["sha256"]
+    with open(os.path.join(dest, "models.json"), "w", encoding="utf-8") as f:
+        json.dump(prints, f, indent=1, sort_keys=True)
+    return len(prints)
+
+
+def check_stored(expected):
+    """After a restore: the keys of `expected` ({key: fingerprint}) that are NOT stored with that fingerprint."""
+    stored = _stored()
+    return sorted(k for k, digest in expected.items() if (stored.get(k) or {}).get("sha256") != digest)
+
+
+USAGE = """usage: python model_store.py publish-all          upload every model under ARTIFACTS_DIR/users not stored yet
+       python model_store.py export-all <dir>     download every stored model into <dir> (a backup), checked
+       python model_store.py check <models.json>  is every model of a backup stored, with its fingerprint?"""
+
 if __name__ == "__main__":
     import sys
-    if sys.argv[1:] == ["publish-all"]:
-        if KIND != "s3":
-            sys.exit("MODEL_STORE is not s3: nothing to upload")
+    args = sys.argv[1:]
+    if args[:1] and KIND != "s3":
+        sys.exit("MODEL_STORE is not s3: the object store commands do not apply")
+    if args == ["publish-all"]:
         n, s = publish_all()
         print(f"uploaded {n} model(s), {s} already stored")
+    elif len(args) == 2 and args[0] == "export-all":
+        print(f"exported {export_all(args[1])} model(s), each matching its fingerprint")
+    elif len(args) == 2 and args[0] == "check":
+        with open(args[1], encoding="utf-8") as f:
+            expected = json.load(f)
+        missing = check_stored(expected)
+        print(f"{len(expected) - len(missing)} of {len(expected)} model(s) stored with their fingerprint")
+        for k in missing:
+            print(f"  missing or different: {k}")
+        sys.exit(1 if missing else 0)
     else:
-        sys.exit("usage: python model_store.py publish-all")
+        sys.exit(USAGE)
