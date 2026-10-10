@@ -27,7 +27,7 @@ import path from "node:path";
 const CHROME = path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe");
 const GW = process.env.CONTINUUM_GATEWAY || "http://localhost:8080";
 const DEMO = process.env.CONTINUUM_DEMO || "http://localhost:3000";
-const PREFIX = process.env.CONTINUUM_CONTAINER_PREFIX || "continuum";
+import { K8S, inService, psql, internalUrl } from "./lib/stack.mjs";
 const SECRET = process.env.CA_SIGNING_SECRET || "dev-continuum-risk-secret";   // pk_demo's tenant secret in dev
 const SITE_KEY = "pk_demo";
 const PORT = 9341;
@@ -57,15 +57,13 @@ async function server(method, p, demoUserId, body, tokenOpts, { token, origin } 
 }
 // What the passkey service holds for a user id (read-only): its SQLite file, inside its own container, or,
 // when CONTINUUM_PASSKEY_PG names the PostgreSQL container of a side-by-side stack, its `passkey` database.
-const PASSKEY_PG = process.env.CONTINUUM_PASSKEY_PG || "";
+const PASSKEY_PG = process.env.CONTINUUM_PASSKEY_PG || (K8S ? "k8s" : "");   // Kubernetes: always PostgreSQL
 function credentialsOf(userId) {
   if (PASSKEY_PG) {
-    return Number(execFileSync("docker", ["exec", PASSKEY_PG, "psql", "-U", "passkey", "-d", "passkey", "-tAc",
-      `SELECT count(*) FROM passkey_credentials WHERE user_id = ${Number(userId)}`], { encoding: "utf8" }).trim());
+    return Number(psql("passkey", `SELECT count(*) FROM passkey_credentials WHERE user_id = ${Number(userId)}`, PASSKEY_PG).trim());
   }
-  const out = execFileSync("docker", ["exec", "-w", "/app", `${PREFIX}-passkey-service-1`, "node", "-e",
-    `const db=require('better-sqlite3')(process.env.DB_PATH||'/app/passkey.db',{readonly:true});console.log(db.prepare('SELECT count(*) n FROM passkey_credentials WHERE user_id=?').get(${Number(userId)}).n)`],
-    { encoding: "utf8", env: { ...process.env, MSYS_NO_PATHCONV: "1" } });
+  const out = inService("passkey-service", ["node", "-e",
+    `const db=require('better-sqlite3')(process.env.DB_PATH||'/app/passkey.db',{readonly:true});console.log(db.prepare('SELECT count(*) n FROM passkey_credentials WHERE user_id=?').get(${Number(userId)}).n)`]);
   return Number(out.trim());
 }
 
@@ -179,11 +177,30 @@ try {
   check("the passkey is still there after all of that", credentialsOf(continuumId) === 1, `${credentialsOf(continuumId)} credential(s)`);
 
   console.log("4. the demo has no route to an internal service");
-  const reach = execFileSync("docker", ["exec", `${PREFIX}-web-1`, "node", "-e",
-    "Promise.all(['http://ca-service:4100/health','http://passkey-service:4000/health','http://gateway:8080/health'].map(u=>fetch(u).then(r=>r.status,e=>(e.cause&&e.cause.code)||e.message))).then(r=>console.log(JSON.stringify(r)))"],
-    { encoding: "utf8", env: { ...process.env, MSYS_NO_PATHCONV: "1" } }).trim();
+  // the internal services by the names that would reach them from the demo (Kubernetes: across namespaces, so
+  // the network rules decide, not a name that does not resolve); the gateway as the demo itself reaches it
+  const urls = [`${internalUrl("ca-service", 4100)}/health`, `${internalUrl("passkey-service", 4000)}/health`, `${internalUrl("gateway", 8080)}/health`];
+  const reach = inService("web", ["node", "-e",
+    `Promise.all(${JSON.stringify(urls)}.map(u=>fetch(u,{signal:AbortSignal.timeout(4000)}).then(r=>r.status,e=>(e.cause&&e.cause.code)||e.name||e.message))).then(r=>console.log(JSON.stringify(r)))`]).trim();
   const [toCa, toPk, toGw] = JSON.parse(reach);
-  check("the demo cannot reach ca-service or passkey-service; it reaches the gateway", toCa !== 200 && toPk !== 200 && toGw === 200, `ca ${toCa}, passkey ${toPk}, gateway ${toGw}`);
+  // A cluster whose network plugin ignores NetworkPolicies (Docker Desktop's built-in Kubernetes) cannot keep the
+  // demo off the internal network; there CONTINUUM_NETPOL_UNENFORCED=1 turns this check into a labelled note.
+  // Everywhere else (Compose networks, an enforcing cluster) it stays a check.
+  const netpolUnenforced = process.env.CONTINUUM_NETPOL_UNENFORCED === "1";
+  const blocked = toCa !== 200 && toPk !== 200 && toGw === 200;
+  if (netpolUnenforced && !blocked) {
+    console.log(`  NOTE  this cluster does not enforce NetworkPolicies: the demo reaches ca ${toCa}, passkey ${toPk} (gateway ${toGw})`);
+  } else {
+    check("the demo cannot reach ca-service or passkey-service; it reaches the gateway", blocked, `ca ${toCa}, passkey ${toPk}, gateway ${toGw}`);
+  }
+  // Whatever the network allows, an internal service refuses a caller without its service key (and the model,
+  // the biometric oracle, too): the second line of defence, checked in every environment.
+  const guarded = [`${internalUrl("ca-service", 4100)}/v1/keystroke/config`, `${internalUrl("ca-service", 4100)}/v1/admin/settings`,
+    `${internalUrl("passkey-service", 4000)}/v1/users/1/credentials`];
+  const refused = JSON.parse(inService("web", ["node", "-e",
+    `Promise.all(${JSON.stringify(guarded)}.map(u=>fetch(u,{signal:AbortSignal.timeout(4000)}).then(r=>r.status,e=>(e.cause&&e.cause.code)||e.name||e.message))).then(r=>console.log(JSON.stringify(r)))`]).trim());
+  check("an internal service refuses the demo without its service key (or cannot be reached at all)",
+    refused.every((s) => s !== 200 && !(typeof s === "number" && s < 400)), refused.join(", "));
 
   console.log("5. reset");
   const reset = await pageFetch(pg, "/api/webauthn/register/reset", "POST", {});
@@ -194,9 +211,8 @@ try {
 } finally {
   try { if (continuumId) await server("POST", "/passkey/reset", demoUserId, {}); } catch {}
   try {
-    if (demoUserId) execFileSync("docker", ["exec", "-w", "/app", `${PREFIX}-web-1`, "node", "-e",
-      `const db=require('better-sqlite3')(process.env.DB_PATH||'/app/db/continuum.db');db.prepare('DELETE FROM users WHERE id=? AND username=?').run(${Number(demoUserId)},${JSON.stringify(USER)});console.log('demo user removed')`],
-      { encoding: "utf8", env: { ...process.env, MSYS_NO_PATHCONV: "1" } });
+    if (demoUserId) inService("web", ["node", "-e",
+      `const db=require('better-sqlite3')(process.env.DB_PATH||'/app/db/continuum.db');db.prepare('DELETE FROM users WHERE id=? AND username=?').run(${Number(demoUserId)},${JSON.stringify(USER)});console.log('demo user removed')`]);
   } catch (e) { console.log("  cleanup: " + e.message); }
   try { ws.close(); } catch {}
   try { chrome.kill(); } catch {}

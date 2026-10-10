@@ -1,0 +1,13 @@
+# Namespace continuum-storage: the object store for model versions (SeaweedFS, S3 API). Local and
+# self-hosted clusters only; in a cloud the overlay points MODEL_S3_ENDPOINT at the provider's object
+# storage and leaves this out.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: continuum-storage
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: continuum
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - seaweedfs.yaml

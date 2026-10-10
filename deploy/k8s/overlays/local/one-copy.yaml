@@ -1,0 +1,60 @@
+# One copy of each service on this PC (the autoscalers may add a second under load), and smaller memory
+# requests so everything fits next to the other projects on Docker Desktop.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: gateway, namespace: continuum }
+spec: { replicas: 1 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: ca-service, namespace: continuum }
+spec: { replicas: 1 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: passkey-service, namespace: continuum }
+spec: { replicas: 1 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: model-inference, namespace: continuum }
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: model
+          resources:
+            requests: { cpu: 100m, memory: 768Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: model-trainer, namespace: continuum }
+spec:
+  template:
+    spec:
+      containers:
+        - name: model
+          resources:
+            requests: { cpu: 100m, memory: 768Mi }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: gateway, namespace: continuum }
+spec: { minReplicas: 1, maxReplicas: 2 }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: ca-service, namespace: continuum }
+spec: { minReplicas: 1, maxReplicas: 2 }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: model-inference, namespace: continuum }
+spec: { minReplicas: 1, maxReplicas: 2 }
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata: { name: continuum-pg, namespace: continuum }
+spec:
+  storage: { size: 2Gi }

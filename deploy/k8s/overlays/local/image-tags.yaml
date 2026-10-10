@@ -1,0 +1,43 @@
+# The images built on this PC (scripts/k8s-local.sh build), tag "local". Written as explicit transformers
+# limited to Deployments, because Kustomize's `images:` field also walks every other resource's
+# spec/template, and the PostgreSQL operator's Database has a text field of that name (its template
+# database), which it cannot read as a pod template.
+apiVersion: builtin
+kind: ImageTagTransformer
+metadata: { name: gateway }
+imageTag: { name: continuum/gateway, newTag: local }
+fieldSpecs:
+  - kind: Deployment
+    path: spec/template/spec/containers[]/image
+---
+apiVersion: builtin
+kind: ImageTagTransformer
+metadata: { name: ca-service }
+imageTag: { name: continuum/ca-service, newTag: local }
+fieldSpecs:
+  - kind: Deployment
+    path: spec/template/spec/containers[]/image
+---
+apiVersion: builtin
+kind: ImageTagTransformer
+metadata: { name: passkey-service }
+imageTag: { name: continuum/passkey-service, newTag: local }
+fieldSpecs:
+  - kind: Deployment
+    path: spec/template/spec/containers[]/image
+---
+apiVersion: builtin
+kind: ImageTagTransformer
+metadata: { name: model-api }
+imageTag: { name: continuum/model-api, newTag: local }
+fieldSpecs:
+  - kind: Deployment
+    path: spec/template/spec/containers[]/image
+---
+apiVersion: builtin
+kind: ImageTagTransformer
+metadata: { name: web-demo }
+imageTag: { name: continuum/web-demo, newTag: local }
+fieldSpecs:
+  - kind: Deployment
+    path: spec/template/spec/containers[]/image

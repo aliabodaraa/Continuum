@@ -1,0 +1,127 @@
+# Who may talk to whom. Default: nothing reaches any pod in this namespace; then exactly the paths the design
+# needs (docs/cloud-native-architecture.md, NetworkPolicies):
+#   edge (Envoy) -> gateway; the demo tenant -> gateway; ca-service -> gateway (its public keys)
+#   gateway -> ca-service, passkey-service;  ca-service -> model-inference, model-trainer
+#   each service -> PostgreSQL;  the operator -> PostgreSQL
+# and the model pods, the biometric oracle, may reach nothing but DNS and the model store.
+# Enforced only where the cluster's network plugin supports it (managed clouds, Calico, Cilium); a cluster that
+# does not enforce them ignores them (Docker Desktop's may not: checked with a deny-all test).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-ingress
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: gateway }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: envoy-gateway-system }
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: continuum-demo }
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: ca-service }
+      ports:
+        - { port: 8080, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ca-service-ingress
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: ca-service }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: gateway }
+      ports:
+        - { port: 4100, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: passkey-service-ingress
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: passkey-service }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: gateway }
+      ports:
+        - { port: 4000, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: model-ingress
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: model }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: ca-service }
+      ports:
+        - { port: 5000, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: model-egress
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: model }
+  policyTypes: [Egress]
+  egress:
+    - to:                                   # DNS
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    - to:                                   # the model store
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: continuum-storage }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: seaweedfs }
+      ports:
+        - { port: 8333, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-ingress
+spec:
+  podSelector:
+    matchLabels: { cnpg.io/cluster: continuum-pg }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/name, operator: In, values: [gateway, ca-service, passkey-service, db-migrate] }
+        - podSelector:
+            matchLabels: { cnpg.io/cluster: continuum-pg }          # replication between instances
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: cnpg-system } # the operator
+      ports:
+        - { port: 5432, protocol: TCP }
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: cnpg-system }
+      ports:
+        - { port: 8000, protocol: TCP }                              # the instance manager's status endpoint

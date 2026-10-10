@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+# Continuum on this PC's Kubernetes: Docker Desktop's built-in cluster (context docker-desktop), in the
+# namespaces continuum, continuum-storage and continuum-demo. Nothing else in the cluster is touched, and
+# nothing is installed on the PC: kubectl comes with Docker Desktop, Kustomize is part of kubectl, and the
+# images are built with Docker, whose image store the cluster runs from.
+#
+#   scripts/k8s-local.sh platform        once: metrics-server, CloudNativePG, Envoy Gateway (deploy/platform)
+#   scripts/k8s-local.sh secrets         once: this cluster's secrets in deploy/k8s/overlays/local/secrets/
+#                                        (git-ignored; random, except the operator key, taken from .env)
+#   scripts/k8s-local.sh build           the five images, tagged :local
+#   scripts/k8s-local.sh deploy          apply deploy/k8s/overlays/local and wait until everything is ready
+#   scripts/k8s-local.sh up              build, deploy, and restart the pods on the new images
+#   scripts/k8s-local.sh seed-ca <file>  copy a ca-service SQLite file into the cluster's database ca
+#                                        (migrate.js: refused if the database already holds rows)
+#   scripts/k8s-local.sh operator        the operator page and admin API, which the edge never routes: a
+#                                        private port-forward to the gateway on http://localhost:28081
+#                                        (open /operator.html there; e2e: CONTINUUM_OPERATOR=that URL)
+#   scripts/k8s-local.sh status          pods, services, the edge's address
+#   scripts/k8s-local.sh logs <deployment> [namespace]
+#   scripts/k8s-local.sh down            delete the three namespaces, their data included (asks first)
+#
+# The API answers on http://localhost:28080 and the demo on http://localhost:23000.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+CTX="${K8S_CONTEXT:-docker-desktop}"
+OVERLAY=deploy/k8s/overlays/local
+SECRETS="$OVERLAY/secrets"
+NAMESPACES=(continuum continuum-storage continuum-demo)
+k() { kubectl --context "$CTX" "$@"; }
+say() { printf '\n== %s\n' "$*"; }
+# Git Bash: no MSYS path rewriting of container paths in kubectl arguments
+export MSYS_NO_PATHCONV=1
+
+platform() { kubectl config use-context "$CTX" >/dev/null && bash deploy/platform/install.sh; }
+
+secrets() {
+  if [ -f "$SECRETS/continuum.env" ]; then echo "$SECRETS already exists; delete it to make new secrets"; return 0; fi
+  mkdir -p "$SECRETS"
+  umask 077
+  rnd() { openssl rand -hex 32; }
+  local admin signing s3secret
+  admin=$(grep -E '^GATEWAY_ADMIN_KEY=' .env 2>/dev/null | head -1 | cut -d= -f2- || true)
+  [ -n "$admin" ] || admin=$(rnd)
+  signing=$(rnd)
+  s3secret=$(rnd)
+  # TEXT_HASH_SALT stays the services' default so samples copied from this checkout (seed-ca) compare equal.
+  cat > "$SECRETS/continuum.env" <<EOF
+CA_SIGNING_SECRET=$signing
+GATEWAY_SESSION_SECRET=$(rnd)
+GATEWAY_ADMIN_KEY=$admin
+MODEL_API_KEY=$(rnd)
+CA_API_KEY=$(rnd)
+PASSKEY_API_KEY=$(rnd)
+TEXT_HASH_SALT=continuum-text-hash-salt
+EOF
+  for svc in gateway ca passkey; do
+    printf 'username=%s\npassword=%s\n' "$svc" "$(openssl rand -hex 24)" > "$SECRETS/pg-$svc.env"
+  done
+  printf 'MODEL_S3_ACCESS_KEY=continuum-models\nMODEL_S3_SECRET_KEY=%s\n' "$s3secret" > "$SECRETS/model-store.env"
+  cat > "$SECRETS/seaweedfs-s3.json" <<EOF
+{"identities": [{"name": "model-service", "credentials": [{"accessKey": "continuum-models", "secretKey": "$s3secret"}],
+  "actions": ["Admin", "Read", "Write", "List", "Tagging"]}]}
+EOF
+  # the demo tenant (pk_demo) signs its users' identities with the gateway's CA_SIGNING_SECRET
+  printf 'SESSION_SECRET=%s\nCONTINUUM_SECRET=%s\n' "$(rnd)" "$signing" > "$SECRETS/demo.env"
+  for key in gateway-verdict-key gateway-identity-key; do
+    openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$SECRETS/$key.pem" 2>/dev/null
+  done
+  echo "secrets written to $SECRETS (git-ignored)"
+}
+
+build() {
+  say "building the images (:local)"
+  docker build -q -t continuum/gateway:local --build-context sdk=./sdk services/gateway
+  docker build -q -t continuum/ca-service:local services/ca-service
+  docker build -q -t continuum/passkey-service:local services/passkey-service
+  docker build -q -t continuum/web-demo:local --build-context sdk=./sdk apps/demo
+  docker build -q -t continuum/model-api:local -f services/model-api/Dockerfile.model.prod .
+}
+
+wait_ready() {
+  say "waiting for PostgreSQL"
+  k -n continuum wait --for=condition=Ready cluster/continuum-pg --timeout=600s
+  for ns in "${NAMESPACES[@]}"; do
+    for d in $(k -n "$ns" get deploy -o name); do
+      k -n "$ns" rollout status "$d" --timeout=600s
+    done
+  done
+}
+
+deploy() {
+  [ -f "$SECRETS/continuum.env" ] || { echo "no secrets yet: run $0 secrets first"; exit 1; }
+  say "applying $OVERLAY"
+  k apply -k "$OVERLAY"
+  wait_ready
+  status
+}
+
+up() {
+  build
+  [ -f "$SECRETS/continuum.env" ] || secrets
+  k apply -k "$OVERLAY"
+  # same tag, new image: restart the pods so they run it
+  for ns in "${NAMESPACES[@]}"; do
+    k -n "$ns" get deploy -o name | grep -v seaweedfs | xargs -r kubectl --context "$CTX" -n "$ns" rollout restart
+  done
+  wait_ready
+  status
+}
+
+seed_ca() {
+  local file="${1:?usage: $0 seed-ca <ca.db>}"
+  [ -f "$file" ] || { echo "no such file: $file"; exit 1; }
+  say "copying $file into the database ca (a one-off pod from the ca-service image)"
+  k -n continuum delete pod ca-seed --ignore-not-found --wait=true >/dev/null
+  k -n continuum apply -f - <<'EOF'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ca-seed
+  labels: { app.kubernetes.io/name: db-migrate }
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: seed
+      image: continuum/ca-service:local
+      command: ["sleep", "3600"]
+      env:
+        - name: DB_USER
+          valueFrom: { secretKeyRef: { name: pg-ca, key: username } }
+        - name: DB_PASSWORD
+          valueFrom: { secretKeyRef: { name: pg-ca, key: password } }
+        - { name: DATABASE_URL, value: "postgres://$(DB_USER):$(DB_PASSWORD)@continuum-pg-rw:5432/ca" }
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits: { memory: 1Gi }
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: ["ALL"] }
+      volumeMounts:
+        - { name: work, mountPath: /work }
+        - { name: tmp, mountPath: /tmp }
+  volumes:
+    - { name: work, emptyDir: {} }
+    - { name: tmp, emptyDir: {} }
+EOF
+  k -n continuum wait --for=condition=Ready pod/ca-seed --timeout=180s
+  k -n continuum cp "$file" ca-seed:/work/ca.db
+  k -n continuum exec ca-seed -- sh -c 'node migrate.js --from /work/ca.db --to "$DATABASE_URL"'
+  k -n continuum delete pod ca-seed --wait=false >/dev/null
+}
+
+status() {
+  for ns in "${NAMESPACES[@]}"; do say "$ns"; k -n "$ns" get pods,svc 2>/dev/null || true; done
+  say "edge"
+  k get gateway -A 2>/dev/null || true
+  echo "API  http://localhost:28080    demo http://localhost:23000"
+}
+
+logs() { k -n "${2:-continuum}" logs "deploy/${1:?usage: $0 logs <deployment> [namespace]}" --tail=200; }
+
+operator() {
+  echo "operator page: http://localhost:28081/operator.html   (Ctrl-C ends it; the forward reconnects if the pod changes)"
+  while true; do k -n continuum port-forward svc/gateway 28081:8080 --address 127.0.0.1 || true; sleep 1; done
+}
+
+down() {
+  read -r -p "Delete namespaces ${NAMESPACES[*]} and ALL their data (databases, model store)? [y/N] " a
+  [ "$a" = y ] || { echo "nothing deleted"; return 0; }
+  k delete namespace "${NAMESPACES[@]}" --ignore-not-found
+}
+
+case "${1:-}" in
+  platform) platform ;;
+  secrets) secrets ;;
+  build) build ;;
+  deploy) deploy ;;
+  up) up ;;
+  seed-ca) shift; seed_ca "$@" ;;
+  status) status ;;
+  operator) operator ;;
+  logs) shift; logs "$@" ;;
+  down) down ;;
+  *) sed -n '2,25p' "$0"; exit 2 ;;
+esac

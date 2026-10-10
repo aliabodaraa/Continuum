@@ -1,0 +1,10 @@
+# Pod Security "restricted": no root, no privilege escalation, no added capabilities, seccomp on. A pod
+# that breaks one of these is refused by the cluster, not merely warned about.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: continuum
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted

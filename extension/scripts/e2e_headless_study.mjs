@@ -24,6 +24,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { inService } from "./lib/stack.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EXT = path.resolve(HERE, "..");
@@ -32,8 +33,6 @@ const CHROME = path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Ap
 const GW = process.env.CONTINUUM_GATEWAY || "http://localhost:8080";
 // Containers the test acts on directly; defaults are the running stack's. For the side-by-side stack
 // (project continuum-next) set CONTINUUM_CONTAINER_PREFIX=continuum-next.
-const PREFIX = process.env.CONTINUUM_CONTAINER_PREFIX || "continuum";
-const CA = `${PREFIX}-ca-service-1`, GW_CONTAINER = `${PREFIX}-gateway-1`;
 const PORT = 9338;
 // A fresh test participant per run (the tenant is reused), so nothing of an earlier run can leak in.
 const P = "ZZE2E" + Math.random().toString(36).slice(2, 7).toUpperCase(), TYPIST = "ZZE2F";
@@ -45,14 +44,14 @@ const check = (name, ok, detail) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Runs `code` (it may await) in the ca-service container with `db` = the service's own data layer (db.js), so
 // the test reads and writes whichever store the service uses: its SQLite file or its PostgreSQL database.
-const caNode = (code) => execFileSync("docker", ["exec", "-w", "/app", CA, "node", "-e",
+const caNode = (code) => inService("ca-service", ["node", "-e",
   `const db=require('/app/db');(async()=>{${code}})().then(()=>db.close(),(e)=>{console.error(e);process.exitCode=1;return db.close();})`],
-  { encoding: "utf8", maxBuffer: 1 << 28 });
-const caScript = (...args) => { try { return { code: 0, out: execFileSync("docker", ["exec", "-w", "/app", CA, "node", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) }; }
+  { maxBuffer: 1 << 28 });
+const caScript = (...args) => { try { return { code: 0, out: inService("ca-service", ["node", ...args], { stdio: ["ignore", "pipe", "pipe"] }) }; }
   catch (e) { return { code: e.status, out: (e.stdout || "") + (e.stderr || "") }; } };
 
 // ---------- preflight ----------
-if (execFileSync("docker", ["exec", CA, "node", "-e", "console.log(process.env.STUDY_LOGGING||'0')"], { encoding: "utf8" }).trim() !== "1") {
+if (inService("ca-service", ["node", "-e", "console.log(process.env.STUDY_LOGGING||'0')"]).trim() !== "1") {
   console.error("ca-service runs with STUDY_LOGGING off. Start it with: STUDY_LOGGING=1 docker compose up -d --no-deps ca-service");
   process.exit(2);
 }
@@ -62,8 +61,12 @@ let siteKey = null, token = null, userId = null;
 // The operator key for /v1/tenants: the environment, else the repository's git-ignored .env (none = dev, open).
 const ADMIN_KEY = process.env.GATEWAY_ADMIN_KEY
   || ((() => { try { return fs.readFileSync(path.join(ROOT, ".env"), "utf8"); } catch { return ""; } })().match(/^GATEWAY_ADMIN_KEY=(.*?)\s*$/m) || [])[1] || "";
+// The operator area (operator page, /v1/tenants, /v1/admin/*): the gateway itself (Compose), or, behind an edge
+// that never routes it (Kubernetes: Envoy marks every request it forwards), a private port-forward to the
+// gateway (scripts/k8s-local.sh operator => CONTINUUM_OPERATOR=http://localhost:28081).
+const OP = process.env.CONTINUUM_OPERATOR || GW;
 async function gw(p, body, method = "POST") {
-  const r = await fetch(GW + p, { method, headers: { "Content-Type": "application/json", Origin: GW, ...(token ? { Authorization: "Bearer " + token } : {}),
+  const r = await fetch((p.startsWith("/v1/tenants") ? OP : GW) + p, { method, headers: { "Content-Type": "application/json", Origin: GW, ...(token ? { Authorization: "Bearer " + token } : {}),
     ...(p.startsWith("/v1/tenants") && ADMIN_KEY ? { "X-Admin-Key": ADMIN_KEY } : {}) },
     body: method === "GET" ? undefined : JSON.stringify(body || {}) });
   return { status: r.status, d: await r.json().catch(() => ({})) };
@@ -373,7 +376,7 @@ try {
     // a server lock left by an interrupted run would outlive the test user's reset
     if (userId) caNode(`await db.run('DELETE FROM session_locks WHERE user_id=?', ${userId}); console.log('lock cleared')`);
     // the test passkey, cleared from inside the gateway container (its service key stays there)
-    if (userId) execFileSync("docker", ["exec", GW_CONTAINER, "node", "-e", `fetch(process.env.PASSKEY_API_URL+'/v1/users/${userId}/reset',{method:'POST',headers:{'X-Api-Key':process.env.PASSKEY_API_KEY||''}}).then(r=>console.log('passkey reset',r.status))`], { encoding: "utf8" });
+    if (userId) inService("gateway", ["node", "-e", `fetch(process.env.PASSKEY_API_URL+'/v1/users/${userId}/reset',{method:'POST',headers:{'X-Api-Key':process.env.PASSKEY_API_KEY||''}}).then(r=>console.log('passkey reset',r.status))`]);
     if (userId) caNode(`for (const t of ['study_windows','study_decisions','study_prompts','study_profiles','study_participants']) await db.run('DELETE FROM '+t+' WHERE user_id=?', ${userId}); console.log('cleaned')`);
     caScript("-e", "require('fs').rmSync('/tmp/e2e_study_export',{recursive:true,force:true})");
   } catch (e) { console.log("  cleanup: " + e.message); }

@@ -273,6 +273,31 @@ publish-all`. The production model image now carries only the serving code and t
 message) for a log collector; empty keeps readable text. Each service also answers `/ready` (its own
 storage reachable) next to `/health` (the process is up), and stops cleanly on `docker stop`.
 
+## Kubernetes on this PC (Docker Desktop's cluster, 2026-10)
+The same services run in Kubernetes from `deploy/k8s` (base + `overlays/local`), in namespaces of their own
+(`continuum`, `continuum-storage`, `continuum-demo`); nothing else in the cluster is touched and no tool is
+installed on the PC beyond Docker Desktop (whose `kubectl` includes Kustomize).
+
+```bash
+scripts/k8s-local.sh platform     # once: metrics-server, CloudNativePG (PostgreSQL), Envoy Gateway
+scripts/k8s-local.sh secrets      # once: random secrets in deploy/k8s/overlays/local/secrets (git-ignored;
+                                  # the operator key is taken from .env)
+scripts/k8s-local.sh up           # build the images (:local), deploy, wait until ready
+scripts/k8s-local.sh status
+```
+
+The API is on **http://localhost:28080** and the demo on **http://localhost:23000** (Envoy). The operator
+page and the admin API are **never routed by the edge** (they answer "Not found" there, even with the key):
+reach them through a private port-forward, the Kubernetes form of the SSH tunnel above:
+
+```bash
+scripts/k8s-local.sh operator     # then open http://localhost:28081/operator.html
+```
+
+Docker Desktop's Kubernetes does not enforce NetworkPolicies, so on this PC the internal services are
+kept apart by their service keys alone (every internal route refuses a caller without its key); the
+policies take effect on a cluster whose network plugin enforces them.
+
 ## Portability smoke test (proving "runs anywhere")
 On a second machine with only the compose file + `.env`:
 ```bash

@@ -77,6 +77,16 @@ jobs:
           TEST_DATABASE_URL: postgres://postgres:ci@localhost:5432/ci
         run: node --test services/gateway/test/*.test.js services/ca-service/test/*.test.js services/passkey-service/test/*.test.js
 
+      - name: Kubernetes manifests render (deploy/k8s overlays, placeholder secrets)
+        run: |
+          for ov in deploy/k8s/overlays/*/; do
+            mkdir -p "$ov/secrets"
+            for f in continuum.env pg-gateway.env pg-ca.env pg-passkey.env model-store.env demo.env; do echo "PLACEHOLDER=1" > "$ov/secrets/$f"; done
+            echo '{}' > "$ov/secrets/seaweedfs-s3.json"
+            : > "$ov/secrets/gateway-verdict-key.pem"; : > "$ov/secrets/gateway-identity-key.pem"
+            kubectl kustomize "$ov" > /dev/null && echo "$ov renders"
+          done
+
       - name: Unit tests (backup manifest; model store)
         run: |
           python -m unittest discover -s scripts -p "test_*.py" -v

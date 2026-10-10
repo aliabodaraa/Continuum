@@ -1,0 +1,121 @@
+# ca-service: the decision engine. Only the gateway calls it; only it calls the model service. Its state is in
+# PostgreSQL (database ca), so copies run side by side; their training workers share one queue with leases.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ca-service
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ca-service
+  labels: { app.kubernetes.io/name: ca-service }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: ca-service }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: ca-service }
+    spec:
+      serviceAccountName: ca-service
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # A stop leaves a running training to its lease: another copy takes it over when the lease runs out.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: ca-service
+          image: continuum/ca-service
+          ports:
+            - { name: http, containerPort: 4100 }
+          env:
+            - { name: PORT, value: "4100" }
+            - { name: NODE_ENV, value: production }
+            - { name: LOG_FORMAT, value: json }
+            - { name: STORAGE, value: postgres }
+            - name: DB_USER
+              valueFrom: { secretKeyRef: { name: pg-ca, key: username } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: pg-ca, key: password } }
+            - { name: DATABASE_URL, value: "postgres://$(DB_USER):$(DB_PASSWORD)@continuum-pg-rw:5432/ca" }
+            - { name: GATEWAY_JWKS_URI, value: "http://gateway:8080/.well-known/jwks.json" }
+            - { name: MODEL_INFER_URL, value: "http://model-inference:5000" }
+            - { name: MODEL_TRAIN_URL, value: "http://model-trainer:5000" }
+            - { name: MODEL_INFER_TIMEOUT_MS, value: "5000" }
+            - { name: MODEL_TRAIN_TIMEOUT_MS, value: "600000" }
+            - name: MODEL_API_KEY
+              valueFrom: { secretKeyRef: { name: continuum-secrets, key: MODEL_API_KEY } }
+            - name: CA_API_KEY
+              valueFrom: { secretKeyRef: { name: continuum-secrets, key: CA_API_KEY } }
+            - name: CA_SIGNING_SECRET
+              valueFrom: { secretKeyRef: { name: continuum-secrets, key: CA_SIGNING_SECRET } }
+            - name: TEXT_HASH_SALT
+              valueFrom: { secretKeyRef: { name: continuum-secrets, key: TEXT_HASH_SALT } }
+            - name: STUDY_LOGGING
+              valueFrom: { configMapKeyRef: { name: continuum-urls, key: STUDY_LOGGING } }
+          envFrom:
+            - configMapRef: { name: continuum-protection }
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            failureThreshold: 6
+          lifecycle:
+            preStop: { exec: { command: ["sleep", "5"] } }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 768Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ca-service
+  labels: { app.kubernetes.io/name: ca-service }
+spec:
+  selector: { app.kubernetes.io/name: ca-service }
+  ports:
+    - { name: http, port: 4100, targetPort: http }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ca-service
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: ca-service }
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ca-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: ca-service }

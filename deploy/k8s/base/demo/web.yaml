@@ -1,0 +1,121 @@
+# The demo site: its own users in a SQLite file on a volume (one copy), Continuum through the gateway. Its
+# settings: ConfigMap demo-config (URLs, per environment) and Secret demo-secrets (its session secret and
+# its tenant secret, which equals the gateway's CA_SIGNING_SECRET for the seeded pk_demo tenant).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-config
+data:
+  ORIGIN: https://demo.example.com
+  RP_ID: example.com
+  COOKIE_SECURE: "1"
+  CONTINUUM_GATEWAY_URL: https://api.example.com
+  CONTINUUM_SITE_KEY: pk_demo
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: demo-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: { storage: 1Gi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels: { app.kubernetes.io/name: web }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }           # one SQLite file on one volume
+  selector:
+    matchLabels: { app.kubernetes.io/name: web }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: web }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: web
+          image: continuum/web-demo
+          ports:
+            - { name: http, containerPort: 3000 }
+          env:
+            - { name: PORT, value: "3000" }
+            - { name: NODE_ENV, value: production }
+            - { name: LOG_FORMAT, value: json }
+            - { name: DB_PATH, value: /app/data/continuum.db }
+            - { name: GATEWAY_URL, value: "http://gateway.continuum:8080" }
+            - { name: CONTINUUM_JWKS_URI, value: "http://gateway.continuum:8080/.well-known/jwks.json" }
+            - name: SESSION_SECRET
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: SESSION_SECRET } }
+            - name: CONTINUUM_SECRET
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: CONTINUUM_SECRET } }
+          envFrom:
+            - configMapRef: { name: demo-config }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 20
+            failureThreshold: 4
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: data, mountPath: /app/data, subPath: db }
+            - { name: data, mountPath: /app/public/uploads, subPath: uploads }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: demo-data }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  labels: { app.kubernetes.io/name: web }
+spec:
+  selector: { app.kubernetes.io/name: web }
+  ports:
+    - { name: http, port: 3000, targetPort: http }
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: demo
+spec:
+  parentRefs:
+    - { name: continuum, namespace: continuum, sectionName: demo }
+  rules:
+    - backendRefs:
+        - { name: web, port: 3000 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-ingress
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: envoy-gateway-system }
+      ports:
+        - { port: 3000, protocol: TCP }

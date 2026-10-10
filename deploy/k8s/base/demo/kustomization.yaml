@@ -1,0 +1,12 @@
+# Namespace continuum-demo: the reference tenant (apps/demo), how any organisation integrates Continuum. It
+# reaches Continuum only through the gateway (its tenant API and public pages), never an internal service.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: continuum-demo
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: continuum-demo
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - web.yaml

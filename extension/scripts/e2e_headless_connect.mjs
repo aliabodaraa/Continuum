@@ -29,6 +29,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { K8S, inService, psql } from "./lib/stack.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EXT = path.resolve(HERE, "..");
@@ -49,12 +50,11 @@ const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-connect-e2e-"));
 // PostgreSQL container of a side-by-side stack (docker-compose.side-by-side.yml), its gw_identities table.
 // Containers the test acts on directly; defaults are the running stack's. For the side-by-side stack
 // (project continuum-next) set CONTINUUM_CONTAINER_PREFIX=continuum-next.
-const PREFIX = process.env.CONTINUUM_CONTAINER_PREFIX || "continuum";
-const GW_PG = process.env.CONTINUUM_GATEWAY_PG || "";
+const GW_PG = process.env.CONTINUUM_GATEWAY_PG || (K8S ? "k8s" : "");   // Kubernetes: always PostgreSQL
 const GW_PG_DB = process.env.CONTINUUM_GATEWAY_PG_DB || "gateway";   // the gateway's own database (and login)
 function identityKeys() {
   if (!GW_PG) return Object.keys(JSON.parse(fs.readFileSync(path.join(ROOT, "services", "gateway", "identity.json"), "utf8")).users);
-  const out = execFileSync("docker", ["exec", GW_PG, "psql", "-U", GW_PG_DB, "-d", GW_PG_DB, "-tAc", "SELECT key FROM gw_identities"], { encoding: "utf8" });
+  const out = psql(GW_PG_DB, "SELECT key FROM gw_identities", GW_PG);
   return out.split("\n").map((s) => s.trim()).filter(Boolean);
 }
 
@@ -82,8 +82,13 @@ function asHost(url, host, headers = {}) {
     r.end();
   });
 }
+// The operator area (operator page, /v1/tenants, /v1/admin/*): the gateway itself (Compose), or, behind an edge
+// that never routes it (Kubernetes: Envoy marks every request it forwards), a private port-forward to the
+// gateway (scripts/k8s-local.sh operator => CONTINUUM_OPERATOR=http://localhost:28081).
+const OP = process.env.CONTINUUM_OPERATOR || GW;
 const gw = (p, opts = {}) => http(GW + p, { ...opts, headers: { Origin: GW, ...(opts.headers || {}) } });
-const admin = (p, opts = {}) => gw(p, { ...opts, headers: { ...(opts.headers || {}), ...(ADMIN_KEY ? { "X-Admin-Key": ADMIN_KEY } : {}) } });
+const opApi = (p, opts = {}) => http(OP + p, { ...opts, headers: { Origin: GW, ...(opts.headers || {}) } });
+const admin = (p, opts = {}) => opApi(p, { ...opts, headers: { ...(opts.headers || {}), ...(ADMIN_KEY ? { "X-Admin-Key": ADMIN_KEY } : {}) } });
 const b64u = (x) => Buffer.from(x).toString("base64url");
 function identityToken(secret, payload) {
   const h = b64u(JSON.stringify({ alg: "HS256", typ: "JWT" })), p = b64u(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 120, ...payload }));
@@ -322,22 +327,29 @@ try {
   const orgO = { Origin: "http://localhost:4399" };
   const pend = await http(GW + "/v1/sdk/session", { method: "POST", body: { siteKey: orgKey }, headers: orgO });
   check("a pending organisation's key does not work yet", pend.status === 403 && pend.d.error === "tenant_pending_approval", `${pend.status} ${pend.d.error}`);
-  const noKey = await gw(`/v1/tenants/${orgKey}/status`, { method: "POST", body: { status: "active" } });
+  const noKey = await opApi(`/v1/tenants/${orgKey}/status`, { method: "POST", body: { status: "active" } });
   check("approval needs the operator's admin key", !ADMIN_KEY || noKey.status === 401, String(noKey.status));
   // the operator area answers only on this machine's own address
-  const opOutside = await asHost(GW + "/operator.html", "continuum.example.com");
-  const apiOutside = await asHost(GW + "/v1/tenants", "continuum.example.com", ADMIN_KEY ? { "X-Admin-Key": ADMIN_KEY } : {});
-  const opInside = await asHost(GW + "/operator.html", "localhost:8080");
+  const opOutside = await asHost(OP + "/operator.html", "continuum.example.com");
+  const apiOutside = await asHost(OP + "/v1/tenants", "continuum.example.com", ADMIN_KEY ? { "X-Admin-Key": ADMIN_KEY } : {});
+  const opInside = await asHost(OP + "/operator.html", "localhost:8080");
   check("the operator page and admin API are “Not found” from any other address, even with the key", opOutside.status === 404 && apiOutside.status === 404 && opInside.status === 200, `page ${opOutside.status}, api ${apiOutside.status}, local ${opInside.status}`);
-  const opProxied = await asHost(GW + "/operator.html", "localhost:8080", { "X-Forwarded-For": "203.0.113.9" });
+  const opProxied = await asHost(OP + "/operator.html", "localhost:8080", { "X-Forwarded-For": "203.0.113.9" });
   check("…and from anyone reaching it through a reverse proxy", opProxied.status === 404, String(opProxied.status));
+  if (OP !== GW) {
+    // behind the edge: not routed at all, whatever the Host and even with the key
+    const edgePage = await asHost(GW + "/operator.html", "localhost");
+    const edgeApi = await asHost(GW + "/v1/tenants", "localhost", ADMIN_KEY ? { "X-Admin-Key": ADMIN_KEY } : {});
+    check("the public edge never serves the operator area (page, API with the key)", edgePage.status === 404 && edgeApi.status === 404,
+      `page ${edgePage.status}, api ${edgeApi.status}`);
+  }
   if (ADMIN_KEY) {
     // one wrong key only: ten in a row would lock the operator out for 15 minutes (checked by hand)
-    const wrong = await gw("/v1/tenants", { headers: { "X-Admin-Key": "not-the-key" } });
+    const wrong = await opApi("/v1/tenants", { headers: { "X-Admin-Key": "not-the-key" } });
     check("a wrong admin key is refused and says how many tries are left", wrong.status === 401 && typeof wrong.d.attemptsLeft === "number" && wrong.d.attemptsLeft < 10, `${wrong.status} ${wrong.d.attemptsLeft}`);
   }
   // the operator approves on /operator.html
-  const { targetId: opId } = await send("Target.createTarget", { url: GW + "/operator.html" });
+  const { targetId: opId } = await send("Target.createTarget", { url: OP + "/operator.html" });
   const op = await attach(opId);
   await waitFor(op, "!!document.getElementById('opKey')", 10000);
   await evaluate(op, fill("#opKey", ADMIN_KEY));
@@ -522,8 +534,8 @@ try {
       if (r.status !== 200 && r.status !== 404) console.log(`  cleanup: account ${email}: HTTP ${r.status}`);
     }
     if (demoUserId) {
-      execFileSync("docker", ["exec", "-w", "/app", `${PREFIX}-web-1`, "node", "-e",
-        `const db=require('better-sqlite3')(process.env.DB_PATH||'/app/db/continuum.db');db.prepare('DELETE FROM users WHERE id=? AND username=?').run(${Number(demoUserId)},${JSON.stringify(DEMO_USER)});console.log('demo user removed')`], { encoding: "utf8" });
+      inService("web", ["node", "-e",
+        `const db=require('better-sqlite3')(process.env.DB_PATH||'/app/db/continuum.db');db.prepare('DELETE FROM users WHERE id=? AND username=?').run(${Number(demoUserId)},${JSON.stringify(DEMO_USER)});console.log('demo user removed')`]);
     }
   } catch (e) { console.log("  cleanup: " + e.message); }
   try { ws.close(); } catch {}

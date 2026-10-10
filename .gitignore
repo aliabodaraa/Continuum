@@ -138,3 +138,6 @@ artifacts/phase2/L/stageC/smoke/
 
 # Local compose settings: secrets (GATEWAY_ADMIN_KEY, ...). Template: .env.example
 .env
+
+# Kubernetes secrets made per cluster (scripts/k8s-local.sh secrets): never commit
+deploy/k8s/overlays/*/secrets/

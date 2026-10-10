@@ -1,0 +1,72 @@
+# PostgreSQL, run by the CloudNativePG operator (deploy/platform/install.sh): one cluster, a database and a
+# login per service. Each login can open only its own database (the pg_hba rules below), as
+# deploy/postgres/init-local.sql does for the Compose stacks. The passwords come from the Secrets pg-gateway,
+# pg-ca and pg-passkey (basic-auth: username, password), made per environment by the overlay.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: continuum-pg
+spec:
+  instances: 1                      # staging and production: 2 or 3 (a standby to fail over to)
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.15-minimal-bookworm   # no extensions needed; collation C is built in
+  primaryUpdateStrategy: unsupervised
+  storage:
+    size: 5Gi
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+  postgresql:
+    pg_hba:
+      - host gateway gateway all scram-sha-256
+      - host ca ca all scram-sha-256
+      - host passkey passkey all scram-sha-256
+      - host all gateway,ca,passkey all reject
+  managed:
+    roles:
+      - name: gateway
+        ensure: present
+        login: true
+        passwordSecret: { name: pg-gateway }
+      - name: ca
+        ensure: present
+        login: true
+        passwordSecret: { name: pg-ca }
+      - name: passkey
+        ensure: present
+        login: true
+        passwordSecret: { name: pg-passkey }
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: continuum-gateway
+spec:
+  cluster: { name: continuum-pg }
+  name: gateway
+  owner: gateway
+  databaseReclaimPolicy: retain
+---
+# ca-service compares and sorts text byte by byte, as SQLite did (timestamps, pseudonyms): collation C.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: continuum-ca
+spec:
+  cluster: { name: continuum-pg }
+  name: ca
+  owner: ca
+  template: template0
+  encoding: UTF8
+  localeCollate: C
+  localeCType: C
+  databaseReclaimPolicy: retain
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: continuum-passkey
+spec:
+  cluster: { name: continuum-pg }
+  name: passkey
+  owner: passkey
+  databaseReclaimPolicy: retain

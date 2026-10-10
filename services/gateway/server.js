@@ -111,6 +111,10 @@ async function seedBuiltInTenants() {
   if (demo) {
     let changed = false;
     if (process.env.DEMO_SIGNIN_URL && demo.signInUrl !== process.env.DEMO_SIGNIN_URL) { demo.signInUrl = process.env.DEMO_SIGNIN_URL; changed = true; }
+    // The sign-in page is on the demo's own site, so that site is one of its websites (passkeys and the SDK
+    // are allowed there). A fresh install (the bundle, Kubernetes) has no other way to know it.
+    const demoSite = process.env.DEMO_SIGNIN_URL ? new URL(process.env.DEMO_SIGNIN_URL).origin : null;
+    if (demoSite && !(demo.origins || []).includes(demoSite)) { demo.origins = (demo.origins || []).concat(demoSite); changed = true; }
     if (EXTENSION_ORIGIN && !(demo.origins || []).includes(EXTENSION_ORIGIN)) { demo.origins = (demo.origins || []).concat(EXTENSION_ORIGIN); demo.allowExtension = true; changed = true; }
     if (changed) await storage.saveTenant("pk_demo");
   }

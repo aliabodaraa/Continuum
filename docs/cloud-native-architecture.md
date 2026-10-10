@@ -11,7 +11,7 @@ built (sources at the end):
 | Fact (checked 2026-10-07) | Consequence |
 |---|---|
 | **ingress-nginx is retired**: no releases or security fixes since March 2026 | Not used. Kubernetes **Gateway API** with **Envoy Gateway** instead |
-| **Skaffold's repository will be archived on 29 Jan 2027** (Google Cloud Deploy docs) | Not used as the dev loop. **Tilt** instead; nothing in CI/CD depends on a dev tool |
+| **Skaffold's repository will be archived on 29 Jan 2027** (Google Cloud Deploy docs) | Not used as the dev loop. Plain `kubectl apply -k` and a script (`scripts/k8s-local.sh`; the OWNER kept nothing installed on the PC, so not Tilt either); nothing in CI/CD depends on a dev tool |
 | **MinIO community edition is archived** (no images since Oct 2025) | Local S3 storage is **SeaweedFS** (Apache 2.0) |
 | **Bitnami's free images ended** (Aug–Sep 2025) | No Bitnami charts. PostgreSQL through **CloudNativePG** |
 | **Node.js 20 reached end of life** (30 Apr 2026); our services run on it | Upgrade to **Node 24 LTS** (supported to Apr 2028) |
@@ -303,12 +303,26 @@ two or more copies in staging and production; locally, one copy of each.
 
 ## 7. Local development (H)
 
-**Tool: Tilt** (maintained, open source, owned by Docker), not Skaffold (repository archived Jan 2027).
-Tilt does what the ticketing project used Skaffold for: watch, rebuild, deploy, and *live update*
-(sync changed files into the running container). It also gives a dashboard of every service's logs and
-status. The manifests are plain Kustomize, so the dev tool can be swapped without touching deployment.
-If you prefer Skaffold's familiarity, a `skaffold.yaml` pointing at the same overlay is about 40 lines,
-and it works until the archive. It is just not something to build on.
+**Decided at step 7 (OWNER):** Docker Desktop's own Kubernetes, Continuum in its own namespaces (the ticketing
+project stays in `default`, untouched), and **no dev tool installed on the PC**: `kubectl` (part of Docker
+Desktop, Kustomize included) and `scripts/k8s-local.sh`. That replaces the Tilt loop described below: the
+manifests are plain Kustomize, so a tool can be added later without touching deployment.
+
+```bash
+scripts/k8s-local.sh platform     # once: metrics-server, CloudNativePG, Envoy Gateway (deploy/platform)
+scripts/k8s-local.sh secrets      # once: random secrets, git-ignored (deploy/k8s/overlays/local/secrets)
+scripts/k8s-local.sh up           # build the five images (:local), apply the overlay, restart, wait
+scripts/k8s-local.sh seed-ca <ca.db>   # optional: a copy of ca-service's data (migrate.js, verified)
+scripts/k8s-local.sh status | logs <deployment> | down
+```
+
+The API answers on **http://localhost:28080** and the demo on **http://localhost:23000**, so the cluster runs
+beside the Compose stacks (8080/3000, 18080/13000) until the switch-over (step 9) gives it the usual
+ports. The end-to-end suites run against it with `CONTINUUM_K8S_CONTEXT=docker-desktop` (they `kubectl exec`
+where they used `docker exec`: `extension/scripts/lib/stack.mjs`).
+
+The original plan, kept for reference: **Tilt** (maintained, open source, owned by Docker), not Skaffold
+(repository archived Jan 2027), would watch, rebuild, deploy and live-update.
 
 ```bash
 # once per machine (Docker Desktop with Kubernetes enabled; the ticketing app stays in "default")
@@ -611,17 +625,19 @@ continuum/
 ├── apps/                   demo, acme: reference integrations (namespace continuum-demo)
 ├── research/               experiments and analysis (was inside services/model-api); never in an image
 ├── deploy/
-│   ├── k8s/
-│   │   ├── base/           namespace, one folder per service, NetworkPolicies, Gateway + HTTPRoutes
-│   │   ├── components/     optional pieces: cnpg-cluster, seaweedfs, otel
-│   │   └── overlays/       local, staging, production
-│   ├── platform/           pinned Helm values + install.sh (envoy-gateway, cnpg, cert-manager,
-│   │                       external-secrets, metrics-server, observability, seaweedfs)
-│   ├── compose/            bundle (single host), side-by-side (migration proofs)
+│   ├── k8s/                (as built at step 7)
+│   │   ├── base/continuum/ namespace continuum: the services, PostgreSQL (CloudNativePG Cluster +
+│   │   │                   Database per service), NetworkPolicies, the Gateway and the API route
+│   │   ├── base/storage/   namespace continuum-storage: SeaweedFS (local and self-hosted only)
+│   │   ├── base/demo/      namespace continuum-demo: the reference tenant and its route
+│   │   └── overlays/       local (this PC); staging and production when there is a cloud
+│   ├── platform/           install.sh at pinned versions (metrics-server, CloudNativePG, Envoy
+│   │                       Gateway) + the GatewayClass; later cert-manager, External Secrets, otel
+│   ├── postgres/, seaweedfs/   local settings for the Compose stacks
 │   └── tofu/               cloud infrastructure (when a provider is chosen)
-├── scripts/                ci-local.sh, backups, dev-secrets.sh
+├── docker-compose*.yml     bundle (single host), dev, side-by-side and its overlays (migration proofs)
+├── scripts/                ci-local.sh, k8s-local.sh, backups
 ├── docs/                   this document, runbooks
-├── Tiltfile
 └── .github/workflows/
 ```
 
@@ -647,7 +663,7 @@ continuum/
 | CI/CD | GitHub Actions + `ci-local.sh` | in place | Jenkins (to host) |
 | Delivery | push-based `kubectl apply -k` by digest | simplest repeatable | Argo CD (later trigger), Spinnaker |
 | IaC | Kustomize + Helm (third-party) + OpenTofu (cloud) | one tool per layer | Pulumi (code for infra here adds little), Terraform (licence) |
-| Local dev | **Docker Desktop Kubernetes + Tilt** | already installed; maintained live-update loop | Skaffold (archived Jan 2027), kind (fine; Docker Desktop is already here) |
+| Local dev | **Docker Desktop Kubernetes + `kubectl apply -k` + `scripts/k8s-local.sh`** (OWNER: nothing installed on the PC) | already installed; plain Kustomize | Tilt (a program on the PC), Skaffold (archived Jan 2027), kind (a second cluster) |
 | Runtimes | **Node 24 LTS**, Python 3.11 + TensorFlow 2.15 (pinned for the models) | Node 20 is end of life | — |
 
 ---
@@ -673,9 +689,9 @@ continuum/
 | PostgreSQL as queue and outbox | ample at this volume; NATS JetStream is the named trigger (§10) |
 | One PostgreSQL cluster for three databases (a shared failure domain) | a third of the cost; separated by role; split by URL later |
 | TensorFlow image (1.9 GB) and ~90 s start make scale-out slow | min 2 replicas, startupProbe, pre-pulled images; ONNX Runtime as the lever |
-| Tilt instead of the familiar Skaffold | Skaffold is being archived; manifests stay tool-agnostic |
+| A script instead of a live-update tool (Tilt) | a code change is rebuild + restart (about a minute), not a file sync; manifests stay tool-agnostic |
 | Envoy Gateway policies are implementation-specific | kept in overlays; routes are standard Gateway API |
-| No mTLS until production; NetworkPolicies possibly not enforced on Docker Desktop | app-level assertions and keys; mTLS (Istio ambient) before real users; policies tested in staging |
+| No mTLS until production; **NetworkPolicies are not enforced on Docker Desktop** (measured at step 7: the demo pod reaches ca-service and passkey-service) | every internal route needs its service key (measured: 401 from ca-service, passkey-service and the model to the demo pod); mTLS (Istio ambient) before real users; policies tested in staging |
 | Tenant secrets in clear in the database | envelope encryption in the hardening step |
 | Passkeys are bound to the domain | fix the production domain before real enrolment; WebAuthn related origins if it must change |
 | GitHub Actions blocked by billing | `ci-local.sh`; self-hosted runner as an option |
@@ -695,7 +711,7 @@ continuum/
 | 4 | passkey-service → PostgreSQL (`STORAGE=sqlite|postgres`, `migrate.js` verifies every credential); a database and a login per service, each closed to the others (`deploy/postgres/init-local.sql`); challenges taken atomically (a replay or a double answer cannot pass twice) and registration challenges expire | 28 credentials of 22 users identical; demo-backend 18/18, connect 92/92, enrol-reload 10/10, study pass, on PostgreSQL, on SQLite, and through **two passkey copies** | **done** |
 | 5 | ca-service → PostgreSQL (`STORAGE=sqlite|postgres`, one async data layer, `migrate.js` verifies every table); queue leases and claims with `SKIP LOCKED`; ties in sorts broken by id; database `ca` with byte-order collation | 23 tables / 911,431 rows identical; study export identical across old code, new code on SQLite and on PostgreSQL; **decision replay: 0 differences** (243); connect, study, enrol-reload, demo-backend on PostgreSQL, on SQLite and through **two ca-service copies** | **done** |
 | 6 | Model service: gunicorn; inference and trainer roles; models in object storage as versions (`model_store.py`, SeaweedFS locally) with a feed so scoring copies load new versions early; ca-service passes the version; the `/model-store` mount goes (the trainer returns the fingerprint); production image = serving files + base models, non-root | every model in use scores identically (89 models, 2,136 scores) on one container and through two scoring copies fed from object storage; `validate_f2` max difference 0; e2e_mouse_a5, connect, study, enrol-reload, demo-backend through one trainer and **two scoring copies** | **done** |
-| 7 | Kubernetes locally: Kustomize base/overlays, Tiltfile, Envoy Gateway, CloudNativePG, SeaweedFS, NetworkPolicies, Pod Security, HPA/PDB in namespace `continuum` | all e2e suites against the cluster on the usual URLs | |
+| 7 | Kubernetes locally on Docker Desktop: Kustomize base/overlays (`deploy/k8s`), `deploy/platform` (metrics-server, CloudNativePG, Envoy Gateway), SeaweedFS, NetworkPolicies, Pod Security `restricted`, HPA/PDB; `scripts/k8s-local.sh` instead of Tilt (OWNER); namespaces `continuum`, `continuum-storage`, `continuum-demo` | connect 94/94, study 29/29 (replay 344/344), enrol-reload 11/11, demo-backend 19/19 through Envoy on `localhost:28080`/`:23000`; e2e_mouse_a5 inside the cluster; the CA data copy migrated in, 23 tables / 916,334 rows identical; the model scorer autoscaled 1 → 2; the operator area only through a port-forward; NetworkPolicies measured as not enforced by Docker Desktop (service keys still refuse) | **done** |
 | 8 | Observability: OTel in all services, grafana/otel-lgtm, dashboards and alerts | a traced check end to end | |
 | 9 | Cutover on this PC: final backup → migrate → run the cluster → full e2e + replay → switch; Compose stack stopped, not deleted, for a rollback window | the same proofs on the real data | |
 | 10 | Cloud readiness, when a budget exists: choose a provider; OpenTofu; External Secrets; cert-manager; staging; CI deploy; production; then Istio ambient mTLS, tenant-secret encryption, key rotation **before real users** | staging smoke + e2e | later |
@@ -710,7 +726,7 @@ Work on mouse-specific code in steps 5–6 is coordinated with the mouse session
 | Ticketing project | Here | Why |
 |---|---|---|
 | ingress-nginx with regex paths, `ticketing.dev` in the hosts file | Gateway API + Envoy Gateway; local URLs unchanged (`localhost:8080` / `:3000`) | retired controller; passkeys need a stable RP ID |
-| Skaffold v2alpha3, manual sync | Tilt live update | Skaffold archive |
+| Skaffold v2alpha3, manual sync | `kubectl apply -k` + `scripts/k8s-local.sh` (no tool on the PC) | Skaffold archive |
 | `infra/k8s` + copied `k8s-dev`/`k8s-prod` files (the prod Ingress still on the removed `extensions/v1beta1` API) | Kustomize base + overlays | no copies to drift |
 | Environment values inside the base manifests (`ticketing.dev` URLs, a personal sender address) | overlays and ConfigMaps | portability |
 | Secrets created by hand with `kubectl create secret`; `auth/.env` committed | generated locally, External Secrets in the cloud; nothing in git | repeatable and safe (rotate that JWT key if it was ever used outside development) |

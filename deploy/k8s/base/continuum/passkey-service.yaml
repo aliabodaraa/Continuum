@@ -1,0 +1,96 @@
+# passkey-service: WebAuthn credentials and ceremonies (database passkey). Only the gateway calls it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: passkey-service
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: passkey-service
+  labels: { app.kubernetes.io/name: passkey-service }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: passkey-service }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: passkey-service }
+    spec:
+      serviceAccountName: passkey-service
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: passkey-service
+          image: continuum/passkey-service
+          ports:
+            - { name: http, containerPort: 4000 }
+          env:
+            - { name: PORT, value: "4000" }
+            - { name: NODE_ENV, value: production }
+            - { name: LOG_FORMAT, value: json }
+            - { name: STORAGE, value: postgres }
+            - name: DB_USER
+              valueFrom: { secretKeyRef: { name: pg-passkey, key: username } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: pg-passkey, key: password } }
+            - { name: DATABASE_URL, value: "postgres://$(DB_USER):$(DB_PASSWORD)@continuum-pg-rw:5432/passkey" }
+            - name: RP_ID
+              valueFrom: { configMapKeyRef: { name: continuum-urls, key: PASSKEY_RP_ID } }
+            - name: ORIGIN
+              valueFrom: { configMapKeyRef: { name: continuum-urls, key: PASSKEY_ORIGIN } }
+            - name: PASSKEY_API_KEY
+              valueFrom: { secretKeyRef: { name: continuum-secrets, key: PASSKEY_API_KEY } }
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            failureThreshold: 6
+          lifecycle:
+            preStop: { exec: { command: ["sleep", "5"] } }
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { memory: 384Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: passkey-service
+  labels: { app.kubernetes.io/name: passkey-service }
+spec:
+  selector: { app.kubernetes.io/name: passkey-service }
+  ports:
+    - { name: http, port: 4000, targetPort: http }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: passkey-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: passkey-service }

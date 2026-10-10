@@ -595,6 +595,29 @@ Implementation details:
   single container. The feed of new versions took the first check after a retrain from no verdict (five
   5-second timeouts across two copies) to none.
 
+## 13f. Kubernetes on this PC (since 2026-10-10, branch `cloud-native`)
+- **Where:** Docker Desktop's own cluster, three namespaces of Continuum's own (`continuum`, `continuum-storage`,
+  `continuum-demo`), nothing else touched; no tool installed on the PC (OWNER): `kubectl` (with Kustomize) and
+  `scripts/k8s-local.sh` (`platform`, `secrets`, `build`, `deploy`, `up`, `seed-ca`, `status`, `logs`, `down`).
+- **Platform** (`deploy/platform/install.sh`, pinned): metrics-server 0.9.0, CloudNativePG 1.30.1 (PostgreSQL 16.15),
+  Envoy Gateway 1.9.2 with the GatewayClass `envoy`.
+- **Manifests** (`deploy/k8s`): `base/continuum` (the five services as Deployments with probes, a graceful stop, HPA
+  and PDB; one PostgreSQL cluster with a database and login per service, each login limited to its own database;
+  NetworkPolicies; the Gateway and the API route), `base/storage` (SeaweedFS), `base/demo` (the reference tenant and
+  its route), `overlays/local` (one copy each, images `:local`, the API on `localhost:28080` and the demo on
+  `localhost:23000`, secrets from a git-ignored folder). Every namespace enforces Pod Security `restricted`: no pod
+  runs as root, escalates privileges, keeps a capability or writes its root filesystem.
+- **Found on the way:** a fresh gateway seeded the demo tenant with no website, so passkeys from the demo were refused
+  (`origin_not_allowed`); the gateway now adds the site of `DEMO_SIGNIN_URL` (its sign-in page is on it). Kustomize's
+  `images:` cannot be used next to CloudNativePG's `Database` (its text field `template`), so the overlay tags the
+  images with explicit transformers.
+- **NetworkPolicies are not enforced by Docker Desktop's Kubernetes** (measured: the demo pod reaches ca-service and
+  passkey-service). Every internal route still needs its service key (measured from the demo pod: 401 from
+  ca-service, passkey-service and the model). The demo suite reports the reach as a note when
+  `CONTINUUM_NETPOL_UNENFORCED=1` and checks the refusal everywhere; the policies are proven on an enforcing cluster.
+- **A slow, unstable connection** (5 to 140 KB/s that night): images were fetched with a resumable downloader, loaded
+  with `docker load`, and the registry digest recorded with a `docker pull` by digest that fetched only the index.
+
 ## 14. Security model (summary)
 | Threat | Mitigation |
 |---|---|

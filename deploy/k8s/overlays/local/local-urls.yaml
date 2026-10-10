@@ -1,0 +1,25 @@
+# Where browsers reach this local cluster, and the Continuum Guard extension loaded unpacked from this checkout
+# (an unpacked extension's id follows its folder).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: continuum-urls
+  namespace: continuum
+data:
+  GATEWAY_PUBLIC_URL: http://localhost:28080
+  PASSKEY_RP_ID: localhost
+  PASSKEY_ORIGIN: http://localhost:23000
+  CONTINUUM_EXTENSION_ID: gkadjaldkpkahhbcdkghjgghnhdcdmlc
+  DEMO_SIGNIN_URL: http://localhost:23000/continuum/link
+  STUDY_LOGGING: "1"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-config
+  namespace: continuum-demo
+data:
+  ORIGIN: http://localhost:23000
+  RP_ID: localhost
+  COOKIE_SECURE: "0"
+  CONTINUUM_GATEWAY_URL: http://localhost:28080

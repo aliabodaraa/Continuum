@@ -1,0 +1,131 @@
+# The gateway: the only service the edge routes to. Keeps no state of its own (PostgreSQL), so any number
+# of copies serve together; its two signing keys are the same for every copy (Secret gateway-keys).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gateway
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  labels: { app.kubernetes.io/name: gateway }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: gateway }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: gateway }
+    spec:
+      serviceAccountName: gateway
+      automountServiceAccountToken: false
+      enableServiceLinks: false          # no injected *_SERVICE_* variables (GATEWAY_* names are settings here)
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000                    # the key files (mode 0440) belong to this group
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: gateway
+          image: continuum/gateway
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: PORT, value: "8080" }
+            - { name: NODE_ENV, value: production }
+            - { name: LOG_FORMAT, value: json }
+            - { name: STORAGE, value: postgres }
+            - name: DB_USER
+              valueFrom: { secretKeyRef: { name: pg-gateway, key: username } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: pg-gateway, key: password } }
+            - { name: DATABASE_URL, value: "postgres://$(DB_USER):$(DB_PASSWORD)@continuum-pg-rw:5432/gateway" }
+            - { name: DATA_DIR, value: /app/data }   # only its two keys live here (Secret gateway-keys)
+            - { name: CA_API_URL, value: "http://ca-service:4100" }
+            - { name: PASSKEY_API_URL, value: "http://passkey-service:4000" }
+            - name: CA_SIGNING_SECRET
+              valueFrom: { secretKeyRef: { name: continuum-secrets, key: CA_SIGNING_SECRET } }
+            - name: GATEWAY_SESSION_SECRET
+              valueFrom: { secretKeyRef: { name: continuum-secrets, key: GATEWAY_SESSION_SECRET } }
+            - name: GATEWAY_ADMIN_KEY
+              valueFrom: { secretKeyRef: { name: continuum-secrets, key: GATEWAY_ADMIN_KEY } }
+            - name: CA_API_KEY
+              valueFrom: { secretKeyRef: { name: continuum-secrets, key: CA_API_KEY } }
+            - name: PASSKEY_API_KEY
+              valueFrom: { secretKeyRef: { name: continuum-secrets, key: PASSKEY_API_KEY } }
+            - name: GATEWAY_PUBLIC_URL
+              valueFrom: { configMapKeyRef: { name: continuum-urls, key: GATEWAY_PUBLIC_URL } }
+            - name: CONTINUUM_EXTENSION_ID
+              valueFrom: { configMapKeyRef: { name: continuum-urls, key: CONTINUUM_EXTENSION_ID } }
+            - name: DEMO_SIGNIN_URL
+              valueFrom: { configMapKeyRef: { name: continuum-urls, key: DEMO_SIGNIN_URL } }
+            - name: DEMO_WEBHOOK_URL
+              valueFrom: { configMapKeyRef: { name: continuum-urls, key: DEMO_WEBHOOK_URL } }
+            - name: GATEWAY_OPERATOR_HOSTS
+              valueFrom: { configMapKeyRef: { name: continuum-urls, key: GATEWAY_OPERATOR_HOSTS } }
+          envFrom:
+            - configMapRef: { name: continuum-protection }
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            failureThreshold: 6
+          lifecycle:
+            preStop: { exec: { command: ["sleep", "5"] } }   # let the endpoints drop it before SIGTERM
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: keys, mountPath: /app/data, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: keys
+          secret: { secretName: gateway-keys, defaultMode: 0440 }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  labels: { app.kubernetes.io/name: gateway }
+spec:
+  selector: { app.kubernetes.io/name: gateway }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: gateway }
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: gateway }

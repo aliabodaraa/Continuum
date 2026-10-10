@@ -1,0 +1,70 @@
+# This PC (Docker Desktop's Kubernetes): one copy of each service, images built here (tag "local"), the API
+# on http://localhost:28080 and the demo on http://localhost:23000, so it runs beside the Compose stacks
+# (8080/3000 and 18080/13000). The secrets are files in secrets/ (git-ignored), made by
+# scripts/k8s-local.sh secrets.
+#   kubectl apply -k deploy/k8s/overlays/local        (scripts/k8s-local.sh deploy does this)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base/continuum
+  - ../../base/storage
+  - ../../base/demo
+
+transformers:
+  - image-tags.yaml          # the images built here, tag "local" (why not `images:`: see the file)
+
+# Fixed names: the PostgreSQL operator and the Deployments refer to them by name.
+generatorOptions:
+  disableNameSuffixHash: true
+secretGenerator:
+  - name: continuum-secrets
+    namespace: continuum
+    envs: [secrets/continuum.env]
+  - name: gateway-keys
+    namespace: continuum
+    files: [secrets/gateway-verdict-key.pem, secrets/gateway-identity-key.pem]
+  - name: pg-gateway
+    namespace: continuum
+    type: kubernetes.io/basic-auth
+    envs: [secrets/pg-gateway.env]
+    options: { labels: { cnpg.io/reload: "true" } }
+  - name: pg-ca
+    namespace: continuum
+    type: kubernetes.io/basic-auth
+    envs: [secrets/pg-ca.env]
+    options: { labels: { cnpg.io/reload: "true" } }
+  - name: pg-passkey
+    namespace: continuum
+    type: kubernetes.io/basic-auth
+    envs: [secrets/pg-passkey.env]
+    options: { labels: { cnpg.io/reload: "true" } }
+  - name: model-store
+    namespace: continuum
+    envs: [secrets/model-store.env]
+  - name: seaweedfs-s3
+    namespace: continuum-storage
+    files: [s3.json=secrets/seaweedfs-s3.json]
+  - name: demo-secrets
+    namespace: continuum-demo
+    envs: [secrets/demo.env]
+
+patches:
+  - path: local-urls.yaml
+  - path: one-copy.yaml
+  - target: { kind: Gateway, name: continuum }
+    patch: |-
+      - op: replace
+        path: /spec/listeners
+        value:
+          - name: api
+            protocol: HTTP
+            port: 28080
+            allowedRoutes: { namespaces: { from: Same } }
+          - name: demo
+            protocol: HTTP
+            port: 23000
+            allowedRoutes:
+              namespaces:
+                from: Selector
+                selector:
+                  matchLabels: { kubernetes.io/metadata.name: continuum-demo }

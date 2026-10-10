@@ -12,19 +12,22 @@
 //   node extension/scripts/e2e_headless_enrol_reload.mjs
 import { spawn, execFileSync } from "node:child_process"; import fs from "node:fs"; import os from "node:os"; import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { inService } from "./lib/stack.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 // Containers the test acts on directly; defaults are the running stack's. For the side-by-side stack
 // (project continuum-next) set CONTINUUM_CONTAINER_PREFIX=continuum-next.
-const PREFIX = process.env.CONTINUUM_CONTAINER_PREFIX || "continuum";
 const GW = process.env.CONTINUUM_GATEWAY || "http://localhost:8080", PORT = 9360;
-const CA = `${PREFIX}-ca-service-1`, GW_CONTAINER = `${PREFIX}-gateway-1`;
 const CHROME = path.join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ADMIN_KEY = (fs.readFileSync(path.join(ROOT, ".env"), "utf8").match(/^GATEWAY_ADMIN_KEY=(.*?)\s*$/m) || [])[1] || "";
 let token = null, userId = null, bad = 0;
 const ok = (n, c, d) => { console.log((c ? "  PASS  " : "  FAIL  ") + n + (d ? " — " + d : "")); if (!c) bad++; };
+// The operator area (operator page, /v1/tenants, /v1/admin/*): the gateway itself (Compose), or, behind an edge
+// that never routes it (Kubernetes: Envoy marks every request it forwards), a private port-forward to the
+// gateway (scripts/k8s-local.sh operator => CONTINUUM_OPERATOR=http://localhost:28081).
+const OP = process.env.CONTINUUM_OPERATOR || GW;
 async function gw(p, body, method = "POST") {
-  const r = await fetch(GW + p, { method, headers: { "Content-Type": "application/json", Origin: GW, ...(token ? { Authorization: "Bearer " + token } : {}),
+  const r = await fetch((p.startsWith("/v1/tenants") ? OP : GW) + p, { method, headers: { "Content-Type": "application/json", Origin: GW, ...(token ? { Authorization: "Bearer " + token } : {}),
     ...(p.startsWith("/v1/tenants") ? { "X-Admin-Key": ADMIN_KEY } : {}) }, body: method === "GET" ? undefined : JSON.stringify(body || {}) });
   return { status: r.status, d: await r.json().catch(() => ({})) };
 }
@@ -128,9 +131,9 @@ try {
 } finally {
   try {
     if (token) for (const p of ["/v1/sdk/keystroke/reset", "/v1/sdk/mouse/reset"]) await gw(p);
-    if (userId) execFileSync("docker", ["exec", GW_CONTAINER, "node", "-e", `fetch(process.env.PASSKEY_API_URL+'/v1/users/${userId}/reset',{method:'POST',headers:{'X-Api-Key':process.env.PASSKEY_API_KEY}}).then(r=>console.log('passkey reset',r.status))`], { encoding: "utf8" });
+    if (userId) inService("gateway", ["node", "-e", `fetch(process.env.PASSKEY_API_URL+'/v1/users/${userId}/reset',{method:'POST',headers:{'X-Api-Key':process.env.PASSKEY_API_KEY||''}}).then(r=>console.log('passkey reset',r.status))`]);
     // through the service's own data layer, so it reaches whichever store the service uses (SQLite or PostgreSQL)
-    if (userId) execFileSync("docker", ["exec", "-w", "/app", CA, "node", "-e", `const db=require('/app/db');db.run('DELETE FROM session_locks WHERE user_id=?', ${userId}).finally(()=>db.close());`]);
+    if (userId) inService("ca-service", ["node", "-e", `const db=require('/app/db');db.run('DELETE FROM session_locks WHERE user_id=?', ${userId}).finally(()=>db.close());`]);
     console.log("  cleanup done");
   } catch (e) { console.log("  cleanup: " + e.message); }
   ws.close(); chrome.kill(); await sleep(400); try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}

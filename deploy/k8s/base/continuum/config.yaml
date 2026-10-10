@@ -1,0 +1,30 @@
+# Settings that are not secret. continuum-protection: every organisation's default protection, read by
+# BOTH the gateway and ca-service (they must agree; the operator page and each organisation's console
+# override them). continuum-urls: where browsers reach Continuum, set per environment by the overlay.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: continuum-protection
+data:
+  ONBOARDING_MODE: eager
+  MONITOR_EXCLUDE_TYPES: hidden
+  CONTINUUM_PANEL: show
+  CONTINUUM_KEYSTROKE: "on"
+  CONTINUUM_MOUSE: "on"
+  ADAPTIVE_RETRAINING: "on"
+  ADAPTIVE_MIN_GAP_HOURS: "3"
+  KEYSTROKE_DECISION_WINDOWS: "20"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: continuum-urls
+data:
+  GATEWAY_PUBLIC_URL: https://api.example.com        # overlays set the real ones
+  PASSKEY_RP_ID: example.com
+  PASSKEY_ORIGIN: https://demo.example.com
+  CONTINUUM_EXTENSION_ID: ""
+  DEMO_SIGNIN_URL: ""
+  DEMO_WEBHOOK_URL: ""
+  GATEWAY_OPERATOR_HOSTS: ""
+  STUDY_LOGGING: "0"

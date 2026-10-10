@@ -116,6 +116,26 @@ compose_checks() {
   return $rc
 }
 
+# deploy/k8s: every overlay renders (Kustomize, as `kubectl apply -k` would), with throwaway placeholder files
+# where the real secrets are git-ignored. kubectl comes with Docker Desktop.
+k8s_checks() {
+  command -v kubectl >/dev/null 2>&1 || { echo "kubectl not found: skipped"; return 0; }
+  local tmp rc=0 ov
+  tmp=$(mktemp -d)
+  cp -r deploy/k8s "$tmp/"
+  for ov in "$tmp"/k8s/overlays/*/; do
+    mkdir -p "$ov/secrets"
+    for f in continuum.env pg-gateway.env pg-ca.env pg-passkey.env model-store.env demo.env; do echo "PLACEHOLDER=1" > "$ov/secrets/$f"; done
+    echo '{}' > "$ov/secrets/seaweedfs-s3.json"
+    : > "$ov/secrets/gateway-verdict-key.pem"; : > "$ov/secrets/gateway-identity-key.pem"
+    if kubectl kustomize "$(winpath "$ov")" > "$tmp/out.yaml"; then
+      echo "deploy/k8s/overlays/$(basename "$ov"): renders ($(grep -c '^kind:' "$tmp/out.yaml") resources)"
+    else rc=1; fi
+  done
+  rm -rf "$tmp"
+  return $rc
+}
+
 DOCKERFILES=(services/ca-service/Dockerfile services/passkey-service/Dockerfile services/gateway/Dockerfile
              apps/demo/Dockerfile services/model-api/Dockerfile.model services/model-api/Dockerfile.model.prod)
 hadolint_checks() {
@@ -183,6 +203,7 @@ image_checks() {
 step "JavaScript + shell: syntax and unit tests" node_checks
 step "Python: syntax and unit tests" python_checks
 step "Compose files" compose_checks
+step "Kubernetes manifests" k8s_checks
 step "Dockerfile lint" hadolint_checks
 step "Workflow files" workflow_checks
 [ "$IMAGES" = 1 ] && step "Images: build, no secrets inside$([ "$SCAN" = 1 ] && echo ', vulnerability scan')" image_checks

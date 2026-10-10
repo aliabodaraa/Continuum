@@ -1,0 +1,200 @@
+# The model service, one image in two roles (services/model-api, MODEL_ROLE): scoring copies that scale with
+# load, and a trainer. Per-user models are versions in object storage (SeaweedFS here: namespace
+# continuum-storage); a pod's model folder is only a cache (emptyDir). Only ca-service can reach them
+# (network-policies.yaml): a scoring endpoint is a biometric oracle.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: model
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-inference
+  labels: { app.kubernetes.io/name: model-inference, app.kubernetes.io/component: model }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: model-inference }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: model-inference, app.kubernetes.io/component: model }
+    spec:
+      serviceAccountName: model
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: model
+          image: continuum/model-api
+          ports:
+            - { name: http, containerPort: 5000 }
+          env:
+            - { name: MODEL_ROLE, value: inference }
+            - { name: MODEL_PORT, value: "5000" }
+            - { name: MODEL_STORE, value: s3 }
+            - { name: MODEL_S3_ENDPOINT, value: "http://seaweedfs.continuum-storage:8333" }
+            - { name: MODEL_S3_BUCKET, value: models }
+            - name: MODEL_S3_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: model-store, key: MODEL_S3_ACCESS_KEY } }
+            - name: MODEL_S3_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: model-store, key: MODEL_S3_SECRET_KEY } }
+            - name: MODEL_API_KEY
+              valueFrom: { secretKeyRef: { name: continuum-secrets, key: MODEL_API_KEY } }
+          # TensorFlow and the base models take up to ~90 s to load: liveness waits for the start-up probe.
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 15
+            failureThreshold: 4
+          lifecycle:
+            preStop: { exec: { command: ["sleep", "5"] } }
+          resources:
+            requests: { cpu: 250m, memory: 1Gi }
+            limits: { memory: 3Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: models, mountPath: /app/artifacts/users }   # the cache of versions this copy loaded
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: models
+          emptyDir: { sizeLimit: 2Gi }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-inference
+  labels: { app.kubernetes.io/name: model-inference }
+spec:
+  selector: { app.kubernetes.io/name: model-inference }
+  ports:
+    - { name: http, port: 5000, targetPort: http }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: model-inference
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: model-inference }
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: model-inference
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: model-inference }
+---
+# The trainer: a fixed size (queue length is not CPU; the durable queue in ca-service absorbs bursts).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-trainer
+  labels: { app.kubernetes.io/name: model-trainer, app.kubernetes.io/component: model }
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app.kubernetes.io/name: model-trainer }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: model-trainer, app.kubernetes.io/component: model }
+    spec:
+      serviceAccountName: model
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # A training in progress when the pod stops is retried by ca-service's queue (its lease runs out).
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: model
+          image: continuum/model-api
+          ports:
+            - { name: http, containerPort: 5000 }
+          env:
+            - { name: MODEL_ROLE, value: trainer }
+            - { name: MODEL_PORT, value: "5000" }
+            - { name: MODEL_STORE, value: s3 }
+            - { name: MODEL_S3_ENDPOINT, value: "http://seaweedfs.continuum-storage:8333" }
+            - { name: MODEL_S3_BUCKET, value: models }
+            - name: MODEL_S3_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: model-store, key: MODEL_S3_ACCESS_KEY } }
+            - name: MODEL_S3_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: model-store, key: MODEL_S3_SECRET_KEY } }
+            - name: MODEL_API_KEY
+              valueFrom: { secretKeyRef: { name: continuum-secrets, key: MODEL_API_KEY } }
+            - { name: MODEL_TRAIN_CONCURRENCY, value: "2" }
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 15
+            failureThreshold: 4
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { memory: 4Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: models, mountPath: /app/artifacts/users }   # where a version is written before upload
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: models
+          emptyDir: { sizeLimit: 4Gi }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-trainer
+  labels: { app.kubernetes.io/name: model-trainer }
+spec:
+  selector: { app.kubernetes.io/name: model-trainer }
+  ports:
+    - { name: http, port: 5000, targetPort: http }
