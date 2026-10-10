@@ -19,7 +19,23 @@ its addresses. The Compose stack is stopped, not removed, and stays untouched fo
   - run `scripts/k8s-local.sh operator`, then open http://localhost:28081/operator.html;
   - the edge never serves it; under Compose it was http://localhost:8080/operator.html.
 
-## Already done (2026-10-10, on a copy of the data)
+## Done: the switch on 2026-10-10, 12:15–12:25
+
+Every check passed:
+- **Import** (137 s), identical part by part:
+  - gateway: 9 organisations, 344 user ids;
+  - passkeys: 27;
+  - ca-service: 881,620 rows;
+  - models: 154, each stored with its own fingerprint.
+- **The import's proof:**
+  - every logged verdict replays;
+  - the study export is identical.
+- **End-to-end suites:** connect 93/93, enrol-reload 10/10, demo-backend 19/19.
+- **First cluster backup:** restorable.
+
+Compose is stopped until 2026-10-24.
+
+## Rehearsed before it (2026-10-10, on a copy of the data)
 
 - **Platform, images and secrets:** `scripts/k8s-local.sh platform | secrets | build`.
 - **Rehearsal import** of a copy (`scripts/k8s-import.sh .`). Every part was identical:
@@ -54,7 +70,8 @@ Run steps 1–2 before the downtime starts. Commands run in this checkout (`cont
    ```
 3. **Stop Compose:** `(cd ../continuum && docker compose stop)`. Use `stop`, not `down`: the containers are
    kept for going back. None of them restarts by itself.
-4. **The cluster on the usual addresses:** `K8S_OVERLAY=live scripts/k8s-local.sh deploy`.
+4. **The cluster on the usual addresses:** `K8S_OVERLAY=live scripts/k8s-local.sh up`. Use `up`, not
+   `deploy`: the pods read the addresses only when they start, so they must restart.
 5. **Import the live data:** `scripts/k8s-import.sh ../continuum`.
    - It refuses to run while that Compose stack is up.
    - It replaces what the cluster held (the rehearsal copy).

@@ -301,9 +301,13 @@ def feed_after(cursor, since_s=None):
 
 
 def publish_all():
-    """Upload every per-user model under ARTIFACTS_DIR/users that is not stored yet (moving to s3)."""
+    """Upload every per-user model under ARTIFACTS_DIR/users that is not stored, or is stored with other
+    content (moving to s3, an import, a restore). A version never changes, but a folder made before versions
+    (users/user-<id>/final_model) was rewritten in place by every training, so the same name can hold other
+    content than the stored copy: the fingerprint decides, not the name. Returns (uploaded, already stored,
+    of the uploaded: replacing other content)."""
     root = os.path.join(ARTIFACTS_DIR, "users")
-    c, done, skipped = _s3(), 0, 0
+    c, done, skipped, replaced = _s3(), 0, 0, 0
     ensure_bucket()
     for user in sorted(os.listdir(root)) if os.path.isdir(root) else []:
         udir = os.path.join(root, user)
@@ -313,15 +317,20 @@ def publish_all():
             p = os.path.join(udir, name)
             if not LIVE_NAME.match(name):            # snapshots, scratch folds, backups: not served
                 continue
+            digest = sha256(p)
             try:
-                c.head_object(Bucket=BUCKET, Key=f"{_key(p)}.complete")
+                stored = json.loads(c.get_object(Bucket=BUCKET, Key=f"{_key(p)}.complete")["Body"].read())
+            except Exception:
+                stored = None
+            if stored and stored.get("sha256") == digest:
                 skipped += 1
                 continue
-            except Exception:
-                pass
-            publish(p)
+            if stored:
+                replaced += 1
+                print(f"[store] {_key(p)}: stored with other content, replaced")
+            publish(p, digest)
             done += 1
-    return done, skipped
+    return done, skipped, replaced
 
 
 def _stored():
@@ -352,7 +361,7 @@ def check_stored(expected):
     return sorted(k for k, digest in expected.items() if (stored.get(k) or {}).get("sha256") != digest)
 
 
-USAGE = """usage: python model_store.py publish-all          upload every model under ARTIFACTS_DIR/users not stored yet
+USAGE = """usage: python model_store.py publish-all          upload every model under ARTIFACTS_DIR/users not stored as it is
        python model_store.py export-all <dir>     download every stored model into <dir> (a backup), checked
        python model_store.py check <models.json>  is every model of a backup stored, with its fingerprint?"""
 
@@ -362,8 +371,8 @@ if __name__ == "__main__":
     if args[:1] and KIND != "s3":
         sys.exit("MODEL_STORE is not s3: the object store commands do not apply")
     if args == ["publish-all"]:
-        n, s = publish_all()
-        print(f"uploaded {n} model(s), {s} already stored")
+        n, s, r = publish_all()
+        print(f"uploaded {n} model(s) ({r} replacing other content), {s} already stored as they are")
     elif len(args) == 2 and args[0] == "export-all":
         print(f"exported {export_all(args[1])} model(s), each matching its fingerprint")
     elif len(args) == 2 and args[0] == "check":
