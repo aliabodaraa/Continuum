@@ -109,7 +109,8 @@ up() {
   k apply -k "$OVERLAY"
   # same tag, new image: restart the pods so they run it
   for ns in "${NAMESPACES[@]}"; do
-    k -n "$ns" get deploy -o name | grep -v seaweedfs | xargs -r kubectl --context "$CTX" -n "$ns" rollout restart
+    # (grep finds nothing in continuum-storage, whose one Deployment is the object store: not an error)
+    k -n "$ns" get deploy -o name | { grep -v seaweedfs || true; } | xargs -r kubectl --context "$CTX" -n "$ns" rollout restart
   done
   wait_ready
   status

@@ -165,6 +165,19 @@ class Backup(unittest.TestCase):
         self.assertFalse(any(n.startswith("final_model") for n in os.listdir(os.path.join(dest, "users", "user-21"))),
                          "nothing half-downloaded is left in place")
 
+    def test_publish_all_replaces_a_folder_from_before_versions_rewritten_since(self):
+        legacy = os.path.join(ROOT, "users", "user-22", "final_model")
+        write(os.path.join(legacy, "saved_model.pb"), "first training")
+        ms.publish_all()                                    # (the other tests' folders are uploaded too)
+        first = ms.sha256(legacy)
+        self.assertEqual(ms.check_stored({ms._key(legacy): first}), [], "the new folder is uploaded")
+        write(os.path.join(legacy, "saved_model.pb"), "retrained in place")   # as trainings did before versions
+        done, skipped, replaced = ms.publish_all()
+        self.assertEqual((done, replaced), (1, 1), "same name, other content: uploaded again, nothing else")
+        self.assertEqual(ms.check_stored({ms._key(legacy): ms.sha256(legacy)}), [])
+        self.assertNotEqual(ms.sha256(legacy), first)
+        self.assertEqual(ms.publish_all()[:2], (0, skipped + 1), "then it is stored as it is")
+
     def test_check_names_a_model_missing_or_different_after_a_restore(self):
         del self.s3.objects[ms._key(self.action) + ".complete"]
         changed = dict(self.prints, **{ms._key(self.model): "0" * 64})
