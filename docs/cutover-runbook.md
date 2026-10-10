@@ -1,8 +1,15 @@
 # Moving the live system from Compose to Kubernetes (step 9)
 
 For whoever runs the switch on this PC. The live system (the Compose stack in `../continuum`, branch `main`)
-moves into Docker Desktop's Kubernetes cluster (`scripts/k8s-local.sh`, run from this checkout). It keeps
-its addresses. The Compose stack is stopped, not removed, and stays untouched for 14 days as the way back.
+moves into Docker Desktop's Kubernetes cluster (`scripts/k8s-local.sh`). It keeps its addresses. The Compose
+stack is stopped, not removed, and stays untouched for 14 days as the way back.
+
+**Since the switch** (`cloud-native` merged into `main` the same day, OWNER):
+- The scripts run from the main checkout, `continuum/`; the secrets were copied to its
+  `deploy/k8s/overlays/local/secrets/` (git-ignored).
+- The code the Compose stack ran is tagged `pre-k8s-switch`.
+- The commands below were written for the worktree `continuum-cloud`, where `../continuum` was the main
+  checkout.
 
 ## What users notice
 
@@ -104,16 +111,23 @@ Run steps 1–2 before the downtime starts. Commands run in this checkout (`cont
   - The cluster backup also holds `../paper`, as `data-export.sh` did.
 - **Keep the Compose containers** stopped and untouched for 14 days. After that, remove them with
   `docker compose down` in `../continuum`. This removes the containers only, not the data files.
-- **Merge `cloud-native` into `main`** after the checks above. Then:
-  - copy `deploy/k8s/overlays/local/secrets/` into `../continuum` (the folder is git-ignored);
-  - run the `k8s-*` scripts from there.
+- **Merge `cloud-native` into `main`:** done on 2026-10-10.
+  - `main` fast-forwarded and pushed; the old code is tagged `pre-k8s-switch`.
+  - The secrets were copied into `continuum/`, and the `k8s-*` scripts run from there.
+  - The worktree `continuum-cloud` can be removed after the 14 days.
 
 ## Going back (within the 14 days)
 
+The Compose stack runs the code of its folder (bind mounts), and `main` has moved on, so first put that folder
+back on the code it ran. Its data files are not in git and stay as they were. In `continuum/`:
+
 ```bash
-K8S_OVERLAY=local scripts/k8s-local.sh deploy     # the cluster moves to 28080/23000/24200, freeing 8080/3000/4200
-(cd ../continuum && docker compose start)
+K8S_OVERLAY=local scripts/k8s-local.sh up     # the cluster moves to 28080/23000/24200, freeing 8080/3000/4200
+git checkout pre-k8s-switch                   # the code the Compose stack ran (the folder must be clean)
+docker compose start
 ```
+
+Afterwards, `git checkout main` returns the folder to the current code; stop Compose first.
 
 Compose comes back with the data as it was at the switch, under its old secrets: users sign in again.
 Whatever the cluster recorded after the switch (new samples, decisions, study log, sign-ups) is **not** in
