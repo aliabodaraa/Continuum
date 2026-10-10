@@ -7,8 +7,8 @@
 #   scripts/k8s-local.sh platform        once: metrics-server, CloudNativePG, Envoy Gateway (deploy/platform)
 #   scripts/k8s-local.sh secrets         once: this cluster's secrets in deploy/k8s/overlays/local/secrets/
 #                                        (git-ignored; random, except the operator key, taken from .env)
-#   scripts/k8s-local.sh build           the five images, tagged :local
-#   scripts/k8s-local.sh deploy          apply deploy/k8s/overlays/local and wait until everything is ready
+#   scripts/k8s-local.sh build           the six images, tagged :local
+#   scripts/k8s-local.sh deploy          apply the overlay and wait until everything is ready
 #   scripts/k8s-local.sh up              build, deploy, and restart the pods on the new images
 #   scripts/k8s-local.sh seed-ca <file>  copy a ca-service SQLite file into the cluster's database ca
 #                                        (migrate.js: refused if the database already holds rows)
@@ -19,12 +19,18 @@
 #   scripts/k8s-local.sh logs <deployment> [namespace]
 #   scripts/k8s-local.sh down            delete the three namespaces, their data included (asks first)
 #
-# The API answers on http://localhost:28080 and the demo on http://localhost:23000.
+# Two overlays, the same system (namespaces, data, secrets) on different addresses, one at a time:
+#   K8S_OVERLAY=local (default)  API http://localhost:28080, demo :23000, Acme :24200, beside the Compose stack
+#   K8S_OVERLAY=live             API http://localhost:8080,  demo :3000,  Acme :4200, in place of it (step 9)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 CTX="${K8S_CONTEXT:-docker-desktop}"
-OVERLAY=deploy/k8s/overlays/local
-SECRETS="$OVERLAY/secrets"
+case "${K8S_OVERLAY:-local}" in
+  local) OVERLAY=deploy/k8s/overlays/local; PORTS=(28080 23000 24200) ;;
+  live) OVERLAY=deploy/k8s/overlays/live; PORTS=(8080 3000 4200) ;;
+  *) echo "K8S_OVERLAY must be local or live"; exit 2 ;;
+esac
+SECRETS=deploy/k8s/overlays/local/secrets      # both overlays use these
 NAMESPACES=(continuum continuum-storage continuum-demo)
 k() { kubectl --context "$CTX" "$@"; }
 say() { printf '\n== %s\n' "$*"; }
@@ -75,6 +81,7 @@ build() {
   docker build -q -t continuum/ca-service:local services/ca-service
   docker build -q -t continuum/passkey-service:local services/passkey-service
   docker build -q -t continuum/web-demo:local --build-context sdk=./sdk apps/demo
+  docker build -q -t continuum/acme:local apps/acme
   docker build -q -t continuum/model-api:local -f services/model-api/Dockerfile.model.prod .
 }
 
@@ -162,14 +169,36 @@ status() {
   for ns in "${NAMESPACES[@]}"; do say "$ns"; k -n "$ns" get pods,svc 2>/dev/null || true; done
   say "edge"
   k get gateway -A 2>/dev/null || true
-  echo "API  http://localhost:28080    demo http://localhost:23000"
+  echo "API  http://localhost:${PORTS[0]}    demo http://localhost:${PORTS[1]}    Acme http://localhost:${PORTS[2]}    ($OVERLAY)"
 }
 
 logs() { k -n "${2:-continuum}" logs "deploy/${1:?usage: $0 logs <deployment> [namespace]}" --tail=200; }
 
 operator() {
-  echo "operator page: http://localhost:28081/operator.html   (Ctrl-C ends it; the forward reconnects if the pod changes)"
-  while true; do k -n continuum port-forward svc/gateway 28081:8080 --address 127.0.0.1 || true; sleep 1; done
+  echo "operator page: http://localhost:28081/operator.html   (Ctrl-C ends it; it follows the gateway to a new pod)"
+  # A port-forward is tied to one pod: after a restart it fails a request before it notices. So follow the
+  # gateway: every 2 s, the ready pod that is not shutting down; when it changes, forward to the new one.
+  local pod="" now pf="" log
+  log=$(mktemp)
+  trap '[ -n "$pf" ] && kill "$pf" 2>/dev/null; rm -f "$log"; exit 0' INT TERM
+  while true; do
+    now=$(k -n continuum get pod -l app.kubernetes.io/name=gateway \
+            -o jsonpath='{range .items[*]}{.metadata.name} {.metadata.deletionTimestamp} {.status.containerStatuses[0].ready}{"\n"}{end}' 2>/dev/null \
+          | awk 'NF == 2 && $2 == "true" { print $1; exit }' || true)
+    if [ -n "$now" ] && { [ "$now" != "$pod" ] || ! kill -0 "$pf" 2>/dev/null; }; then
+      if [ -n "$pf" ]; then
+        kill -0 "$pf" 2>/dev/null || echo "$(date +%T) the forward ended: $(grep -v '^Handling' "$log" | tail -1)"
+        kill "$pf" 2>/dev/null || true; wait "$pf" 2>/dev/null || true
+        sleep 1                                   # Windows frees the old listener a moment after its process ends
+      fi
+      pod=$now
+      # kubectl itself in the background (not through k(): a function runs in a subshell, and killing that
+      # would leave the old kubectl holding the port)
+      kubectl --context "$CTX" -n continuum port-forward "pod/$pod" 28081:8080 --address 127.0.0.1 >"$log" 2>&1 & pf=$!
+      echo "$(date +%T) forwarding to $pod"
+    fi
+    sleep 2
+  done
 }
 
 down() {
@@ -189,5 +218,5 @@ case "${1:-}" in
   operator) operator ;;
   logs) shift; logs "$@" ;;
   down) down ;;
-  *) sed -n '2,25p' "$0"; exit 2 ;;
+  *) sed -n '2,24p' "$0"; exit 2 ;;
 esac

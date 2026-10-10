@@ -32,8 +32,10 @@ import { fileURLToPath } from "node:url";
 import { K8S, inService, psql } from "./lib/stack.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const EXT = path.resolve(HERE, "..");
-const ROOT = path.resolve(EXT, "..");
+// The extension under test: this checkout's, or another's (CONTINUUM_EXTENSION_DIR): a gateway admits one extension
+// id, and an unpacked extension's id follows its folder (the live system: the main checkout's extension).
+const EXT = process.env.CONTINUUM_EXTENSION_DIR ? path.resolve(process.env.CONTINUUM_EXTENSION_DIR) : path.resolve(HERE, "..");
+const ROOT = path.resolve(HERE, "..", "..");
 const CHROME = path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe");
 const GW = process.env.CONTINUUM_GATEWAY || "http://localhost:8080";
 const DEMO = process.env.CONTINUUM_DEMO || "http://localhost:3000";

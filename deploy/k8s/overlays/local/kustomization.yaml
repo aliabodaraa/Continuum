@@ -1,7 +1,7 @@
 # This PC (Docker Desktop's Kubernetes): one copy of each service, images built here (tag "local"), the API
-# on http://localhost:28080 and the demo on http://localhost:23000, so it runs beside the Compose stacks
-# (8080/3000 and 18080/13000). The secrets are files in secrets/ (git-ignored), made by
-# scripts/k8s-local.sh secrets.
+# on http://localhost:28080, the demo on http://localhost:23000 and Acme on http://localhost:24200, so it runs
+# beside the Compose stacks (8080/3000/4200 and 18080/13000). The secrets are files in secrets/
+# (git-ignored), made by scripts/k8s-local.sh secrets. overlays/live is this overlay on the usual addresses.
 #   kubectl apply -k deploy/k8s/overlays/local        (scripts/k8s-local.sh deploy does this)
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -63,6 +63,14 @@ patches:
           - name: demo
             protocol: HTTP
             port: 23000
+            allowedRoutes:
+              namespaces:
+                from: Selector
+                selector:
+                  matchLabels: { kubernetes.io/metadata.name: continuum-demo }
+          - name: acme
+            protocol: HTTP
+            port: 24200
             allowedRoutes:
               namespaces:
                 from: Selector

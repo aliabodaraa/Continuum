@@ -123,11 +123,13 @@ k8s_checks() {
   local tmp rc=0 ov
   tmp=$(mktemp -d)
   cp -r deploy/k8s "$tmp/"
-  for ov in "$tmp"/k8s/overlays/*/; do
+  for ov in "$tmp"/k8s/overlays/*/; do            # placeholders first: one overlay can build on another's
     mkdir -p "$ov/secrets"
     for f in continuum.env pg-gateway.env pg-ca.env pg-passkey.env model-store.env demo.env; do echo "PLACEHOLDER=1" > "$ov/secrets/$f"; done
     echo '{}' > "$ov/secrets/seaweedfs-s3.json"
     : > "$ov/secrets/gateway-verdict-key.pem"; : > "$ov/secrets/gateway-identity-key.pem"
+  done
+  for ov in "$tmp"/k8s/overlays/*/; do
     if kubectl kustomize "$(winpath "$ov")" > "$tmp/out.yaml"; then
       echo "deploy/k8s/overlays/$(basename "$ov"): renders ($(grep -c '^kind:' "$tmp/out.yaml") resources)"
     else rc=1; fi

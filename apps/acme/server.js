@@ -10,6 +10,14 @@ const { createGuard } = require("./lib/continuumNode");
 
 const app = express();
 app.use(express.json());
+// The page loads the SDK from Continuum's gateway: http://localhost:8080 as written in it, or the address in
+// CONTINUUM_GATEWAY_URL (a deployment whose gateway answers elsewhere).
+const GATEWAY_URL = (process.env.CONTINUUM_GATEWAY_URL || "").replace(/\/+$/, "");
+if (GATEWAY_URL) {
+  const fs = require("fs");
+  const page = fs.readFileSync(path.join(__dirname, "public", "index.html"), "utf8").replaceAll("http://localhost:8080", GATEWAY_URL);
+  app.get(["/", "/index.html"], (req, res) => res.type("html").send(page));
+}
 app.use(express.static(path.join(__dirname, "public")));
 
 // The secret is shared with Continuum (the tenant secret). Acme uses it BOTH to

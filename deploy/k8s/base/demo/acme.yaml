@@ -1,0 +1,75 @@
+# Acme, the second reference integration: no users or database of its own, only the SDK (loaded from the
+# gateway) and the @continuum/node middleware. It signs its users' identities as the pk_demo tenant
+# (demo-secrets' CONTINUUM_SECRET) and checks verdicts with the gateway's public keys.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acme
+  labels: { app.kubernetes.io/name: acme }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: acme }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: acme }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: acme
+          image: continuum/acme
+          ports:
+            - { name: http, containerPort: 4200 }
+          env:
+            - { name: PORT, value: "4200" }
+            - { name: CONTINUUM_JWKS_URI, value: "http://gateway.continuum:8080/.well-known/jwks.json" }
+            - name: CONTINUUM_SECRET
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: CONTINUUM_SECRET } }
+            - name: CONTINUUM_GATEWAY_URL
+              valueFrom: { configMapKeyRef: { name: demo-config, key: CONTINUUM_GATEWAY_URL } }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 20
+            failureThreshold: 4
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: acme
+  labels: { app.kubernetes.io/name: acme }
+spec:
+  selector: { app.kubernetes.io/name: acme }
+  ports:
+    - { name: http, port: 4200, targetPort: http }
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: acme
+spec:
+  parentRefs:
+    - { name: continuum, namespace: continuum, sectionName: acme }
+  rules:
+    - backendRefs:
+        - { name: acme, port: 4200 }

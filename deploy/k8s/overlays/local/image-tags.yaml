@@ -4,6 +4,14 @@
 # database), which it cannot read as a pod template.
 apiVersion: builtin
 kind: ImageTagTransformer
+metadata: { name: acme }
+imageTag: { name: continuum/acme, newTag: local }
+fieldSpecs:
+  - kind: Deployment
+    path: spec/template/spec/containers[]/image
+---
+apiVersion: builtin
+kind: ImageTagTransformer
 metadata: { name: gateway }
 imageTag: { name: continuum/gateway, newTag: local }
 fieldSpecs:
