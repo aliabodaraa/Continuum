@@ -1,0 +1,3 @@
+EXPERIMENT SC (SMOKE TEST): personal typing model, fine-tuned base (FT) vs trained from scratch (SC), 20-window decisions
+M= 130 (1 owners): per-user AUC FT 0.9944 vs SC 0.6257 | FT-SC +0.3688 [+0.3688, +0.3688], FT higher for 1/1 -> the base helps
+          deployed rule FAR/FRR: FT 1.2%/16.7%, SC 0.0%/100.0% | window EER FT 13.6%, SC 43.6% | epochs FT 30.0, SC 2.0, SC 6 s per owner

@@ -1,0 +1,21 @@
+{
+ "source": "artifacts/phase7/im/parts (all 98 other participants)",
+ "rules": {
+  "lu": {
+   "label": "Lu et al.: more than 3 of 20 windows below 0.50",
+   "lowAtLeast": 4,
+   "far": 0.055572734144162715,
+   "frr": 0.22462562396006655,
+   "decisionsGenuine": 601,
+   "decisionsImpostor": 58212
+  },
+  "adopted": {
+   "label": "Adopted: at least 10 of 20 windows below 0.50",
+   "lowAtLeast": 10,
+   "far": 0.1302480588194874,
+   "frr": 0.033277870216306155,
+   "decisionsGenuine": 601,
+   "decisionsImpostor": 58212
+  }
+ }
+}

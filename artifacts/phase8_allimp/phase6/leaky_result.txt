@@ -1,0 +1,3 @@
+Random 70/30 split of the owner's overlapping windows (arm A200, 99 targets): window EER mean 12.3%, window AUC mean 0.936
+Temporal split with a gap (experiment KS, the same targets): window EER mean 13.3%, window AUC mean 0.928
+EER random - temporal: -1.1 points [-1.8, -0.3], lower under the random split for 61/99 users

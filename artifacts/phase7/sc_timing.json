@@ -1,0 +1,573 @@
+{
+ "owners": [
+  0,
+  10,
+  20,
+  30,
+  40,
+  50,
+  60,
+  70,
+  80,
+  90
+ ],
+ "threads": 4,
+ "rows": [
+  {
+   "kind": "FT",
+   "size": "130",
+   "owner": 0,
+   "epochs": 30,
+   "buildSeconds": 2.399892414000533,
+   "totalSeconds": 20.26021253700037,
+   "secondsPerEpoch": 0.5953440040999946,
+   "storedEpochs": 30
+  },
+  {
+   "kind": "SC",
+   "size": "130",
+   "owner": 0,
+   "epochs": 52,
+   "buildSeconds": 2.4354219300003024,
+   "totalSeconds": 30.38552975499988,
+   "secondsPerEpoch": 0.5375020735576842,
+   "storedEpochs": 46
+  },
+  {
+   "kind": "FT",
+   "size": "130",
+   "owner": 10,
+   "epochs": 30,
+   "buildSeconds": 2.1063955310000892,
+   "totalSeconds": 19.44765387300049,
+   "secondsPerEpoch": 0.5780419447333467,
+   "storedEpochs": 30
+  },
+  {
+   "kind": "SC",
+   "size": "130",
+   "owner": 10,
+   "epochs": 48,
+   "buildSeconds": 2.4740311349996773,
+   "totalSeconds": 28.861937392999607,
+   "secondsPerEpoch": 0.5497480470416652,
+   "storedEpochs": 34
+  },
+  {
+   "kind": "FT",
+   "size": "130",
+   "owner": 20,
+   "epochs": 30,
+   "buildSeconds": 2.216673785000239,
+   "totalSeconds": 19.963048821000484,
+   "secondsPerEpoch": 0.5915458345333415,
+   "storedEpochs": 30
+  },
+  {
+   "kind": "SC",
+   "size": "130",
+   "owner": 20,
+   "epochs": 43,
+   "buildSeconds": 2.54862133000006,
+   "totalSeconds": 26.770676372000707,
+   "secondsPerEpoch": 0.563303605627922,
+   "storedEpochs": 41
+  },
+  {
+   "kind": "FT",
+   "size": "130",
+   "owner": 30,
+   "epochs": 30,
+   "buildSeconds": 2.0562289640001836,
+   "totalSeconds": 19.41881919900061,
+   "secondsPerEpoch": 0.5787530078333475,
+   "storedEpochs": 30
+  },
+  {
+   "kind": "SC",
+   "size": "130",
+   "owner": 30,
+   "epochs": 74,
+   "buildSeconds": 2.8613937299996905,
+   "totalSeconds": 40.311383458999444,
+   "secondsPerEpoch": 0.5060809422837804,
+   "storedEpochs": 30
+  },
+  {
+   "kind": "FT",
+   "size": "130",
+   "owner": 40,
+   "epochs": 20,
+   "buildSeconds": 2.622930231000282,
+   "totalSeconds": 15.533825145000264,
+   "secondsPerEpoch": 0.6455447456999991,
+   "storedEpochs": 20
+  },
+  {
+   "kind": "SC",
+   "size": "130",
+   "owner": 40,
+   "epochs": 24,
+   "buildSeconds": 2.4231312020001496,
+   "totalSeconds": 18.864417335000326,
+   "secondsPerEpoch": 0.6850535888750073,
+   "storedEpochs": 24
+  },
+  {
+   "kind": "FT",
+   "size": "130",
+   "owner": 50,
+   "epochs": 30,
+   "buildSeconds": 2.0708387909999146,
+   "totalSeconds": 19.33197920800012,
+   "secondsPerEpoch": 0.5753713472333402,
+   "storedEpochs": 30
+  },
+  {
+   "kind": "SC",
+   "size": "130",
+   "owner": 50,
+   "epochs": 88,
+   "buildSeconds": 3.153511957999399,
+   "totalSeconds": 46.708044375999634,
+   "secondsPerEpoch": 0.49493786838636633,
+   "storedEpochs": 89
+  },
+  {
+   "kind": "FT",
+   "size": "130",
+   "owner": 60,
+   "epochs": 30,
+   "buildSeconds": 2.0923052339994683,
+   "totalSeconds": 20.25294358699921,
+   "secondsPerEpoch": 0.6053546117666581,
+   "storedEpochs": 30
+  },
+  {
+   "kind": "SC",
+   "size": "130",
+   "owner": 60,
+   "epochs": 46,
+   "buildSeconds": 2.5304838310003106,
+   "totalSeconds": 27.666348283000843,
+   "secondsPerEpoch": 0.5464318359130551,
+   "storedEpochs": 39
+  },
+  {
+   "kind": "FT",
+   "size": "130",
+   "owner": 70,
+   "epochs": 30,
+   "buildSeconds": 2.1241004370003793,
+   "totalSeconds": 20.446118872000625,
+   "secondsPerEpoch": 0.6107339478333416,
+   "storedEpochs": 30
+  },
+  {
+   "kind": "SC",
+   "size": "130",
+   "owner": 70,
+   "epochs": 98,
+   "buildSeconds": 2.623364515000503,
+   "totalSeconds": 50.69748487200013,
+   "secondsPerEpoch": 0.49055224854081253,
+   "storedEpochs": 87
+  },
+  {
+   "kind": "FT",
+   "size": "130",
+   "owner": 80,
+   "epochs": 21,
+   "buildSeconds": 2.175824951999857,
+   "totalSeconds": 17.076817950000077,
+   "secondsPerEpoch": 0.7095710951428676,
+   "storedEpochs": 21
+  },
+  {
+   "kind": "SC",
+   "size": "130",
+   "owner": 80,
+   "epochs": 32,
+   "buildSeconds": 2.4525066880005397,
+   "totalSeconds": 21.397944046000703,
+   "secondsPerEpoch": 0.5920449174375051,
+   "storedEpochs": 22
+  },
+  {
+   "kind": "FT",
+   "size": "130",
+   "owner": 90,
+   "epochs": 27,
+   "buildSeconds": 2.187119714999426,
+   "totalSeconds": 19.503546363999703,
+   "secondsPerEpoch": 0.6413491351481584,
+   "storedEpochs": 27
+  },
+  {
+   "kind": "SC",
+   "size": "130",
+   "owner": 90,
+   "epochs": 30,
+   "buildSeconds": 2.622990075999951,
+   "totalSeconds": 20.875700171000062,
+   "secondsPerEpoch": 0.6084236698333371,
+   "storedEpochs": 100
+  },
+  {
+   "kind": "FT",
+   "size": "all",
+   "owner": 0,
+   "epochs": 29,
+   "buildSeconds": 2.2132805060000464,
+   "totalSeconds": 36.18509322099999,
+   "secondsPerEpoch": 1.1714418177586188,
+   "storedEpochs": 29
+  },
+  {
+   "kind": "SC",
+   "size": "all",
+   "owner": 0,
+   "epochs": 37,
+   "buildSeconds": 3.981141096999636,
+   "totalSeconds": 49.15412372299943,
+   "secondsPerEpoch": 1.2208914223243188,
+   "storedEpochs": 37
+  },
+  {
+   "kind": "FT",
+   "size": "all",
+   "owner": 10,
+   "epochs": 27,
+   "buildSeconds": 2.1308159059999525,
+   "totalSeconds": 30.409474332999707,
+   "secondsPerEpoch": 1.0473577195185095,
+   "storedEpochs": 27
+  },
+  {
+   "kind": "SC",
+   "size": "all",
+   "owner": 10,
+   "epochs": 58,
+   "buildSeconds": 2.7774167970001145,
+   "totalSeconds": 65.82336089700038,
+   "secondsPerEpoch": 1.0869990362069013,
+   "storedEpochs": 33
+  },
+  {
+   "kind": "FT",
+   "size": "all",
+   "owner": 20,
+   "epochs": 30,
+   "buildSeconds": 2.268800267000188,
+   "totalSeconds": 43.52184461500019,
+   "secondsPerEpoch": 1.3751014782666668,
+   "storedEpochs": 30
+  },
+  {
+   "kind": "SC",
+   "size": "all",
+   "owner": 20,
+   "epochs": 41,
+   "buildSeconds": 2.598026253000171,
+   "totalSeconds": 60.106156273000124,
+   "secondsPerEpoch": 1.4026373175609745,
+   "storedEpochs": 21
+  },
+  {
+   "kind": "FT",
+   "size": "all",
+   "owner": 30,
+   "epochs": 30,
+   "buildSeconds": 3.390499983999689,
+   "totalSeconds": 38.24157245399965,
+   "secondsPerEpoch": 1.1617024156666653,
+   "storedEpochs": 30
+  },
+  {
+   "kind": "SC",
+   "size": "all",
+   "owner": 30,
+   "epochs": 41,
+   "buildSeconds": 2.618242913999893,
+   "totalSeconds": 51.3646310310005,
+   "secondsPerEpoch": 1.1889362955366,
+   "storedEpochs": 20
+  },
+  {
+   "kind": "FT",
+   "size": "all",
+   "owner": 40,
+   "epochs": 14,
+   "buildSeconds": 2.092480544999489,
+   "totalSeconds": 21.207607824999286,
+   "secondsPerEpoch": 1.3653662342856998,
+   "storedEpochs": 14
+  },
+  {
+   "kind": "SC",
+   "size": "all",
+   "owner": 40,
+   "epochs": 22,
+   "buildSeconds": 4.003426061000027,
+   "totalSeconds": 32.88713082599952,
+   "secondsPerEpoch": 1.3128956711363406,
+   "storedEpochs": 31
+  },
+  {
+   "kind": "FT",
+   "size": "all",
+   "owner": 50,
+   "epochs": 30,
+   "buildSeconds": 2.116231814999992,
+   "totalSeconds": 43.30044281600021,
+   "secondsPerEpoch": 1.372807033366674,
+   "storedEpochs": 30
+  },
+  {
+   "kind": "SC",
+   "size": "all",
+   "owner": 50,
+   "epochs": 46,
+   "buildSeconds": 2.4966104820005057,
+   "totalSeconds": 66.57212130600055,
+   "secondsPerEpoch": 1.3929458874782619,
+   "storedEpochs": 72
+  },
+  {
+   "kind": "FT",
+   "size": "all",
+   "owner": 60,
+   "epochs": 30,
+   "buildSeconds": 3.8108138799998414,
+   "totalSeconds": 42.09145669499958,
+   "secondsPerEpoch": 1.276021427166658,
+   "storedEpochs": 30
+  },
+  {
+   "kind": "SC",
+   "size": "all",
+   "owner": 60,
+   "epochs": 40,
+   "buildSeconds": 2.565423254999587,
+   "totalSeconds": 53.67708731199946,
+   "secondsPerEpoch": 1.2777916014249968,
+   "storedEpochs": 72
+  },
+  {
+   "kind": "FT",
+   "size": "all",
+   "owner": 70,
+   "epochs": 26,
+   "buildSeconds": 2.0972457380003107,
+   "totalSeconds": 38.26326990800044,
+   "secondsPerEpoch": 1.3910009296153896,
+   "storedEpochs": 26
+  },
+  {
+   "kind": "SC",
+   "size": "all",
+   "owner": 70,
+   "epochs": 32,
+   "buildSeconds": 2.525244314999327,
+   "totalSeconds": 50.01306229399961,
+   "secondsPerEpoch": 1.4839943118437589,
+   "storedEpochs": 38
+  },
+  {
+   "kind": "FT",
+   "size": "all",
+   "owner": 80,
+   "epochs": 30,
+   "buildSeconds": 2.1886519390000103,
+   "totalSeconds": 42.99851824800044,
+   "secondsPerEpoch": 1.3603288769666808,
+   "storedEpochs": 30
+  },
+  {
+   "kind": "SC",
+   "size": "all",
+   "owner": 80,
+   "epochs": 47,
+   "buildSeconds": 2.7057459770003334,
+   "totalSeconds": 67.13748967999982,
+   "secondsPerEpoch": 1.3708881638936061,
+   "storedEpochs": 40
+  },
+  {
+   "kind": "FT",
+   "size": "all",
+   "owner": 90,
+   "epochs": 25,
+   "buildSeconds": 2.092271212000014,
+   "totalSeconds": 34.99763439399976,
+   "secondsPerEpoch": 1.3162145272799899,
+   "storedEpochs": 25
+  },
+  {
+   "kind": "SC",
+   "size": "all",
+   "owner": 90,
+   "epochs": 54,
+   "buildSeconds": 4.302864938000312,
+   "totalSeconds": 71.81415462000041,
+   "secondsPerEpoch": 1.250209068185187,
+   "storedEpochs": 39
+  }
+ ],
+ "summary": {
+  "FT_130": {
+   "epochs": 27.8,
+   "totalSeconds": 19.123496555600195,
+   "secondsPerEpoch": 0.6131609674024394,
+   "buildSeconds": 2.2052310054000372
+  },
+  "SC_130": {
+   "epochs": 53.5,
+   "totalSeconds": 31.253946606200135,
+   "secondsPerEpoch": 0.5574078797497136,
+   "buildSeconds": 2.612545639500058
+  },
+  "ratio_130": 1.6343217630380265,
+  "FT_all": {
+   "epochs": 27.1,
+   "totalSeconds": 37.121691450899924,
+   "secondsPerEpoch": 1.2837342459891552,
+   "buildSeconds": 2.440109179199953
+  },
+  "SC_all": {
+   "epochs": 41.8,
+   "totalSeconds": 56.85493179619998,
+   "secondsPerEpoch": 1.2988188775590948,
+   "buildSeconds": 3.0574142088999907
+  },
+  "ratio_all": 1.5315824676631664
+ },
+ "epochMismatches": [
+  [
+   "SC",
+   "130",
+   0,
+   46,
+   52
+  ],
+  [
+   "SC",
+   "130",
+   10,
+   34,
+   48
+  ],
+  [
+   "SC",
+   "130",
+   20,
+   41,
+   43
+  ],
+  [
+   "SC",
+   "130",
+   30,
+   30,
+   74
+  ],
+  [
+   "SC",
+   "130",
+   50,
+   89,
+   88
+  ],
+  [
+   "SC",
+   "130",
+   60,
+   39,
+   46
+  ],
+  [
+   "SC",
+   "130",
+   70,
+   87,
+   98
+  ],
+  [
+   "SC",
+   "130",
+   80,
+   22,
+   32
+  ],
+  [
+   "SC",
+   "130",
+   90,
+   100,
+   30
+  ],
+  [
+   "SC",
+   "all",
+   10,
+   33,
+   58
+  ],
+  [
+   "SC",
+   "all",
+   20,
+   21,
+   41
+  ],
+  [
+   "SC",
+   "all",
+   30,
+   20,
+   41
+  ],
+  [
+   "SC",
+   "all",
+   40,
+   31,
+   22
+  ],
+  [
+   "SC",
+   "all",
+   50,
+   72,
+   46
+  ],
+  [
+   "SC",
+   "all",
+   60,
+   72,
+   40
+  ],
+  [
+   "SC",
+   "all",
+   70,
+   38,
+   32
+  ],
+  [
+   "SC",
+   "all",
+   80,
+   40,
+   47
+  ],
+  [
+   "SC",
+   "all",
+   90,
+   39,
+   54
+  ]
+ ]
+}

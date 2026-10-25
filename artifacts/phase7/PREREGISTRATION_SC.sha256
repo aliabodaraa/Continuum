@@ -1,0 +1,5 @@
+{
+ "artifacts/phase7/PREREGISTRATION_SC.md": "179b6bd2e52f039ee67d822f8c594608f1d7ff6bdf60de6ba206271ec3833382",
+ "services/model-api/analysis/phase7/run_sc.py": "52114661737fed33d56635a16ed325d20432e2a3d5657a5b1957620e38806ba4",
+ "services/model-api/analysis/phase7/analyze_sc.py": "088c97333b90f67a834bed93851f6c116d639bc11733aae67baea34b5db12d6f"
+}

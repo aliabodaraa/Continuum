@@ -1,0 +1,4 @@
+EXPERIMENT EC, typing enrolment learning curve (SMOKE TEST); 20-window decisions, block mean; FAR/FRR at 10 of 20 below 0.50
+  M=  12: per-user AUC 0.7979  FAR   6.2%  FRR 100.0%  pooled EER 29.58%  below 0.9: 100.0%  window EER 27.99%  (owners 1, truncated 0)
+  M= 130: per-user AUC 0.8646  FAR  28.3%  FRR   0.0%  pooled EER 16.67%  below 0.9: 100.0%  window EER 25.00%  (owners 1, truncated 0)
+  KS A200 (paper): per-user AUC 0.9693  FAR  11.9%  FRR   3.3%

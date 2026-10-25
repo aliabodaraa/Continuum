@@ -1,0 +1,1408 @@
+{
+ "arm": "A200",
+ "nTargets": 99,
+ "randomSplit": {
+  "windowEerMean": 0.12251253932834988,
+  "windowAucMean": 0.9362924822026915
+ },
+ "temporalSplitKS": {
+  "windowEerMean": 0.12872766512336062,
+  "windowAucMean": 0.9316303362293747
+ },
+ "eerDiffRandomMinusTemporal": {
+  "mean": -0.006215125795010712,
+  "ci95": [
+   -0.014340143305071608,
+   0.0013176661349770323
+  ],
+  "lowerFor": 56
+ },
+ "perUser": {
+  "0": {
+   "random": {
+    "participant": 0,
+    "winEer": 0.0897595589960122,
+    "winAuc": 0.9682636640863241,
+    "nHeldOut": 145,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 0,
+    "winEer": 0.12853571428571428,
+    "winAuc": 0.9306833333333333
+   }
+  },
+  "1": {
+   "random": {
+    "participant": 1,
+    "winEer": 0.13432980599647265,
+    "winAuc": 0.9342290249433106,
+    "nHeldOut": 162,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 1,
+    "winEer": 0.1083067940552017,
+    "winAuc": 0.9447271762208068
+   }
+  },
+  "2": {
+   "random": {
+    "participant": 2,
+    "winEer": 0.026321160042964552,
+    "winAuc": 0.9964088793412101,
+    "nHeldOut": 152,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 2,
+    "winEer": 0.040824829931972784,
+    "winAuc": 0.995249433106576
+   }
+  },
+  "3": {
+   "random": {
+    "participant": 3,
+    "winEer": 0.3111904761904762,
+    "winAuc": 0.7534412050534499,
+    "nHeldOut": 70,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 3,
+    "winEer": 0.3676153846153846,
+    "winAuc": 0.6960717948717948
+   }
+  },
+  "4": {
+   "random": {
+    "participant": 4,
+    "winEer": 0.0695744680851064,
+    "winAuc": 0.9753477348386163,
+    "nHeldOut": 188,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 4,
+    "winEer": 0.0972636612021858,
+    "winAuc": 0.973011839708561
+   }
+  },
+  "5": {
+   "random": {
+    "participant": 5,
+    "winEer": 0.08712692672005512,
+    "winAuc": 0.9718014294325326,
+    "nHeldOut": 158,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 5,
+    "winEer": 0.11030555555555555,
+    "winAuc": 0.9483186274509804
+   }
+  },
+  "6": {
+   "random": {
+    "participant": 6,
+    "winEer": 0.1761317254174397,
+    "winAuc": 0.9098316989133316,
+    "nHeldOut": 154,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 6,
+    "winEer": 0.1409697986577181,
+    "winAuc": 0.9361163310961969
+   }
+  },
+  "7": {
+   "random": {
+    "participant": 7,
+    "winEer": 0.05298666486462135,
+    "winAuc": 0.9837441996666216,
+    "nHeldOut": 151,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 7,
+    "winEer": 0.10962785388127853,
+    "winAuc": 0.957601598173516
+   }
+  },
+  "8": {
+   "random": {
+    "participant": 8,
+    "winEer": 0.2557898955760648,
+    "winAuc": 0.8223657870791629,
+    "nHeldOut": 157,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 8,
+    "winEer": 0.18418859649122807,
+    "winAuc": 0.9008081140350878
+   }
+  },
+  "9": {
+   "random": {
+    "participant": 9,
+    "winEer": 0.06557137963098908,
+    "winAuc": 0.9801037537317085,
+    "nHeldOut": 139,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 9,
+    "winEer": 0.06716542288557215,
+    "winAuc": 0.9813855721393034
+   }
+  },
+  "10": {
+   "random": {
+    "participant": 10,
+    "winEer": 0.12477891156462585,
+    "winAuc": 0.9415881114350502,
+    "nHeldOut": 168,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 10,
+    "winEer": 0.10431390593047035,
+    "winAuc": 0.9506993865030675
+   }
+  },
+  "11": {
+   "random": {
+    "participant": 11,
+    "winEer": 0.06848603271095673,
+    "winAuc": 0.9790874222029238,
+    "nHeldOut": 188,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 11,
+    "winEer": 0.08738251366120219,
+    "winAuc": 0.9742923497267759
+   }
+  },
+  "12": {
+   "random": {
+    "participant": 12,
+    "winEer": 0.2273469387755102,
+    "winAuc": 0.8522351797862002,
+    "nHeldOut": 168,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 12,
+    "winEer": 0.2203461145194274,
+    "winAuc": 0.8522535787321064
+   }
+  },
+  "13": {
+   "random": {
+    "participant": 13,
+    "winEer": 0.10393511250654108,
+    "winAuc": 0.9548225187510901,
+    "nHeldOut": 156,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 13,
+    "winEer": 0.08729635761589404,
+    "winAuc": 0.9653355408388521
+   }
+  },
+  "14": {
+   "random": {
+    "participant": 14,
+    "winEer": 0.07564625850340137,
+    "winAuc": 0.9694612244897959,
+    "nHeldOut": 175,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 14,
+    "winEer": 0.07062745098039216,
+    "winAuc": 0.9804539215686274
+   }
+  },
+  "15": {
+   "random": {
+    "participant": 15,
+    "winEer": 0.08740009911249268,
+    "winAuc": 0.966287786637834,
+    "nHeldOut": 151,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 15,
+    "winEer": 0.08902054794520547,
+    "winAuc": 0.9713704337899544
+   }
+  },
+  "16": {
+   "random": {
+    "participant": 16,
+    "winEer": 0.2700373523642586,
+    "winAuc": 0.7960469095613706,
+    "nHeldOut": 163,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 16,
+    "winEer": 0.49450210970464137,
+    "winAuc": 0.5055770042194093
+   }
+  },
+  "17": {
+   "random": {
+    "participant": 17,
+    "winEer": 0.03423213120864784,
+    "winAuc": 0.9901942968968409,
+    "nHeldOut": 146,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 17,
+    "winEer": 0.05786879432624113,
+    "winAuc": 0.9804066193853428
+   }
+  },
+  "18": {
+   "random": {
+    "participant": 18,
+    "winEer": 0.07538891028109357,
+    "winAuc": 0.971036238394729,
+    "nHeldOut": 159,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 18,
+    "winEer": 0.13118506493506493,
+    "winAuc": 0.9415790043290043
+   }
+  },
+  "19": {
+   "random": {
+    "participant": 19,
+    "winEer": 0.13350174216027877,
+    "winAuc": 0.9372241579558652,
+    "nHeldOut": 164,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 19,
+    "winEer": 0.13951572327044026,
+    "winAuc": 0.9178018867924528
+   }
+  },
+  "20": {
+   "random": {
+    "participant": 20,
+    "winEer": 0.08660684963640629,
+    "winAuc": 0.9698479161779654,
+    "nHeldOut": 174,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 20,
+    "winEer": 0.0946706114398422,
+    "winAuc": 0.9682485207100592
+   }
+  },
+  "21": {
+   "random": {
+    "participant": 21,
+    "winEer": 0.10113079193941728,
+    "winAuc": 0.9599893038976597,
+    "nHeldOut": 159,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 21,
+    "winEer": 0.08329112554112554,
+    "winAuc": 0.9730898268398268
+   }
+  },
+  "22": {
+   "random": {
+    "participant": 22,
+    "winEer": 0.1250170068027211,
+    "winAuc": 0.9340702947845805,
+    "nHeldOut": 144,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 22,
+    "winEer": 0.10629016786570744,
+    "winAuc": 0.9529136690647482
+   }
+  },
+  "23": {
+   "random": {
+    "participant": 23,
+    "winEer": 0.14847985347985349,
+    "winAuc": 0.9167591139019711,
+    "nHeldOut": 156,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 23,
+    "winEer": 0.10041887417218542,
+    "winAuc": 0.9609591611479029
+   }
+  },
+  "24": {
+   "random": {
+    "participant": 24,
+    "winEer": 0.17218115060593775,
+    "winAuc": 0.9083132855791323,
+    "nHeldOut": 151,
+    "epochsRun": 17
+   },
+   "temporal": {
+    "participant": 24,
+    "winEer": 0.17103310502283103,
+    "winAuc": 0.9050844748858448
+   }
+  },
+  "25": {
+   "random": {
+    "participant": 25,
+    "winEer": 0.11342687074829932,
+    "winAuc": 0.955874149659864,
+    "nHeldOut": 160,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 25,
+    "winEer": 0.13690860215053763,
+    "winAuc": 0.9423569892473118
+   }
+  },
+  "26": {
+   "random": {
+    "participant": 26,
+    "winEer": 0.20129560915275202,
+    "winAuc": 0.8563508260447036,
+    "nHeldOut": 154,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 26,
+    "winEer": 0.20133780760626396,
+    "winAuc": 0.871010067114094
+   }
+  },
+  "27": {
+   "random": {
+    "participant": 27,
+    "winEer": 0.11739495798319327,
+    "winAuc": 0.9439767017918278,
+    "nHeldOut": 153,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 27,
+    "winEer": 0.12835585585585585,
+    "winAuc": 0.9449391891891892
+   }
+  },
+  "28": {
+   "random": {
+    "participant": 28,
+    "winEer": 0.11982277121374865,
+    "winAuc": 0.9425559434300036,
+    "nHeldOut": 152,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 28,
+    "winEer": 0.11607312925170069,
+    "winAuc": 0.9515192743764173
+   }
+  },
+  "29": {
+   "random": {
+    "participant": 29,
+    "winEer": 0.12964474678760393,
+    "winAuc": 0.9306538170823885,
+    "nHeldOut": 162,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 29,
+    "winEer": 0.08281794055201698,
+    "winAuc": 0.9682346072186837
+   }
+  },
+  "30": {
+   "random": {
+    "participant": 30,
+    "winEer": 0.1894241640318099,
+    "winAuc": 0.8756764395899205,
+    "nHeldOut": 142,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 30,
+    "winEer": 0.16660827250608273,
+    "winAuc": 0.8813102189781022
+   }
+  },
+  "31": {
+   "random": {
+    "participant": 31,
+    "winEer": 0.07142857142857142,
+    "winAuc": 0.9726139455782313,
+    "nHeldOut": 140,
+    "epochsRun": 27
+   },
+   "temporal": {
+    "participant": 31,
+    "winEer": 0.043888888888888894,
+    "winAuc": 0.9843320987654322
+   }
+  },
+  "32": {
+   "random": {
+    "participant": 32,
+    "winEer": 0.08691297208538588,
+    "winAuc": 0.9667800453514739,
+    "nHeldOut": 174,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 32,
+    "winEer": 0.09550394477317554,
+    "winAuc": 0.9673451676528599
+   }
+  },
+  "33": {
+   "random": {
+    "participant": 33,
+    "winEer": 0.09089672232529375,
+    "winAuc": 0.9676285301999588,
+    "nHeldOut": 165,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 33,
+    "winEer": 0.08758333333333333,
+    "winAuc": 0.960465625
+   }
+  },
+  "34": {
+   "random": {
+    "participant": 34,
+    "winEer": 0.07454599230996747,
+    "winAuc": 0.9710706891452233,
+    "nHeldOut": 161,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 34,
+    "winEer": 0.16608333333333333,
+    "winAuc": 0.9121955128205128
+   }
+  },
+  "35": {
+   "random": {
+    "participant": 35,
+    "winEer": 0.18022053982883474,
+    "winAuc": 0.8908852315119596,
+    "nHeldOut": 155,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 35,
+    "winEer": 0.15391666666666665,
+    "winAuc": 0.9170355555555556
+   }
+  },
+  "36": {
+   "random": {
+    "participant": 36,
+    "winEer": 0.044019381337440634,
+    "winAuc": 0.991234758054165,
+    "nHeldOut": 159,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 36,
+    "winEer": 0.05172402597402598,
+    "winAuc": 0.9915140692640693
+   }
+  },
+  "37": {
+   "random": {
+    "participant": 37,
+    "winEer": 0.12304854486173167,
+    "winAuc": 0.9565636195306525,
+    "nHeldOut": 169,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 37,
+    "winEer": 0.07930081300813008,
+    "winAuc": 0.9703272357723577
+   }
+  },
+  "38": {
+   "random": {
+    "participant": 38,
+    "winEer": 0.08141196013289037,
+    "winAuc": 0.969811343141908,
+    "nHeldOut": 172,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 38,
+    "winEer": 0.10780888223552895,
+    "winAuc": 0.9578393213572854
+   }
+  },
+  "39": {
+   "random": {
+    "participant": 39,
+    "winEer": 0.08231292517006802,
+    "winAuc": 0.9673107448107449,
+    "nHeldOut": 156,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 39,
+    "winEer": 0.11254139072847683,
+    "winAuc": 0.960687637969095
+   }
+  },
+  "40": {
+   "random": {
+    "participant": 40,
+    "winEer": 0.068972554539057,
+    "winAuc": 0.9781224489795919,
+    "nHeldOut": 145,
+    "epochsRun": 21
+   },
+   "temporal": {
+    "participant": 40,
+    "winEer": 0.022680097680097683,
+    "winAuc": 0.9952466422466423
+   }
+  },
+  "41": {
+   "random": {
+    "participant": 41,
+    "winEer": 0.06174630827940932,
+    "winAuc": 0.9788522482163597,
+    "nHeldOut": 164,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 41,
+    "winEer": 0.0640106434446057,
+    "winAuc": 0.982364134816965
+   }
+  },
+  "42": {
+   "random": {
+    "participant": 42,
+    "winEer": 0.043203577727387255,
+    "winAuc": 0.9913710422440581,
+    "nHeldOut": 162,
+    "epochsRun": 29
+   },
+   "temporal": {
+    "participant": 42,
+    "winEer": 0.04460068593826555,
+    "winAuc": 0.9930110512276117
+   }
+  },
+  "43": {
+   "random": {
+    "participant": 43,
+    "winEer": 0.17947148090005233,
+    "winAuc": 0.8853141897784755,
+    "nHeldOut": 156,
+    "epochsRun": 29
+   },
+   "temporal": {
+    "participant": 43,
+    "winEer": 0.1456681949397181,
+    "winAuc": 0.917572875983472
+   }
+  },
+  "44": {
+   "random": {
+    "participant": 44,
+    "winEer": 0.13715041572184428,
+    "winAuc": 0.9309217867040996,
+    "nHeldOut": 189,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 44,
+    "winEer": 0.21741360089186176,
+    "winAuc": 0.873252508361204
+   }
+  },
+  "45": {
+   "random": {
+    "participant": 45,
+    "winEer": 0.1595165059888986,
+    "winAuc": 0.914373774049497,
+    "nHeldOut": 163,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 45,
+    "winEer": 0.16381694255111975,
+    "winAuc": 0.9194082008006058
+   }
+  },
+  "46": {
+   "random": {
+    "participant": 46,
+    "winEer": 0.10423034330011074,
+    "winAuc": 0.9543968517639614,
+    "nHeldOut": 172,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 46,
+    "winEer": 0.08901274374328266,
+    "winAuc": 0.9658283433133733
+   }
+  },
+  "47": {
+   "random": {
+    "participant": 47,
+    "winEer": 0.16515219647180907,
+    "winAuc": 0.9160778661747184,
+    "nHeldOut": 177,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 47,
+    "winEer": 0.1743887895050686,
+    "winAuc": 0.9103478433710992
+   }
+  },
+  "48": {
+   "random": {
+    "participant": 48,
+    "winEer": 0.10663526949241235,
+    "winAuc": 0.9668402232687947,
+    "nHeldOut": 195,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 48,
+    "winEer": 0.1,
+    "winAuc": 0.9652631578947368
+   }
+  },
+  "49": {
+   "random": {
+    "participant": 49,
+    "winEer": 0.21059006211180126,
+    "winAuc": 0.8693421219419445,
+    "nHeldOut": 161,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 49,
+    "winEer": 0.15884615384615386,
+    "winAuc": 0.9165044926583388
+   }
+  },
+  "50": {
+   "random": {
+    "participant": 50,
+    "winEer": 0.28181346222699605,
+    "winAuc": 0.7886533794804471,
+    "nHeldOut": 171,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 50,
+    "winEer": 0.33730717742765937,
+    "winAuc": 0.7153907939450108
+   }
+  },
+  "51": {
+   "random": {
+    "participant": 51,
+    "winEer": 0.20786590709903593,
+    "winAuc": 0.8842423104211009,
+    "nHeldOut": 163,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 51,
+    "winEer": 0.16432976306394026,
+    "winAuc": 0.9195661581737531
+   }
+  },
+  "52": {
+   "random": {
+    "participant": 52,
+    "winEer": 0.13917989417989418,
+    "winAuc": 0.9334663643235072,
+    "nHeldOut": 135,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 52,
+    "winEer": 0.10897435897435898,
+    "winAuc": 0.9529362261669954
+   }
+  },
+  "53": {
+   "random": {
+    "participant": 53,
+    "winEer": 0.056513893693070444,
+    "winAuc": 0.9820934701564241,
+    "nHeldOut": 177,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 53,
+    "winEer": 0.036159809183064995,
+    "winAuc": 0.993663287616776
+   }
+  },
+  "54": {
+   "random": {
+    "participant": 54,
+    "winEer": 0.09637624280481424,
+    "winAuc": 0.9465192743764173,
+    "nHeldOut": 156,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 54,
+    "winEer": 0.09413539367181752,
+    "winAuc": 0.9585079526801381
+   }
+  },
+  "55": {
+   "random": {
+    "participant": 55,
+    "winEer": 0.06649987705925745,
+    "winAuc": 0.9704602081796574,
+    "nHeldOut": 166,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 55,
+    "winEer": 0.07530126877952964,
+    "winAuc": 0.967663640707119
+   }
+  },
+  "56": {
+   "random": {
+    "participant": 56,
+    "winEer": 0.056519563239308464,
+    "winAuc": 0.9790411196325663,
+    "nHeldOut": 157,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 56,
+    "winEer": 0.07131241565452093,
+    "winAuc": 0.9755555555555555
+   }
+  },
+  "57": {
+   "random": {
+    "participant": 57,
+    "winEer": 0.080625,
+    "winAuc": 0.9703507653061224,
+    "nHeldOut": 160,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 57,
+    "winEer": 0.09830162668872347,
+    "winAuc": 0.9656454370002757
+   }
+  },
+  "58": {
+   "random": {
+    "participant": 58,
+    "winEer": 0.21769874813830858,
+    "winAuc": 0.8700885561325121,
+    "nHeldOut": 169,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 58,
+    "winEer": 0.2743746091307067,
+    "winAuc": 0.7917062747550553
+   }
+  },
+  "59": {
+   "random": {
+    "participant": 59,
+    "winEer": 0.1439558232931727,
+    "winAuc": 0.9253708712400623,
+    "nHeldOut": 166,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 59,
+    "winEer": 0.12940542549238201,
+    "winAuc": 0.9350384880819663
+   }
+  },
+  "60": {
+   "random": {
+    "participant": 60,
+    "winEer": 0.09457342172537805,
+    "winAuc": 0.9671068937128992,
+    "nHeldOut": 157,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 60,
+    "winEer": 0.06426225820962664,
+    "winAuc": 0.9813765182186235
+   }
+  },
+  "61": {
+   "random": {
+    "participant": 61,
+    "winEer": 0.17790263344601642,
+    "winAuc": 0.9004845373732315,
+    "nHeldOut": 163,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 61,
+    "winEer": 0.16954560207724764,
+    "winAuc": 0.9013307367737747
+   }
+  },
+  "62": {
+   "random": {
+    "participant": 62,
+    "winEer": 0.10725133296561867,
+    "winAuc": 0.9473331494760067,
+    "nHeldOut": 148,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 62,
+    "winEer": 0.11149961149961149,
+    "winAuc": 0.9520984997908075
+   }
+  },
+  "63": {
+   "random": {
+    "participant": 63,
+    "winEer": 0.139111313315135,
+    "winAuc": 0.9243567745569565,
+    "nHeldOut": 157,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 63,
+    "winEer": 0.15129892037786774,
+    "winAuc": 0.9155982905982906
+   }
+  },
+  "64": {
+   "random": {
+    "participant": 64,
+    "winEer": 0.07651667224266756,
+    "winAuc": 0.969082933719936,
+    "nHeldOut": 183,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 64,
+    "winEer": 0.09126860654950542,
+    "winAuc": 0.9630615576682993
+   }
+  },
+  "65": {
+   "random": {
+    "participant": 65,
+    "winEer": 0.12539548363724187,
+    "winAuc": 0.9324715211528398,
+    "nHeldOut": 169,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 65,
+    "winEer": 0.1402074213049823,
+    "winAuc": 0.9250896393579321
+   }
+  },
+  "66": {
+   "random": {
+    "participant": 66,
+    "winEer": 0.11378064433320498,
+    "winAuc": 0.9456090360672571,
+    "nHeldOut": 159,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 66,
+    "winEer": 0.1428815628815629,
+    "winAuc": 0.9412099012099012
+   }
+  },
+  "67": {
+   "random": {
+    "participant": 67,
+    "winEer": 0.15338779683652604,
+    "winAuc": 0.9112653895914193,
+    "nHeldOut": 163,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 67,
+    "winEer": 0.202120523639511,
+    "winAuc": 0.8513945688629233
+   }
+  },
+  "68": {
+   "random": {
+    "participant": 68,
+    "winEer": 0.13123724489795918,
+    "winAuc": 0.9441977040816326,
+    "nHeldOut": 160,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 68,
+    "winEer": 0.16132892197408327,
+    "winAuc": 0.9210763716570168
+   }
+  },
+  "69": {
+   "random": {
+    "participant": 69,
+    "winEer": 0.11947704081632653,
+    "winAuc": 0.9381666666666667,
+    "nHeldOut": 160,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 69,
+    "winEer": 0.16780259167355943,
+    "winAuc": 0.9110780259167356
+   }
+  },
+  "70": {
+   "random": {
+    "participant": 70,
+    "winEer": 0.0344862772695285,
+    "winAuc": 0.994975369458128,
+    "nHeldOut": 174,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 70,
+    "winEer": 0.02957922419460881,
+    "winAuc": 0.9953542709755727
+   }
+  },
+  "71": {
+   "random": {
+    "participant": 71,
+    "winEer": 0.07815541601255888,
+    "winAuc": 0.9676994434137292,
+    "nHeldOut": 143,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 71,
+    "winEer": 0.10038275733927908,
+    "winAuc": 0.9596630744456831
+   }
+  },
+  "72": {
+   "random": {
+    "participant": 72,
+    "winEer": 0.19768074671729158,
+    "winAuc": 0.8818541370036387,
+    "nHeldOut": 172,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 72,
+    "winEer": 0.2814023235580122,
+    "winAuc": 0.8104641998055172
+   }
+  },
+  "73": {
+   "random": {
+    "participant": 73,
+    "winEer": 0.18749149659863945,
+    "winAuc": 0.8948888760049475,
+    "nHeldOut": 176,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 73,
+    "winEer": 0.17524066576698155,
+    "winAuc": 0.9071405008247113
+   }
+  },
+  "74": {
+   "random": {
+    "participant": 74,
+    "winEer": 0.033547230972926084,
+    "winAuc": 0.991464639547094,
+    "nHeldOut": 149,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 74,
+    "winEer": 0.027307692307692307,
+    "winAuc": 0.9971854226020893
+   }
+  },
+  "75": {
+   "random": {
+    "participant": 75,
+    "winEer": 0.14522556390977442,
+    "winAuc": 0.920483798782671,
+    "nHeldOut": 152,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 75,
+    "winEer": 0.08840572126286411,
+    "winAuc": 0.9660119774405489
+   }
+  },
+  "76": {
+   "random": {
+    "participant": 76,
+    "winEer": 0.2544298192649841,
+    "winAuc": 0.8307865394678582,
+    "nHeldOut": 169,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 76,
+    "winEer": 0.18904210965186574,
+    "winAuc": 0.8881842818428184
+   }
+  },
+  "77": {
+   "random": {
+    "participant": 77,
+    "winEer": 0.058837499496840154,
+    "winAuc": 0.9812735981966751,
+    "nHeldOut": 169,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 77,
+    "winEer": 0.06592974775901606,
+    "winAuc": 0.9829330831769856
+   }
+  },
+  "78": {
+   "random": {
+    "participant": 78,
+    "winEer": 0.05301453914899293,
+    "winAuc": 0.9830801209372638,
+    "nHeldOut": 153,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 78,
+    "winEer": 0.06651882651882651,
+    "winAuc": 0.9770651420651421
+   }
+  },
+  "79": {
+   "random": {
+    "participant": 79,
+    "winEer": 0.13764105642256902,
+    "winAuc": 0.9290883019874616,
+    "nHeldOut": 153,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 79,
+    "winEer": 0.0881069531069531,
+    "winAuc": 0.9661642411642412
+   }
+  },
+  "80": {
+   "random": {
+    "participant": 80,
+    "winEer": 0.08916666666666667,
+    "winAuc": 0.964615322319404,
+    "nHeldOut": 168,
+    "epochsRun": 28
+   },
+   "temporal": {
+    "participant": 80,
+    "winEer": 0.08552811860940696,
+    "winAuc": 0.9662832310838446
+   }
+  },
+  "81": {
+   "random": {
+    "participant": 81,
+    "winEer": 0.11181421864520456,
+    "winAuc": 0.95178978633707,
+    "nHeldOut": 142,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 81,
+    "winEer": 0.15405900243309,
+    "winAuc": 0.9126776155717762
+   }
+  },
+  "82": {
+   "random": {
+    "participant": 82,
+    "winEer": 0.12592214663643236,
+    "winAuc": 0.9346963970773494,
+    "nHeldOut": 135,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 82,
+    "winEer": 0.1538397435897436,
+    "winAuc": 0.9120307692307692
+   }
+  },
+  "83": {
+   "random": {
+    "participant": 83,
+    "winEer": 0.15817768166869398,
+    "winAuc": 0.9101973239626977,
+    "nHeldOut": 151,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 83,
+    "winEer": 0.150675799086758,
+    "winAuc": 0.9247191780821917
+   }
+  },
+  "84": {
+   "random": {
+    "participant": 84,
+    "winEer": 0.043203577727387255,
+    "winAuc": 0.9910010917947426,
+    "nHeldOut": 162,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 84,
+    "winEer": 0.05791242038216561,
+    "winAuc": 0.9883949044585987
+   }
+  },
+  "85": {
+   "random": {
+    "participant": 85,
+    "winEer": 0.04944160997732426,
+    "winAuc": 0.980202664399093,
+    "nHeldOut": 144,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 85,
+    "winEer": 0.07197122302158274,
+    "winAuc": 0.9686330935251799
+   }
+  },
+  "86": {
+   "random": {
+    "participant": 86,
+    "winEer": 0.2561727299615498,
+    "winAuc": 0.8200716187095957,
+    "nHeldOut": 161,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 86,
+    "winEer": 0.30876282051282056,
+    "winAuc": 0.7693675213675214
+   }
+  },
+  "87": {
+   "random": {
+    "participant": 87,
+    "winEer": 0.12137212331741207,
+    "winAuc": 0.941944082597578,
+    "nHeldOut": 141,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 87,
+    "winEer": 0.09562745098039216,
+    "winAuc": 0.9511421568627451
+   }
+  },
+  "88": {
+   "random": {
+    "participant": 88,
+    "winEer": 0.055566893424036284,
+    "winAuc": 0.9853292181069959,
+    "nHeldOut": 162,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 88,
+    "winEer": 0.10345541401273886,
+    "winAuc": 0.9639193205944798
+   }
+  },
+  "89": {
+   "random": {
+    "participant": 89,
+    "winEer": 0.17088521484543184,
+    "winAuc": 0.9102415396538363,
+    "nHeldOut": 158,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 89,
+    "winEer": 0.21425980392156863,
+    "winAuc": 0.8624139433551198
+   }
+  },
+  "90": {
+   "random": {
+    "participant": 90,
+    "winEer": 0.05947443493526443,
+    "winAuc": 0.9812530173359666,
+    "nHeldOut": 155,
+    "epochsRun": 23
+   },
+   "temporal": {
+    "participant": 90,
+    "winEer": 0.05333333333333334,
+    "winAuc": 0.9879177777777778
+   }
+  },
+  "91": {
+   "random": {
+    "participant": 91,
+    "winEer": 0.12864721327127343,
+    "winAuc": 0.9436595456896208,
+    "nHeldOut": 171,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 91,
+    "winEer": 0.16232530120481928,
+    "winAuc": 0.9138855421686747
+   }
+  },
+  "92": {
+   "random": {
+    "participant": 92,
+    "winEer": 0.17139455782312923,
+    "winAuc": 0.9039733444398167,
+    "nHeldOut": 147,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 92,
+    "winEer": 0.13975586854460093,
+    "winAuc": 0.9349542253521127
+   }
+  },
+  "93": {
+   "random": {
+    "participant": 93,
+    "winEer": 0.11266455878125899,
+    "winAuc": 0.9314127622880138,
+    "nHeldOut": 142,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 93,
+    "winEer": 0.07872931873479319,
+    "winAuc": 0.9689464720194647
+   }
+  },
+  "94": {
+   "random": {
+    "participant": 94,
+    "winEer": 0.06428571428571428,
+    "winAuc": 0.9794849368318757,
+    "nHeldOut": 140,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 94,
+    "winEer": 0.08149074074074075,
+    "winAuc": 0.9701592592592593
+   }
+  },
+  "95": {
+   "random": {
+    "participant": 95,
+    "winEer": 0.10803846718543533,
+    "winAuc": 0.9450653354867127,
+    "nHeldOut": 139,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 95,
+    "winEer": 0.1193681592039801,
+    "winAuc": 0.9382985074626866
+   }
+  },
+  "96": {
+   "random": {
+    "participant": 96,
+    "winEer": 0.12050073193834496,
+    "winAuc": 0.9366412641005769,
+    "nHeldOut": 158,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 96,
+    "winEer": 0.14406209150326799,
+    "winAuc": 0.9284673202614379
+   }
+  },
+  "97": {
+   "random": {
+    "participant": 97,
+    "winEer": 0.16106324011085915,
+    "winAuc": 0.905574242042496,
+    "nHeldOut": 162,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 97,
+    "winEer": 0.2038274946921444,
+    "winAuc": 0.8789235668789809
+   }
+  },
+  "98": {
+   "random": {
+    "participant": 98,
+    "winEer": 0.2093313234384663,
+    "winAuc": 0.8827460188620903,
+    "nHeldOut": 176,
+    "epochsRun": 30
+   },
+   "temporal": {
+    "participant": 98,
+    "winEer": 0.1578640350877193,
+    "winAuc": 0.9171637426900585
+   }
+  }
+ }
+}

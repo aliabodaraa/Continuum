@@ -1,0 +1,11 @@
+EXPERIMENT IM (deployed typing recipe, KS arm A200, scored against every other KeyRecs participant)
+99 owners; decisions = 20-window blocks scored by their mean; live rule >= 10 of 20 below 0.50
+reproduction of the KS A200 parts: max |diff| genuine 0.00e+00, S40 runs 0.00e+00
+
+  S40 (39.6 impostors/owner, 23520 impostor decisions): per-user AUC 0.9693 | live rule FAR 11.9% FRR 3.3% | pooled decision EER 7.82%
+  ALL (98.0 impostors/owner, 58212 impostor decisions): per-user AUC 0.9645 | live rule FAR 13.0% FRR 3.3% | pooled decision EER 8.32%
+  NEW (58.4 impostors/owner, 34692 impostor decisions): per-user AUC 0.9613 | live rule FAR 13.8% FRR 3.3% | pooled decision EER 8.65%
+
+PRIMARY  ALL - S40, per-user AUC: -0.0048 [-0.0074, -0.0021], higher for 23/99
+SECONDARY NEW - S40: -0.0080 [-0.0124, -0.0036], higher for 23/99
+READING  |dAUC| 0.0048 (< 0.01?) and |dFAR| 1.12 points (< 2?): ROBUST to the choice of impostors

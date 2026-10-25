@@ -1,0 +1,10 @@
+EXPERIMENT EC, typing enrolment learning curve (frozen run); 20-window decisions, block mean; FAR/FRR at 10 of 20 below 0.50
+  M=  12: per-user AUC 0.5522  FAR   0.1%  FRR  99.3%  pooled EER 42.63%  below 0.9: 87.9%  window EER 45.81%  (owners 99, truncated 0)  | vs all -0.4064 [-0.4623, -0.3522]
+  M=  26: per-user AUC 0.7236  FAR   1.9%  FRR  87.5%  pooled EER 31.12%  below 0.9: 70.7%  window EER 34.36%  (owners 99, truncated 0)  | vs all -0.2350 [-0.2781, -0.1944]
+  M=  52: per-user AUC 0.8490  FAR  11.5%  FRR  41.9%  pooled EER 22.81%  below 0.9: 55.6%  window EER 26.16%  (owners 99, truncated 0)  | vs all -0.1096 [-0.1327, -0.0878]
+  M=  78: per-user AUC 0.8709  FAR  14.5%  FRR  27.6%  pooled EER 18.78%  below 0.9: 41.4%  window EER 22.72%  (owners 99, truncated 0)  | vs all -0.0877 [-0.1097, -0.0671]
+  M= 130: per-user AUC 0.9105  FAR  15.8%  FRR  15.0%  pooled EER 15.12%  below 0.9: 30.3%  window EER 19.54%  (owners 99, truncated 0)  | vs all -0.0481 [-0.0646, -0.0350]
+  M= 208: per-user AUC 0.9310  FAR  15.7%  FRR  10.1%  pooled EER 13.31%  below 0.9: 18.2%  window EER 17.37%  (owners 99, truncated 1)  | vs all -0.0276 [-0.0363, -0.0201]
+  M= all: per-user AUC 0.9586  FAR  13.0%  FRR   5.5%  pooled EER  8.82%  below 0.9:  6.1%  window EER 13.79%  (owners 99, truncated 0)
+  saturation point (lower bound above -0.005): none below all
+  KS A200 (paper): per-user AUC 0.9645  FAR  13.0%  FRR   3.3%  | EC all minus KS -0.0060 [-0.0142, -0.0002]

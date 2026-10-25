@@ -1,0 +1,25 @@
+{
+  "arm": "A200",
+  "users": 99,
+  "windowsPerDecision": 20,
+  "threshold": 0.5,
+  "method": "Lu et al.'s own decision rule on the DEPLOYED typing model (arm A200 of experiment KS), against the adopted rule.",
+  "rules": {
+    "lu": {
+      "label": "Lu et al.: more than 3 of 20 windows below 0.50",
+      "lowAtLeast": 4,
+      "far": 0.050255102040816325,
+      "frr": 0.22462562396006655,
+      "decisionsGenuine": 601,
+      "decisionsImpostor": 23520
+    },
+    "adopted": {
+      "label": "Adopted: at least 10 of 20 windows below 0.50",
+      "lowAtLeast": 10,
+      "far": 0.11904761904761904,
+      "frr": 0.033277870216306155,
+      "decisionsGenuine": 601,
+      "decisionsImpostor": 23520
+    }
+  }
+}

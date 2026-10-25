@@ -1,0 +1,50 @@
+{
+ "smokeTest": true,
+ "sizes": {
+  "130": {
+   "owners": 1,
+   "FT": {
+    "users": 1,
+    "perUserAucMean": 0.9944444444444445,
+    "far": 0.012499999999999956,
+    "frr": 0.16666666666666666,
+    "pooledEer": 0.010416666666666685,
+    "shareBelowFloor": 0.0,
+    "windowEerMean": 0.1356904761904762,
+    "truncated": 0,
+    "trainWindowsMean": 99.0
+   },
+   "SC": {
+    "users": 1,
+    "perUserAucMean": 0.6256944444444444,
+    "far": 0.0,
+    "frr": 1.0,
+    "pooledEer": 0.46041666666666664,
+    "shareBelowFloor": 1.0,
+    "windowEerMean": 0.4358571428571429,
+    "truncated": 0,
+    "trainWindowsMean": 99.0
+   },
+   "ftMinusSc": {
+    "mean": 0.36875,
+    "lo": 0.36875,
+    "hi": 0.36875,
+    "higherFor": 1,
+    "lowerFor": 0,
+    "n": 1
+   },
+   "verdict": "the base helps",
+   "epochsRun": {
+    "FT": 30.0,
+    "SC": 2.0
+   },
+   "scTrainSecondsMean": 6.5,
+   "perOwner": {
+    "0": {
+     "FT": 0.9944444444444445,
+     "SC": 0.6256944444444444
+    }
+   }
+  }
+ }
+}

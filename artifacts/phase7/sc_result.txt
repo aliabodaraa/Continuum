@@ -1,0 +1,5 @@
+EXPERIMENT SC: personal typing model, fine-tuned base (FT) vs trained from scratch (SC), 20-window decisions
+M= 130 (99 owners): per-user AUC FT 0.9157 vs SC 0.9142 | FT-SC +0.0015 [-0.0152, +0.0169], FT higher for 41/99 -> no measurable difference
+          deployed rule FAR/FRR: FT 15.4%/15.0%, SC 16.0%/13.0% | window EER FT 19.4%, SC 18.4% | epochs FT 27.5, SC 54.5, SC 25 s per owner
+M= all (99 owners): per-user AUC FT 0.9645 vs SC 0.9708 | FT-SC -0.0063 [-0.0199, +0.0050], FT higher for 41/99 -> no measurable difference
+          deployed rule FAR/FRR: FT 11.9%/5.5%, SC 11.4%/3.8% | window EER FT 13.3%, SC 12.2% | epochs FT 27.8, SC 43.9, SC 49 s per owner

@@ -1,0 +1,46 @@
+{
+ "source": "artifacts/phase7/im/parts (KS A200 models, all 98 other participants)",
+ "lengths": {
+  "6": {
+   "users": 99,
+   "decisionsGenuine": 1520,
+   "decisionsImpostor": 145530,
+   "far": 0.13301037586751874,
+   "frr": 0.1013157894736842,
+   "eer": 0.11381712307464187,
+   "auc": 0.9501551384775069,
+   "aucPerUserMean": 0.9472496691886729,
+   "tarAtFar1": 0.27368421052631575,
+   "tarAtFar5": 0.6723684210526315
+  },
+  "10": {
+   "users": 99,
+   "decisionsGenuine": 1073,
+   "decisionsImpostor": 106722,
+   "far": 0.13384306890800401,
+   "frr": 0.06244175209692451,
+   "eer": 0.10135344282231876,
+   "auc": 0.9566674810741089,
+   "aucPerUserMean": 0.9543414599888429,
+   "tarAtFar1": 0.28797763280521904,
+   "tarAtFar5": 0.6971109040074557
+  },
+  "20": {
+   "users": 99,
+   "decisionsGenuine": 601,
+   "decisionsImpostor": 58212,
+   "far": 0.13024805881948742,
+   "frr": 0.033277870216306155,
+   "eer": 0.0831952900826207,
+   "auc": 0.9655275175836145,
+   "aucPerUserMean": 0.9645485057900023,
+   "tarAtFar1": 0.34109816971713813,
+   "tarAtFar5": 0.7936772046589018
+  }
+ },
+ "window": {
+  "eerMean": 0.1330506920283942,
+  "aucMean": 0.9277446896834629,
+  "usersAbove20pctEer": 10
+ }
+}

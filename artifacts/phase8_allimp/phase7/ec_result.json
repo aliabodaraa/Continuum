@@ -1,0 +1,153 @@
+{
+ "hashes": {
+  "preregistrationEcSha256": "30608042579d8ef3f2c1203d26936813061658f3371362c715752179d27efea0"
+ },
+ "smokeTest": false,
+ "sizes": {
+  "12": {
+   "users": 99,
+   "perUserAucMean": 0.5522207620421906,
+   "far": 0.0009620009620009418,
+   "frr": 0.9933444259567388,
+   "pooledEer": 0.42631926129667985,
+   "shareBelowFloor": 0.8787878787878788,
+   "windowEerMean": 0.4581142167005879,
+   "truncated": 0,
+   "trainWindowsMean": 5.0
+  },
+  "26": {
+   "users": 99,
+   "perUserAucMean": 0.723587347396871,
+   "far": 0.01857005428434,
+   "frr": 0.8752079866888519,
+   "pooledEer": 0.31115193098197613,
+   "shareBelowFloor": 0.7070707070707071,
+   "windowEerMean": 0.34360574941403993,
+   "truncated": 0,
+   "trainWindowsMean": 16.0
+  },
+  "52": {
+   "users": 99,
+   "perUserAucMean": 0.8490031919453688,
+   "far": 0.11478732907304334,
+   "frr": 0.4193011647254576,
+   "pooledEer": 0.22812842678542705,
+   "shareBelowFloor": 0.5555555555555556,
+   "windowEerMean": 0.26159704410599877,
+   "truncated": 0,
+   "trainWindowsMean": 37.0
+  },
+  "78": {
+   "users": 99,
+   "perUserAucMean": 0.8708893478026132,
+   "far": 0.14527932385075237,
+   "frr": 0.2762063227953411,
+   "pooledEer": 0.187839434333373,
+   "shareBelowFloor": 0.41414141414141414,
+   "windowEerMean": 0.22724808021164672,
+   "truncated": 0,
+   "trainWindowsMean": 57.0
+  },
+  "130": {
+   "users": 99,
+   "perUserAucMean": 0.9105297999430653,
+   "far": 0.1579227650656222,
+   "frr": 0.1497504159733777,
+   "pooledEer": 0.15122423025917203,
+   "shareBelowFloor": 0.30303030303030304,
+   "windowEerMean": 0.19537905173585887,
+   "truncated": 0,
+   "trainWindowsMean": 99.0
+  },
+  "208": {
+   "users": 99,
+   "perUserAucMean": 0.9310179458988982,
+   "far": 0.15744176458462178,
+   "frr": 0.10149750415973377,
+   "pooledEer": 0.13311418199105385,
+   "shareBelowFloor": 0.18181818181818182,
+   "windowEerMean": 0.1736911902126999,
+   "truncated": 1,
+   "trainWindowsMean": 160.59595959595958
+  },
+  "all": {
+   "users": 99,
+   "perUserAucMean": 0.958596677006541,
+   "far": 0.1298701298701299,
+   "frr": 0.05490848585690516,
+   "pooledEer": 0.08819061499118545,
+   "shareBelowFloor": 0.06060606060606061,
+   "windowEerMean": 0.1379107713072923,
+   "truncated": 0,
+   "trainWindowsMean": 286.09090909090907
+  }
+ },
+ "paired": {
+  "12": {
+   "mean": -0.40637591496435027,
+   "lo": -0.46232469045819385,
+   "hi": -0.3521798831365159,
+   "higherFor": 1,
+   "lowerFor": 98,
+   "n": 99
+  },
+  "26": {
+   "mean": -0.23500932960966972,
+   "lo": -0.2780558060766394,
+   "hi": -0.19439243319983113,
+   "higherFor": 0,
+   "lowerFor": 98,
+   "n": 99
+  },
+  "52": {
+   "mean": -0.10959348506117214,
+   "lo": -0.13271815887249563,
+   "hi": -0.08783586492557581,
+   "higherFor": 2,
+   "lowerFor": 96,
+   "n": 99
+  },
+  "78": {
+   "mean": -0.08770732920392785,
+   "lo": -0.10970244230448313,
+   "hi": -0.067091924672707,
+   "higherFor": 3,
+   "lowerFor": 95,
+   "n": 99
+  },
+  "130": {
+   "mean": -0.0480668770634757,
+   "lo": -0.06458505119219404,
+   "hi": -0.03496745270979966,
+   "higherFor": 11,
+   "lowerFor": 87,
+   "n": 99
+  },
+  "208": {
+   "mean": -0.027578731107642668,
+   "lo": -0.03627388999731686,
+   "hi": -0.020072930777650155,
+   "higherFor": 13,
+   "lowerFor": 81,
+   "n": 99
+  }
+ },
+ "saturationPoint": null,
+ "ksA200Reference": {
+  "users": 99,
+  "perUserAucMean": 0.9645485057900023,
+  "far": 0.13024805881948742,
+  "frr": 0.033277870216306155,
+  "pooledEer": 0.0831952900826207,
+  "shareBelowFloor": 0.0707070707070707,
+  "windowEerMean": 0.1330506920283942
+ },
+ "allMinusKs": {
+  "mean": -0.005951828783461439,
+  "lo": -0.014232807300409347,
+  "hi": -0.0001726657774702042,
+  "higherFor": 43,
+  "lowerFor": 48,
+  "n": 99
+ }
+}

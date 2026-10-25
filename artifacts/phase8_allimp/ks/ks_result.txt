@@ -1,0 +1,12 @@
+EXPERIMENT KS (keystroke, Lu per-user training; negatives: KeyRecs 40 vs Aalto 40/200/1000)
+99 KeyRecs targets; decisions = 20-window packets; score = packet mean
+
+PRIMARY  A1000 - REF, per-user AUC of 20-window decisions: +0.0118 [+0.0020, +0.0217] p 0.017, better for 61/99
+         superiority (lower 95% bound > 0): YES; SE 0.0050, MDE80 0.0140
+KEY SECONDARY  A1000 - A40: -0.0081 [-0.0127, -0.0039] p 0.000, better for 38/99 -> NO
+reported  A200 - REF: +0.0205 [+0.0109, +0.0306] p 0.000, better for 70/99;  A40 - REF: +0.0199 [+0.0105, +0.0298] p 0.000, better for 68/99
+
+  REF   per-user decision AUC 0.9452 | window AUC 0.912 EER mean 14.9% (>20%: 22) | pooled decision EER 10.8% FRR@FAR1% 74.0% | live rule FAR 9.8% FRR 15.1%
+  A40   per-user decision AUC 0.9651 | window AUC 0.930 EER mean 13.1% (>20%: 14) | pooled decision EER 8.8% FRR@FAR1% 61.7% | live rule FAR 14.1% FRR 2.8%
+  A200  per-user decision AUC 0.9657 | window AUC 0.929 EER mean 13.2% (>20%: 11) | pooled decision EER 8.3% FRR@FAR1% 65.7% | live rule FAR 12.7% FRR 3.3%
+  A1000 per-user decision AUC 0.9570 | window AUC 0.917 EER mean 14.4% (>20%: 22) | pooled decision EER 9.5% FRR@FAR1% 74.7% | live rule FAR 13.6% FRR 3.7%

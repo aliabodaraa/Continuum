@@ -50,12 +50,14 @@ artifacts/users/
 **/artifacts/users/
 services/model-api/artifacts/
 
-# Dead / experimental model variants — keep only ws50-gru (keystroke base) and
-# mouse-fcn-a5 (mouse base); everything else is regenerable experiment output.
+# Dead / experimental model variants — keep only the bases: ws50-gru-v2 (keystroke base served since 2026-10-25,
+# the one every typing result was measured with), ws50-gru (the earlier keystroke base) and mouse-fcn-a5 (mouse
+# base); everything else is regenerable experiment output.
 # Per-user evaluation models and exported inputs of the mouse study (regenerable with
 # final_mouse_eval.py / export_g_inputs.py / extension/scripts/eval_ondevice_g.js).
 artifacts/final_eval/
 artifacts/*-v2
+!artifacts/ws50-gru-v2/
 artifacts/*.BROKEN*
 artifacts/*.log
 artifacts/smoke-*
@@ -141,3 +143,6 @@ artifacts/phase2/L/stageC/smoke/
 
 # Kubernetes secrets made per cluster (scripts/k8s-local.sh secrets): never commit
 deploy/k8s/overlays/*/secrets/
+
+# Smoke tests of the experiments are not results (each experiment's own smoke/ folder).
+artifacts/**/smoke/

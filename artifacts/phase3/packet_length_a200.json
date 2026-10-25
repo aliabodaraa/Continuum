@@ -1,0 +1,92 @@
+{
+  "arm": "A200",
+  "method": "The paper's packet-length table (paper Table 4, thesis Table 11) used to be computed from the baseline score file\n(`artifacts/xai/population_scores.json`, negatives = KeyRecs participants 0-39, the REF arm), which is not the model\nthat is deployed. This script recomputes it from the saved per-target scores of the deployed arm, with exactly the\ndecision definition of Table 3 and of the adaptive-retraining experiments:\n  * decisions are step-disjoint blocks of n windows (`eval_decision_level.blocks`, gap 4), the score of a block is its mean;\n  * pooled EER and AUC over all users' decisions, and the mean over users of the per-user AUC (the paper's AUC); FAR/FRR at the live rule (a window is low below 0.50, a block is suspicious\n    when at least half of its windows are low); TAR at FAR = 1% from the pooled block-mean scores.\nCheck: n = 20 reproduces the A200 column of Table 3 (FAR 11.9%, FRR 3.3%, pooled EER 7.8%).",
+  "lengths": {
+    "6": {
+      "users": 99,
+      "decisionsGenuine": 1520,
+      "decisionsImpostor": 58800,
+      "far": 0.1244557823129252,
+      "frr": 0.1013157894736842,
+      "eer": 0.10986618331543144,
+      "auc": 0.9540802508503401,
+      "aucPerUserMean": 0.9516358759701493,
+      "tarAtFar1": 0.31052631578947365,
+      "tarAtFar5": 0.6927631578947369
+    },
+    "10": {
+      "users": 99,
+      "decisionsGenuine": 1073,
+      "decisionsImpostor": 43120,
+      "far": 0.125834879406308,
+      "frr": 0.06244175209692451,
+      "eer": 0.09521117944763263,
+      "auc": 0.9598724900449038,
+      "aucPerUserMean": 0.9581951063294215,
+      "tarAtFar1": 0.32152842497670087,
+      "tarAtFar5": 0.7297297297297297
+    },
+    "20": {
+      "users": 99,
+      "decisionsGenuine": 601,
+      "decisionsImpostor": 23520,
+      "far": 0.11904761904761907,
+      "frr": 0.033277870216306155,
+      "eer": 0.07819588525926177,
+      "auc": 0.9697104174448482,
+      "aucPerUserMean": 0.9692997126330459,
+      "tarAtFar1": 0.410981697171381,
+      "tarAtFar5": 0.8386023294509152
+    }
+  },
+  "refCheck": {
+    "6": {
+      "users": 99,
+      "decisionsGenuine": 1520,
+      "decisionsImpostor": 58800,
+      "far": 0.10761904761904761,
+      "frr": 0.23355263157894737,
+      "eer": 0.13888068385248836,
+      "auc": 0.9328088077336197,
+      "aucPerUserMean": 0.9225106786865103,
+      "tarAtFar1": 0.2460526315789474,
+      "tarAtFar5": 0.5453947368421053
+    },
+    "10": {
+      "users": 99,
+      "decisionsGenuine": 1073,
+      "decisionsImpostor": 43120,
+      "far": 0.10760667903525045,
+      "frr": 0.1863932898415657,
+      "eer": 0.12489536990768516,
+      "auc": 0.9406556098674326,
+      "aucPerUserMean": 0.9311163258536466,
+      "tarAtFar1": 0.25256290773532153,
+      "tarAtFar5": 0.5890027958993476
+    },
+    "20": {
+      "users": 99,
+      "decisionsGenuine": 601,
+      "decisionsImpostor": 23520,
+      "far": 0.10284863945578226,
+      "frr": 0.15141430948419302,
+      "eer": 0.11186288159190466,
+      "auc": 0.9503908593387438,
+      "aucPerUserMean": 0.9419746251690694,
+      "tarAtFar1": 0.2762063227953411,
+      "tarAtFar5": 0.6439267886855241
+    }
+  },
+  "lowerFrr20vs6": {
+    "lower": 48,
+    "equal": 47,
+    "higher": 4,
+    "users": 99
+  },
+  "refLowerFrr20vs6": {
+    "lower": 64,
+    "equal": 23,
+    "higher": 12,
+    "users": 99
+  }
+}
