@@ -1,0 +1,1 @@
+blocks, binary head with 1:1 negatives (Lu), fixed 0.50, 20 users x 3 seeds: vote 3 of 5 FAR 22.8% FRR 35.5% | mean of 5 FAR 22.6% FRR 37.1% | single block FAR 24.3% FRR 39.5% | per-user AUC 1 block 0.827, 5 blocks 0.865

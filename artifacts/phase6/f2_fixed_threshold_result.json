@@ -1,0 +1,94 @@
+{
+ "source": "/app/artifacts/phase2/L/scores_D.json",
+ "nTargets": 19,
+ "rows": {
+  "F2": {
+   "personal20_33of60": {
+    "far": 0.10803324099722991,
+    "frr": 0.1,
+    "promptsPerMinMean": 0.4784926901101108,
+    "promptsPerMinMedian": 0.0,
+    "usersNeverPrompted": 0.7368421052631579,
+    "interruptionMean": 0.07355336871590741,
+    "impostorRunsCaught": 0.961218836565097,
+    "impostorRunsNeverCaught": 0.03878116343490301,
+    "timeToCatchMedianS": 17.216
+   },
+   "fixed050_30of60": {
+    "far": 0.012465373961218837,
+    "frr": 0.36666666666666664,
+    "promptsPerMinMean": 1.5318692800406808,
+    "promptsPerMinMedian": 1.882264364029928,
+    "usersNeverPrompted": 0.3684210526315789,
+    "interruptionMean": 0.3096908939014202,
+    "impostorRunsCaught": 0.997229916897507,
+    "impostorRunsNeverCaught": 0.0027700831024930483,
+    "timeToCatchMedianS": 17.216
+   },
+   "fixed050_33of60": {
+    "far": 0.027700831024930747,
+    "frr": 0.3,
+    "promptsPerMinMean": 1.4172049930215396,
+    "promptsPerMinMedian": 1.232311199654953,
+    "usersNeverPrompted": 0.3684210526315789,
+    "interruptionMean": 0.2743438063484503,
+    "impostorRunsCaught": 0.9944598337950139,
+    "impostorRunsNeverCaught": 0.005540166204986097,
+    "timeToCatchMedianS": 17.216
+   },
+   "singleWindowAt050": {
+    "FRR": 0.37835358862646185,
+    "FAR": 0.08207620963236116
+   },
+   "tauPercentile20": {
+    "mean": 0.4288633310015968,
+    "min": 0.20707702000745212,
+    "max": 0.7406049771982528
+   }
+  },
+  "REF": {
+   "personal20_33of60": {
+    "far": 0.12973222530009235,
+    "frr": 0.09444444444444444,
+    "promptsPerMinMean": 0.3689703367761143,
+    "promptsPerMinMedian": 0.0,
+    "usersNeverPrompted": 0.8421052631578947,
+    "interruptionMean": 0.07624084721607942,
+    "impostorRunsCaught": 0.9381348107109879,
+    "impostorRunsNeverCaught": 0.061865189289012,
+    "timeToCatchMedianS": 17.216
+   },
+   "fixed050_30of60": {
+    "far": 0.007386888273314866,
+    "frr": 0.4166666666666667,
+    "promptsPerMinMean": 1.6844638614252254,
+    "promptsPerMinMedian": 1.791810552419376,
+    "usersNeverPrompted": 0.3508771929824561,
+    "interruptionMean": 0.3905941495724777,
+    "impostorRunsCaught": 0.9972299168975068,
+    "impostorRunsNeverCaught": 0.0027700831024930483,
+    "timeToCatchMedianS": 17.216
+   },
+   "fixed050_33of60": {
+    "far": 0.009233610341643583,
+    "frr": 0.3833333333333333,
+    "promptsPerMinMean": 1.4894633571541716,
+    "promptsPerMinMedian": 1.2121512189590202,
+    "usersNeverPrompted": 0.3859649122807017,
+    "interruptionMean": 0.32775864200012805,
+    "impostorRunsCaught": 0.9972299168975068,
+    "impostorRunsNeverCaught": 0.0027700831024930483,
+    "timeToCatchMedianS": 17.216
+   },
+   "singleWindowAt050": {
+    "FRR": 0.4528777803256134,
+    "FAR": 0.0682199128394234
+   },
+   "tauPercentile20": {
+    "mean": 0.3279767508771931,
+    "min": 0.042579800000000015,
+    "max": 0.8763278
+   }
+  }
+ }
+}

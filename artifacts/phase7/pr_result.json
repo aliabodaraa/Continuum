@@ -1,0 +1,200 @@
+{
+ "what": "experiment PR, a request only when the mouse suspicion persists (Table 6's system)",
+ "preregistrationPrSha256": "f74584749b6a1fd11e0165719743f41124da3183aca748ef3eb1c1e7b191ad25",
+ "network": "/app/artifacts/phase7/fs/fcn_sapimouse_j80",
+ "users": 19,
+ "validity": {
+  "maxScoreDifference": 6.661338147750939e-16,
+  "a1On150WindowRuns": {
+   "promptsPerMin": 0.3717727639069825,
+   "runsCaught": 0.969529085872576
+  },
+  "table6Live": {
+   "promptsPerMinMean": 0.3717727639069825,
+   "usersNeverPrompted": 0.7894736842105263,
+   "impostorRunsCaught": 0.9695290858725761,
+   "timeToCatchMeanS": 17.769371428571432,
+   "genuineMinutes": 19.55181666666667,
+   "impostorRuns": 361.0
+  }
+ },
+ "impostorSessionWindowsMean": 224.0775623268698,
+ "rows": {
+  "A1": {
+   "promptsPerMin": 0.3717727639069825,
+   "usersNeverAsked": 0.7894736842105263,
+   "sessionsCaught": 0.9806094182825483,
+   "timeToCatchMeanS": 18.064033898305087,
+   "acceptable": true
+  },
+  "A2": {
+   "promptsPerMin": 0.32405168407438806,
+   "usersNeverAsked": 0.7894736842105263,
+   "sessionsCaught": 0.9695290858725762,
+   "timeToCatchMeanS": 19.77534285714286,
+   "vsA1": {
+    "prompts": {
+     "mean": -0.04772107983259444,
+     "lo": -0.1431632394977833,
+     "hi": 0.0,
+     "n": 19
+    },
+    "caught": {
+     "mean": -0.0110803324099723,
+     "lo": -0.02216066481994459,
+     "hi": -0.0027700831024930718,
+     "n": 19
+    }
+   },
+   "acceptable": true
+  },
+  "A3": {
+   "promptsPerMin": 0.24732367336315772,
+   "usersNeverAsked": 0.8421052631578947,
+   "sessionsCaught": 0.9667590027700831,
+   "timeToCatchMeanS": 21.39667621776504,
+   "vsA1": {
+    "prompts": {
+     "mean": -0.12444909054382472,
+     "lo": -0.32562619179887975,
+     "hi": 0.0,
+     "n": 19
+    },
+    "caught": {
+     "mean": -0.013850415512465375,
+     "lo": -0.027700831024930758,
+     "hi": -0.0027700831024930774,
+     "n": 19
+    }
+   },
+   "acceptable": true
+  },
+  "A4": {
+   "promptsPerMin": 0.24732367336315772,
+   "usersNeverAsked": 0.8421052631578947,
+   "sessionsCaught": 0.9584487534626038,
+   "timeToCatchMeanS": 23.098236994219647,
+   "vsA1": {
+    "prompts": {
+     "mean": -0.12444909054382472,
+     "lo": -0.32562619179887975,
+     "hi": 0.0,
+     "n": 19
+    },
+    "caught": {
+     "mean": -0.0221606648199446,
+     "lo": -0.0443213296398892,
+     "hi": -0.0055401662049861435,
+     "n": 19
+    }
+   },
+   "acceptable": true
+  },
+  "A6": {
+   "promptsPerMin": 0.14316323949778334,
+   "usersNeverAsked": 0.8947368421052632,
+   "sessionsCaught": 0.9529085872576177,
+   "timeToCatchMeanS": 26.548110465116277,
+   "vsA1": {
+    "prompts": {
+     "mean": -0.22860952440919916,
+     "lo": -0.49622185445080724,
+     "hi": 0.0,
+     "n": 19
+    },
+    "caught": {
+     "mean": -0.027700831024930747,
+     "lo": -0.04986149584487535,
+     "hi": -0.008310249307479221,
+     "n": 19
+    }
+   },
+   "acceptable": true
+  },
+  "A8": {
+   "promptsPerMin": 0.14316323949778334,
+   "usersNeverAsked": 0.8947368421052632,
+   "sessionsCaught": 0.9445983379501385,
+   "timeToCatchMeanS": 29.986005865102648,
+   "vsA1": {
+    "prompts": {
+     "mean": -0.22860952440919916,
+     "lo": -0.49622185445080724,
+     "hi": 0.0,
+     "n": 19
+    },
+    "caught": {
+     "mean": -0.03601108033240997,
+     "lo": -0.05817174515235456,
+     "hi": -0.016620498614958446,
+     "n": 19
+    }
+   },
+   "acceptable": false
+  },
+  "A11": {
+   "promptsPerMin": 0.09544215966518889,
+   "usersNeverAsked": 0.9473684210526315,
+   "sessionsCaught": 0.9002770083102493,
+   "timeToCatchMeanS": 34.23500923076923,
+   "vsA1": {
+    "prompts": {
+     "mean": -0.2763306042417936,
+     "lo": -0.5542357162080789,
+     "hi": -0.05622139717777851,
+     "n": 19
+    },
+    "caught": {
+     "mean": -0.08033240997229917,
+     "lo": -0.12465373961218836,
+     "hi": -0.04155124653739612,
+     "n": 19
+    }
+   },
+   "acceptable": false
+  },
+  "B2": {
+   "promptsPerMin": 0.09544215966518889,
+   "usersNeverAsked": 0.9473684210526315,
+   "sessionsCaught": 0.9113573407202217,
+   "timeToCatchMeanS": 34.07224316109423,
+   "vsA1": {
+    "prompts": {
+     "mean": -0.2763306042417936,
+     "lo": -0.5542357162080789,
+     "hi": -0.05622139717777851,
+     "n": 19
+    },
+    "caught": {
+     "mean": -0.06925207756232687,
+     "lo": -0.11080332409972299,
+     "hi": -0.03324099722991689,
+     "n": 19
+    }
+   },
+   "acceptable": false
+  },
+  "B3": {
+   "promptsPerMin": 0.047721079832594444,
+   "usersNeverAsked": 0.9473684210526315,
+   "sessionsCaught": 0.7008310249307478,
+   "timeToCatchMeanS": 49.56617391304347,
+   "vsA1": {
+    "prompts": {
+     "mean": -0.32405168407438806,
+     "lo": -0.6783878995809994,
+     "hi": -0.05622139717777851,
+     "n": 19
+    },
+    "caught": {
+     "mean": -0.2797783933518005,
+     "lo": -0.3407202216066482,
+     "hi": -0.22437673130193908,
+     "n": 19
+    }
+   },
+   "acceptable": false
+  }
+ },
+ "recommended": "A6"
+}

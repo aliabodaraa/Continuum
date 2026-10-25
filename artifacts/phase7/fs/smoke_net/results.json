@@ -1,0 +1,37 @@
+{
+ "smokeTest": true,
+ "identificationTop1": 0.15497179125528915,
+ "classes": 80,
+ "seed": 101,
+ "epochsRun": 1,
+ "bestEpoch": 1,
+ "bestValLoss": 3.3103458881378174,
+ "trainWindows": 43142,
+ "valWindows": 10583,
+ "minutes": 0.7968658844629923,
+ "recipe": {
+  "optimizer": "Adam",
+  "learningRate": 0.0001,
+  "batch": 16,
+  "epochs": 1,
+  "plateau": 50,
+  "weights": "lowest validation loss"
+ },
+ "history": {
+  "loss": [
+   3.713569402694702
+  ],
+  "accuracy": [
+   0.12203884869813919
+  ],
+  "val_loss": [
+   3.3103458881378174
+  ],
+  "val_accuracy": [
+   0.19351790845394135
+  ],
+  "lr": [
+   9.999999747378752e-05
+  ]
+ }
+}

@@ -1,0 +1,4 @@
+Mouse live loop, stage D F2, 19 users, 1 variant(s), a check every 6 windows
+ 15 windows (9 low, first decision after about 5 s): genuine requests 2.48/min, users never asked 32%, impostor runs caught 99.7%, mean time to catch 7.0 s
+ 33 windows (19 low, first decision after about 10 s): genuine requests 0.85/min, users never asked 63%, impostor runs caught 98.1%, mean time to catch 11.9 s
+ 60 windows (33 low, first decision after about 17 s): genuine requests 0.48/min, users never asked 74%, impostor runs caught 96.1%, mean time to catch 18.1 s

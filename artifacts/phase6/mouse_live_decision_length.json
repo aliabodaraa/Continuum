@@ -1,0 +1,43 @@
+{
+ "source": "/app/artifacts/phase2/L/scores_D.json",
+ "users": 19,
+ "variants": 1,
+ "checkEveryWindows": 6,
+ "threshold": "20th percentile of leave-one-sample-out scores",
+ "rule": "passkey when >= ceil(0.55 N) of the last N are low",
+ "rows": [
+  {
+   "windows": 15,
+   "lowNeeded": 9,
+   "seconds": 5.1,
+   "promptsPerMinMean": 2.4830958766167197,
+   "usersNeverPrompted": 0.3157894736842105,
+   "impostorRunsCaught": 0.997229916897507,
+   "timeToCatchMeanS": 7.011933333333334,
+   "genuineMinutes": 19.55181666666667,
+   "impostorRuns": 361.0
+  },
+  {
+   "windows": 33,
+   "lowNeeded": 19,
+   "seconds": 10.0,
+   "promptsPerMinMean": 0.8471084315903908,
+   "usersNeverPrompted": 0.631578947368421,
+   "impostorRunsCaught": 0.9806094182825484,
+   "timeToCatchMeanS": 11.854237288135595,
+   "genuineMinutes": 19.55181666666667,
+   "impostorRuns": 361.0
+  },
+  {
+   "windows": 60,
+   "lowNeeded": 33,
+   "seconds": 17.2,
+   "promptsPerMinMean": 0.4784926901101108,
+   "usersNeverPrompted": 0.7368421052631579,
+   "impostorRunsCaught": 0.961218836565097,
+   "timeToCatchMeanS": 18.136956772334297,
+   "genuineMinutes": 19.55181666666667,
+   "impostorRuns": 361.0
+  }
+ ]
+}

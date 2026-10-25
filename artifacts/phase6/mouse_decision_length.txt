@@ -1,0 +1,4 @@
+Mouse decision length, 19 users (stage D, F2), threshold = 20th percentile
+ 15 windows (9 low, about 5 s): FAR 14.2%  FRR 15.1%  EER 13.3%  per-user AUC 0.942
+ 33 windows (19 low, about 10 s): FAR 12.9%  FRR 10.0%  EER 9.1%  per-user AUC 0.964
+ 60 windows (33 low, about 17 s): FAR 10.8%  FRR 10.0%  EER 9.6%  per-user AUC 0.969

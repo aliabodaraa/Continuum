@@ -1,0 +1,5 @@
+Fixed thresholds, 20 users x 3 seeds, decisions of 5 blocks or 60 windows (about 17 s), pooled FAR / FRR
+blocks, one-class SVM, its boundary 0    vote   0.1% /  78.5%   mean   0.0% /  83.9%   single unit   1.9% /  71.0%   (186 genuine, 3534 impostor decisions)
+blocks, binary head, 0.50                vote   1.7% /  56.5%   mean   1.6% /  57.5%   single unit   2.6% /  57.9%   (186 genuine, 3534 impostor decisions)
+windows, binary head, 0.50               vote   8.7% /  13.4%   mean   8.8% /  14.0%   single unit  17.1% /  24.1%   (186 genuine, 3534 impostor decisions)
+deployed window channel (paper Table 6, 19 users, personal threshold, 33 of 60): FAR 10.8%, FRR 10.0%

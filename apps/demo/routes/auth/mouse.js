@@ -45,6 +45,15 @@ router.post("/enroll", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// A real-use sample, recorded by the SDK right after a passkey verification and the user's yes (learning from real use,
+// stage 1). Continuum keeps it only after a passkey it verified moments ago; a locked session never gets here (app.js).
+router.post("/use-sample", requireAuth, async (req, res, next) => {
+  try {
+    const r = await ca.mouseUseSample(req.session.userId, req.body.windows);
+    res.status(r.status).json(r.data);
+  } catch (e) { next(e); }
+});
+
 // Destructive: deletes the trained mouse profile and every stored session. Gated on a passkey
 // verification from the last couple of minutes — see middleware/requireFreshPasskey. The SDK
 // runs the ceremony first, but the gate is enforced here because the client cannot be trusted

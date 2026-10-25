@@ -122,6 +122,13 @@
       },
       eventCount: () => events.length,
       windowCount: () => stepsToWindows(eventsToSteps(events)).length,
+      // Stop listening. A recorder that is done must detach, or it keeps collecting the page's movement
+      // (guard.js mouseSampleFlow).
+      stop: () => {
+        el.removeEventListener("mousemove", onMove);
+        el.removeEventListener("mousedown", onDown);
+        window.removeEventListener("mouseup", onUp);
+      },
     };
   }
 

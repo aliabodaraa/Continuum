@@ -1,0 +1,10 @@
+{
+ "identificationTop1": 0.39316434846266474,
+ "classes": 100,
+ "epochs": 27,
+ "seed": 101,
+ "trainWindows": 54920,
+ "negativesFile": "/app/data/mouse_only/Mouse_A5_W50_base.h5",
+ "negativeWindows": 68845,
+ "provenance": "repr_arch_study final configuration; see artifacts/repr_arch_study/RUN_LOG.md"
+}

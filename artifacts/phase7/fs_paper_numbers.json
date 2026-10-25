@@ -1,0 +1,171 @@
+{
+ "F2_check": {
+  "rows": [
+   {
+    "windows": 15,
+    "lowNeeded": 9,
+    "far": 0.14175438596491227,
+    "frr": 0.1511111111111111,
+    "pooledEer": 0.1333333333333333,
+    "perUserAuc": 0.9417617265775159,
+    "live": {
+     "promptsPerMinMean": 2.4830958766167197,
+     "usersNeverPrompted": 0.3157894736842105,
+     "impostorRunsCaught": 0.997229916897507,
+     "timeToCatchMeanS": 7.011933333333334,
+     "genuineMinutes": 19.55181666666667,
+     "impostorRuns": 361.0
+    }
+   },
+   {
+    "windows": 33,
+    "lowNeeded": 19,
+    "far": 0.12912280701754386,
+    "frr": 0.1,
+    "pooledEer": 0.09106858054226473,
+    "perUserAuc": 0.9637076023391812,
+    "live": {
+     "promptsPerMinMean": 0.8471084315903908,
+     "usersNeverPrompted": 0.631578947368421,
+     "impostorRunsCaught": 0.9806094182825484,
+     "timeToCatchMeanS": 11.854237288135595,
+     "genuineMinutes": 19.55181666666667,
+     "impostorRuns": 361.0
+    }
+   },
+   {
+    "windows": 60,
+    "lowNeeded": 33,
+    "far": 0.10803324099722991,
+    "frr": 0.1,
+    "pooledEer": 0.09570637119113574,
+    "perUserAuc": 0.9688365650969528,
+    "live": {
+     "promptsPerMinMean": 0.4784926901101108,
+     "usersNeverPrompted": 0.7368421052631579,
+     "impostorRunsCaught": 0.961218836565097,
+     "timeToCatchMeanS": 18.136956772334297,
+     "genuineMinutes": 19.55181666666667,
+     "impostorRuns": 361.0
+    }
+   }
+  ],
+  "singleWindow": {
+   "auc": 0.8695846997422099,
+   "eer": 0.19894336545750735
+  }
+ },
+ "FS": {
+  "rows": [
+   {
+    "windows": 15,
+    "lowNeeded": 9,
+    "far": 0.12631578947368421,
+    "frr": 0.1511111111111111,
+    "pooledEer": 0.13421052631578945,
+    "perUserAuc": 0.9407125028967134,
+    "live": {
+     "promptsPerMinMean": 2.4490751811320517,
+     "usersNeverPrompted": 0.3157894736842105,
+     "impostorRunsCaught": 0.997229916897507,
+     "timeToCatchMeanS": 6.886400000000001,
+     "genuineMinutes": 19.55181666666667,
+     "impostorRuns": 361.0
+    }
+   },
+   {
+    "windows": 33,
+    "lowNeeded": 19,
+    "far": 0.11789473684210526,
+    "frr": 0.11818181818181818,
+    "pooledEer": 0.10893141945773524,
+    "perUserAuc": 0.9606900584795321,
+    "live": {
+     "promptsPerMinMean": 0.9196691241782355,
+     "usersNeverPrompted": 0.47368421052631576,
+     "impostorRunsCaught": 0.9861495844875346,
+     "timeToCatchMeanS": 11.567000000000002,
+     "genuineMinutes": 19.55181666666667,
+     "impostorRuns": 361.0
+    }
+   },
+   {
+    "windows": 60,
+    "lowNeeded": 33,
+    "far": 0.09279778393351801,
+    "frr": 0.1,
+    "pooledEer": 0.08668051708217914,
+    "perUserAuc": 0.9676823638042473,
+    "live": {
+     "promptsPerMinMean": 0.3717727639069825,
+     "usersNeverPrompted": 0.7894736842105263,
+     "impostorRunsCaught": 0.9695290858725761,
+     "timeToCatchMeanS": 17.769371428571432,
+     "genuineMinutes": 19.55181666666667,
+     "impostorRuns": 361.0
+    }
+   }
+  ],
+  "singleWindow": {
+   "auc": 0.8718396591541103,
+   "eer": 0.19722729134377784
+  }
+ },
+ "FS_table": {
+  "rows": [
+   {
+    "windows": 9,
+    "lowNeeded": 5,
+    "far": 0.12171052631578948,
+    "frr": 0.21921921921921922,
+    "pooledEer": 0.15375268993690044,
+    "perUserAuc": 0.924374968882207,
+    "live": {
+     "promptsPerMinMean": 5.370368739280292,
+     "usersNeverPrompted": 0.05263157894736842,
+     "impostorRunsCaught": 1.0,
+     "timeToCatchMeanS": 5.014875346260388,
+     "genuineMinutes": 19.55181666666667,
+     "impostorRuns": 361.0
+    }
+   },
+   {
+    "windows": 34,
+    "lowNeeded": 19,
+    "far": 0.10596491228070175,
+    "frr": 0.12149532710280374,
+    "pooledEer": 0.11361862600426298,
+    "perUserAuc": 0.9601520467836258,
+    "live": {
+     "promptsPerMinMean": 0.9673902040108301,
+     "usersNeverPrompted": 0.47368421052631576,
+     "impostorRunsCaught": 0.9861495844875346,
+     "timeToCatchMeanS": 11.517129213483146,
+     "genuineMinutes": 19.55181666666667,
+     "impostorRuns": 361.0
+    }
+   },
+   {
+    "windows": 60,
+    "lowNeeded": 33,
+    "far": 0.09279778393351801,
+    "frr": 0.1,
+    "pooledEer": 0.08668051708217914,
+    "perUserAuc": 0.9676823638042473,
+    "live": {
+     "promptsPerMinMean": 0.3717727639069825,
+     "usersNeverPrompted": 0.7894736842105263,
+     "impostorRunsCaught": 0.9695290858725761,
+     "timeToCatchMeanS": 17.769371428571432,
+     "genuineMinutes": 19.55181666666667,
+     "impostorRuns": 361.0
+    }
+   }
+  ],
+  "singleWindow": {
+   "auc": 0.8718396591541103,
+   "eer": 0.19722729134377784
+  }
+ },
+ "users": 19
+}

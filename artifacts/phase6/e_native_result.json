@@ -1,0 +1,296 @@
+{
+ "what": "sensitivity check of experiment E: block arms with the base trained as SapiMouse's code trains it",
+ "preregistrationESha256": "f410e4b0057dd9810ffc7ae418dbe7e2be65ac31628b0001dcf663e95765b2e6",
+ "scriptSha256": "4ef2241e63db9ceee1573feae1fb767bc129ed9966f37ed2d3030f72a08d83bf",
+ "users": [
+  "user1",
+  "user101",
+  "user104",
+  "user107",
+  "user108",
+  "user111",
+  "user115",
+  "user119",
+  "user16",
+  "user19",
+  "user29",
+  "user69",
+  "user70",
+  "user8",
+  "user85",
+  "user86",
+  "user89",
+  "user9",
+  "user91",
+  "user98"
+ ],
+ "lengthsBlocks": [
+  1,
+  2,
+  3,
+  4,
+  5
+ ],
+ "lengthsWindows": [
+  9,
+  22,
+  34,
+  47,
+  60
+ ],
+ "primaryAuc": {
+  "K-OC (E, untrained base)": 0.7963733814989318,
+  "K-BIN (E, untrained base)": 0.8176343961874946,
+  "K-OC (SapiMouse training)": 0.9146392159896818,
+  "K-BIN (SapiMouse training)": 0.9176257768922177,
+  "W-OC (E)": 0.8995465192457553,
+  "W-BIN (E)": 0.9523723698707466
+ },
+ "aucByLength": {
+  "K-OC (E, untrained base)": [
+   0.7599275430291443,
+   0.789781674101109,
+   0.7996207834726804,
+   0.8205029274125384,
+   0.8120339794791871
+  ],
+  "K-BIN (E, untrained base)": [
+   0.7846059585380829,
+   0.8106061170883848,
+   0.8251951296383495,
+   0.8336355302671092,
+   0.8341292454055459
+  ],
+  "K-OC (SapiMouse training)": [
+   0.8802603728325511,
+   0.906703566741969,
+   0.9196325517129704,
+   0.9331461988304094,
+   0.9334533898305084
+  ],
+  "K-BIN (SapiMouse training)": [
+   0.8865486644919937,
+   0.9180933132260221,
+   0.9266212609902729,
+   0.9329532163742691,
+   0.9239124293785311
+  ],
+  "W-OC (E)": [
+   0.8703730604109978,
+   0.8927555324056256,
+   0.9051013520096353,
+   0.9105643274853799,
+   0.9189383239171374
+  ],
+  "W-BIN (E)": [
+   0.923471838469845,
+   0.9502207663618745,
+   0.9592228672794709,
+   0.9630847953216373,
+   0.965861581920904
+  ]
+ },
+ "eerAt5Blocks": {
+  "K-OC (E, untrained base)": 0.2321421845574388,
+  "K-BIN (E, untrained base)": 0.20778548931748814,
+  "K-OC (SapiMouse training)": 0.09926789077212804,
+  "K-BIN (SapiMouse training)": 0.10349811676082862,
+  "W-OC (E)": 0.12996704331450096,
+  "W-BIN (E)": 0.05170197740112994
+ },
+ "primary": {
+  "comparison": "W-OC (E) minus K-OC (SapiMouse training)",
+  "meanDiff": -0.015092696743926414,
+  "ci95": [
+   -0.0405018394410313,
+   0.011890761101009098
+  ],
+  "p": 0.2472,
+  "n": 20,
+  "bBetter": 10,
+  "verdict": "tie"
+ },
+ "secondary": {
+  "comparison": "W-BIN (E) minus K-BIN (SapiMouse training)",
+  "meanDiff": 0.03474659297852869,
+  "ci95": [
+   0.0010040023073820724,
+   0.0762327903181828
+  ],
+  "p": 0.0444,
+  "n": 20,
+  "bBetter": 16
+ },
+ "trainingEffect": {
+  "comparison": "K-OC (SapiMouse training) minus K-OC (E)",
+  "meanDiff": 0.11826583449074983,
+  "ci95": [
+   0.06552747134542698,
+   0.1758283978661913
+  ],
+  "p": 0.0,
+  "n": 20,
+  "bBetter": 19
+ },
+ "perLength": [
+  {
+   "blocks": 1,
+   "windows": 9,
+   "seconds": 3.4,
+   "W-OC minus K-OC(native)": {
+    "meanDiff": -0.009887312421553423,
+    "ci95": [
+     -0.03111203715991635,
+     0.011247057332760777
+    ],
+    "p": 0.3518,
+    "n": 20,
+    "bBetter": 9
+   }
+  },
+  {
+   "blocks": 2,
+   "windows": 22,
+   "seconds": 6.9,
+   "W-OC minus K-OC(native)": {
+    "meanDiff": -0.01394803433634335,
+    "ci95": [
+     -0.04068453857257886,
+     0.012284975728897092
+    ],
+    "p": 0.2936,
+    "n": 20,
+    "bBetter": 9
+   }
+  },
+  {
+   "blocks": 3,
+   "windows": 34,
+   "seconds": 10.3,
+   "W-OC minus K-OC(native)": {
+    "meanDiff": -0.014531199703335218,
+    "ci95": [
+     -0.04108247795134862,
+     0.01262767103511499
+    ],
+    "p": 0.2762,
+    "n": 20,
+    "bBetter": 9
+   }
+  },
+  {
+   "blocks": 4,
+   "windows": 47,
+   "seconds": 13.8,
+   "W-OC minus K-OC(native)": {
+    "meanDiff": -0.02258187134502924,
+    "ci95": [
+     -0.048305116959064344,
+     0.005234064327485397
+    ],
+    "p": 0.102,
+    "n": 20,
+    "bBetter": 5
+   }
+  },
+  {
+   "blocks": 5,
+   "windows": 60,
+   "seconds": 17.2,
+   "W-OC minus K-OC(native)": {
+    "meanDiff": -0.014515065913370961,
+    "ci95": [
+     -0.04482580037664778,
+     0.020423611111111076
+    ],
+    "p": 0.366,
+    "n": 20,
+    "bBetter": 6
+   }
+  }
+ ],
+ "blockBase": {
+  "native": [
+   {
+    "seedIndex": 0,
+    "bestEpoch": 100,
+    "epochsRun": 100,
+    "valTop1AtBest": 0.567206863679695,
+    "baseMinutes": 20.61
+   },
+   {
+    "seedIndex": 1,
+    "bestEpoch": 92,
+    "epochsRun": 100,
+    "valTop1AtBest": 0.5834127740705434,
+    "baseMinutes": 20.62
+   },
+   {
+    "seedIndex": 2,
+    "bestEpoch": 93,
+    "epochsRun": 100,
+    "valTop1AtBest": 0.559580552907531,
+    "baseMinutes": 20.59
+   }
+  ],
+  "E": [
+   {
+    "seedIndex": 0,
+    "bestEpoch": 1,
+    "valTop1AtBest": 0.0276
+   },
+   {
+    "seedIndex": 1,
+    "bestEpoch": 1,
+    "valTop1AtBest": 0.0257
+   },
+   {
+    "seedIndex": 2,
+    "bestEpoch": 1,
+    "valTop1AtBest": 0.0391
+   }
+  ],
+  "chance": 0.01
+ },
+ "sapimouseCodeOnItsSplit": {
+  "users": 48,
+  "fcnValTop1": 0.501915693283081,
+  "byBlocks": {
+   "1": {
+    "pooledAuc": 0.9293581589231438,
+    "pooledEer": 0.1449726443768997,
+    "perUserMeanAuc": 0.9248161737595412,
+    "perUserMeanAucSep4": 0.9276219332233316,
+    "published": 0.88
+   },
+   "2": {
+    "pooledAuc": 0.9533455522616616,
+    "pooledEer": 0.12320872674882297,
+    "perUserMeanAuc": 0.9495613048487078,
+    "perUserMeanAucSep4": 0.9518312680798987,
+    "published": 0.92
+   },
+   "3": {
+    "pooledAuc": 0.9624243821167079,
+    "pooledEer": 0.10526315789473684,
+    "perUserMeanAuc": 0.959138023487797,
+    "perUserMeanAucSep4": 0.9611835341990531,
+    "published": 0.94
+   },
+   "4": {
+    "pooledAuc": 0.9673638631498103,
+    "pooledEer": 0.09302325581395349,
+    "perUserMeanAuc": 0.9641562327944505,
+    "perUserMeanAucSep4": 0.9665725276793014,
+    "published": 0.94
+   },
+   "5": {
+    "pooledAuc": 0.9708215965321387,
+    "pooledEer": 0.09049562318930875,
+    "perUserMeanAuc": 0.9677907223883718,
+    "perUserMeanAucSep4": 0.9704119559571666,
+    "published": 0.95
+   }
+  }
+ }
+}

@@ -1,0 +1,35 @@
+{
+ "source": "/app/artifacts/phase2/L/scores_D.json",
+ "users": 19,
+ "threshold": "20th percentile of leave-one-sample-out scores",
+ "rule": "passkey when at least ceil(0.55 N) of the last N windows are low",
+ "rows": [
+  {
+   "windows": 15,
+   "votesNeeded": 9,
+   "seconds": 5.11,
+   "far": 0.14175438596491227,
+   "frr": 0.1511111111111111,
+   "pooledEer": 0.1333333333333333,
+   "perUserAuc": 0.9417617265775159
+  },
+  {
+   "windows": 33,
+   "votesNeeded": 19,
+   "seconds": 9.95,
+   "far": 0.12912280701754386,
+   "frr": 0.1,
+   "pooledEer": 0.09106858054226473,
+   "perUserAuc": 0.9637076023391812
+  },
+  {
+   "windows": 60,
+   "votesNeeded": 33,
+   "seconds": 17.22,
+   "far": 0.10803324099722991,
+   "frr": 0.1,
+   "pooledEer": 0.09570637119113574,
+   "perUserAuc": 0.9688365650969528
+  }
+ ]
+}

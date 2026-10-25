@@ -1,0 +1,169 @@
+{
+ "what": "E's windows vs blocks with both networks trained with SapiMouse's recipe",
+ "preregistrationESha256": "f410e4b0057dd9810ffc7ae418dbe7e2be65ac31628b0001dcf663e95765b2e6",
+ "scriptSha256": "583caf7d77858ff7ef7a25dedfce6fa4ce01e7e09cc944dd46ae792ba20cebe7",
+ "users": [
+  "user1",
+  "user101",
+  "user104",
+  "user107",
+  "user108",
+  "user111",
+  "user115",
+  "user119",
+  "user16",
+  "user19",
+  "user29",
+  "user69",
+  "user70",
+  "user8",
+  "user85",
+  "user86",
+  "user89",
+  "user9",
+  "user91",
+  "user98"
+ ],
+ "lengthsBlocks": [
+  1,
+  2,
+  3,
+  4,
+  5
+ ],
+ "lengthsWindows": [
+  9,
+  22,
+  34,
+  47,
+  60
+ ],
+ "primaryAuc": {
+  "K-OC (SapiMouse training)": 0.9146392159896818,
+  "W-OC (SapiMouse training)": 0.8918780168584748,
+  "K-BIN (SapiMouse training)": 0.9176257768922177,
+  "W-BIN (SapiMouse training)": 0.9488641204012703,
+  "W-OC (E's training)": 0.8995465192457553,
+  "W-BIN (E's training)": 0.9523723698707466
+ },
+ "aucByLength": {
+  "K-OC (SapiMouse training)": [
+   0.8802603728325511,
+   0.906703566741969,
+   0.9196325517129704,
+   0.9331461988304094,
+   0.9334533898305084
+  ],
+  "W-OC (SapiMouse training)": [
+   0.859537931296791,
+   0.8833015587638064,
+   0.8988476256521356,
+   0.9063070175438597,
+   0.9113959510357816
+  ],
+  "K-BIN (SapiMouse training)": [
+   0.8865486644919937,
+   0.9180933132260221,
+   0.9266212609902729,
+   0.9329532163742691,
+   0.9239124293785311
+  ],
+  "W-BIN (SapiMouse training)": [
+   0.9164930867943841,
+   0.946815522619892,
+   0.9542151841868822,
+   0.9640614035087719,
+   0.9627354048964218
+  ],
+  "W-OC (E's training)": [
+   0.8703730604109978,
+   0.8927555324056256,
+   0.9051013520096353,
+   0.9105643274853799,
+   0.9189383239171374
+  ],
+  "W-BIN (E's training)": [
+   0.923471838469845,
+   0.9502207663618745,
+   0.9592228672794709,
+   0.9630847953216373,
+   0.965861581920904
+  ]
+ },
+ "eerAt5Blocks": {
+  "K-OC (SapiMouse training)": 0.09926789077212804,
+  "W-OC (SapiMouse training)": 0.14985640301318265,
+  "K-BIN (SapiMouse training)": 0.10349811676082862,
+  "W-BIN (SapiMouse training)": 0.0608804143126177,
+  "W-OC (E's training)": 0.12996704331450096,
+  "W-BIN (E's training)": 0.05170197740112994
+ },
+ "primary": {
+  "comparison": "W-OC minus K-OC (both SapiMouse training)",
+  "meanDiff": -0.02276119913120685,
+  "ci95": [
+   -0.05146379795759043,
+   0.00733686427830979
+  ],
+  "p": 0.1262,
+  "n": 20,
+  "bBetter": 7,
+  "verdict": "tie"
+ },
+ "secondary": {
+  "comparison": "W-BIN minus K-BIN (both SapiMouse training)",
+  "meanDiff": 0.031238343509052746,
+  "ci95": [
+   0.001172326578541277,
+   0.06785248423943811
+  ],
+  "p": 0.04,
+  "n": 20,
+  "bBetter": 14
+ },
+ "recipeEffectWindowsOC": {
+  "comparison": "W-OC SapiMouse training minus W-OC E",
+  "meanDiff": -0.007668502387280435,
+  "ci95": [
+   -0.014283973045412669,
+   -0.0013931472080809726
+  ],
+  "p": 0.0162,
+  "n": 20,
+  "bBetter": 7
+ },
+ "recipeEffectWindowsBIN": {
+  "comparison": "W-BIN SapiMouse training minus W-BIN E",
+  "meanDiff": -0.0035082494694759435,
+  "ci95": [
+   -0.010043447770894196,
+   0.0018660968599785717
+  ],
+  "p": 0.23,
+  "n": 20,
+  "bBetter": 9
+ },
+ "windowBase": [
+  {
+   "seedIndex": 0,
+   "bestEpoch": 24,
+   "epochsRun": 100,
+   "valTop1AtBest": 0.43159922928709055,
+   "baseMinutes": 557.46
+  },
+  {
+   "seedIndex": 1,
+   "bestEpoch": 18,
+   "epochsRun": 100,
+   "valTop1AtBest": 0.42166888987698237,
+   "baseMinutes": 88.98
+  },
+  {
+   "seedIndex": 2,
+   "bestEpoch": 26,
+   "epochsRun": 100,
+   "valTop1AtBest": 0.4307840521713354,
+   "baseMinutes": 82.61
+  }
+ ]
+}

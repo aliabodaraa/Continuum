@@ -1,0 +1,6 @@
+SapiMouse channel + personal threshold, 20 users x 3 seeds, decision = 5 blocks (about 17.2 s), enrolment 53.6 blocks on average
+ADOPTED (q = 20, fixed before the run): pooled FAR 4.1%  FRR 40.3%  | mean over users FAR 4.1%  FRR 44.2%  (186 genuine, 3534 impostor decisions)
+sweep (diagnostic only): q5 FAR 18.9% FRR 14.0%; q10 FAR 12.3% FRR 19.4%; q20 FAR 4.1% FRR 40.3%; q30 FAR 1.7% FRR 53.8%; q40 FAR 0.6% FRR 68.3%; q50 FAR 0.1% FRR 76.3%
+per-user AUC / EER by blocks: 1: 0.880 / 18.9%; 2: 0.907 / 16.4%; 3: 0.920 / 14.1%; 4: 0.933 / 10.6%; 5: 0.933 / 9.9%
+timing: training 0.08 s (0.06-0.12), one check 56.8 ms (p95 70.7) [computation only, in one process, after the network was loaded]
+base: val top-1 0.567 at epoch 100, val top-1 0.583 at epoch 92, val top-1 0.560 at epoch 93

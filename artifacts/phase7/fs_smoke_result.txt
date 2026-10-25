@@ -1,0 +1,8 @@
+EXPERIMENT FS (SMOKE TEST): base-80 FCN trained with SapiMouse's settings vs the deployed recipe, stage D F2 path, 19 development users
+  15-window decisions: per-user AUC F2 0.9418  FS 0.9042  FS-F2 -0.0376 [-0.0614, -0.0148] (higher for 4, lower for 13)
+  33-window decisions: per-user AUC F2 0.9637  FS 0.9197  FS-F2 -0.0440 [-0.0712, -0.0191] (higher for 3, lower for 12)
+  60-window decisions: per-user AUC F2 0.9688  FS 0.9319  FS-F2 -0.0369 [-0.0660, -0.0111] (higher for 2, lower for 9)
+  F2: deployed rule FAR 10.8% FRR 10.0% | live loop 0.48/min, never asked 74%, runs caught 96.1%, time to catch 18.1 s | identification top-1 0.4391
+  FS: deployed rule FAR 19.0% FRR 11.7% | live loop 0.58/min, never asked 63%, runs caught 90.3%, time to catch 18.1 s | identification top-1 0.1550
+  FS training: 1 epochs, best 1, 1 min
+  primary (60 windows, margin -0.01): not shown non-inferior

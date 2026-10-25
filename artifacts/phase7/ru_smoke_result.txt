@@ -1,0 +1,9 @@
+Experiment RU (smoke), prereg 72786bf8f69f, code daf8787839b9
+V1 True (A threshold 0.262084), V2 True (max diff 4.44e-16, 0 mismatches of 515), V3 True (raw 77.1, scaled 57.0), V4 True
+B threshold 0.338982
+genuine: 515 checks (515 non-warm-up, 2 sittings, 13.7 min), 17 segments; requests A 4, B 14 (live 4, of which A's replay asked at 4)
+G: B - A = +0.728 requests/min, 95% [+0.357, +1.214], pass False
+I raw: A 77.1%, B 88.1%, B - A +10.9 points, 95% [+2.6, +20.7], pass True
+I scaled: A 57.0%, B 82.3%, B - A +25.3 points, 95% [+11.1, +41.0], pass True
+poisoning (user19): capture B 15.151515151515152, poisoned 0.0
+verdict: smoke run: a pipeline check, not evidence

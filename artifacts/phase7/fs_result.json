@@ -1,0 +1,86 @@
+{
+ "preregistrationFsSha256": "1e6e6c94651cf27e90673042a04045702a81140f46b5c03a6d236e37e8aeec66",
+ "smokeTest": false,
+ "targets": 19,
+ "auc": {
+  "15": {
+   "F2": 0.9417617265775159,
+   "FS": 0.9407125028967134,
+   "pairedFsMinusF2": {
+    "mean": -0.0010492236808026362,
+    "lo": -0.01594157976526397,
+    "hi": 0.015367932189642695,
+    "higherFor": 7,
+    "lowerFor": 8,
+    "n": 19
+   }
+  },
+  "33": {
+   "F2": 0.9637076023391812,
+   "FS": 0.9606900584795321,
+   "pairedFsMinusF2": {
+    "mean": -0.0030175438596491003,
+    "lo": -0.016749122807017527,
+    "hi": 0.009894736842105272,
+    "higherFor": 7,
+    "lowerFor": 8,
+    "n": 19
+   }
+  },
+  "60": {
+   "F2": 0.9688365650969528,
+   "FS": 0.9676823638042473,
+   "pairedFsMinusF2": {
+    "mean": -0.0011542012927054513,
+    "lo": -0.01615881809787628,
+    "hi": 0.015466297322252997,
+    "higherFor": 3,
+    "lowerFor": 6,
+    "n": 19
+   }
+  }
+ },
+ "deployed": {
+  "F2": {
+   "far": 0.10803324099722991,
+   "frr": 0.1
+  },
+  "FS": {
+   "far": 0.09279778393351801,
+   "frr": 0.1
+  }
+ },
+ "live": {
+  "F2": {
+   "promptsPerMinMean": 0.4784926901101108,
+   "usersNeverPrompted": 0.7368421052631579,
+   "impostorRunsCaught": 0.961218836565097,
+   "timeToCatchMeanS": 18.136956772334297
+  },
+  "FS": {
+   "promptsPerMinMean": 0.3717727639069825,
+   "usersNeverPrompted": 0.7894736842105263,
+   "impostorRunsCaught": 0.9695290858725761,
+   "timeToCatchMeanS": 17.769371428571432
+  }
+ },
+ "identificationTop1": {
+  "FS": 0.3871062529384109,
+  "F2": 0.4390573577809121
+ },
+ "fsTraining": {
+  "epochsRun": 100,
+  "bestEpoch": 18,
+  "bestValLoss": 1.984579086303711,
+  "minutes": 237.34598546425502,
+  "recipe": {
+   "optimizer": "Adam",
+   "learningRate": 0.0001,
+   "batch": 16,
+   "epochs": 100,
+   "plateau": 50,
+   "weights": "lowest validation loss"
+  }
+ },
+ "nonInferior": false
+}

@@ -1,0 +1,13 @@
+Mouse numbers, 19 development users, stage D path (F2 = current recipe as a check, FS = SapiMouse's recipe)
+  F2_check N=15 (9 low): FAR  14.2%  FRR  15.1%  EER  13.3%  per-user AUC 0.9418 | live 2.48/min, never asked 32%, caught 99.7%, time to catch 7.0 s
+  F2_check N=33 (19 low): FAR  12.9%  FRR  10.0%  EER   9.1%  per-user AUC 0.9637 | live 0.85/min, never asked 63%, caught 98.1%, time to catch 11.9 s
+  F2_check N=60 (33 low): FAR  10.8%  FRR  10.0%  EER   9.6%  per-user AUC 0.9688 | live 0.48/min, never asked 74%, caught 96.1%, time to catch 18.1 s
+  F2_check single window: mean AUC 0.870, mean EER 19.9%
+  FS       N=15 (9 low): FAR  12.6%  FRR  15.1%  EER  13.4%  per-user AUC 0.9407 | live 2.45/min, never asked 32%, caught 99.7%, time to catch 6.9 s
+  FS       N=33 (19 low): FAR  11.8%  FRR  11.8%  EER  10.9%  per-user AUC 0.9607 | live 0.92/min, never asked 47%, caught 98.6%, time to catch 11.6 s
+  FS       N=60 (33 low): FAR   9.3%  FRR  10.0%  EER   8.7%  per-user AUC 0.9677 | live 0.37/min, never asked 79%, caught 97.0%, time to catch 17.8 s
+  FS       single window: mean AUC 0.872, mean EER 19.7%
+  FS_table N= 9 (5 low): FAR  12.2%  FRR  21.9%  EER  15.4%  per-user AUC 0.9244 | live 5.37/min, never asked 5%, caught 100.0%, time to catch 5.0 s
+  FS_table N=34 (19 low): FAR  10.6%  FRR  12.1%  EER  11.4%  per-user AUC 0.9602 | live 0.97/min, never asked 47%, caught 98.6%, time to catch 11.5 s
+  FS_table N=60 (33 low): FAR   9.3%  FRR  10.0%  EER   8.7%  per-user AUC 0.9677 | live 0.37/min, never asked 79%, caught 97.0%, time to catch 17.8 s
+  FS_table single window: mean AUC 0.872, mean EER 19.7%

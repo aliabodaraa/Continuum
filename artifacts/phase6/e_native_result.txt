@@ -1,0 +1,22 @@
+E sensitivity check (prereg E f410e4b0057d), 20 users, 3 seeds
+block base network, validation identification accuracy at the kept weights (chance 0.010): E 0.028 (epoch 1), 0.026 (epoch 1), 0.039 (epoch 1) | SapiMouse training 0.567 (epoch 100 of 100), 0.583 (epoch 92 of 100), 0.560 (epoch 93 of 100)
+
+arm                             primary     1b/9w    2b/22w    3b/34w    4b/47w    5b/60w   EER@5b
+K-OC (E, untrained base)          0.796     0.760     0.790     0.800     0.821     0.812    23.2%
+K-BIN (E, untrained base)         0.818     0.785     0.811     0.825     0.834     0.834    20.8%
+K-OC (SapiMouse training)         0.915     0.880     0.907     0.920     0.933     0.933     9.9%
+K-BIN (SapiMouse training)        0.918     0.887     0.918     0.927     0.933     0.924    10.3%
+W-OC (E)                          0.900     0.870     0.893     0.905     0.911     0.919    13.0%
+W-BIN (E)                         0.952     0.923     0.950     0.959     0.963     0.966     5.2%
+
+PRIMARY  W-OC minus K-OC(SapiMouse training): -0.0151 [-0.0405, +0.0119] p 0.2472, second higher for 10/20 -> TIE
+secondary W-BIN minus K-BIN(SapiMouse training): +0.0347 [+0.0010, +0.0762] p 0.0444, second higher for 16/20
+training effect on blocks, K-OC native minus K-OC E: +0.1183 [+0.0655, +0.1758] p 0.0000, second higher for 19/20
+per length, W-OC minus K-OC(native): 1b -0.010 (p 0.352); 2b -0.014 (p 0.294); 3b -0.015 (p 0.276); 4b -0.023 (p 0.102); 5b -0.015 (p 0.366)
+
+SapiMouse's code on its own split (48 users, FCN val top-1 0.502):
+  1 blocks: pooled AUC 0.929 (paper 0.88), pooled EER 14.5%, per-user mean AUC 0.925 (4 Sep run 0.928)
+  2 blocks: pooled AUC 0.953 (paper 0.92), pooled EER 12.3%, per-user mean AUC 0.950 (4 Sep run 0.952)
+  3 blocks: pooled AUC 0.962 (paper 0.94), pooled EER 10.5%, per-user mean AUC 0.959 (4 Sep run 0.961)
+  4 blocks: pooled AUC 0.967 (paper 0.94), pooled EER 9.3%, per-user mean AUC 0.964 (4 Sep run 0.967)
+  5 blocks: pooled AUC 0.971 (paper 0.95), pooled EER 9.0%, per-user mean AUC 0.968 (4 Sep run 0.970)

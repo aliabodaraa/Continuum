@@ -1,0 +1,168 @@
+{
+ "experiment": "RU",
+ "mode": "smoke",
+ "preregSha256": "72786bf8f69f12ab22f5013059c12c7a48ffa24eb3269db5820d6764d2080d1d",
+ "codeSha256": "daf8787839b92ceeba3ca479dbac41db3f278f821e0add897856ed00962fecf0",
+ "network": "/app/artifacts/mouse-fcn-a5/final_model",
+ "cohortSha256": "a5506e4677d5ca6301655c0cd80cca68ca39812636baae8230aed5dcd8b2528f",
+ "startedUtc": "2026-10-25 13:51:48",
+ "period": {
+  "before": "2026-10-25 13:30:38",
+  "without": [
+   "2026-10-25 09:54:33",
+   "2026-10-25 09:54:54"
+  ]
+ },
+ "excluded": [],
+ "thresholds": {
+  "A": 0.26208394455013234,
+  "B": 0.33898235705455576
+ },
+ "V1": {
+  "pass": true,
+  "rebuilt": 0.26208394455013234,
+  "live": 0.26208394455013234
+ },
+ "V2": {
+  "pass": true,
+  "maxAbsScoreDiff": 4.440892098500626e-16,
+  "mismatchedChecks": [],
+  "mismatches": 0,
+  "checks": 515
+ },
+ "V4": {
+  "pass": true,
+  "profileTrainedAt": "2026-10-24 15:08:29",
+  "thresholdsOnChecks": [
+   0.262083944550132
+  ]
+ },
+ "genuine": {
+  "checks": 515,
+  "nonWarmupChecks": 515,
+  "sittings": 2,
+  "minutes": 13.733333333333334,
+  "segments": 17,
+  "streamWindows": 7337,
+  "distinctWindows": 7235,
+  "overlapHistogram": {
+   "0": 17,
+   "36": 1,
+   "38": 2,
+   "39": 2,
+   "40": 30,
+   "41": 43,
+   "42": 55,
+   "43": 39,
+   "44": 35,
+   "45": 27,
+   "46": 33,
+   "47": 27,
+   "48": 19,
+   "49": 20,
+   "50": 23,
+   "51": 14,
+   "52": 20,
+   "53": 18,
+   "54": 11,
+   "55": 14,
+   "56": 14,
+   "57": 12,
+   "58": 14,
+   "59": 13,
+   "60": 12
+  },
+  "smallOverlapChecks": [],
+  "requests": {
+   "A": 4,
+   "B": 14
+  },
+  "requestsPerMin": {
+   "A": 0.2912621359223301,
+   "B": 1.0194174757281553
+  },
+  "liveRequests": 4,
+  "liveRequestsReplayedByA": 4,
+  "bLowAtLiveRequests": [
+   53,
+   33,
+   53,
+   45
+  ],
+  "lowWindowShare": {
+   "A": 0.10836212854181064,
+   "B": 0.2029025570145128
+  },
+  "perCheckVerdictShare": {
+   "A": 0.007766990291262136,
+   "B": 0.07961165048543689
+  },
+  "G": {
+   "deltaPerMin": 0.7281553398058251,
+   "ci95": [
+    0.35714285714285715,
+    1.2142857142857142
+   ],
+   "pass": false
+  },
+  "minimumMet": false
+ },
+ "V3": {
+  "pass": true,
+  "raw": 77.13310580204778,
+  "scaled": 56.996587030716725,
+  "diagnostic": {
+   "raw": 77.1,
+   "scaled": 57.0
+  }
+ },
+ "impostors": {
+  "users": 20,
+  "ownerMedianStep": 10.198039054870605,
+  "I": {
+   "raw": {
+    "captureA": 77.13310580204778,
+    "captureB": 88.05460750853243,
+    "deltaPoints": 10.921501706484642,
+    "ci95": [
+     2.641261171797418,
+     20.73590982286634
+    ],
+    "decisions": 293,
+    "pass": true
+   },
+   "scaled": {
+    "captureA": 56.996587030716725,
+    "captureB": 82.25255972696246,
+    "deltaPoints": 25.255972696245735,
+    "ci95": [
+     11.11032196969697,
+     41.03448275862069
+    ],
+    "decisions": 293,
+    "pass": true
+   }
+  },
+  "runsCaught150": {
+   "raw": {
+    "A": 0.8230088495575221,
+    "B": 0.9469026548672567
+   },
+   "scaled": {
+    "A": 0.6548672566371682,
+    "B": 0.8761061946902655
+   }
+  }
+ },
+ "poisoning": {
+  "impostor": "user19",
+  "rawAcceptanceUnderB": 0.5791245791245792,
+  "thresholdPoisoned": 0.3512458036513412,
+  "capture": {
+   "B": 15.151515151515152,
+   "Bpoisoned": 0.0
+  }
+ },
+ "verdict": "smoke run: a pipeline check, not evidence",
+ "seconds": 41.7
+}

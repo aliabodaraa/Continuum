@@ -1,0 +1,9 @@
+Experiment RU (test, amendment A1), prereg 72786bf8f69f, code bf141310d5dd
+V1 True (A threshold 0.262084), V2 True (max diff 3.33e-16, 0 mismatches of 375), V3 True (raw 77.1, scaled 57.0), V4 True
+B threshold 0.338982
+genuine: 375 checks (375 non-warm-up, 3 sittings, 10.0 min), 18 segments; requests A 0, B 0 (live 0, of which A's replay asked at 0)
+G: B - A = +0.000 requests/min, 95% [+0.000, +0.000], pass False
+I raw: A 77.1%, B 88.1%, B - A +10.9 points, 95% [+2.6, +20.7], pass True
+I scaled: A 57.0%, B 82.3%, B - A +25.3 points, 95% [+11.1, +41.0], pass True
+poisoning (user19): capture B 15.151515151515152, poisoned 0.0
+verdict: keep A: final for this mix (a same-day test favours it)

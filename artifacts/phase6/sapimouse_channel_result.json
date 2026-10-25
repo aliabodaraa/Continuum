@@ -1,0 +1,122 @@
+{
+ "what": "SapiMouse channel (blocks, FCN trained as SapiMouse, one-class SVM) + personal threshold",
+ "users": 20,
+ "seeds": 3,
+ "rule": "threshold = 20th percentile of out-of-sample enrolment block scores (8 parts); passkey when the mean of 5 consecutive blocks is below it",
+ "secondsPerDecision": 17.2,
+ "adopted": {
+  "q": 20,
+  "pooledFRR": 0.4032258064516129,
+  "pooledFAR": 0.041029994340690434,
+  "genuineDecisions": 186,
+  "impostorDecisions": 3534,
+  "meanFRR": 0.4416666666666667,
+  "meanFAR": 0.0408804143126177
+ },
+ "sweep": [
+  {
+   "q": 5,
+   "pooledFRR": 0.13978494623655913,
+   "pooledFAR": 0.18930390492359933,
+   "genuineDecisions": 186,
+   "impostorDecisions": 3534,
+   "meanFRR": 0.1611111111111111,
+   "meanFAR": 0.18855461393596987
+  },
+  {
+   "q": 10,
+   "pooledFRR": 0.1935483870967742,
+   "pooledFAR": 0.122524052065648,
+   "genuineDecisions": 186,
+   "impostorDecisions": 3534,
+   "meanFRR": 0.22222222222222224,
+   "meanFAR": 0.12207627118644067
+  },
+  {
+   "q": 20,
+   "pooledFRR": 0.4032258064516129,
+   "pooledFAR": 0.041029994340690434,
+   "genuineDecisions": 186,
+   "impostorDecisions": 3534,
+   "meanFRR": 0.4416666666666667,
+   "meanFAR": 0.0408804143126177
+  },
+  {
+   "q": 30,
+   "pooledFRR": 0.5376344086021505,
+   "pooledFAR": 0.016694963214487834,
+   "genuineDecisions": 186,
+   "impostorDecisions": 3534,
+   "meanFRR": 0.5902777777777778,
+   "meanFAR": 0.01664783427495292
+  },
+  {
+   "q": 40,
+   "pooledFRR": 0.6827956989247311,
+   "pooledFAR": 0.00622524052065648,
+   "genuineDecisions": 186,
+   "impostorDecisions": 3534,
+   "meanFRR": 0.7368055555555555,
+   "meanFAR": 0.006214689265536724
+  },
+  {
+   "q": 50,
+   "pooledFRR": 0.7634408602150538,
+   "pooledFAR": 0.0008488964346349745,
+   "genuineDecisions": 186,
+   "impostorDecisions": 3534,
+   "meanFRR": 0.8145833333333332,
+   "meanFAR": 0.000847457627118644
+  }
+ ],
+ "byBlocks": {
+  "1": {
+   "aucMean": 0.8802603728325513,
+   "eerMean": 0.18940995168144037
+  },
+  "2": {
+   "aucMean": 0.906703566741969,
+   "eerMean": 0.1638222937022644
+  },
+  "3": {
+   "aucMean": 0.9196325517129706,
+   "eerMean": 0.14093622461752714
+  },
+  "4": {
+   "aucMean": 0.9331461988304094,
+   "eerMean": 0.10601315789473684
+  },
+  "5": {
+   "aucMean": 0.9334533898305084,
+   "eerMean": 0.09926789077212807
+  }
+ },
+ "base": [
+  {
+   "bestEpoch": 100,
+   "epochsRun": 100,
+   "valTop1AtBest": 0.567206863679695
+  },
+  {
+   "bestEpoch": 92,
+   "epochsRun": 100,
+   "valTop1AtBest": 0.5834127740705434
+  },
+  {
+   "bestEpoch": 93,
+   "epochsRun": 100,
+   "valTop1AtBest": 0.559580552907531
+  }
+ ],
+ "timing": {
+  "trainSecondsMean": 0.08132561276628016,
+  "trainSecondsRange": [
+   0.062295637995703146,
+   0.11870446999819251
+  ],
+  "checkMsMean": 56.790047446690245,
+  "checkMsP95": 70.6548222038691,
+  "note": "computation only, in one process, after the network was loaded"
+ },
+ "enrolBlocksMean": 53.65
+}

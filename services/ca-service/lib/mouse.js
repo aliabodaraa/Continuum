@@ -57,6 +57,18 @@ const SAMPLES_REQUIRED = Math.ceil(MIN_ENROLL_WINDOWS / SAMPLE_WINDOWS);
 // 55 windows: 1st percentile 7.1 px, 5th 9.8 px. Constant-speed or jittering motion scores ~0.
 // Replaces the old click gate: the model no longer reads clicks.
 const MIN_STEP_IQR_PX = 5;
+// A sample must be movement that is not on file already. On 2026-09-19 the SDK recorded the same movement twice
+// (two sample flows ran at once) and both copies were stored. Inside a profile a copy finds its twin in training,
+// so its leave-one-sample-out scores come out too high and so does the threshold: the owner's went from 0.262
+// to 0.303. Two samples are compared by the runs of REPEAT_RUN consecutive steps they share. Independent
+// SapiMouse samples share none (80 base users, 1,214 samples: 0 of 12,111 pairs), the pieces either side of a cut
+// in one recording share at most 3.7% (their boundary windows overlap), and the owner's copies shared 81% and 98%.
+// The limit is the typing popup's (lib/adaptive.js OVERLAP_LIMIT).
+const REPEAT_RUN = 20;
+const REPEAT_LIMIT = 0.05;
+// Learning from real use, stage 1 (lib/mouseUse.js): the windows of every scored check of the users listed here (by the
+// operator, never by a client) are kept for the offline evaluation of stage 2. Never trained on; deleted after it.
+const LIVE_CAPTURE_USERS = new Set(String(process.env.MOUSE_LIVE_CAPTURE_USERS || "").split(",").map((s) => s.trim()).filter(Boolean));
 
 const THRESHOLD_PERCENTILE = 20;
 const THRESHOLD_SOURCE = "leave-one-sample-out";
@@ -65,10 +77,14 @@ const VOTE_K = 33;
 // The model the threshold and vote run on: "f2" (frozen network + per-user head) or "s1" (per-user
 // fine-tuned networks).
 const MOUSE_HEAD_SCHEME = "f2";
-// Stored with every profile ("f2-loso-p20-33of60"). A profile built under another model or rule
-// (S1's networks, the old in-sample threshold with 30 of 60) is rebuilt from its stored samples,
-// never scored against this one.
-const MOUSE_DECISION_VERSION = `${MOUSE_HEAD_SCHEME}-loso-p${THRESHOLD_PERCENTILE}-${VOTE_K}of${VOTE_N}`;
+// The frozen network the heads are trained on: "sm" = the FCN trained with SapiMouse's own settings
+// (adopted 2026-10-22, docs/recovery/RESULTS_FS.md). A head trained on another network's embedding
+// does not fit this one, so the network is part of the version below.
+const MOUSE_NETWORK = "sm";
+// Stored with every profile ("f2-sm-loso-p20-33of60"). A profile built under another model, network or
+// rule (S1's networks, the earlier network, the old in-sample threshold with 30 of 60) is rebuilt from
+// its stored samples, never scored against this one.
+const MOUSE_DECISION_VERSION = `${MOUSE_HEAD_SCHEME}-${MOUSE_NETWORK}-loso-p${THRESHOLD_PERCENTILE}-${VOTE_K}of${VOTE_N}`;
 // Kept under the old names for callers that report them (SDK panel, gateway).
 const MOUSE_SUSTAIN_WINDOW = VOTE_N;
 const MOUSE_SUSTAIN_LOW = VOTE_K;
@@ -103,10 +119,50 @@ function stepSpreadPx(windows) {
   return q(0.75) - q(0.25);
 }
 
+// Every run of REPEAT_RUN consecutive steps in a sample, taken inside each window, so a window skipped by the
+// client's path filter cannot join steps that were never consecutive.
+function stepRuns(windows) {
+  const runs = new Set();
+  for (const w of windows) for (let i = 0; i + REPEAT_RUN <= w.length; i++) runs.add(JSON.stringify(w.slice(i, i + REPEAT_RUN)));
+  return runs;
+}
+// The share of a sample's runs that also occur in another sample.
+function repeatShare(runs, otherRuns) {
+  if (!runs.size) return 0;
+  let n = 0;
+  for (const r of runs) if (otherRuns.has(r)) n += 1;
+  return n / runs.size;
+}
+// Which stored samples repeat a newer one (scripts/dedup_mouse_samples.js, the cleanup of 2026-10-24). Newest first:
+// a sample is kept unless more than REPEAT_LIMIT of its runs occur in a sample already kept, so of two copies the
+// newer stays and a third sample that overlapped only the dropped one is kept. `samples`: [{ id, windows }].
+function repeatedSamples(samples) {
+  const kept = [], repeated = [];
+  for (const s of [...samples].sort((a, b) => b.id - a.id)) {
+    const runs = stepRuns(s.windows);
+    let worst = null;
+    for (const k of kept) {
+      const share = repeatShare(runs, k.runs);
+      if (share > REPEAT_LIMIT && (!worst || share > worst.share)) worst = { of: k.id, share };
+    }
+    if (worst) repeated.push({ id: s.id, repeats: worst.of, share: worst.share });
+    else kept.push({ id: s.id, runs });
+  }
+  return repeated;
+}
+
 // Enroll: store this session's windows, then (re)train on ALL accumulated
 // sessions so enrollment builds up over visits — the mouse analogue of the
 // keystroke multi-sample profile. Transfer-learns from the SapiMouse base.
 async function enrollMouse(userId, windows) {
+  // Once the profile exists it takes no more enrolment samples, as typing since 2026-10-05. Until 2026-10-24 any
+  // sample sent here was stored and rebuilt the profile from the newest ones, with no passkey ("+ train"), so
+  // anyone at an unlocked session could replace the profile with their own movement. Enrolling again needs a
+  // reset, and the reset asks for the passkey.
+  if (await mouseEnrolled(userId)) {
+    return { status: 409, body: { ok: false, error: "already_enrolled",
+      note: "The mouse profile is trained; it takes no more enrolment samples. Reset it (passkey) to enrol again." } };
+  }
   if (staleClientWindows(windows)) {
     return { status: 400, body: { ok: false, error: "This client sends the retired 7-feature mouse windows. Reload the page or update the extension." } };
   }
@@ -135,6 +191,17 @@ async function enrollMouse(userId, windows) {
         needStepSpreadPx: MIN_STEP_IQR_PX,
       },
     };
+  }
+  const runs = stepRuns(windows);
+  for (const s of await db.all("SELECT id, windows FROM mouse_samples WHERE user_id = ? ORDER BY id DESC", userId)) {
+    const share = repeatShare(runs, stepRuns(JSON.parse(s.windows)));
+    if (share > REPEAT_LIMIT) {
+      return {
+        status: 422,
+        body: { ok: false, error: "This movement is already in one of your samples. Keep moving for a new sample.",
+                repeatedShare: share, repeatLimit: REPEAT_LIMIT },
+      };
+    }
   }
 
   await db.run(
@@ -362,11 +429,14 @@ async function checkMouse(userId, windows, study = null) {
   // Every scored check is logged, so a user's report ("it keeps asking me") can be checked against
   // what the model actually saw: scores, threshold, how many were low, and the verdict.
   try {
-    await db.run(
+    const decisionId = await db.insert(
       `INSERT INTO mouse_decisions (user_id, window_count, threshold, low_windows, vote_k, vote_n, warmup, suspicious, scores)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       userId, scores.length, userThreshold, lows, VOTE_K, VOTE_N, isWarmup ? 1 : 0, isSuspicious ? 1 : 0,
       JSON.stringify(scores));   // full precision: EER/AUC are computed from these offline
+    if (LIVE_CAPTURE_USERS.has(String(userId))) {
+      await db.run("INSERT INTO mouse_live_windows (decision_id, user_id, windows) VALUES (?, ?, ?)", decisionId, userId, JSON.stringify(recent));
+    }
   } catch (e) { /* logging must never block a verdict */ }
   // User study (lib/studyLog.js; a no-op outside it). The client numbers its windows per session.
   const studyCtx = studyLog.parseContext(study);
@@ -449,6 +519,10 @@ async function resetMouseProfile(userId) {
   const before = await db.get("SELECT COUNT(*) AS n FROM mouse_samples WHERE user_id = ?", userId);
   await db.run("DELETE FROM mouse_profiles WHERE user_id = ?", userId);
   await db.run("DELETE FROM mouse_samples WHERE user_id = ?", userId);
+  // and everything learning from real use kept for this user (lib/mouseUse.js)
+  await db.run("DELETE FROM mouse_use_samples WHERE user_id = ?", userId);
+  await db.run("DELETE FROM mouse_use_anchors WHERE user_id = ?", userId);
+  await db.run("DELETE FROM mouse_live_windows WHERE user_id = ?", userId);
   // The streak counted strikes against a model that no longer exists. Leaving it would
   // carry stale evidence into the next enrollment and could step the user up on their
   // first packet after re-enrolling.
@@ -463,6 +537,15 @@ module.exports = {
   mouseStatus,
   mouseEnrolled,
   resetMouseProfile,
+  validWindows,
+  staleClientWindows,
+  stepSpreadPx,
+  MIN_STEP_IQR_PX,
+  stepRuns,
+  repeatShare,
+  repeatedSamples,
+  REPEAT_RUN,
+  REPEAT_LIMIT,
   MIN_ENROLL_WINDOWS,
   MIN_SESSION_WINDOWS,
   SAMPLE_WINDOWS,

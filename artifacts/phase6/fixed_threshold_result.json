@@ -1,0 +1,69 @@
+{
+ "blocks, one-class SVM, its boundary 0": {
+  "vote": {
+   "pooledFAR": 0.0008488964346349745,
+   "pooledFRR": 0.7849462365591398,
+   "genuineDecisions": 186,
+   "impostorDecisions": 3534,
+   "meanFAR": 0.000847457627118644,
+   "meanFRR": 0.8215277777777776
+  },
+  "mean": {
+   "pooledFAR": 0.0,
+   "pooledFRR": 0.8387096774193549,
+   "genuineDecisions": 186,
+   "impostorDecisions": 3534,
+   "meanFAR": 0.0,
+   "meanFRR": 0.8951388888888889
+  },
+  "singleUnit": {
+   "FRR": 0.7095238095238096,
+   "FAR": 0.019498746867167918
+  }
+ },
+ "blocks, binary head, 0.50": {
+  "vote": {
+   "pooledFAR": 0.016694963214487834,
+   "pooledFRR": 0.5645161290322581,
+   "genuineDecisions": 186,
+   "impostorDecisions": 3534,
+   "meanFAR": 0.016596045197740113,
+   "meanFRR": 0.6222222222222221
+  },
+  "mean": {
+   "pooledFAR": 0.01584606677985286,
+   "pooledFRR": 0.5752688172043011,
+   "genuineDecisions": 186,
+   "impostorDecisions": 3534,
+   "meanFAR": 0.015739171374764598,
+   "meanFRR": 0.6388888888888888
+  },
+  "singleUnit": {
+   "FRR": 0.579047619047619,
+   "FAR": 0.025714285714285714
+  }
+ },
+ "windows, binary head, 0.50": {
+  "vote": {
+   "pooledFAR": 0.08687040181097906,
+   "pooledFRR": 0.13440860215053763,
+   "genuineDecisions": 186,
+   "impostorDecisions": 3534,
+   "meanFAR": 0.08667660598451557,
+   "meanFRR": 0.14999999999999997
+  },
+  "mean": {
+   "pooledFAR": 0.08828522920203735,
+   "pooledFRR": 0.13978494623655913,
+   "genuineDecisions": 186,
+   "impostorDecisions": 3534,
+   "meanFAR": 0.0880702029713329,
+   "meanFRR": 0.15555555555555553
+  },
+  "singleUnit": {
+   "FRR": 0.24076963078523142,
+   "FAR": 0.170531633295407
+  }
+ },
+ "_reference": "deployed window channel (paper Table 6, 19 users, personal threshold, 33 of 60): FAR 10.8%, FRR 10.0%"
+}

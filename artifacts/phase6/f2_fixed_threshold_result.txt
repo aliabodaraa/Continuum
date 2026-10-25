@@ -1,0 +1,9 @@
+Stage D scores, 19 development users, base-80, 440-window enrolment; 17.2-s decisions, pooled
+F2   personal20_33of60  FAR  10.8%  FRR  10.0%  | live loop: prompts/min 0.48, users never prompted 73.7%, impostor runs caught 96.1%
+F2   fixed050_30of60    FAR   1.2%  FRR  36.7%  | live loop: prompts/min 1.53, users never prompted 36.8%, impostor runs caught 99.7%
+F2   fixed050_33of60    FAR   2.8%  FRR  30.0%  | live loop: prompts/min 1.42, users never prompted 36.8%, impostor runs caught 99.4%
+F2   personal thresholds: mean 0.429 (from 0.207 to 0.741); single window at 0.50: FAR 8.2%  FRR 37.8%
+REF  personal20_33of60  FAR  13.0%  FRR   9.4%  | live loop: prompts/min 0.37, users never prompted 84.2%, impostor runs caught 93.8%
+REF  fixed050_30of60    FAR   0.7%  FRR  41.7%  | live loop: prompts/min 1.68, users never prompted 35.1%, impostor runs caught 99.7%
+REF  fixed050_33of60    FAR   0.9%  FRR  38.3%  | live loop: prompts/min 1.49, users never prompted 38.6%, impostor runs caught 99.7%
+REF  personal thresholds: mean 0.328 (from 0.043 to 0.876); single window at 0.50: FAR 6.8%  FRR 45.3%

@@ -1,0 +1,24 @@
+2026-10-20 20:35:12.445246: I tensorflow/core/util/port.cc:113] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-10-20 20:35:12.862461: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+     user1  48 blocks vs 48 negatives, 15 epochs
+     user8  48 blocks vs 48 negatives, 15 epochs
+     user9  43 blocks vs 43 negatives, 7 epochs
+    user16  55 blocks vs 55 negatives, 15 epochs
+    user19  123 blocks vs 123 negatives, 11 epochs
+    user29  56 blocks vs 56 negatives, 9 epochs
+    user69  48 blocks vs 48 negatives, 10 epochs
+    user70  51 blocks vs 51 negatives, 7 epochs
+    user85  44 blocks vs 44 negatives, 9 epochs
+    user86  58 blocks vs 58 negatives, 15 epochs
+    user89  52 blocks vs 52 negatives, 15 epochs
+    user91  71 blocks vs 71 negatives, 15 epochs
+    user98  25 blocks vs 25 negatives, 15 epochs
+   user101  50 blocks vs 50 negatives, 15 epochs
+   user104  52 blocks vs 52 negatives, 10 epochs
+   user107  36 blocks vs 36 negatives, 7 epochs
+   user108  58 blocks vs 58 negatives, 15 epochs
+   user111  45 blocks vs 45 negatives, 7 epochs
+   user115  50 blocks vs 50 negatives, 15 epochs
+   user119  60 blocks vs 60 negatives, 7 epochs
+wrote /app/artifacts/phase6/blocks_lu/BL_s0.json

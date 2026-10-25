@@ -1,0 +1,13 @@
+{
+ "arch": "fcn",
+ "study_arm": "B6",
+ "representation": "A5",
+ "representation_desc": "|dx|, |dy|",
+ "window": 50,
+ "stride": 10,
+ "freeze": [
+  "conv1",
+  "bn1"
+ ],
+ "embedding_layer": "embedding"
+}

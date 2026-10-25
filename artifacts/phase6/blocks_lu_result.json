@@ -1,0 +1,26 @@
+{
+ "vote": {
+  "pooledFAR": 0.22778720996038485,
+  "pooledFRR": 0.3548387096774194,
+  "genuineDecisions": 186,
+  "impostorDecisions": 3534,
+  "meanFAR": 0.22582864327409427,
+  "meanFRR": 0.37777777777777777
+ },
+ "mean": {
+  "pooledFAR": 0.22608941709111488,
+  "pooledFRR": 0.3709677419354839,
+  "genuineDecisions": 186,
+  "impostorDecisions": 3534,
+  "meanFAR": 0.22412689135658162,
+  "meanFRR": 0.3902777777777777
+ },
+ "singleUnit": {
+  "FRR": 0.3952380952380952,
+  "FAR": 0.24265664160401001
+ },
+ "perUserAuc": {
+  "1": 0.8267413832929045,
+  "5": 0.8651977401129942
+ }
+}
