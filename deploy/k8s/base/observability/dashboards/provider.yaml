@@ -1,0 +1,12 @@
+# Grafana loads this file with the dashboards of the image itself. The dashboard JSON sits beside it in the
+# ConfigMap grafana-continuum-dashboards (base/observability/kustomization.yaml), mounted at /etc/continuum-dashboards.
+apiVersion: 1
+providers:
+  - name: Continuum
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/continuum-dashboards
+      foldersFromFilesStructure: false

@@ -1,0 +1,86 @@
+# Telemetry on this PC: every service sends its traces and request metrics (OpenTelemetry, OTLP over HTTP) to
+# the collector in namespace continuum-observability (base/observability, grafana/otel-lgtm), where Grafana
+# shows them (scripts/k8s-local.sh grafana). The Node services are instrumented without a code change
+# (NODE_OPTIONS loads the OpenTelemetry auto-instrumentation: http, express, pg, fetch); the model service in
+# its gunicorn hook (services/model-api/gunicorn.conf.py). Without these settings (the base, the bundle) a
+# service sends nothing and loads nothing.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: gateway, namespace: continuum }
+spec:
+  template:
+    spec:
+      containers:
+        - name: gateway
+          env:
+            - { name: NODE_OPTIONS, value: "--require @opentelemetry/auto-instrumentations-node/register" }
+            - { name: OTEL_SERVICE_NAME, value: gateway }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-lgtm.continuum-observability:4318" }
+            - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf }
+            - { name: OTEL_TRACES_EXPORTER, value: otlp }
+            - { name: OTEL_METRICS_EXPORTER, value: otlp }
+            - { name: OTEL_LOGS_EXPORTER, value: none }
+            - { name: OTEL_NODE_RESOURCE_DETECTORS, value: "env,host,os,process,container" }
+            - { name: OTEL_NODE_DISABLED_INSTRUMENTATIONS, value: "fs,dns,net" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: ca-service, namespace: continuum }
+spec:
+  template:
+    spec:
+      containers:
+        - name: ca-service
+          env:
+            - { name: NODE_OPTIONS, value: "--require @opentelemetry/auto-instrumentations-node/register" }
+            - { name: OTEL_SERVICE_NAME, value: ca-service }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-lgtm.continuum-observability:4318" }
+            - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf }
+            - { name: OTEL_TRACES_EXPORTER, value: otlp }
+            - { name: OTEL_METRICS_EXPORTER, value: otlp }
+            - { name: OTEL_LOGS_EXPORTER, value: none }
+            - { name: OTEL_NODE_RESOURCE_DETECTORS, value: "env,host,os,process,container" }
+            - { name: OTEL_NODE_DISABLED_INSTRUMENTATIONS, value: "fs,dns,net" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: passkey-service, namespace: continuum }
+spec:
+  template:
+    spec:
+      containers:
+        - name: passkey-service
+          env:
+            - { name: NODE_OPTIONS, value: "--require @opentelemetry/auto-instrumentations-node/register" }
+            - { name: OTEL_SERVICE_NAME, value: passkey-service }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-lgtm.continuum-observability:4318" }
+            - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: http/protobuf }
+            - { name: OTEL_TRACES_EXPORTER, value: otlp }
+            - { name: OTEL_METRICS_EXPORTER, value: otlp }
+            - { name: OTEL_LOGS_EXPORTER, value: none }
+            - { name: OTEL_NODE_RESOURCE_DETECTORS, value: "env,host,os,process,container" }
+            - { name: OTEL_NODE_DISABLED_INSTRUMENTATIONS, value: "fs,dns,net" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: model-inference, namespace: continuum }
+spec:
+  template:
+    spec:
+      containers:
+        - name: model
+          env:
+            - { name: OTEL_SERVICE_NAME, value: model-inference }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-lgtm.continuum-observability:4318" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: model-trainer, namespace: continuum }
+spec:
+  template:
+    spec:
+      containers:
+        - name: model
+          env:
+            - { name: OTEL_SERVICE_NAME, value: model-trainer }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-lgtm.continuum-observability:4318" }

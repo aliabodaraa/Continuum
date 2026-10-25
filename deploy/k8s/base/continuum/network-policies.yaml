@@ -3,7 +3,7 @@
 #   edge (Envoy) -> gateway; the demo tenant -> gateway; ca-service -> gateway (its public keys)
 #   gateway -> ca-service, passkey-service;  ca-service -> model-inference, model-trainer
 #   each service -> PostgreSQL;  the operator -> PostgreSQL
-# and the model pods, the biometric oracle, may reach nothing but DNS and the model store.
+# and the model pods, the biometric oracle, may reach nothing but DNS, the model store and the telemetry collector.
 # Enforced only where the cluster's network plugin supports it (managed clouds, Calico, Cilium); a cluster that
 # does not enforce them ignores them (Docker Desktop's may not: checked with a deny-all test).
 apiVersion: networking.k8s.io/v1
@@ -100,6 +100,13 @@ spec:
             matchLabels: { app.kubernetes.io/name: seaweedfs }
       ports:
         - { port: 8333, protocol: TCP }
+    - to:                                   # its traces and metrics (base/observability, where an overlay runs it)
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: continuum-observability }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: otel-lgtm }
+      ports:
+        - { port: 4318, protocol: TCP }
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

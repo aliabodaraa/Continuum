@@ -15,9 +15,14 @@
 #   scripts/k8s-local.sh operator        the operator page and admin API, which the edge never routes: a
 #                                        private port-forward to the gateway on http://localhost:28081
 #                                        (open /operator.html there; e2e: CONTINUUM_OPERATOR=that URL)
+#   scripts/k8s-local.sh grafana         traces and metrics (Grafana, grafana/otel-lgtm in continuum-observability): a
+#                                        private port-forward on http://localhost:3001 (admin / admin)
+#   scripts/k8s-local.sh e2e [suite...]  the end-to-end suites against this cluster (connect, enrol_reload,
+#                                        demo_backend by default; study adds a test participant to the study log,
+#                                        so it is run only when named): each makes its own operator port-forward
 #   scripts/k8s-local.sh status          pods, services, the edge's address
 #   scripts/k8s-local.sh logs <deployment> [namespace]
-#   scripts/k8s-local.sh down            delete the three namespaces, their data included (asks first)
+#   scripts/k8s-local.sh down            delete the namespaces, their data included (asks first)
 #
 # Two overlays, the same system (namespaces, data, secrets) on different addresses, one at a time:
 #   K8S_OVERLAY=local (default)  API http://localhost:28080, demo :23000, Acme :24200, beside the Compose stack
@@ -31,7 +36,7 @@ case "${K8S_OVERLAY:-local}" in
   *) echo "K8S_OVERLAY must be local or live"; exit 2 ;;
 esac
 SECRETS=deploy/k8s/overlays/local/secrets      # both overlays use these
-NAMESPACES=(continuum continuum-storage continuum-demo)
+NAMESPACES=(continuum continuum-storage continuum-demo continuum-observability)
 k() { kubectl --context "$CTX" "$@"; }
 say() { printf '\n== %s\n' "$*"; }
 # Git Bash: no MSYS path rewriting of container paths in kubectl arguments
@@ -90,7 +95,12 @@ wait_ready() {
   k -n continuum wait --for=condition=Ready cluster/continuum-pg --timeout=600s
   for ns in "${NAMESPACES[@]}"; do
     for d in $(k -n "$ns" get deploy -o name); do
-      k -n "$ns" rollout status "$d" --timeout=600s
+      if [ "$ns" = continuum-observability ]; then
+        # Not part of the product: its image is large, and a slow connection must not hold up or fail a deployment.
+        k -n "$ns" rollout status "$d" --timeout=120s || echo "note: $d is not ready yet; the product does not depend on it (it starts when its image has arrived)"
+      else
+        k -n "$ns" rollout status "$d" --timeout=600s
+      fi
     done
   done
 }
@@ -109,8 +119,9 @@ up() {
   k apply -k "$OVERLAY"
   # same tag, new image: restart the pods so they run it
   for ns in "${NAMESPACES[@]}"; do
-    # (grep finds nothing in continuum-storage, whose one Deployment is the object store: not an error)
-    k -n "$ns" get deploy -o name | { grep -v seaweedfs || true; } | xargs -r kubectl --context "$CTX" -n "$ns" rollout restart
+    # (the object store and the telemetry stack keep running: their images did not change; grep may find
+    # nothing in their namespaces, which is not an error)
+    k -n "$ns" get deploy -o name | { grep -v -e seaweedfs -e otel-lgtm || true; } | xargs -r kubectl --context "$CTX" -n "$ns" rollout restart
   done
   wait_ready
   status
@@ -202,6 +213,24 @@ operator() {
   done
 }
 
+grafana() {
+  echo "Grafana: http://localhost:3001  (admin / admin; Ctrl-C ends it). Explore > Tempo for traces, Prometheus for metrics."
+  k -n continuum-observability port-forward deploy/otel-lgtm 3001:3000 --address 127.0.0.1
+}
+
+# The suites run from this checkout against this cluster: the live addresses of the overlay, the overlay's
+# secrets, kubectl exec where they look inside a service (extension/scripts/lib/stack.mjs).
+e2e() {
+  local suites=("$@") s rc=0
+  [ ${#suites[@]} -gt 0 ] || suites=(connect enrol_reload demo_backend)
+  for s in "${suites[@]}"; do
+    say "e2e_headless_$s"
+    CONTINUUM_K8S_CONTEXT="$CTX" CONTINUUM_GATEWAY="http://localhost:${PORTS[0]}" CONTINUUM_DEMO="http://localhost:${PORTS[1]}" \
+      node "extension/scripts/e2e_headless_$s.mjs" || rc=1
+  done
+  return $rc
+}
+
 down() {
   read -r -p "Delete namespaces ${NAMESPACES[*]} and ALL their data (databases, model store)? [y/N] " a
   [ "$a" = y ] || { echo "nothing deleted"; return 0; }
@@ -217,7 +246,9 @@ case "${1:-}" in
   seed-ca) shift; seed_ca "$@" ;;
   status) status ;;
   operator) operator ;;
+  grafana) grafana ;;
+  e2e) shift; e2e "$@" ;;
   logs) shift; logs "$@" ;;
   down) down ;;
-  *) sed -n '2,24p' "$0"; exit 2 ;;
+  *) sed -n '2,30p' "$0"; exit 2 ;;
 esac

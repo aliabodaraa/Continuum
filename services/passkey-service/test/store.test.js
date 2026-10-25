@@ -43,6 +43,18 @@ for (const b of backends) {
     } finally { await s.close(); }
   });
 
+  test(`${b.name}: an id that is not a whole number is no challenge, and not an error`, async () => {
+    const s = await b.open();
+    try {
+      await s.saveChallenge(11, "ch-x", "authentication", 60000);
+      for (const id of ["abc", "NaN", NaN, 1.5, -1, 0, "1e400", Infinity, "", {}, [], [5], true]) {
+        assert.equal(await s.takeChallenge({ id, userId: 11, type: "authentication" }), null, `id ${JSON.stringify(id)} ${String(id)}`);
+      }
+      // none of that used the real challenge up
+      assert.equal((await s.takeChallenge({ userId: 11, type: "authentication" })).challenge, "ch-x");
+    } finally { await s.close(); }
+  });
+
   test(`${b.name}: a challenge is taken once, by its user and kind, and expires`, async () => {
     const s = await b.open();
     try {

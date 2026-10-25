@@ -9,6 +9,7 @@ resources:
   - ../../base/continuum
   - ../../base/storage
   - ../../base/demo
+  - ../../base/observability    # the services' traces and metrics; Grafana on a port-forward (telemetry.yaml)
 
 transformers:
   - image-tags.yaml          # the images built here, tag "local" (why not `images:`: see the file)
@@ -51,6 +52,7 @@ secretGenerator:
 patches:
   - path: local-urls.yaml
   - path: one-copy.yaml
+  - path: telemetry.yaml
   - target: { kind: Gateway, name: continuum }
     patch: |-
       - op: replace

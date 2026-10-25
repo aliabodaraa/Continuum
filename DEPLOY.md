@@ -113,12 +113,16 @@ Each organisation sets how protection behaves in its apps in its console (**Prot
 panel on its pages (shown or hidden), the typing and mouse channels (on or off), enrolment
 (required at first sign-in, or on demand from the panel), the windows in a typing decision (6, 10
 or 20; 20 by default: fewer decide sooner but flag the real user more often), adaptive retraining
-(on or off) and its pause after each retrain (3 hours by default), and the field types never watched.
+(on or off), how many accepted samples make a retrain (1, 2 or 3; 3 by default), where a sample is taken
+from (the end of the recent typing, or anywhere in it), its pause after each retrain (3 hours by default),
+and the field types never watched.
 
-Adaptive retraining runs in cycles: three clean samples that share no keystrokes (each starts 50 keys
-after the previous one), kept pending; the user retrains with them and must pass the passkey in that
-request (gateway `POST /v1/sdk/keystroke/adaptive/retrain`); then the pause. Nothing else turns typing
-into training data.
+Adaptive retraining runs in cycles: clean samples that share no keystrokes (each starts 50 keys after the
+previous one), kept pending. A sample is twenty windows of typing (about 250 characters), all of them
+judged and only they stored. After 1, 2 or 3 of them (the organisation's setting) the user retrains with
+them and must pass the passkey in that request (gateway `POST /v1/sdk/keystroke/adaptive/retrain`); then
+the pause. Nothing else turns typing into training data. Environment defaults: `ADAPTIVE_RETRAIN_EVERY`,
+`ADAPTIVE_SAMPLE_FROM` (`end` or `any`), `ADAPTIVE_MIN_GAP_HOURS`; only 3 samples from the end were measured.
 The operator page (**Settings**) sets the defaults for all organisations, the server switches
 (auto-approve, private webhooks), the study's logging, and shows the whole environment read-only
 (secrets only as "set" / "not set").
@@ -270,7 +274,9 @@ publish-all`. The production model image now carries only the serving code and t
 
 ### Logs
 `LOG_FORMAT=json` in `.env` makes every service log one JSON object per line (time, level, service,
-message) for a log collector; empty keeps readable text. Each service also answers `/ready` (its own
+message) for a log collector; empty keeps readable text. A line written while a request is handled also
+carries the request's `trace_id` and `span_id` when OpenTelemetry is on (the Kubernetes overlay with a
+collector sets `OTEL_EXPORTER_OTLP_ENDPOINT`; see ARCHITECTURE.md 13g). Each service also answers `/ready` (its own
 storage reachable) next to `/health` (the process is up), and stops cleanly on `docker stop`.
 
 ## Kubernetes on this PC (Docker Desktop's cluster, 2026-10)
@@ -285,6 +291,8 @@ scripts/k8s-local.sh secrets      # once: random secrets in deploy/k8s/overlays/
                                   # the operator key is taken from .env)
 scripts/k8s-local.sh up           # build the images (:local), deploy, wait until ready
 scripts/k8s-local.sh status
+scripts/k8s-local.sh grafana      # traces and metrics (grafana/otel-lgtm): http://localhost:3001, admin / admin
+scripts/k8s-local.sh e2e          # the end-to-end suites against this cluster (connect, enrol_reload, demo_backend)
 ```
 
 Two overlays, the same system on different addresses (one at a time: they share the namespaces):
@@ -317,10 +325,10 @@ scripts/k8s-restore.sh <backup> --restore             # into the cluster, compar
 scripts/k8s-restore.sh <backup> --secrets             # a new PC: the secrets first, then k8s-local.sh deploy
 ```
 
-The end-to-end suites run against the cluster with `CONTINUUM_K8S_CONTEXT=docker-desktop
-CONTINUUM_NETPOL_UNENFORCED=1 CONTINUUM_GATEWAY=<API> CONTINUUM_DEMO=<demo> CONTINUUM_OPERATOR=http://localhost:28081`
-and `CA_SIGNING_SECRET` from the secrets file (the operator forward running); on `overlays/live` also
-`CONTINUUM_EXTENSION_DIR=../continuum/extension`, the extension that gateway admits.
+The end-to-end suites target this cluster by default (`scripts/k8s-local.sh e2e`, or
+`node extension/scripts/e2e_headless_<suite>.mjs` with `CONTINUUM_GATEWAY` / `CONTINUUM_DEMO` on the overlay's
+addresses): each makes its own port-forward for the operator area and reads the tenant secret from the
+secrets file. A Compose stack instead: `CONTINUUM_CONTAINER_PREFIX=continuum`.
 
 Docker Desktop's Kubernetes does not enforce NetworkPolicies, so on this PC the internal services are
 kept apart by their service keys alone (every internal route refuses a caller without its key); the

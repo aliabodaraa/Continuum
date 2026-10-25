@@ -182,10 +182,10 @@ option — a rise in these is either an outage or someone arranging one.
   these measured lengths (`DECISION_WINDOW_CHOICES`). It reaches ca-service in the signed claim
   (`cfg.kw`); warm-up becomes `windowCount <= packet`, the study log records the rule as
   `lu-050-3of6-warm8` etc. and `details.packetWindows`, and the replay uses it. Shorter = sooner
-  first verdict, more genuine flags (FRR at 0.50: 23.6% / 18.8% / 14.8%), same capture. The
+  first verdict, more genuine flags (FRR at 0.50 with the deployed model: 10.1% / 6.2% / 3.3% for 6 / 10 / 20 windows, `artifacts/phase3/packet_length_a200.json`), same capture. The
   paper's figures are for 20.
-  A wider `ROLLING_WINDOW_COUNT=18` mean drives adaptive-learning eligibility only, and adaptive
-  contributions are still judged on the last `CONTRIBUTE_WINDOW_COUNT=6` windows.
+  An adaptive sample is judged on `SAMPLE_WINDOW_COUNT=20` windows (mean) and its last
+  `SAMPLE_FLOOR_WINDOWS=3` must each clear the window floor; see "The adaptive sample" below.
 - **Digraph hygiene:** drop event-batching artifacts (`dd < 15 ms` or `dwell < 10 ms`)
   and composition pauses (`dd > 1 s`) — timing noise, not rhythm.
 - **Leak-free evaluation:** the public HDF windows overlap in shuffled order; a naive
@@ -249,21 +249,22 @@ Verdict risk levels: `warmup` / `suspicious` / `genuine`. A model outage produce
 verdict at all (503, §2c) rather than a fourth level — an absent decision is not a decision.
 
 ### 6b. Escalation evidence is durable
-The keystroke debounce (2 suspicious of the last 3 checks) and the mouse strike counter are
-**evidence accumulated across checks**. Both used to live in process memory — a `Map` in
-ca-service, another `Map` in the gateway, and `req.session.mouseSuspiciousStreak` in the
-demo: three copies of one fact, none of which survived a restart.
+The mouse strike counter is **evidence accumulated across checks**. It used to live in process
+memory — a `Map` in the gateway and `req.session.mouseSuspiciousStreak` in the demo: two copies
+of one fact, neither of which survived a restart. The typing channel carries nothing from one
+check to the next: a typing check decides from its own packet of windows, and a suspicious check
+asks for the passkey at once.
 
 The problem is not the lost counter, it is *who benefits from losing it*. An impostor one
-check short of a step-up got a clean slate from any deploy, crash or OOM kill. A debounce
-whose evidence cannot outlive a restart is a debounce with a reset button. Three owners also
-meant the SDK and the demo could disagree about how suspicious the same person just was.
+check short of a step-up got a clean slate from any deploy, crash or OOM kill. Evidence that
+cannot outlive a restart is evidence with a reset button. Two owners also meant the SDK and the
+demo could disagree about how suspicious the same person just was.
 
-Both counters now live in `decision_state` (`lib/decisionState.js`), owned by the service
-that owns the behavioral data they are derived from. Callers keep their **threshold** — for
-the mouse channel both the gateway and the demo step up at 1 strike, the point that was measured
-— and no longer keep the **count**; ca-service returns it as `suspiciousStreak`. Both are cleared when spent on a
-step-up, and when the profile they were measured against is deleted.
+The counter now lives in `decision_state` (`lib/decisionState.js`), owned by the service that
+owns the behavioral data it is derived from. Callers keep their **threshold** — for the mouse
+channel both the gateway and the demo step up at 1 strike, the point that was measured — and no
+longer keep the **count**; ca-service returns it as `suspiciousStreak`. It is cleared when spent
+on a step-up, and when the profile it was measured against is deleted.
 
 This is also what unblocks a second gateway replica: two processes each holding half the
 evidence would never reach a threshold. (The tenant registry is still a JSON file, so
@@ -339,7 +340,7 @@ inference on that process — the fix is gunicorn with separate inference and tr
 - **Onboarding modes:** `eager` (popup enrolls everything missing at load) vs `lazy`
   (passkey only; each modality enrolls when its panel toggle is turned on). Lazy is active.
 - **Adaptive retraining, popup only (since 2026-10-05):** after a sustained clean run the
-  popup offers the typing as a sample; three samples, then the retrain with the passkey. No other
+  popup offers the typing as a sample; 1, 2 or 3 samples (the organisation's choice, 3 by default), then the retrain with the passkey. No other
   path adds typing samples: the public `contribute()` and ca-service `/v1/keystroke/submit` are
   gone, and `/v1/keystroke/enroll` answers 409 `already_enrolled` once the model exists (it used
   to take samples and retrain at any time, with no passkey). The panel's "+ train" then offers
@@ -456,7 +457,7 @@ Implementation details:
   back and compares record by record. On a copy of the real data (2026-10-07): 9 tenants, 344
   identities (every user id equal), 3 accounts, 116 revocations, settings, 257 activity entries:
   identical. The files are only read, so going back is `STORAGE=json`.
-- **Proven side by side** (`docker-compose.side-by-side.yml`: a second full stack, project
+- **Proven side by side** (`docker-compose.side-by-side.yml`, removed on 2026-10-18 with the Compose way back; in the history up to f94fb2d: a second full stack, project
   `continuum-next`, gateway :18080, demo :13000, on a restored copy of the data): the extension's
   end-to-end test (92 checks) passes with the new code on PostgreSQL and on JSON files; the gateway's
   store checks (11) pass on JSON; storage contract tests run on both backends (`ci-local.sh` starts a
@@ -476,7 +477,7 @@ Implementation details:
   jitter (5 s doubling to an hour), and after 8 attempts marks them dead and writes
   `webhook.undeliverable` to the tenant's activity log (console and operator pages show it). Delivery is
   at least once; receivers drop repeats by `jti`. With json, events are sent at once, as before.
-- **Proven with two copies** (`docker-compose.two-gateways.yml`: two gateway replicas behind a
+- **Proven with two copies** (`docker-compose.two-gateways.yml`, removed on 2026-10-18 with the Compose way back; in the history up to f94fb2d: two gateway replicas behind a
   balancer that sends each request to the other copy): the extension's e2e suite 92/92 (88 requests to
   each copy); a tenant changed directly in the database was taken over by both copies within a second.
 - **The tenant API (`/v1/server/*`, step 3b):** what an organisation's own backend calls, acting for one
@@ -514,11 +515,11 @@ Implementation details:
 - **A database and a login per service:** the compose variables are per service
   (`GATEWAY_STORAGE`/`GATEWAY_DATABASE_URL`, `PASSKEY_STORAGE`/`PASSKEY_DATABASE_URL`); locally one
   PostgreSQL holds databases `gateway` and `passkey` with logins of the same names
-  (`deploy/postgres/init-local.sql`), CONNECT revoked from PUBLIC: checked that each login can open only
+  (`deploy/postgres/init-local.sql`, removed on 2026-10-18 with the Compose way back; in the history up to f94fb2d; in Kubernetes the same rule is the cluster's `pg_hba`, `deploy/k8s/base/continuum/postgres.yaml`), CONNECT revoked from PUBLIC: checked that each login can open only
   its own database.
 - **Proven:** unit tests on both backends (10 parallel takes of one challenge from two copies: one
   succeeds; the migration run for real); end-to-end suites on PostgreSQL, on SQLite, and with two passkey
-  copies behind the alternating balancer (`docker-compose.two-passkeys.yml`).
+  copies behind the alternating balancer (`docker-compose.two-passkeys.yml`, removed on 2026-10-18 with the Compose way back; in the history up to f94fb2d).
 - **Order at the switch-over of the running stack:** the demo's passkey re-key (step 3b) runs on the SQLite
   file first, then `migrate.js` copies the re-keyed credentials.
 
@@ -554,7 +555,7 @@ Implementation details:
   PostgreSQL identical to the one from SQLite, and that from the code before this change; the decision
   replay reproduces all 243 logged verdicts; end-to-end suites (connect, study, enrol-reload, demo-backend)
   with the service on PostgreSQL, on SQLite, and with two copies behind the alternating balancer
-  (`docker-compose.two-cas.yml`).
+  (`docker-compose.two-cas.yml`, removed on 2026-10-18 with the Compose way back; in the history up to f94fb2d).
 - **Not yet (step 6):** the study log still hashes model folders through the read-only `/model-store`
   mount; it goes when the model service keeps versioned models and returns their hash.
 
@@ -591,7 +592,7 @@ Implementation details:
   models, 2,136 scores), also through two scoring copies that started empty and fetched every model from
   object storage; the F2 mouse serving code still reproduces the frozen analysis exactly
   (`validate_f2.py`, max difference 0); the end-to-end suites and `e2e_mouse_a5` with one trainer and two
-  scoring copies behind the alternating balancer (`docker-compose.split-models.yml`), and in the default
+  scoring copies behind the alternating balancer (`docker-compose.split-models.yml`, removed on 2026-10-18 with the Compose way back; in the history up to f94fb2d), and in the default
   single container. The feed of new versions took the first check after a retrain from no verdict (five
   5-second timeouts across two copies) to none.
 
@@ -634,6 +635,100 @@ Implementation details:
 - **A slow, unstable connection** (5 to 140 KB/s that night): images were fetched with a resumable downloader, loaded
   with `docker load`, and the registry digest recorded with a `docker pull` by digest that fetched only the index.
 
+## 13g. The Compose way back removed; start-up waits; observability; the suites on the cluster (2026-10-19)
+- **The Compose way back is gone.** The OWNER asked for the move to be completed before the 14 days were
+  over. First the cluster was checked again on the live addresses (connect 93/93, enrol-reload 10/10 and demo-backend 19/19, after the redeploy and again after the last change) and a fresh backup
+  (`scripts/k8s-backup.sh`) passed its restore drill, before the redeploy and again after it (three databases identical table by table,
+  200 models matching their fingerprints). Then removed: the stopped Compose containers of the live stack and of the side-by-side copy
+  (`continuum-next`) with their volumes; the worktree `continuum-cloud` (its two cluster backups moved to
+  `_backups/`); the Compose-era data files of this checkout (`services/ca-service/ca.db`,
+  `services/passkey-service/passkey.db`, the gateway's JSON files and keys, `apps/demo/db/`,
+  `artifacts/users/`), each first found identical to `_backups/continuum-backup-20261010-121333.tgz`, which
+  stays as the record of the system as it was at the switch; and the proof stacks of steps 1-6
+  (`docker-compose.side-by-side.yml`, `two-gateways`, `two-passkeys`, `two-cas`, `split-models`,
+  `passkey-standalone`, `scripts/dev/round-robin.js`, `deploy/postgres/init-local.sql`,
+  `deploy/seaweedfs/s3-local.json`), which the history up to f94fb2d keeps. What remains of Compose:
+  `docker-compose.yml` (development with bind mounts and hot reload) and `docker-compose.bundle.yml` /
+  `docker-compose.prod.yml` (the single-host product bundle, DEPLOY.md). Older research snapshots
+  (`ca.db.pre-*.bak`, `artifacts/users-pre-*.tar.bak`) were not touched.
+- **A service waits for its database at start** (`boot.js` in the gateway and passkey-service, `lib/boot.js`
+  in ca-service; `model_store.ensure_bucket` for the object store). Found on 2026-10-18 after a restart of
+  Docker Desktop: the gateway, ca-service and passkey-service had each crashed about sixteen times, since
+  they exited the moment PostgreSQL's name did not resolve (`EAI_AGAIN`) and Kubernetes restarted them with
+  a growing back-off (up to five minutes). Now a transient failure (name not found, connection refused,
+  "the database system is starting up", a database or login the operator has not made yet) is retried for
+  `BOOT_WAIT_MS` (default two minutes); a setting error still fails at once. Checked with the three images
+  started before their PostgreSQL: each waited through `ENOTFOUND`/`EAI_AGAIN` and `3D000` ("database
+  does not exist") and served as soon as the database was created (`services/gateway/test/boot.test.js`
+  covers the rule).
+- **The model service tells readiness from liveness.** `/ready` (open, like `/health`) answers 503 until
+  a scoring copy has its base model, so a copy that failed to load it gets no traffic; the start-up and
+  readiness probes ask it, liveness keeps `/health`.
+- **Observability (step 8 of the plan).** The services send traces and request metrics by OpenTelemetry
+  (OTLP over HTTP) when an overlay sets `OTEL_EXPORTER_OTLP_ENDPOINT`; without it a service loads and
+  sends nothing. Node: the auto-instrumentation loaded by `NODE_OPTIONS` (http, express, pg, fetch), no
+  code change; the model service: its gunicorn `post_fork` hook (Flask and botocore; the pinned line is
+  1.26.0, the last that accepts protobuf 4, which TensorFlow 2.15 pins). A JSON log line written while a
+  request is handled carries that request's `trace_id` and `span_id`. Locally, `grafana/otel-lgtm`
+  (collector, Prometheus, Tempo, Loki, Grafana in one pod) runs in namespace `continuum-observability`
+  (`deploy/k8s/base/observability`, included by `overlays/local`); Grafana is never routed by the edge:
+  `scripts/k8s-local.sh grafana` opens it on http://localhost:3001. A request was followed through the system in Tempo: gateway to ca-service to PostgreSQL (a real request of the test suite), ca-service to the model trainer to the object store (a real training), and ca-service to a scoring copy (one base-model prediction made through the real client hop; its server span has the client span as parent). Nothing in a span names
+  typed text, key timings or tokens. The dashboard "Continuum services" is provisioned from a ConfigMap
+  (request rate, 5xx, latency p95 by service and by gateway route, calls between services, database query time,
+  model requests by route, Node event loop; `base/observability/dashboards`); the image's own RED dashboards show
+  no data for these services (they expect other metric names). Anonymous visitors are Viewers (the image makes
+  them Admins), `admin` / `admin` to change anything; Tempo needs a volume of its own at `/var/tempo` because the
+  pod is not root. Alerts are still to be made.
+- **Two "wrong request" cases that were answered 500, fixed in passkey-service.** Found with the new dashboard:
+  its 5xx chart showed one on the passkey service and one on the gateway's adaptive-retrain route (which relays
+  it) during the test suites, and the service's log line for the 500, which now carries its trace id, named the
+  cause. (1) The WebAuthn library throws for an assertion or attestation that does not verify, and the catch-all
+  answered 500 with the library's message, which names the expected origin. Now only that failure is answered
+  400 with a generic message (`/v1/register/complete`, `/v1/auth/complete`), and the reason goes to the log.
+  (2) A challenge id that is not a whole number (text, `NaN`) reached PostgreSQL as a malformed query
+  (`invalid input syntax for type bigint: "NaN"`): a 500 where SQLite had always matched nothing and answered
+  400, so a regression of the move to PostgreSQL. Now such an id is simply no challenge on both backends
+  (`wholeId` in `store.js`, one new test per backend). A damaged stored record or a store failure is still 500,
+  so a rise in 5xx means the service is unwell, and a wrong passkey or a malformed request is no longer
+  counted as a server error.
+- **The adaptive sample is what was judged (2026-10-19, OWNER).** A sample is the typing behind SAMPLE_WINDOW_COUNT
+  (20) consecutive windows. Before, it was the whole stretch since the previous sample, of any length, of which
+  the server scored only the last 20 windows (mean over the last 18, each of the last 6 above the floor) while
+  every window of it was stored and later trained on: of the 79 samples stored then, 19 had more than 20 windows
+  (the longest 63), so part of them was learnt without being judged. Now the server cuts the stretch it receives
+  (`ks.lastWindowsSample`, `ks.windowsSample`: the cut is checked row by row against the windows it must give), judges
+  all 20 windows (mean at least 0.80 and each of the newest 3 at least 0.80, the owner's choice on 19 October;
+  it had been the last 6, the size of the old packet) and stores only them. A takeover shows at the end of a
+  sample first: in a simulation on the 99-user score file (the last 1 to 3 windows of an owner's block replaced
+  by real impostor windows) the mean alone accepts 27%, 20% and 12% of blocks, the mean with a floor on the
+  newest windows about 1.3%, 1.1% and 1.0% with six and about 1.6%, 1.4% and 1.4% with three.
+  `dryRun: true` on `/v1/keystroke/contribute` asks the same question and stores nothing; the SDK asks it at each
+  new window once a clean run of checks and enough typing exist, and shows the popup only when the answer is yes
+  (it skips the rhythm-consistency check, which in experiment AR never refused a sample). The SDK's 120-key
+  minimum is replaced by the 20 windows. Two organisation settings (console, Settings; operator default; env
+  `ADAPTIVE_RETRAIN_EVERY`, `ADAPTIVE_SAMPLE_FROM`; claims `cfg.re`, `cfg.sf`): the accepted samples that make a
+  retrain possible, 1, 2 or 3 (default 3, the only one experiment AR measured), and where a sample is taken from,
+  `end` (the last 20 windows, the default) or `any` (the newest run of 20 windows of the stretch that would be
+  accepted, the rest ignored; all windows are scored once to find it; not measured, and a stretch with several
+  candidate runs gives a stretch that is not the user's more chances to pass).
+- **The typing decision is the packet vote alone (2026-10-19, OWNER).** The passkey used to be asked for only
+  after two of the last three typing checks were suspicious, a confirmation decided on 2026-07-19 for the
+  six-window packet. It was never part of the measured rule: the 99-user sweep that chose the packet of
+  twenty (2026-09-23), the paper's tables and the pre-registrations all describe the vote alone. A replay of
+  those same score streams, with a check after every new window as the SDK sends them (the replay of the
+  vote alone reproduces `artifacts/xai/session_survival.json` exactly), showed that the layer changed almost
+  nothing, since consecutive checks share 19 of their 20 windows: one genuine user of 99 spared, two more
+  impostor sessions of 3,920 escaping, about two seconds more before the passkey. A check whose last twenty
+  windows are at least half below 0.50 now asks for the passkey at once, as the mouse rule does, and the
+  history the old rule kept in `decision_state` is gone (its five empty rows were deleted from the live
+  database). Study rows logged before this date carry the old parameters, and `scripts/study_replay.js`
+  replays them under those: the replay of the real study log reproduces all 104 logged verdicts. New tests:
+  `test/keystrokeCheck.test.js` (the real server with synthetic data) and `test/studyReplay.test.js`.
+- **The end-to-end suites target the cluster by default** (`extension/scripts/lib/stack.mjs`): context
+  `docker-desktop`, the operator area through a port-forward each suite makes for itself, the tenant secret
+  from the overlay's secrets file, the NetworkPolicy note on Docker Desktop; `scripts/k8s-local.sh e2e`
+  runs them. Compose remains a choice (`CONTINUUM_CONTAINER_PREFIX=continuum`).
+
 ## 14. Security model (summary)
 | Threat | Mitigation |
 |---|---|
@@ -649,14 +744,14 @@ Implementation details:
 | Biometric scoring oracle (hill-climb a forgery) | model-api on an isolated `model` network reachable only from ca-service, **and** `MODEL_API_KEY` on every route but `/health` |
 | Model poisoning / rollback by a co-located container | Same two controls; `/api/user/train` and `/api/user/rollback` are unreachable and credentialed |
 | Stalled model hangs the auth path | Deadline on every model call; `503 model_unavailable` = no verdict issued, logged at `[SECURITY]` |
-| Restart amnesty mid-escalation | Debounce + strike counters persisted in `decision_state`, cleared only when spent |
+| Restart amnesty mid-escalation | Strike counter persisted in `decision_state`, cleared only when spent |
 | Retrain lost to a crash | `training_jobs` queue; `running` rows requeued on boot, bounded attempts |
 
 ## 15. Repository layout (top level)
 ```
 services/{model-api,ca-service,passkey-service,gateway}   # the product
   ca-service/lib/modelClient.js     # the ONE authenticated, deadline-bounded hop to model-api
-  ca-service/lib/decisionState.js   # durable escalation counters (debounce, mouse strikes)
+  ca-service/lib/decisionState.js   # durable escalation counters (mouse strikes)
   ca-service/lib/trainingQueue.js   # durable training jobs + crash-recovering worker
 sdk/                     # guard.js + capture libs (served by gateway/web)
 packages/{continuum-node,continuum-python}                # host middleware

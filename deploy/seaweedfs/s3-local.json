@@ -1,9 +1,0 @@
-{
-  "identities": [
-    {
-      "name": "model-service",
-      "credentials": [{ "accessKey": "continuum-models", "secretKey": "local-only-models-secret" }],
-      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
-    }
-  ]
-}

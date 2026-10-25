@@ -53,12 +53,14 @@ spec:
             - name: MODEL_API_KEY
               valueFrom: { secretKeyRef: { name: continuum-secrets, key: MODEL_API_KEY } }
           # TensorFlow and the base models take up to ~90 s to load: liveness waits for the start-up probe.
+          # /ready says 503 until the base model is loaded (a copy without it would fail every check);
+          # /health only says the process answers.
           startupProbe:
-            httpGet: { path: /health, port: http }
+            httpGet: { path: /ready, port: http }
             periodSeconds: 5
             failureThreshold: 60
           readinessProbe:
-            httpGet: { path: /health, port: http }
+            httpGet: { path: /ready, port: http }
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
@@ -162,11 +164,11 @@ spec:
               valueFrom: { secretKeyRef: { name: continuum-secrets, key: MODEL_API_KEY } }
             - { name: MODEL_TRAIN_CONCURRENCY, value: "2" }
           startupProbe:
-            httpGet: { path: /health, port: http }
+            httpGet: { path: /ready, port: http }
             periodSeconds: 5
             failureThreshold: 60
           readinessProbe:
-            httpGet: { path: /health, port: http }
+            httpGet: { path: /ready, port: http }
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:

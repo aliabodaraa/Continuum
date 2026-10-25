@@ -114,14 +114,34 @@ def _key(path):
     return rel
 
 
-def ensure_bucket():
+def ensure_bucket(wait_s=None):
+    """At start: the bucket exists. The object store may still be starting (a rollout, a restart of the whole
+    machine), so an endpoint that does not answer is retried for a bounded time (BOOT_WAIT_MS, default two
+    minutes) instead of failing the pod at once, which the orchestrator would retry with a growing back-off."""
     if KIND != "s3":
         return
+    if wait_s is None:
+        wait_s = float(os.getenv("BOOT_WAIT_MS", "120000")) / 1000
     c = _s3()
-    try:
-        c.head_bucket(Bucket=BUCKET)
-    except Exception:
-        c.create_bucket(Bucket=BUCKET)
+    deadline = time.monotonic() + wait_s
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            try:
+                c.head_bucket(Bucket=BUCKET)
+            except c.exceptions.ClientError as e:
+                if e.response.get("Error", {}).get("Code") not in ("404", "NoSuchBucket"):
+                    raise
+                c.create_bucket(Bucket=BUCKET)
+            return
+        except Exception as e:  # the endpoint is down, or its name does not resolve yet
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise
+            if attempt == 1 or attempt % 5 == 0:
+                print(f"[model-store] object store not ready ({type(e).__name__}: {e}); retrying for another {int(left)} s")
+            time.sleep(min(2.0, left))
 
 
 def _lock(path):

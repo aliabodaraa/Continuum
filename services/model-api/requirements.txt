@@ -8,5 +8,11 @@ tensorflow-cpu==2.15.0
 flask==3.0.3
 gunicorn==23.0.0
 boto3==1.40.0
+# OpenTelemetry (served under gunicorn: gunicorn.conf.py post_fork). 1.26.0 is the last line that accepts protobuf 4,
+# which tensorflow 2.15 pins.
+opentelemetry-sdk==1.26.0
+opentelemetry-exporter-otlp-proto-http==1.26.0
+opentelemetry-instrumentation-flask==0.47b0
+opentelemetry-instrumentation-botocore==0.47b0
 python-dotenv
 matplotlib

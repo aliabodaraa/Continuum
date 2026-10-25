@@ -111,25 +111,31 @@ Run steps 1–2 before the downtime starts. Commands run in this checkout (`cont
   - The cluster backup also holds `../paper`, as `data-export.sh` did.
 - **Keep the Compose containers** stopped and untouched for 14 days. After that, remove them with
   `docker compose down` in `../continuum`. This removes the containers only, not the data files.
+  - **Done early, on 2026-10-19 (OWNER):** containers and volumes of both Compose stacks removed, the worktree
+    too, and the Compose-era data files of the checkout after each was found identical to the backup
+    `_backups/continuum-backup-20261010-121333.tgz`, which stays. Before that: connect 93/93, enrol-reload 10/10 and demo-backend 19/19, after the redeploy and again after the last change; a fresh cluster backup
+    passed its restore drill. Going back now means restoring that backup into a Compose stack built from the
+    tag `pre-k8s-switch` (`scripts/data-import.sh`), not a `docker compose start`.
 - **Merge `cloud-native` into `main`:** done on 2026-10-10.
   - `main` fast-forwarded and pushed; the old code is tagged `pre-k8s-switch`.
   - The secrets were copied into `continuum/`, and the `k8s-*` scripts run from there.
-  - The worktree `continuum-cloud` can be removed after the 14 days.
+  - The worktree `continuum-cloud` was removed on 2026-10-19.
 
-## Going back (within the 14 days)
+## Going back (no longer possible as it was; removed on 2026-10-19)
 
-The Compose stack runs the code of its folder (bind mounts), and `main` has moved on, so first put that folder
-back on the code it ran. Its data files are not in git and stay as they were. In `continuum/`:
+The Compose stack, its volumes, the worktree and the Compose-era data files were removed on 2026-10-19 (OWNER),
+after the cluster had been checked again and a fresh backup had passed its restore drill. What remains of the
+way back:
 
-```bash
-K8S_OVERLAY=local scripts/k8s-local.sh up     # the cluster moves to 28080/23000/24200, freeing 8080/3000/4200
-git checkout pre-k8s-switch                   # the code the Compose stack ran (the folder must be clean)
-docker compose start
-```
-
-Afterwards, `git checkout main` returns the folder to the current code; stop Compose first.
-
-Compose comes back with the data as it was at the switch, under its old secrets: users sign in again.
-Whatever the cluster recorded after the switch (new samples, decisions, study log, sign-ups) is **not** in
-the Compose files. It stays in the cluster and in its backups. No tool copies it back into the Compose
-files.
+- **The code:** the tag `pre-k8s-switch` (the code the Compose stack ran) and the history up to f94fb2d.
+- **The data as it was at the switch:** `_backups/continuum-backup-20261010-121333.tgz`
+  (`scripts/data-export.sh`: the SQLite files, the gateway's JSON files and keys, the models, the paper
+  sources, each with its SHA-256 in MANIFEST.json). `scripts/data-import.sh <file> --verify-only` checks it.
+  Without `--verify-only` it restores in place (stack stopped), or into another folder with `--target <dir>`.
+  Add `--no-paper`: the paper sources in that backup are those of 10 October, and `../paper` has moved on.
+- **A Compose stack from them:** `git checkout pre-k8s-switch` in a clean checkout, restore the files as above
+  (with `--no-paper`), then `docker compose --profile model up -d`. The cluster's edge must not hold 8080, 3000
+  and 4200 then: stop it, or use the `local` overlay on 28080, 23000 and 24200. It comes back with the data and
+  the secrets as they were at the switch. Whatever the cluster recorded since (new samples, decisions, study log,
+  sign-ups) is **not** in those files. It stays in the cluster and in its backups (`scripts/k8s-backup.sh`);
+  no tool copies it back into Compose files.

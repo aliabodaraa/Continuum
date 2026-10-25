@@ -33,7 +33,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: seaweedfs
-          image: chrislusf/seaweedfs:3.80   # the version the Compose stacks run (docker-compose.split-models.yml)
+          image: chrislusf/seaweedfs:3.80   # the version the migration was proven with (step 6)
           args: ["server", "-dir=/data", "-s3", "-s3.config=/etc/seaweedfs/s3.json", "-master.volumeSizeLimitMB=1024"]
           ports:
             - { name: s3, containerPort: 8333 }

@@ -15,6 +15,7 @@ const {
 } = require("@simplewebauthn/server");
 const { isoBase64URL } = require("@simplewebauthn/server/helpers");
 const { openStore } = require("./store");
+const { waitFor } = require("./boot");
 // Opened in boot(): sqlite (one file, DB_PATH) or postgres (DATABASE_URL), see store.js.
 const STORAGE = (process.env.STORAGE || "sqlite").toLowerCase();
 let store;
@@ -165,13 +166,23 @@ app.post("/v1/register/complete", async (req, res) => {
     if (!chal) return res.status(400).json({ error: "No pending registration challenge" });
     if (chal.expired) return res.status(400).json({ error: "Challenge expired" });
 
-    const verification = await verifyRegistrationResponse({
-      response: credential,
-      expectedChallenge: chal.challenge,
-      expectedOrigin: originOf(req),
-      expectedRPID: rpOf(req),
-      requireUserVerification: true,
-    });
+    // The library throws for an attestation that does not verify (wrong challenge, origin or RP ID, no user
+    // verification): the caller's failure, answered 400 like the other refusals. 500 stays for what is really
+    // broken (the store), so a rise in 5xx means the service, not someone's wrong passkey. The reason is logged,
+    // not returned: the library's message names the expected origin.
+    let verification;
+    try {
+      verification = await verifyRegistrationResponse({
+        response: credential,
+        expectedChallenge: chal.challenge,
+        expectedOrigin: originOf(req),
+        expectedRPID: rpOf(req),
+        requireUserVerification: true,
+      });
+    } catch (err) {
+      console.warn("register/complete: attestation refused:", err.message);
+      return res.status(400).json({ error: "Registration verification failed" });
+    }
     if (!verification.verified) {
       return res.status(400).json({ error: "Registration verification failed" });
     }
@@ -245,19 +256,29 @@ app.post("/v1/auth/complete", async (req, res) => {
     const credential = await store.findCredential(userId, [credentialId, legacyCredentialId]);
     if (!credential) return res.status(400).json({ error: "Credential not found" });
 
-    const verification = await verifyAuthenticationResponse({
-      response: assertion,
-      expectedChallenge: challenge.challenge,
-      expectedOrigin: originOf(req),
-      expectedRPID: rpOf(req),
-      requireUserVerification: true,
-      authenticator: {
-        credentialID: storedCredentialIdToBuffer(credential.credential_id),
-        credentialPublicKey: isoBase64URL.toBuffer(credential.public_key),
-        counter: credential.counter,
-        transports: parseTransports(credential.transports),
-      },
-    });
+    // What the service itself stored: read outside the try below, so a damaged record is still a 500.
+    const authenticator = {
+      credentialID: storedCredentialIdToBuffer(credential.credential_id),
+      credentialPublicKey: isoBase64URL.toBuffer(credential.public_key),
+      counter: credential.counter,
+      transports: parseTransports(credential.transports),
+    };
+    // The library throws for an assertion that does not verify (wrong signature, challenge, origin or RP ID, a
+    // counter that went back): the caller's failure, answered 400. See register/complete.
+    let verification;
+    try {
+      verification = await verifyAuthenticationResponse({
+        response: assertion,
+        expectedChallenge: challenge.challenge,
+        expectedOrigin: originOf(req),
+        expectedRPID: rpOf(req),
+        requireUserVerification: true,
+        authenticator,
+      });
+    } catch (err) {
+      console.warn("auth/complete: assertion refused:", err.message);
+      return res.status(400).json({ error: "Authentication verification failed" });
+    }
 
     if (!verification.verified) {
       return res.status(400).json({ error: "Authentication verification failed" });
@@ -273,7 +294,8 @@ app.post("/v1/auth/complete", async (req, res) => {
 
 // ---- start: the store first, then traffic. A failure stops the process with the reason. ----
 async function boot() {
-  store = await openStore({ kind: STORAGE, dbPath: process.env.DB_PATH, databaseUrl: process.env.DATABASE_URL });
+  // The database may still be starting (a rollout, a restart of the whole machine): wait for it, bounded (boot.js).
+  store = await waitFor("store", () => openStore({ kind: STORAGE, dbPath: process.env.DB_PATH, databaseUrl: process.env.DATABASE_URL }));
   setInterval(() => store.sweep().catch((e) => console.error(`[passkey] sweep: ${e.message}`)), 3600000).unref();
   const server = app.listen(PORT, () => {
     console.log(`Passkey service on http://localhost:${PORT} (rpID=${DEFAULT_RP_ID}, storage=${store.kind})`);

@@ -33,7 +33,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # The production web server, and the S3 client for MODEL_STORE=s3 (a layer of its own, so adding them
 # did not invalidate the TensorFlow layer above).
 RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m pip install --default-timeout=300 --retries=20 gunicorn==23.0.0 boto3==1.40.0
+    python -m pip install --default-timeout=300 --retries=20 gunicorn==23.0.0 boto3==1.40.0 \
+      opentelemetry-sdk==1.26.0 opentelemetry-exporter-otlp-proto-http==1.26.0 \
+      opentelemetry-instrumentation-flask==0.47b0 opentelemetry-instrumentation-botocore==0.47b0
 
 COPY services/model-api/ ./services/model-api/
 

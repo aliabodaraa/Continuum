@@ -1,6 +1,6 @@
 """model_store.py on the file store (MODEL_STORE=fs): version names, the fingerprint, pruning, deleting.
 Runs without NumPy, TensorFlow or boto3:  python -m unittest discover -s services/model-api/tests
-(the object store itself is exercised end to end by docker-compose.split-models.yml; its backup commands
+(the object store itself is exercised end to end in the cluster, deploy/k8s/base/storage; its backup commands
 here against an in-memory stand-in for the S3 calls they make)."""
 import io
 import json

@@ -1,0 +1,102 @@
+# grafana/otel-lgtm: the collector (OTLP on 4317 gRPC / 4318 HTTP), Prometheus, Tempo, Loki and Grafana in one
+# container, its data in the pod (a development stack: nothing here is kept across a restart, and nothing in
+# it is a record of the system; the records are in PostgreSQL and the object store). Grafana is never routed by
+# the edge: scripts/k8s-local.sh grafana opens it on a private port-forward (http://localhost:3001).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-lgtm
+  labels: { app.kubernetes.io/name: otel-lgtm }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: otel-lgtm }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: otel-lgtm }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: otel-lgtm
+          image: grafana/otel-lgtm:0.37.0
+          ports:
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: otlp-http, containerPort: 4318 }
+            - { name: grafana, containerPort: 3000 }
+          env:
+            - { name: GF_SECURITY_ADMIN_USER, value: admin }
+            - { name: GF_SECURITY_ADMIN_PASSWORD, value: admin }     # reachable only through the port-forward
+            - { name: GF_USERS_DEFAULT_THEME, value: light }
+            - { name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer }    # the image's default is Admin for everyone who reaches the port
+            - { name: ENABLE_LOGS_ALL, value: "false" }
+          startupProbe:
+            httpGet: { path: /api/health, port: grafana }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /api/health, port: grafana }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: grafana }
+            periodSeconds: 20
+            failureThreshold: 4
+          resources:
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { memory: 2Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: tempo, mountPath: /var/tempo }   # Tempo's shutdown marker: the image makes it as root, we are not
+            - { name: dashboards, mountPath: /etc/continuum-dashboards, readOnly: true }
+            - { name: dashboards, mountPath: /otel-lgtm/grafana/conf/provisioning/dashboards/continuum.yaml, subPath: continuum.yaml, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: data
+          emptyDir: { sizeLimit: 4Gi }
+        - name: tempo
+          emptyDir: { sizeLimit: 256Mi }
+        - name: dashboards
+          configMap: { name: grafana-continuum-dashboards }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-lgtm
+  labels: { app.kubernetes.io/name: otel-lgtm }
+spec:
+  selector: { app.kubernetes.io/name: otel-lgtm }
+  ports:
+    - { name: otlp-grpc, port: 4317, targetPort: otlp-grpc }
+    - { name: otlp-http, port: 4318, targetPort: otlp-http }
+    - { name: grafana, port: 3000, targetPort: grafana }
+---
+# The services of the product and the reference apps may send telemetry; nothing reaches Grafana over the
+# network (a port-forward does not pass through here).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-lgtm-ingress
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: continuum }
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: continuum-demo }
+      ports:
+        - { port: 4317, protocol: TCP }
+        - { port: 4318, protocol: TCP }

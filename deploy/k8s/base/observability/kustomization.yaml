@@ -1,0 +1,22 @@
+# Namespace continuum-observability: where the services' traces and metrics go (OpenTelemetry, OTLP). Local
+# and self-hosted clusters: one pod, grafana/otel-lgtm (an OpenTelemetry Collector, Prometheus, Tempo, Loki and
+# Grafana together, made for development and testing). In a cloud, the overlay points OTEL_EXPORTER_OTLP_ENDPOINT
+# at a collector of its own (or a managed OTLP service) and leaves this out. The services send only when an
+# overlay sets the endpoint (deploy/k8s/overlays/local/telemetry.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: continuum-observability
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: continuum
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - otel-lgtm.yaml
+
+# The dashboard "Continuum services" and the file that tells Grafana to load it (a content change rolls the pod).
+configMapGenerator:
+  - name: grafana-continuum-dashboards
+    files:
+      - continuum-services.json=dashboards/continuum-services.json
+      - continuum.yaml=dashboards/provider.yaml

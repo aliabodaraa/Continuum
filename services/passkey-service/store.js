@@ -52,6 +52,14 @@ const SCHEMA_PG = `
 const SCHEMA_LOCK = 4000417;   // pg_advisory_xact_lock: copies starting together create the tables once
 
 function conflict(message) { return Object.assign(new Error(message), { code: "conflict" }); }
+// A challenge id is a whole number this service handed out. Anything else (text, a fraction, NaN, a number too big
+// to be one) is no challenge of ours: nothing to take, which is what SQLite always answered. PostgreSQL would
+// reject such a value as a malformed query, which the route answered with a 500 for what is only a wrong request.
+function wholeId(id) {
+  if (typeof id !== "number" && typeof id !== "string") return null;
+  const n = Number(id);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
 // One shape for a credential row, whichever backend (numbers as numbers; PostgreSQL returns bigint as text).
 const credRow = (r) => (r ? { id: Number(r.id), user_id: Number(r.user_id), credential_id: r.credential_id, public_key: r.public_key,
   counter: Number(r.counter || 0), transports: r.transports || null } : null);
@@ -103,8 +111,9 @@ function openSqlite(dbPath) {
     },
     // { id } takes that challenge (it must belong to userId); without an id, the user's latest unused one of that type.
     async takeChallenge({ id, userId, type }) {
+      if (id != null && wholeId(id) === null) return null;
       return id != null
-        ? take("SELECT * FROM webauthn_challenges WHERE id = ? AND user_id = ? AND challenge_type = ? AND used = 0", [Number(id), userId, type])
+        ? take("SELECT * FROM webauthn_challenges WHERE id = ? AND user_id = ? AND challenge_type = ? AND used = 0", [wholeId(id), userId, type])
         : take("SELECT * FROM webauthn_challenges WHERE user_id = ? AND challenge_type = ? AND used = 0 ORDER BY id DESC LIMIT 1", [userId, type]);
     },
     // Used and expired challenges are only history: dropped after a day.
@@ -166,8 +175,9 @@ async function openPostgres(databaseUrl) {
       return Number(r.rows[0].id);
     },
     async takeChallenge({ id, userId, type }) {
+      if (id != null && wholeId(id) === null) return null;
       const r = id != null
-        ? await pool.query(TAKE("id = $1 AND user_id = $2 AND challenge_type = $3"), [Number(id), userId, type])
+        ? await pool.query(TAKE("id = $1 AND user_id = $2 AND challenge_type = $3"), [wholeId(id), userId, type])
         : await pool.query(TAKE("user_id = $1 AND challenge_type = $2"), [userId, type]);
       return r.rows[0] ? chalRow(r.rows[0], r.rows[0].expired) : null;
     },
