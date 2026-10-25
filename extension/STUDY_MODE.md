@@ -38,7 +38,8 @@ never lifted automatically; tell participants to resume after typing something p
 ## Before the first participant
 
 1. **Logging on.** Start ca-service with `STUDY_LOGGING=1` (set it in `.env`, or
-   `STUDY_LOGGING=1 docker compose up -d --no-deps ca-service`). Without it nothing is logged.
+   in the cluster it is `STUDY_LOGGING: "1"` in `deploy/k8s/overlays/local/local-urls.yaml`, and the operator page can
+   switch it at run time; under Compose `STUDY_LOGGING=1 docker compose up -d --no-deps ca-service`). Without it nothing is logged.
 2. **Study tenant.** Register one tenant whose origins are the gateway's own origin (the study page) and the
    extension's origin, `chrome-extension://<extension id>` (shown on `chrome://extensions` and on the
    extension's settings page; an unpacked extension's id depends on its folder, so load it from the same

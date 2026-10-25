@@ -96,7 +96,7 @@ router.post("/auth/complete", async (req, res) => {
       return res.status(400).json({ error: "userId, challengeId, and assertion required" });
     }
 
-    const verified = await passkey.authComplete(userId, challengeId, assertion);
+    const verified = await passkey.authComplete(userId, challengeId, assertion, req.body.reason);
     // Continuum's proof of this verification (2 minutes, once): adaptive retraining needs it.
     req.session.stepUpToken = verified.stepUpToken;
 
@@ -111,7 +111,8 @@ router.post("/auth/complete", async (req, res) => {
       delete req.session.continuousAuthLocked;
       ca.lockClear(req.session.userId).catch(() => {});
     }
-    res.json({ ok: true, message: "Passkey authentication successful" });
+    // Learning from real use (Continuum, stage 1): whether the page may offer to record a real-use mouse sample now.
+    res.json({ ok: true, message: "Passkey authentication successful", mouseUseSample: verified.mouseUseSample || { offer: false } });
   } catch (err) {
     console.error("Auth complete error:", err);
     res.status(err.status === 400 ? 400 : 500).json({ error: err.message });

@@ -47,19 +47,20 @@ function decisionWindows(n) { return DECISION_WINDOW_CHOICES.includes(Number(n))
 // warm-up. A single long pause among a genuine user's first ~90 keys used to be enough.
 const WARMUP_FAST_MIN_WINDOWS = 8;
 const WARMUP_FAST_FRACTION = 0.75;
-// Wider recent span used for the adaptive "contribute" rolling mean. Requires
-// sustained clean typing (≈3 of the former 6-window packets) rather than a single
-// lucky stretch, and rolls forward so an earlier rough patch ages out instead of
-// permanently blocking eligibility.
-const ROLLING_WINDOW_COUNT = 18;
-// Adaptive contribution is judged on the former 6-window packet: /contribute needs
-// at least this many scored windows, every one of the last this-many above the
-// window floor, and the SDK's cooldown between offers is this many strides. Kept
-// separate from RECENT_WINDOW_COUNT so the packet change leaves adaptive learning
-// exactly as it was.
-const CONTRIBUTE_WINDOW_COUNT = 6;
-// Windows scored per check: enough for both the packet (at most 20) and the rolling mean.
-const SCORED_WINDOW_COUNT = Math.max(RECENT_WINDOW_COUNT, ROLLING_WINDOW_COUNT);
+// An adaptive sample (the popup's "Contribute sample") is the typing behind the user's last
+// SAMPLE_WINDOW_COUNT windows. All of them are scored and judged, the mean is taken over all of them, and
+// only they are stored, so nothing is learned that was not judged (lastWindowsSample). Before 2026-10-19 a
+// sample was the whole stretch since the previous one, of any length, of which only the last 20 windows
+// were scored (mean over the last 18) while every window of it was stored and later trained on. 20 is
+// also the length of the live packet.
+const SAMPLE_WINDOW_COUNT = 20;
+// Each of the last SAMPLE_FLOOR_WINDOWS windows of a sample must clear the window floor (server.js): a high
+// mean can hide a weak window at the very end, and the end is where a takeover shows first. Three, the number
+// of consecutive checks that offer a sample (the SDK's clean run), since 2026-10-19 (OWNER); it was six, the
+// size of the old live packet, which is the form experiment AR measured.
+const SAMPLE_FLOOR_WINDOWS = 3;
+// Windows scored per check: enough for both the packet (at most 20) and a sample.
+const SCORED_WINDOW_COUNT = Math.max(RECENT_WINDOW_COUNT, SAMPLE_WINDOW_COUNT);
 // Fraction of recent windows scoring below the user threshold that flags the
 // session. Lu et al. (2020): flag when ≥ p of packet windows score < 50%.
 // At 20 windows: 10/20 = 0.50 ≥ 0.50 → SUSPICIOUS; 9/20 → tolerated.
@@ -218,8 +219,9 @@ function eventSteps(events) {
   return eventStepsTimed(events).map((s) => s.row);
 }
 
-// eventSteps with each step's client timestamps (t0 = first keydown, t1 = second keydown), which
-// identify a window across overlapping checks for the user-study log. The rows are eventSteps'.
+// eventSteps with each step's client timestamps (t0 = first keydown, t1 = second keydown, up1 = the second
+// key's release), which identify a window across overlapping checks for the user-study log and mark where a
+// run of windows begins and ends. The rows are eventSteps'.
 function eventStepsTimed(events) {
   const normalized = normalizeEvents(events);
   const lastDownByFieldAndKey = new Map();
@@ -281,6 +283,7 @@ function eventStepsTimed(events) {
       dd,
       t0: first.timestampRelative,
       t1: second.timestampRelative,
+      up1: secondUp.timestampRelative,
     });
   }
 
@@ -297,7 +300,7 @@ function eventStepsTimed(events) {
   const steps = [];
   for (let i = 0; i < raw.length; i += 1) {
     if (raw[i].dd > PAUSE_DD_SECONDS) continue; // composition pause — not rhythm
-    steps.push({ row: raw[i].row, t0: raw[i].t0, t1: raw[i].t1 });
+    steps.push({ row: raw[i].row, t0: raw[i].t0, t1: raw[i].t1, up1: raw[i].up1 });
   }
   return steps;
 }
@@ -336,6 +339,80 @@ function eventsToFeatureWindows(events) {
   }
 
   return windows;
+}
+
+// What an adaptive contribution is made of: the typing behind `n` consecutive windows of `events`, windows
+// `start` to `start + n - 1`, from the first key press of the first to the release of the last key of the
+// last. Windows are aligned to the start of the events they come from, and window `start` begins a whole
+// number of strides after that start, so cutting there and windowing again gives exactly those `n` windows.
+// That is checked row by row: a cut that does not reproduce them is not returned, because a sample must
+// contain nothing that was not judged. Returns how many windows the stretch has and the events to judge and
+// store, or events: null when there are no such windows or the cut does not reproduce them.
+function windowsSample(events, start, n = SAMPLE_WINDOW_COUNT) {
+  const steps = eventStepsTimed(events);
+  const windows = steps.length >= WINDOW_SIZE ? Math.floor((steps.length - WINDOW_SIZE) / WINDOW_STRIDE) + 1 : 0;
+  if (!Number.isInteger(start) || start < 0 || start + n > windows) return { windows, events: null };
+  const from = steps[start * WINDOW_STRIDE].t0;
+  const to = start + n === windows ? Infinity : steps[(start + n - 1) * WINDOW_STRIDE + WINDOW_SIZE - 1].up1;
+  const kept = events.filter((e) => Number(e.timestampRelative) >= from && Number(e.timestampRelative) <= to);
+  const wanted = eventsToFeatureWindows(events).slice(start, start + n);
+  const got = eventsToFeatureWindows(kept);
+  if (got.length !== n || JSON.stringify(got) !== JSON.stringify(wanted)) return { windows, events: null, cutFailed: true };
+  return { windows, events: kept };
+}
+
+// The default: the last `n` windows of the stretch, what the user typed last.
+function lastWindowsSample(events, n = SAMPLE_WINDOW_COUNT) {
+  const windows = eventsToFeatureWindows(events).length;
+  return windows < n ? { windows, events: null } : windowsSample(events, windows - n, n);
+}
+
+// Every window of `events` with its genuine probability from the user's model, in one request; the windows
+// are the ones eventsToFeatureWindows gives. Null when the user has no model or the model service does not
+// answer.
+async function scoreStretch({ events, userId, db }) {
+  const profile = await getUserTypingProfile(userId, db);
+  if (!profile || profile.type !== "per-user-cnn-lstm" || Number(profile.version) < PROFILE_VERSION) return null;
+  const windows = eventsToFeatureWindows(events);
+  if (!windows.length) return { windows: 0, scores: [] };
+  try {
+    const result = await postModelApi("/api/user/predict", {
+      userId, windows, modelPath: profile.modelPath, threshold: WINDOW_DECISION_THRESHOLD,
+    });
+    return { windows: windows.length, scores: Array.isArray(result.prediction) ? result.prediction.map((p) => Number(p[1])) : [] };
+  } catch (err) {
+    return null;
+  }
+}
+
+// The organisation's choice "anywhere in the typing" (adaptiveSampleFrom): the NEWEST run of `n` consecutive
+// windows of the stretch that would be accepted, and the rest of the stretch is ignored. Every window is
+// scored once and a run qualifies on the rule server.js applies to a sample: a mean of at least `meanMin` and
+// each of its last SAMPLE_FLOOR_WINDOWS windows at least `floor`. When none qualifies, or there is no model to
+// ask, the last `n` windows are returned, so the usual checks refuse them with their own reason.
+async function newestQualifyingSample({ events, userId, db, meanMin, floor, n = SAMPLE_WINDOW_COUNT }) {
+  const end = lastWindowsSample(events, n);
+  if (!end.events) return end;
+  const scored = await scoreStretch({ events, userId, db });
+  if (!scored || scored.scores.length !== end.windows) return end;
+  for (let start = end.windows - n; start >= 0; start -= 1) {
+    const run = scored.scores.slice(start, start + n);
+    const mean = run.reduce((a, b) => a + b, 0) / n;
+    if (mean >= meanMin && Math.min(...run.slice(-SAMPLE_FLOOR_WINDOWS)) >= floor) {
+      const picked = windowsSample(events, start, n);
+      if (picked.events) return picked;
+    }
+  }
+  return end;
+}
+
+// Key presses that type something (space, digits, letters, numpad, punctuation): the unit the SDK reports as
+// the length of a sample, since it never sends the text.
+function printableKeyCount(events) {
+  return normalizeEvents(events).filter((e) => {
+    const k = e.keyCode;
+    return e.eventType === "keydown" && (k === 32 || (k >= 48 && k <= 90) || (k >= 96 && k <= 111) || (k >= 186 && k <= 222));
+  }).length;
 }
 
 // Rhythm-consistency check for adaptive contributions. Every other adaptive-learning
@@ -438,6 +515,25 @@ function typingQuality(textContent, events, knownLength = null) {
       coverage >= 0.75 &&
       windows.length > 0,
   };
+}
+
+// Pastes into each field (owner, 2026-10-25): an organisation allows a number of pastes per field
+// (lib/appSettings.js pasteAllowance, "unlimited" by default) and every paste counts, however short. A field
+// is its name and type as the client reported them. The count covers the events a check carries, which the
+// clients clear after each passkey verification, so it starts again after every verification. It replaced
+// "more than 80 pasted characters in all".
+function pasteCountsByField(events) {
+  const counts = {};
+  for (const e of Array.isArray(events) ? events : []) {
+    if (!e || e.eventType !== "paste") continue;
+    const field = `${String(e.fieldName || "page")}|${String(e.fieldType || "")}`;
+    counts[field] = (counts[field] || 0) + 1;
+  }
+  return counts;
+}
+function pastePolicyViolation(events, allowance) {
+  if (!Number.isFinite(allowance)) return false;   // unlimited
+  return Object.values(pasteCountsByField(events)).some((n) => n > allowance);
 }
 
 // Ties (equal timestamps, about a third of the samples have some) are broken by id, the order the
@@ -654,7 +750,9 @@ async function trainUserTypingProfile(userId, db) {
     // Model storage is OWNED by the model-api: we say what (userId + modality),
     // it decides where. No filesystem coupling between the services.
     modality: "keystroke",
-    epochs: 25,
+    // The evaluated recipe (KS, EC, AR2: up to 30 epochs, patience 6). It was 25 here until 2026-10-23, which cut
+    // training short for the ~3 in 4 owners whose validation loss was still falling after epoch 25.
+    epochs: 30,
     batchSize: 16,
     // the version in use: the model service keeps it when it removes old versions
     currentModelPath: previous ? previous.modelPath : null,
@@ -690,16 +788,23 @@ async function trainUserTypingProfile(userId, db) {
   // we score both the new fit and the pre-retrain snapshot on held-out
   // genuine windows; if the new one is clearly worse we ROLL BACK and keep
   // the proven model. The stored samples still count toward future retrains.
-  // The gate guards against a bad fit of the SAME recipe. The one retrain that moves a profile
-  // to NEGATIVES_SOURCE is a deliberate recipe change, tested in KS, and it skips the gate:
-  // a rollback there would re-save the old profile, which would ask for this retrain again.
-  const migrating = !!previous && previous.negatives !== NEGATIVES_SOURCE;
+  // The gate guards against a bad fit of the SAME recipe. A deliberate recipe change, tested before
+  // it was deployed, skips it (a rollback there would re-save the old profile, which would ask for
+  // this retrain again): the one retrain that moves a profile to NEGATIVES_SOURCE (tested in KS), and
+  // the first retrain on a new base (result.baseModel). On 2026-10-25 the base moved from ws50-gru
+  // (GRU 32) to ws50-gru-v2 (GRU 16), the base every typing result in the paper was measured with;
+  // profiles from before record no base. Both models are still scored and logged, for the record.
+  const negativesChange = !!previous && previous.negatives !== NEGATIVES_SOURCE;
+  const baseChange = !!previous && !!result.baseModel && previous.baseModel !== result.baseModel;
+  const migrating = negativesChange || baseChange;
   if (migrating) {
-    console.log(`[retrain-gate] user=${userId} negatives ${previous.negatives || "app-users"} -> ` +
-      `${NEGATIVES_SOURCE}: recipe change, gate skipped`);
+    console.log(`[retrain-gate] user=${userId} ` + [
+      negativesChange && `negatives ${previous.negatives || "app-users"} -> ${NEGATIVES_SOURCE}`,
+      baseChange && `base ${previous.baseModel || "unrecorded"} -> ${result.baseModel}`,
+    ].filter(Boolean).join(", ") + ": recipe change, gate skipped");
   }
   try {
-    if (previousPath && !migrating) {
+    if (previousPath) {
       const heldOut = await getHeldOutWindows(userId, db);
       if (heldOut.length >= 30) {
         const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
@@ -712,9 +817,9 @@ async function trainUserTypingProfile(userId, db) {
           newScores.length === prevScores.length &&
           (newMean < prevMean - 0.02 || lows(newScores) > lows(prevScores) + 2);
         console.log(
-          `[retrain-gate] user=${userId} heldOut=${heldOut.length} prevMean=${prevMean.toFixed(3)} newMean=${newMean.toFixed(3)} prevLows=${lows(prevScores)} newLows=${lows(newScores)} → ${regressed ? "ROLLBACK" : "accept"}`,
+          `[retrain-gate] user=${userId} heldOut=${heldOut.length} prevMean=${prevMean.toFixed(3)} newMean=${newMean.toFixed(3)} prevLows=${lows(prevScores)} newLows=${lows(newScores)} → ${migrating ? "recipe change, kept" : regressed ? "ROLLBACK" : "accept"}`,
         );
-        if (regressed) {
+        if (regressed && !migrating) {
           await discardNew();
           // Keep serving the proven model — but CONSUME the retrain trigger by
           // re-saving the existing profile (bumps trained_at). Otherwise
@@ -745,6 +850,7 @@ async function trainUserTypingProfile(userId, db) {
     negativeSource: result.negativeSource,
     negatives: NEGATIVES_SOURCE,
     trainedFrom: result.trainedFrom,
+    baseModel: result.baseModel || null,
     trainingAccuracy: result.accuracy,
     balancedAccuracy: result.balancedAccuracy,
     trainedAt: new Date().toISOString(),
@@ -754,7 +860,7 @@ async function trainUserTypingProfile(userId, db) {
   // User study: the live cutoff is the fixed 0.50, so the threshold-source scores are the per-user
   // validation (held-out genuine) scores model-api computed for this model.
   await studyLog.recordProfile(userId, {
-    channel: "keystroke", ruleVersion: `${RULE_VERSION};${NEGATIVES_SOURCE}`, threshold: WINDOW_DECISION_THRESHOLD,
+    channel: "keystroke", ruleVersion: [RULE_VERSION, NEGATIVES_SOURCE, result.baseModel].filter(Boolean).join(";"), threshold: WINDOW_DECISION_THRESHOLD,
     thresholdSource: "fixed-0.50; scores = validation genuine", modelPath: result.modelPath, modelSha256: result.modelSha256,
     windowCount: result.positiveWindowCount, thresholdScores: result.validationGenuineScores,
   });
@@ -832,9 +938,8 @@ async function evaluateKeystrokes({ events, timings, userId, db, packetWindows }
   // The same windows as eventsToFeatureWindows, each with its key for the user-study log.
   const { windows: allWindows, keys: allKeys } = featureWindowsWithKeys(normalized);
   // We score the last SCORED_WINDOW_COUNT windows in one prediction: the last
-  // RECENT_WINDOW_COUNT of them (the packet) drive the live Lu vote, while the
-  // mean over the last ROLLING_WINDOW_COUNT is the "rolling mean" used to decide
-  // when a stretch of typing is clean enough to offer as an adaptive-learning sample.
+  // RECENT_WINDOW_COUNT of them (the packet) drive the live Lu vote, while the last
+  // SAMPLE_WINDOW_COUNT of them are what an adaptive-learning sample is judged on.
   const windows = allWindows.slice(-SCORED_WINDOW_COUNT);
   const windowKeys = allKeys.slice(-SCORED_WINDOW_COUNT);
   const profile = await getUserTypingProfile(userId, db);
@@ -900,17 +1005,17 @@ async function evaluateKeystrokes({ events, timings, userId, db, packetWindows }
     const scoredScores = Array.isArray(result.prediction)
       ? result.prediction.map((p) => Number(p[1]))
       : [];
-    const rollingScores = scoredScores.slice(-ROLLING_WINDOW_COUNT);
+    const sampleScores = scoredScores.slice(-SAMPLE_WINDOW_COUNT);
     // The packet = the most recent `packet` windows; the live vote
     // and the on-screen tiles use only these.
     const perWindowScores = scoredScores.slice(-packet);
     const lowWindows = perWindowScores.filter((s) => s < LU_WINDOW_THRESHOLD).length;
     const voteFraction = perWindowScores.length > 0 ? lowWindows / perWindowScores.length : 0;
     // Live verdict = pure Lu et al. (2020) packet vote at the fixed 0.50 boundary.
-    // (The wider rolling mean below is computed ONLY for adaptive-contribution
-    // eligibility — it deliberately has NO part in this verdict.)
+    // (The sample scores below are used ONLY for adaptive-contribution
+    // eligibility — they deliberately have NO part in this verdict.)
     const isSuspicious = voteFraction >= PACKET_VOTE_FRACTION;
-    const rollingMean = mean(rollingScores);
+    const sampleMean = mean(sampleScores);
 
     // TEMP DIAG: when a window crashes to ~0 while others are high, dump the
     // lowest window's per-feature min/avg/max + its last rows, so we can tell an
@@ -935,9 +1040,9 @@ async function evaluateKeystrokes({ events, timings, userId, db, packetWindows }
     return {
       // Packet mean — keeps the existing "confidence" meaning (last packet).
       modelConfidence: mean(perWindowScores),
-      // Rolling mean over the wider recent window — drives adaptive eligibility ONLY.
-      rollingMean,
-      rollingWindowCount: rollingScores.length,
+      // The last SAMPLE_WINDOW_COUNT scores and their mean: they drive adaptive eligibility ONLY.
+      sampleMean,
+      sampleWindowScores: sampleScores,
       isSuspicious,
       reason: isSuspicious
         ? `${lowWindows} of ${perWindowScores.length} windows scored < 50% (Lu et al. vote)`
@@ -1026,8 +1131,8 @@ module.exports = {
   WINDOW_SIZE,
   WINDOW_STRIDE,
   RECENT_WINDOW_COUNT,
-  ROLLING_WINDOW_COUNT,
-  CONTRIBUTE_WINDOW_COUNT,
+  SAMPLE_WINDOW_COUNT,
+  SAMPLE_FLOOR_WINDOWS,
   PACKET_VOTE_FRACTION,
   WINDOW_DECISION_THRESHOLD,
   CHECK_MIN_TEXT_CHARS,
@@ -1036,6 +1141,10 @@ module.exports = {
   NEGATIVES_SOURCE,
   evaluateKeystrokes,
   eventsToFeatureWindows,
+  windowsSample,
+  lastWindowsSample,
+  newestQualifyingSample,
+  printableKeyCount,
   logAuthDecision,
   needsNegativesRefresh,
   isServedProfile,
@@ -1055,4 +1164,6 @@ module.exports = {
   decisionWindows,
   WARMUP_FAST_MIN_WINDOWS,
   WARMUP_FAST_FRACTION,
+  pasteCountsByField,
+  pastePolicyViolation,
 };

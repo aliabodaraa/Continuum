@@ -24,8 +24,8 @@ services:
     environment:
       MODEL_HOST: 0.0.0.0
       MODEL_PORT: 5000
-      MODEL_PATH: ${MODEL_PATH:-/app/artifacts/ws50-gru/final_model}
-      MODEL_UNITS: ${MODEL_UNITS:-32}
+      MODEL_PATH: ${MODEL_PATH:-/app/artifacts/ws50-gru-v2/final_model}
+      MODEL_UNITS: ${MODEL_UNITS:-16}
       # Service credential. MUST match ca-service's MODEL_API_KEY below — every request
       # except /health is rejected without it. Unset means the check is inactive, which the
       # service announces loudly at startup; the bundle and prod stacks make it required.
@@ -34,7 +34,7 @@ services:
       # (userId, modality); this service derives + confines every path.
       ARTIFACTS_DIR: /app/artifacts
       DATA_DIR: /app/data
-      # all = scores and trains in one container; inference / trainer split them (docker-compose.split-models.yml).
+      # all = scores and trains in one container; inference / trainer split them (deploy/k8s/base/continuum/model.yaml).
       MODEL_ROLE: ${MODEL_ROLE:-all}
       # fs = per-user model versions in ./artifacts/users; s3 = in object storage (services/model-api/model_store.py).
       MODEL_STORE: ${MODEL_STORE:-fs}
@@ -317,6 +317,8 @@ services:
     networks: [model]
     volumes:
       - .:/app
+    # Rebuilds the older ws50-gru base (no pooling, GRU 32). The base served since 2026-10-25 is ws50-gru-v2
+    # (max pooling, GRU 16), trained on 2026-06-26 before this repository; its network is read from the saved model.
     command: python services/model-api/train.py --data-dir data --window-size 50 --epochs 150 --batch-size 64 --output-dir artifacts/ws50-gru --rnn-type gru --units 32
 
 networks:

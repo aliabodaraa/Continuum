@@ -33,6 +33,12 @@ const run = (script, flag, dir) => { try { return { code: 0, out: execFileSync("
   const scores = Array.from({ length: 20 }, (_, i) => (i < 12 ? 0.2 : 0.9));
   await studyLog.recordCheck(mu, studyLog.parseContext({ participant: "ZZTEST1", sessionId: "sess-zz-0001", condition: "genuine" }), {
     channel: "keystroke", ruleVersion: ks.RULE_VERSION, threshold: 0.5, scores, keys: scores.map((_, i) => `${i * 10}-${i * 10 + 500}`),
+    lowWindows: 12, verdict: "challenge", promptRequired: true,
+    details: { packetSuspicious: true, windowTotal: 40, overwhelmingImpostor: false, unverifiable: false, pastePolicy: false, degenerateInput: false,
+      hasPasskey: true, modelAvailable: true, packetWindows: 20 } });
+  // the same packet as logged under the confirmation that was live before 2026-10-19: replayed under its own parameters
+  await studyLog.recordCheck(mu, studyLog.parseContext({ participant: "ZZTEST1", sessionId: "sess-zz-0001", condition: "genuine" }), {
+    channel: "keystroke", ruleVersion: ks.RULE_VERSION, threshold: 0.5, scores, keys: scores.map((_, i) => `${i * 10}-${i * 10 + 500}`),
     lowWindows: 12, verdict: "suspicious", promptRequired: false,
     details: { packetSuspicious: true, windowTotal: 40, overwhelmingImpostor: false, unverifiable: false, pastePolicy: false, degenerateInput: false,
       recentSuspicious: 1, hasPasskey: true, modelAvailable: true, suspiciousWindow: 3, suspiciousMin: 2 } });

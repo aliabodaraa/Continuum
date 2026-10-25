@@ -1153,6 +1153,9 @@ def train_user_payload(payload):
             "negativeSource": negative_source,
             "datasetNegativeError": dataset_negative_status(neg_dataset_path),
             "trainedFrom": trained_from,
+            # The base's folder name (e.g. ws50-gru-v2), so a caller can tell a retrain after a base change from
+            # one on the same base (ca-service skips its same-recipe regression gate once).
+            "baseModel": os.path.basename(os.path.dirname(os.path.normpath(base_model_path))) if trained_from != "scratch" else None,
             "inputShape": [int(window_size), int(num_features)],
             "accuracy": float(eval_acc),
             "loss": float(eval_loss),
@@ -1770,7 +1773,7 @@ def create_flask_app():
         # /health stays open: it is how the orchestrator decides whether this container is
         # ready, it reveals nothing beyond "TensorFlow loaded", and gating it would mean
         # handing the healthcheck a credential.
-        if request.path == "/health":
+        if request.path in ("/health", "/ready"):
             return None
         if not api_key_ok(request.headers.get("X-Api-Key")):
             print(f"[model-api][SECURITY] rejected {request.method} {request.path} — bad or missing X-Api-Key")
@@ -1828,6 +1831,17 @@ def create_flask_app():
     @app.route("/health", methods=["GET"])
     def health():
         return jsonify({**health_payload(), "role": ROLE, "store": model_store.KIND})
+
+    # Liveness is /health (the process answers). Readiness is this: a scoring copy without its base model
+    # must get no traffic (every check would fail), so it says 503 until the model is loaded. A trainer is
+    # ready once it serves (its negatives are checked at start; a training without them fails on its own).
+    @app.route("/ready", methods=["GET"])
+    def ready():
+        ok = (not SCORES) or (model is not None)
+        payload = {"ready": ok, "role": ROLE, "store": model_store.KIND, "model_loaded": model is not None}
+        if not ok:
+            payload["model_error"] = model_error
+        return jsonify(payload), (200 if ok else 503)
 
     return app
 

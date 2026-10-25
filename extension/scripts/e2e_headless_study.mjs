@@ -24,7 +24,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { inService } from "./lib/stack.mjs";
+import { inService, operatorUrl } from "./lib/stack.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // The extension under test: this checkout's, or another's (CONTINUUM_EXTENSION_DIR): a gateway admits one extension
@@ -66,7 +66,7 @@ const ADMIN_KEY = process.env.GATEWAY_ADMIN_KEY
 // The operator area (operator page, /v1/tenants, /v1/admin/*): the gateway itself (Compose), or, behind an edge
 // that never routes it (Kubernetes: Envoy marks every request it forwards), a private port-forward to the
 // gateway (scripts/k8s-local.sh operator => CONTINUUM_OPERATOR=http://localhost:28081).
-const OP = process.env.CONTINUUM_OPERATOR || GW;
+const OP = await operatorUrl(GW);
 async function gw(p, body, method = "POST") {
   const r = await fetch((p.startsWith("/v1/tenants") ? OP : GW) + p, { method, headers: { "Content-Type": "application/json", Origin: GW, ...(token ? { Authorization: "Bearer " + token } : {}),
     ...(p.startsWith("/v1/tenants") && ADMIN_KEY ? { "X-Admin-Key": ADMIN_KEY } : {}) },

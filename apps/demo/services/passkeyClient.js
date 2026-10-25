@@ -58,8 +58,9 @@ async function authOptions(userId) {
 }
 // Resolves to { ok, ..., stepUpToken }: the token proves this verification to Continuum for 2 minutes,
 // once (adaptive retraining asks for it).
-async function authComplete(userId, challengeId, assertion) {
-  return call("POST", "/passkey/auth/complete", userId, { challengeId, assertion, origin: ORIGIN });
+// `reason` (what the passkey answers: a "mouse" or "keystroke" lock) is a label Continuum keeps with the verification.
+async function authComplete(userId, challengeId, assertion, reason) {
+  return call("POST", "/passkey/auth/complete", userId, { challengeId, assertion, origin: ORIGIN, reason });
 }
 
 module.exports = {

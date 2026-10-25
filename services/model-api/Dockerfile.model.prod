@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     MODEL_HOST=0.0.0.0 \
     MODEL_PORT=5000 \
     MODEL_DEBUG=0 \
-    MODEL_PATH=/app/artifacts/ws50-gru/final_model \
+    MODEL_PATH=/app/artifacts/ws50-gru-v2/final_model \
     ARTIFACTS_DIR=/app/artifacts \
     DATA_DIR=/app/data \
     HOME=/tmp
@@ -31,7 +31,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       python-dotenv \
       matplotlib \
     && python -m pip install --default-timeout=300 --retries=20 tensorflow-cpu==2.15.0 \
-    && python -m pip install --default-timeout=300 --retries=20 gunicorn==23.0.0 boto3==1.40.0
+    && python -m pip install --default-timeout=300 --retries=20 gunicorn==23.0.0 boto3==1.40.0 \
+      opentelemetry-sdk==1.26.0 opentelemetry-exporter-otlp-proto-http==1.26.0 \
+      opentelemetry-instrumentation-flask==0.47b0 opentelemetry-instrumentation-botocore==0.47b0
 
 # Only the files that serve requests. The ~90 research and evaluation scripts in services/model-api stay
 # in the repository (the thesis records name them there) and never enter this image. Build context is
@@ -40,9 +42,12 @@ COPY services/model-api/api.py services/model-api/model.py services/model-api/pr
      services/model-api/loso.py services/model-api/model_store.py services/model-api/wsgi.py \
      services/model-api/gunicorn.conf.py ./services/model-api/
 
-# The two base models and what comes with them: the keystroke base (ws50-gru: network and scaler) and
+# The two base models and what comes with them: the keystroke base (ws50-gru-v2: network and scaler) and
 # the mouse base (mouse-fcn-a5: network, scaler, F2 cohort). Research outputs under artifacts/ stay out.
-COPY artifacts/ws50-gru/ ./artifacts/ws50-gru/
+# ws50-gru-v2 (Lu et al.'s best Buffalo setting: Conv1D 32 with kernel 2, max pooling 2, two GRU layers of
+# 16 units) is the base every typing result in the paper was measured with. It replaced ws50-gru (two GRU
+# layers of 32 units, no pooling) on 2026-10-25; the two share the scaler.
+COPY artifacts/ws50-gru-v2/ ./artifacts/ws50-gru-v2/
 COPY artifacts/mouse-fcn-a5/ ./artifacts/mouse-fcn-a5/
 
 # Mouse enrollment's negative pool: the (|dx|, |dy|) windows of the 100 SapiMouse base users

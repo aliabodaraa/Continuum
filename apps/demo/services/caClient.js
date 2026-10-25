@@ -31,6 +31,8 @@ module.exports = {
   mouseEnroll: (userId, windows) => request("POST", "/mouse/enroll", userId, { windows }),
   mouseCheck: (userId, windows) => request("POST", "/mouse/check", userId, { windows }),
   mouseStatus: (userId) => request("GET", "/mouse/status", userId),
+  // A real-use sample: the movement right after a passkey verification (Continuum keeps it only then, once).
+  mouseUseSample: (userId, windows) => request("POST", "/mouse/use-sample", userId, { windows }),
   // Destructive: the route that calls this must verify a passkey first.
   mouseReset: (userId) => request("POST", "/mouse/reset", userId, {}),
   // The suspicious-packet count is kept by Continuum; this says "we acted on it".

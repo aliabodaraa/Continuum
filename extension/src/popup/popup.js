@@ -98,6 +98,12 @@ function refresh() {
       q("mouse").textContent = off.mouse ? "off (organisation setting)" : mouseText(s.mouseVerdict, bars.mouse);
     }
 
+    // Learning from real use, stage 1: a sample being recorded after a passkey, or how the last one went.
+    var us = s.useSample || {}, lastUse = us.last;
+    show("rowUse", !!(us.recording || lastUse));
+    if (us.recording) q("useSample").textContent = "recording… keep browsing as usual";
+    else if (lastUse) q("useSample").textContent = (lastUse.ok ? "saved " : "not saved (" + lastUse.error + ") ") + new Date(lastUse.at).toLocaleString();
+
     q("pauseBtn").textContent = s.paused ? "Resume recording" : "Pause recording";
     q("pauseBtn").style.background = s.paused ? "#16a34a" : "#dc2626";
     show("errLine", !!s.error);

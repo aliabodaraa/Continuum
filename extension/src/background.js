@@ -41,11 +41,36 @@ var paused = false;
 
 // MV3: this worker is stopped after ~30 s idle and restarted from scratch, so everything that gates
 // behaviour is persisted (the lock in cg_progress, the settings, the account) and read back at start.
-var state = { locked: false, lockReason: null, verdict: null, mouseVerdict: null, error: null, notEnrolled: null, lastCheckAt: 0,
+var state = { locked: false, lockReason: null, lockPasted: false, verdict: null, mouseVerdict: null, error: null, notEnrolled: null, lastCheckAt: 0,
   disabled: {} };   // channel -> when the server last said the organisation turned it off
 var session = null;     // { token, userId, key } from /v1/sdk/session; re-minted on a 401 or a change of user
 var probation = false;  // after a step-up: re-challenge on any scored suspicious verdict (as the SDK)
 var openPrompt = null;      // the open step-up: { channel, decisionId, sessionId, tabId } (study logging)
+// Learning from real use, stage 1: after a verified step-up the gateway may offer to record a real-use mouse sample
+// (ca-service lib/mouseUse.js). The verify page asks; on a yes every tab records fresh movement (content.js) and the
+// first to reach a sample's windows sends it here. Both states live in storage.session, because this worker is
+// stopped when idle and restarted from scratch (the MV3 rule); lastUseSample is for the popup.
+var useOffer = null;        // { until, tabId }: offered, the user not asked yet
+var useRec = null;          // { epoch, until }: recording
+var lastUseSample = null;   // { at, ok, error }
+function persistUse() { try { api.storage.session.set({ cg_use: { offer: useOffer, rec: useRec } }); } catch (e) {} }
+function stopUseRecording() {
+  var was = !!(useOffer || useRec);
+  useOffer = null; useRec = null;
+  persistUse();
+  if (was) broadcastAll({ type: "cg:use-sample-stop" });
+}
+function startUseRecording(until) {
+  useRec = { epoch: "u" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8), until: until };
+  persistUse();
+  broadcastAll({ type: "cg:use-sample-start", epoch: useRec.epoch, until: useRec.until });
+}
+function sendUseSample(windows) {
+  gw("/v1/sdk/mouse/use-sample", { windows: windows })
+    .then(function (r) { lastUseSample = { at: Date.now(), ok: r.status === 200, error: r.status === 200 ? null : ((r.d && (r.d.note || r.d.error)) || "HTTP " + r.status) }; })
+    .catch(function (e) { lastUseSample = { at: Date.now(), ok: false, error: (e && e.message) || "gateway unreachable" }; })
+    .then(function () { try { api.storage.local.set({ cg_last_use_sample: lastUseSample }); } catch (e) {} });
+}
 
 function studyOn() { return !!(study && study.on && study.gateway && study.siteKey && study.participant); }
 // The active connection, or null when nobody is signed in.
@@ -108,6 +133,7 @@ function loadAccount(v) {
 // Any change of user: drop what belonged to the previous one.
 function resetUser() {
   session = null; probation = false; openPrompt = null;
+  stopUseRecording();
   state.verdict = null; state.mouseVerdict = null; state.error = null; state.notEnrolled = null;
 }
 
@@ -206,14 +232,16 @@ function onVerdict(channel, r, sessionId) {
   dlog("[continuum-guard] " + channel + " verdict", JSON.stringify(channel === "keystroke" ? state.verdict : state.mouseVerdict));
   var scored = channel === "keystroke" ? Number(d.scoredWindowCount) > 0 : Number(d.windowCount) > 0;
   var trigger = !!d.requiresPasskeyChallenge || (probation && !!d.isSuspicious && scored);
-  if (trigger && !state.locked) { challenge(channel, d.studyDecisionId || null, sessionId); return; }
+  // a paste lock (more pastes into one field than the organisation allows) says so on the page
+  var pasted = !!(d.typingEvaluation && d.typingEvaluation.modelType === "paste-policy");
+  if (trigger && !state.locked) { challenge(channel, d.studyDecisionId || null, sessionId, pasted); return; }
   if (!d.warmup && !d.isSuspicious) probation = false;   // a clean verdict ends probation
   updateBadge();
   persistProgress();
 }
-function challenge(channel, decisionId, sessionId) {
+function challenge(channel, decisionId, sessionId, pasted) {
   openPrompt = { channel: channel, decisionId: decisionId, sessionId: sessionId, tabId: null };
-  engageLock(channel);
+  engageLock(channel, pasted);
   promptEvent("shown");
 }
 
@@ -336,6 +364,7 @@ api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "
   if (p && p.user === connKey()) {
     state.locked = !!p.locked;
     state.lockReason = p.lockReason || null;
+    state.lockPasted = !!p.lockPasted;
     if (Date.now() - (p.at || 0) < 10 * 60 * 1000) { state.verdict = p.verdict || null; state.mouseVerdict = p.mouseVerdict || null; }
   }
   broadcastConfig();
@@ -344,12 +373,24 @@ api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "
 if (api.storage.session && api.storage.session.get) {
   api.storage.session.get("cg_link_pending", function (d) { var p = d && d.cg_link_pending; if (p) pendingGateway = p.gateway; });
 }
+// A real-use sample offered or being recorded before this worker was restarted. The handlers that need it wait for this,
+// because the message that woke the worker can arrive before the read completes.
+var useRestored = new Promise(function (resolve) {
+  if (!api.storage.session || !api.storage.session.get) { resolve(); return; }
+  api.storage.session.get("cg_use", function (d) {
+    var u = (d && d.cg_use) || {}, now = Date.now();
+    if (!useOffer && u.offer && u.offer.until > now) useOffer = u.offer;
+    if (!useRec && u.rec && u.rec.until > now) useRec = u.rec;
+    resolve();
+  });
+});
+api.storage.local.get("cg_last_use_sample", function (d) { if (d && d.cg_last_use_sample) lastUseSample = d.cg_last_use_sample; });
 
 // Snapshot the lock and the verdicts so they survive a worker restart. Throttled (at most one write per
 // ~1.2 s); immediate for the lock itself.
 var _persistTimer = null;
 function progressSnapshot() {
-  return { user: connKey(), verdict: state.verdict, mouseVerdict: state.mouseVerdict, locked: state.locked, lockReason: state.lockReason, at: Date.now() };
+  return { user: connKey(), verdict: state.verdict, mouseVerdict: state.mouseVerdict, locked: state.locked, lockReason: state.lockReason, lockPasted: state.lockPasted, at: Date.now() };
 }
 function persistProgress(immediate) {
   if (immediate) {
@@ -405,7 +446,7 @@ if (api.storage.onChanged) {
     if (connKey() !== who) {
       // Another user (or nobody): the old lock and verdicts belonged to the previous one.
       resetUser();
-      if (state.locked) { state.locked = false; state.lockReason = null; broadcastAll({ type: "cg:unlock" }); }
+      if (state.locked) { state.locked = false; state.lockReason = null; state.lockPasted = false; broadcastAll({ type: "cg:unlock" }); }
       persistProgress(true);
     }
     if (changes.cg_study || changes.cg_account || changes.cg_paused || changes.cg_debug) broadcastConfig();
@@ -423,6 +464,7 @@ function statusObj(tabId) {
     error: state.error, notEnrolled: state.notEnrolled, lastCheckAt: state.lastCheckAt, exclusions: config.exclusions,
     disabled: { keystroke: !!state.disabled.keystroke, mouse: !!state.disabled.mouse },
     bars: tabId != null ? { keystroke: barState("keystroke", tabId).text, mouse: barState("mouse", tabId).text } : null,
+    useSample: { recording: !!(useRec && useRec.until > Date.now()), last: lastUseSample },
   };
 }
 
@@ -564,16 +606,19 @@ function broadcastAll(msg) {
     (tabs || []).forEach(function (t) { try { api.tabs.sendMessage(t.id, msg, function () { void api.runtime.lastError; }); } catch (e) {} });
   });
 }
-function engageLock(reason) {
+function engageLock(reason, pasted) {
+  stopUseRecording();   // no movement around a lock is ever a real-use sample
   state.locked = true;
   state.lockReason = reason || "keystroke";
-  broadcastAll({ type: "cg:lock" });
+  state.lockPasted = !!pasted;
+  broadcastAll({ type: "cg:lock", pasted: state.lockPasted });
   refreshAllBadges();
   persistProgress(true);
 }
 function releaseLock() {
   state.locked = false;
   state.lockReason = null;
+  state.lockPasted = false;
   state.error = null;
   state.verdict = null;
   state.mouseVerdict = null;
@@ -598,7 +643,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
   if (!msg) return;
   switch (msg.type) {
     case "cg:hello":
-      reply({ capture: captureInfo(), excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, gatewayOrigin: gatewayOrigin(), debug: debugLog, excludeTypes: excludeTypes });
+      reply({ capture: captureInfo(), excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, lockPasted: state.lockPasted, gatewayOrigin: gatewayOrigin(), debug: debugLog, excludeTypes: excludeTypes });
       return true;
     case "cg:check": {
       // From a content script: { channel, sessionId, clientTs, body, windowKeys }.
@@ -626,8 +671,32 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
         openPrompt = null;
         probation = true;
         releaseLock();
-        closeSenderTab(sender);
+        // A real-use sample offered: the page asks first, and closes on the answer (cg:use-consent).
+        if (msg.useOffer && Number(msg.useOffer.expiresInMs) > 0 && fromGatewayPage(sender, "/connect.html")) {
+          useOffer = { until: Date.now() + Number(msg.useOffer.expiresInMs) - 5000, tabId: sender.tab && sender.tab.id };
+          persistUse();
+        } else closeSenderTab(sender);
       }
+      return;
+    case "cg:use-consent":
+      // The user's answer on the verify page. A yes starts fresh recording in every tab, if nothing changed meanwhile.
+      if (!fromGatewayPage(sender, "/connect.html")) return;
+      useRestored.then(function () {
+        var offer = useOffer;
+        useOffer = null;
+        persistUse();
+        closeSenderTab(sender);
+        if (msg.consent === true && offer && offer.until > Date.now() && conn() && !paused && !state.locked && !state.disabled.mouse) startUseRecording(offer.until);
+      });
+      return;
+    case "cg:use-sample":
+      // From a content script: the first page to reach a sample's windows. Kept once, the others are told to stop.
+      if (!sender || !sender.tab || !Array.isArray(msg.windows)) return;
+      useRestored.then(function () {
+        if (!useRec || msg.epoch !== useRec.epoch || !(useRec.until > Date.now()) || state.locked) return;
+        stopUseRecording();
+        sendUseSample(msg.windows);
+      });
       return;
     case "cg:verify-failed":
       if (fromGatewayPage(sender, "/study.html") || fromGatewayPage(sender, "/connect.html")) promptEvent("failed");

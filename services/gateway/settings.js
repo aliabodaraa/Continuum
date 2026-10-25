@@ -22,10 +22,17 @@ const APP = {
   keystroke: { env: "CONTINUUM_KEYSTROKE", def: "on", choices: ["on", "off"], claim: "ks" },
   // windows in the typing decision: only the measured packets (ca-service keystrokeSecurity.js)
   keystrokeDecisionWindows: { env: "KEYSTROKE_DECISION_WINDOWS", def: 20, choices: [6, 10, 20], claim: "kw" },
+  // pastes a user may make into one field before the passkey is asked for; every paste counts, however short.
+  // "unlimited" never asks and is the default (owner, 2026-10-25). ca-service lib/appSettings.js pasteAllowance().
+  pasteAllowance: { env: "PASTE_ALLOWANCE", def: "unlimited", choices: ["0", "1", "2", "3", "5", "unlimited"], claim: "pa" },
   mouse: { env: "CONTINUUM_MOUSE", def: "on", choices: ["on", "off"], claim: "ms" },
   onboarding: { env: "ONBOARDING_MODE", def: "eager", choices: ["eager", "lazy"], claim: "ob" },
   excludeFieldTypes: { env: "MONITOR_EXCLUDE_TYPES", def: ["hidden"], list: true, claim: "ex" },
   adaptive: { env: "ADAPTIVE_RETRAINING", def: "on", choices: ["on", "off"], claim: "ad" },
+  // accepted samples that make a retrain possible; only 3 was measured (experiment AR)
+  adaptiveRetrainEvery: { env: "ADAPTIVE_RETRAIN_EVERY", def: 3, choices: [1, 2, 3], claim: "re" },
+  // where in the recent typing a sample is taken from: "end" = the last windows, "any" = the newest run that qualifies
+  adaptiveSampleFrom: { env: "ADAPTIVE_SAMPLE_FROM", def: "end", choices: ["end", "any"], claim: "sf" },
   adaptiveGapHours: { env: "ADAPTIVE_MIN_GAP_HOURS", def: 3, number: [0, 168], claim: "gap" },   // pause after each retrain
 };
 const SERVER = {
@@ -39,7 +46,7 @@ function bad(code, note) { return Object.assign(new Error(note || code), { code 
 // A value as it would be stored, or throws { code: "bad_setting" }.
 function normalise(def, v, key) {
   if (def.choices) {
-    const val = typeof def.choices[0] === "number" ? Number(v) : v;
+    const val = typeof def.choices[0] === "number" ? Number(v) : String(v);   // "2" and 2 alike for a text choice
     if (!def.choices.includes(val)) throw bad("bad_setting", `${key} must be one of ${def.choices.join(", ")}`);
     return val;
   }

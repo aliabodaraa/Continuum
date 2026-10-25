@@ -170,10 +170,15 @@ Raised from an earlier ~1/3 fraction to reduce false rejections for genuine user
 momentarily type differently, while still catching impostors — see the fraction's own
 history in `keystrokeSecurity.js`.
 
-### Adaptive learning keeps the old packet
-Adaptive contributions are still judged on the last `CONTRIBUTE_WINDOW_COUNT = 6` windows (at
-least 6 scored, all of them above the window floor), and the rolling mean on the last 18, so the
-packet change left adaptive learning exactly as it was.
+### The adaptive sample is twenty windows, judged whole
+An adaptive sample (the popup's "Contribute sample") is the typing behind `SAMPLE_WINDOW_COUNT = 20`
+consecutive windows: the last 20 of the stretch since the previous sample, or, if the organisation
+chose "anywhere", the newest run of 20 that would be accepted. All 20 are scored, their mean must be at
+least 0.80 and each of the newest `SAMPLE_FLOOR_WINDOWS = 3` must be at least 0.80, and only those 20
+windows are stored, so nothing is learnt that was not judged. (Until 2026-10-19 a sample was the whole
+stretch, of which only the last 20 windows were scored, with the mean over the last 18.) The accepted
+samples wait, unused, until `ADAPTIVE_RETRAIN_EVERY` of them (1, 2 or 3; 3 by default) allow a retrain
+with the passkey, and a pause follows (`ADAPTIVE_MIN_GAP_HOURS`, 3 h by default).
 
 ---
 

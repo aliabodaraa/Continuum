@@ -6,8 +6,10 @@ require("./lib/log")("ca-service");   // LOG_FORMAT=json: one JSON object per lo
 const express = require("express");
 const crypto = require("crypto");
 const db = require("./db");
+const { waitFor } = require("./lib/boot");
 const ks = require("./lib/keystrokeSecurity");
 const mouse = require("./lib/mouse");
+const mouseUse = require("./lib/mouseUse");
 const mouseActions = require("./lib/mouseActions");
 const lock = require("./lib/lock");
 const decisionState = require("./lib/decisionState");
@@ -56,7 +58,6 @@ function riskLevel(isWarmup, isSuspicious) {
 
 // ---- adaptive-learning + paste policy (ported from the old demo route) ----
 const ADAPTIVE_CONFIDENCE_MIN = 0.8;
-const ADAPTIVE_RETRAIN_EVERY = 3;
 // A high MEAN can hide one weak window; every window in a contributed packet must
 // clear this floor too, or a borderline moment could quietly enter the training set.
 const ADAPTIVE_WINDOW_FLOOR = 0.8;
@@ -66,37 +67,16 @@ const ADAPTIVE_WINDOW_FLOOR = 0.8;
 // "at most one sample per calendar day, automatic retrain after three". Experiment AR measured that
 // earlier rule; its samples were already non-overlapping and retrained after three, so the cycle
 // changes the pace and adds the passkey, not which samples pass.
-const PASTE_POLICY_MAX_CHARS = 80;
-// Debounce keystroke CHALLENGES (not scoring): challenge when >= KS_SUSPICIOUS_MIN of the
-// last KS_SUSPICIOUS_WINDOW checks are suspicious (a SLIDING window, not strictly
-// consecutive). This catches sustained/intermittent abnormal typing (e.g. high-speed
-// mashing that's suspicious on many packets but rarely two in a row) while still tolerating
-// a single isolated dip on natural text. Strong signals (paste, un-modelable input,
-// overwhelming-impostor) bypass the debounce and challenge immediately.
-const KS_SUSPICIOUS_WINDOW = 3;
-const KS_SUSPICIOUS_MIN = 2;
-// The history itself is PERSISTED (lib/decisionState.js). It was a Map here, which made
-// every restart an amnesty: an impostor one suspicious check short of a step-up resumed at
-// zero after any deploy, crash or OOM kill. A debounce whose evidence cannot survive a
-// restart is a debounce with a reset button.
-const PASTE_POLICY_MIN_TYPED_COVERAGE = 0.6;
-
-function pastePolicyViolation(quality) {
-  if (!quality) return false;
-  // Rely on ACTUAL captured paste events, not a keystroke-coverage ratio. The
-  // ratio (keydownCount / textLength) false-positives whenever the event buffer
-  // no longer spans the full field text — which happens legitimately after a
-  // step-up (the tracker resets but the textarea keeps its prior text) and for
-  // long entries (events are capped at the last ~700). Those cases wrongly read
-  // as "paste" → win=0 → warmup → the impostor gets a free pass. A genuine paste
-  // fires a DOM paste event, which the tracker records as pastedLength.
-  return quality.pastedLength > PASTE_POLICY_MAX_CHARS;
-}
+// The paste rule counts ACTUAL captured paste events per field against the organisation's allowance
+// (ks.pastePolicyViolation), not a keystroke-coverage ratio. The ratio (keydownCount / textLength)
+// false-positived whenever the event buffer no longer spanned the full field text, which happens legitimately
+// after a step-up (the tracker resets but the textarea keeps its prior text) and for long entries; those cases
+// read as "paste" -> win=0 -> warm-up -> a free pass for the impostor. A genuine paste fires a DOM paste event.
 function pastePolicyEvaluation(quality, metrics) {
   return {
     modelConfidence: 0,
     isSuspicious: true,
-    reason: "Pasted content bypasses typing-rhythm monitoring. Passkey verification is required for pasted text.",
+    reason: "More pastes into one field than this organisation allows. Pasted text is not judged as typing, so passkey verification is required.",
     modelAvailable: true,
     modelType: "paste-policy",
     metrics: metrics || {},
@@ -290,13 +270,15 @@ app.get("/v1/keystroke/config", async (req, res) => {
     // The organisation's packet (6, 10 or 20 windows; 20 by default): the first verdict comes once
     // there are more windows than this.
     recentWindowCount: ks.decisionWindows(st.keystrokeDecisionWindows),
-    rollingWindowCount: ks.ROLLING_WINDOW_COUNT,
-    contributeWindowCount: ks.CONTRIBUTE_WINDOW_COUNT,
+    // An adaptive sample is this many windows; the last few must each clear the window floor.
+    sampleWindowCount: ks.SAMPLE_WINDOW_COUNT,
+    sampleFloorWindows: ks.SAMPLE_FLOOR_WINDOWS,
     packetVoteFraction: ks.PACKET_VOTE_FRACTION,
     decisionThreshold: ks.WINDOW_DECISION_THRESHOLD,
     checkMinTextChars: ks.CHECK_MIN_TEXT_CHARS,
     adaptiveConfidenceMin: ADAPTIVE_CONFIDENCE_MIN,
-    adaptiveRetrainEvery: ADAPTIVE_RETRAIN_EVERY,
+    // Accepted samples before a retrain (1, 2 or 3; the organisation's setting).
+    adaptiveRetrainEvery: st.adaptiveRetrainEvery,
     // Deployment-level onboarding strategy (docker env):
     //   eager — popup enrolls everything missing at load (default)
     //   lazy  — passkey only at load; keystroke/mouse enroll when the user
@@ -323,7 +305,8 @@ const SECRET_ENV = new Set(["CA_SIGNING_SECRET", "GATEWAY_SESSION_SECRET", "CA_A
 const SERVICE_ENV = ["PORT", "STORAGE", "DB_PATH", "MODEL_API_URL", "MODEL_INFER_URL", "MODEL_TRAIN_URL", "MODEL_TRAIN_TIMEOUT_MS",
   "MODEL_INFER_TIMEOUT_MS", "TRAINING_POLL_MS", "TRAINING_MAX_ATTEMPTS", "KEYSTROKE_NEGATIVES_PATH", "GATEWAY_JWKS_URI",
   "IDENTITY_MAX_AGE_SEC", "CA_RISK_TTL_SEC", "STUDY_LOGGING", "ONBOARDING_MODE", "MONITOR_EXCLUDE_TYPES", "CONTINUUM_PANEL",
-  "CONTINUUM_KEYSTROKE", "CONTINUUM_MOUSE", "ADAPTIVE_RETRAINING", "ADAPTIVE_MIN_GAP_HOURS", "KEYSTROKE_DECISION_WINDOWS", ...SECRET_ENV];
+  "CONTINUUM_KEYSTROKE", "CONTINUUM_MOUSE", "ADAPTIVE_RETRAINING", "ADAPTIVE_MIN_GAP_HOURS", "ADAPTIVE_RETRAIN_EVERY", "ADAPTIVE_SAMPLE_FROM",
+  "KEYSTROKE_DECISION_WINDOWS", ...SECRET_ENV];
 app.get("/v1/admin/settings", (req, res) => {
   res.json({
     settings: runtimeSettings.describe(),
@@ -357,9 +340,9 @@ app.get("/v1/keystroke/status/:userId", requireIdentity, aw(async (req, res) => 
   const adaptiveSamplesSinceRetrain = status.trainedAt ? await countTrainingSamplesSince(uid(req), status.trainedAt) : 0;
   const st = appSettings.forRequest(req);
   const adaptivePending = await adaptive.pendingCount(uid(req));
-  res.json({ ...status, adaptiveSamplesSinceRetrain, adaptiveRetrainEvery: ADAPTIVE_RETRAIN_EVERY,
+  res.json({ ...status, adaptiveSamplesSinceRetrain, adaptiveRetrainEvery: st.adaptiveRetrainEvery,
     adaptiveEnabled: st.adaptive === "on", adaptiveMinGapHours: st.adaptiveGapHours,
-    adaptivePending, adaptiveReady: adaptivePending >= ADAPTIVE_RETRAIN_EVERY,
+    adaptivePending, adaptiveReady: adaptivePending >= st.adaptiveRetrainEvery,
     nextContributionAt: st.adaptive === "on" ? await nextContributionAt(uid(req), st) : null });
 }));
 
@@ -423,13 +406,17 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
     const { textContent, textLength, keystrokeTimings, keystrokeEvents, hasPasskey } = req.body;
     // The organisation's packet: the vote runs on its last this-many windows, and until there are
     // more windows than this the check is warm-up.
-    const packetWindows = ks.decisionWindows(appSettings.forRequest(req).keystrokeDecisionWindows);
+    const appCfg = appSettings.forRequest(req);
+    const packetWindows = ks.decisionWindows(appCfg.keystrokeDecisionWindows);
     // A client may send the trimmed text's LENGTH instead of the text (the study extension does).
     const typedLength = textContent != null ? String(textContent).trim().length : Number(textLength);
-    if (!Number.isFinite(typedLength) || typedLength < ks.CHECK_MIN_TEXT_CHARS) {
+    // More pastes into one field than the organisation allows: judged whatever was typed, because the clients
+    // send a check at every paste and a paste that no typing follows must still be caught.
+    const pasteViolation = ks.pastePolicyViolation(keystrokeEvents, appCfg.pasteAllowance);
+    if (!pasteViolation && (!Number.isFinite(typedLength) || typedLength < ks.CHECK_MIN_TEXT_CHARS)) {
       return res.json({ ok: true, checked: false, message: "More typed text is required before rhythm verification" });
     }
-    const checkQuality = ks.typingQuality(textContent, keystrokeEvents, typedLength);
+    const checkQuality = ks.typingQuality(textContent, keystrokeEvents, Number.isFinite(typedLength) ? typedLength : 0);
     if (keystrokeTimings) {
       const trueKeys = Number(keystrokeTimings.keyCount);
       const truePasted = Number(keystrokeTimings.pastedLength || 0);
@@ -449,7 +436,7 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
     for (let i = 1; i < degDowns.length; i++) { const dd = degDowns[i] - degDowns[i - 1]; if (dd >= 0) { degGaps += 1; if (dd < 40) degTooFast += 1; } }
     const chaoticInput = degGaps >= 20 && degTooFast / degGaps >= 0.4;
     const degenerateInput = lowDiversity || chaoticInput;
-    const evaluation = pastePolicyViolation(checkQuality)
+    const evaluation = pasteViolation
       ? pastePolicyEvaluation(checkQuality, keystrokeTimings)
       : await ks.evaluateKeystrokes({ events: keystrokeEvents, timings: keystrokeTimings, userId, db, packetWindows });
 
@@ -466,18 +453,13 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
     const isPastePolicy = evaluation.modelType === "paste-policy";
     const isWarmup = Number(evaluation.windowCount || 0) <= packetWindows &&
       !overwhelmingImpostor && !unverifiable && !isPastePolicy && !degenerateInput;
-    // Debounce the CHALLENGE (not the scoring): normal packet-vote suspicion must persist
-    // across KS_SUSPICIOUS_MIN of the last KS_SUSPICIOUS_WINDOW checks (sliding window);
-    // strong signals fire immediately. A genuine run flushes the history. Probation (post
-    // step-up, client-side) is unaffected. Degenerate input is unverifiable even when the
-    // model scores it genuine, so it forces suspicion AND counts as a strong signal.
+    // The decision is the packet vote itself (Lu et al., 2020, here over the organisation's packet, twenty
+    // windows by default): a check whose last windows are at least half below 0.50 asks for the passkey at
+    // once. Nothing is carried from one check to the next. Degenerate input is unverifiable even when the
+    // model scores it genuine, so it forces suspicion.
     const effectiveSuspicious = (!isWarmup && evaluation.isSuspicious) || degenerateInput;
-    const strongSignal = overwhelmingImpostor || unverifiable || isPastePolicy || degenerateInput;
-    // Persisted, so the evidence accumulated so far outlives a restart.
-    const { suspiciousCount: recentSuspicious } =
-      await decisionState.pushKeystrokeVerdict(userId, effectiveSuspicious, KS_SUSPICIOUS_WINDOW);
-    const passkeyTriggered = !!hasPasskey && effectiveSuspicious && (strongSignal || recentSuspicious >= KS_SUSPICIOUS_MIN);
-    if (passkeyTriggered) { await decisionState.resetKeystrokeHistory(userId); await lock.setLocked(userId); }
+    const passkeyTriggered = !!hasPasskey && effectiveSuspicious;
+    if (passkeyTriggered) await lock.setLocked(userId);
 
     await ks.logAuthDecision(userId, db, { source: "check", evaluation, passkeyTriggered });
     // User study (lib/studyLog.js; a no-op outside it): the packet's full-precision scores and keys.
@@ -491,8 +473,7 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
       details: {
         packetSuspicious: evaluation.isSuspicious === true, windowTotal: Number(evaluation.windowCount || 0),
         overwhelmingImpostor, unverifiable, pastePolicy: isPastePolicy, degenerateInput,
-        recentSuspicious, hasPasskey: !!hasPasskey, modelAvailable: evaluation.modelAvailable !== false,
-        suspiciousWindow: KS_SUSPICIOUS_WINDOW, suspiciousMin: KS_SUSPICIOUS_MIN, packetWindows,
+        hasPasskey: !!hasPasskey, modelAvailable: evaluation.modelAvailable !== false, packetWindows,
       },
     }) : null;
 
@@ -511,7 +492,8 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
       typingEvaluation: evaluation,
       riskToken: signRisk(userId, riskLevel(isWarmup, evaluation.isSuspicious), "keystroke"),
       message: passkeyTriggered
-        ? (degenerateInput ? "Repeated or erratic keystrokes can't verify identity. Passkey verification required."
+        ? (isPastePolicy ? "More pastes into one field than allowed. Passkey verification required."
+          : degenerateInput ? "Repeated or erratic keystrokes can't verify identity. Passkey verification required."
           : "Typing rhythm does not match. Passkey verification required.")
         : isWarmup ? "Warming up — building the first evaluation packet." : "Typing rhythm verified.",
     });
@@ -522,92 +504,107 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
 // Continuum checks typing and movement while they happen, never at a submit, and nothing but the
 // adaptive popup adds typing samples.
 
+// The adaptive popup's sample (lib/adaptive.js) is the typing behind the user's last SAMPLE_WINDOW_COUNT
+// windows (ks.lastWindowsSample). All of those windows are scored and judged, and only they are stored, so
+// nothing is learned that was not judged. `dryRun: true` asks the same question without storing anything: the
+// SDK asks it at every new window so that the popup shows only when a click would be accepted. A dry run is
+// answered 200 whatever the outcome, with `eligible` and the reason a click would be refused for, so asking
+// often does not fill the logs with refusals. It skips the rhythm-consistency check, whose history query is
+// the costly part and which, in experiment AR, never refused a sample.
 app.post("/v1/keystroke/contribute", requireIdentity, channelOn("keystroke"), excludeFields, async (req, res) => {
   try {
     const userId = uid(req);
+    const dryRun = req.body.dryRun === true;
+    const refuse = (status, body) => (dryRun
+      ? res.json({ ok: true, dryRun: true, eligible: false, ...body })
+      : res.status(status).json({ ok: false, ...body }));
     const st = appSettings.forRequest(req);
     if (st.adaptive === "off") {
-      return res.status(409).json({ ok: false, error: "adaptive_disabled", note: "Adaptive retraining is turned off for this organisation." });
+      return refuse(409, { error: "adaptive_disabled", note: "Adaptive retraining is turned off for this organisation." });
     }
     const next = await nextContributionAt(userId, st);
     if (next) {
       const mins = Math.ceil((Date.parse(next) - Date.now()) / 60000);
-      return res.status(429).json({
-        ok: false, error: "adaptive_paused", nextContributionAt: next, pauseHours: st.adaptiveGapHours,
+      return refuse(429, {
+        error: "adaptive_paused", nextContributionAt: next, pauseHours: st.adaptiveGapHours,
         message: `Your model was just retrained. New samples can be added again in ${mins >= 60 ? Math.ceil(mins / 60) + " h" : mins + " min"}.`,
       });
     }
     const pending = await adaptive.pendingCount(userId);
-    if (pending >= ADAPTIVE_RETRAIN_EVERY) {
-      return res.status(409).json({ ok: false, error: "ready_to_retrain", pending, retrainEvery: ADAPTIVE_RETRAIN_EVERY,
+    if (pending >= st.adaptiveRetrainEvery) {
+      return refuse(409, { error: "ready_to_retrain", pending, retrainEvery: st.adaptiveRetrainEvery,
         message: `${pending} samples are ready. Retrain your model (with your passkey) before adding more.` });
     }
-    // A sample is the typing since the previous one (the SDK sends only that, and its length, not the
-    // field's whole text); a client that still sends the text is measured on the text.
+    // The SDK sends only the typing since the previous sample, and its length, not the field's whole text;
+    // a client that still sends the text is measured on the text.
     const { textContent, keystrokeEvents } = req.body;
     const quality = ks.typingQuality(textContent != null ? textContent : null, keystrokeEvents, req.body.textLength);
     if (!quality.acceptableForEnrollment) {
-      return res.status(422).json({
-        ok: false,
+      return refuse(422, {
         error: quality.pasteCount > 0 ? "Pasted text cannot train your model. Type naturally." : "Not enough typed keystrokes in this sample to contribute.",
       });
     }
-    if ((await adaptive.overlapShare(userId, keystrokeEvents)) > adaptive.OVERLAP_LIMIT) {
-      return res.status(422).json({ ok: false, error: "sample_overlaps",
+    // The sample: the typing behind SAMPLE_WINDOW_COUNT consecutive windows. By default the last ones, what the
+    // user typed last. The organisation may choose "any": the newest run that would be accepted, anywhere in the
+    // stretch, and the rest of it is ignored. A shorter stretch is not a sample yet.
+    const stretch = st.adaptiveSampleFrom === "any"
+      ? await ks.newestQualifyingSample({ events: keystrokeEvents, userId, db, meanMin: ADAPTIVE_CONFIDENCE_MIN, floor: ADAPTIVE_WINDOW_FLOOR })
+      : ks.lastWindowsSample(keystrokeEvents);
+    if (!stretch.events) {
+      return refuse(422, stretch.cutFailed
+        ? { error: "This stretch could not be cut into a sample. Keep typing and try again.", windows: stretch.windows }
+        : { error: `Keep typing — need ${ks.SAMPLE_WINDOW_COUNT} clean windows, have ${stretch.windows}.`, windows: stretch.windows });
+    }
+    const sample = stretch.events;
+    if ((await adaptive.overlapShare(userId, sample)) > adaptive.OVERLAP_LIMIT) {
+      return refuse(422, { error: "sample_overlaps",
         message: "This stretch repeats typing from your previous sample. Keep typing, then add the next one." });
     }
-    const evaluation = await ks.evaluateKeystrokes({ events: keystrokeEvents, timings: null, userId, db });
-    const rolling = Number(evaluation.rollingMean != null ? evaluation.rollingMean : evaluation.modelConfidence);
-    const windowsSeen = evaluation.rollingWindowCount || 0;
-    const minContributeWindows = ks.CONTRIBUTE_WINDOW_COUNT;
-    if (!evaluation.modelAvailable || rolling < ADAPTIVE_CONFIDENCE_MIN || windowsSeen < minContributeWindows) {
-      return res.status(422).json({
-        ok: false,
-        error: windowsSeen < minContributeWindows
-          ? `Keep typing — need ${minContributeWindows} clean windows, have ${windowsSeen}.`
-          : `Sample not clean enough to contribute (${Math.round(rolling * 100)}% < ${Math.round(ADAPTIVE_CONFIDENCE_MIN * 100)}%).`,
-        rollingMean: rolling,
-      });
+    const evaluation = await ks.evaluateKeystrokes({ events: sample, timings: null, userId, db });
+    const scores = Array.isArray(evaluation.sampleWindowScores) ? evaluation.sampleWindowScores : [];
+    if (!evaluation.modelAvailable || scores.length < ks.SAMPLE_WINDOW_COUNT) {
+      return refuse(422, { error: "Your typing model could not score this sample. Try again in a moment." });
     }
-    // A high MEAN can hide one weak window inside an otherwise-clean packet — require
-    // every recent window to clear the floor too.
-    const recentScores = Array.isArray(evaluation.recentWindowScores)
-      ? evaluation.recentWindowScores.slice(-ks.CONTRIBUTE_WINDOW_COUNT) : [];
-    const worstWindow = recentScores.length ? Math.min(...recentScores) : rolling;
+    const mean = Number(evaluation.sampleMean);
+    if (mean < ADAPTIVE_CONFIDENCE_MIN) {
+      return refuse(422, { error: `Sample not clean enough to contribute (${Math.round(mean * 100)}% < ${Math.round(ADAPTIVE_CONFIDENCE_MIN * 100)}%).`, sampleMean: mean });
+    }
+    // A high MEAN can hide one weak window inside an otherwise-clean sample — require
+    // each of the last SAMPLE_FLOOR_WINDOWS windows to clear the floor too.
+    const worstWindow = Math.min(...scores.slice(-ks.SAMPLE_FLOOR_WINDOWS));
     if (worstWindow < ADAPTIVE_WINDOW_FLOOR) {
-      return res.status(422).json({
-        ok: false,
-        error: `One window in this sample scored ${Math.round(worstWindow * 100)}%, below the ${Math.round(ADAPTIVE_WINDOW_FLOOR * 100)}% floor — a good average can hide one weak moment. Try again with a fully consistent stretch of typing.`,
-        rollingMean: rolling,
+      return refuse(422, {
+        error: `One of the last ${ks.SAMPLE_FLOOR_WINDOWS} windows scored ${Math.round(worstWindow * 100)}%, below the ${Math.round(ADAPTIVE_WINDOW_FLOOR * 100)}% floor — a good average can hide one weak moment, and what you typed last has to look like you. Try again with a fully consistent stretch of typing.`,
+        sampleMean: mean,
       });
     }
     // Model-independent check: does this sample's own timing match this user's ALREADY
     // enrolled history, regardless of what the (possibly still-young) model thinks of it?
-    const consistency = ks.checkRhythmConsistency(keystrokeEvents, await getTrainingEventsForUser(userId));
-    if (!consistency.consistent) {
-      return res.status(422).json({
-        ok: false,
-        error: `This sample's ${consistency.worstFeature} timing is unusually different from your `
-          + `enrolled rhythm (z=${consistency.worstZ.toFixed(2)}) — try again with your normal typing pace.`,
-        rollingMean: rolling,
-      });
+    if (!dryRun) {
+      const consistency = ks.checkRhythmConsistency(sample, await getTrainingEventsForUser(userId));
+      if (!consistency.consistent) {
+        return refuse(422, {
+          error: `This sample's ${consistency.worstFeature} timing is unusually different from your `
+            + `enrolled rhythm (z=${consistency.worstZ.toFixed(2)}) — try again with your normal typing pace.`,
+          sampleMean: mean,
+        });
+      }
     }
     // "New text": the same phrase typed again (the same key sequence) teaches the model nothing new.
-    const hash = textContent != null ? textHash(textContent) : textHash("keys:" + adaptive.keySequence(keystrokeEvents));
+    const hash = textContent != null ? textHash(textContent) : textHash("keys:" + adaptive.keySequence(sample));
     if (await hasDuplicateTrainingText(userId, hash)) {
-      return res.status(422).json({
-        ok: false,
-        error: "This text has already been contributed — a repeated sample teaches the model nothing new.",
-      });
+      return refuse(422, { error: "This text has already been contributed — a repeated sample teaches the model nothing new." });
     }
+    if (dryRun) return res.json({ ok: true, dryRun: true, eligible: true, windows: stretch.windows, sampleFrom: st.adaptiveSampleFrom, sampleMean: mean });
     await storeTextSample({
-      userId, textContent: textContent || "[adaptive-contribution]", keystrokeEvents,
+      userId, textContent: textContent || "[adaptive-contribution]", keystrokeEvents: sample,
       metrics: evaluation.metrics, evaluation, samplePurpose: adaptive.PENDING,
-      sourcePath: "contribute", isTraining: false, hash, charCount: quality.textLength,
+      sourcePath: "contribute", isTraining: false, hash,
+      charCount: Math.min(quality.textLength, ks.printableKeyCount(sample)) || quality.textLength,
     });
     const now = await adaptive.pendingCount(userId);
-    res.json({ ok: true, pending: now, retrainEvery: ADAPTIVE_RETRAIN_EVERY, ready: now >= ADAPTIVE_RETRAIN_EVERY, rollingMean: rolling,
-      message: now >= ADAPTIVE_RETRAIN_EVERY ? "Sample added. Your model is ready to retrain." : `Sample added: ${now} of ${ADAPTIVE_RETRAIN_EVERY}.` });
+    res.json({ ok: true, pending: now, retrainEvery: st.adaptiveRetrainEvery, ready: now >= st.adaptiveRetrainEvery, sampleMean: mean,
+      message: now >= st.adaptiveRetrainEvery ? "Sample added. Your model is ready to retrain." : `Sample added: ${now} of ${st.adaptiveRetrainEvery}.` });
   } catch (err) { return sendError(res, "contribute", err); }
 });
 
@@ -620,8 +617,8 @@ app.post("/v1/keystroke/adaptive/confirm", requireIdentity, channelOn("keystroke
     const st = appSettings.forRequest(req);
     if (st.adaptive === "off") return res.status(409).json({ ok: false, error: "adaptive_disabled" });
     const pending = await adaptive.pendingCount(userId);
-    if (pending < ADAPTIVE_RETRAIN_EVERY) {
-      return res.status(409).json({ ok: false, error: "not_ready", pending, retrainEvery: ADAPTIVE_RETRAIN_EVERY });
+    if (pending < st.adaptiveRetrainEvery) {
+      return res.status(409).json({ ok: false, error: "not_ready", pending, retrainEvery: st.adaptiveRetrainEvery });
     }
     const n = await adaptive.confirm(userId);
     await trainingQueue.enqueue(userId, "keystroke", "adaptive");
@@ -634,9 +631,6 @@ app.post("/v1/keystroke/reset", requireIdentity, aw(async (req, res) => {
   await ks.resetUserTypingProfile(userId, db);
   await adaptive.forget(userId);
   await db.run("UPDATE keystroke_texts SET is_training = 0 WHERE user_id = ?", userId);
-  // The debounce history is evidence against a model that no longer exists. Carrying it
-  // into re-enrollment could step the user up on their first scored check afterwards.
-  await decisionState.resetKeystrokeHistory(userId);
   res.json({ ok: true, message: "Typing rhythm enrollment was reset", typingStatus: await ks.getUserTypingStatus(userId, db) });
 }));
 
@@ -793,7 +787,17 @@ app.post("/v1/mouse/check", requireIdentity, channelOn("mouse"), async (req, res
     res.status(r.status).json(r.body);
   } catch (err) { return sendError(res, "mouse-check", err, { checked: false }); }
 });
-app.get("/v1/mouse/status/:userId", requireIdentity, aw(async (req, res) => res.json(await mouse.mouseStatus(uid(req)))));
+app.get("/v1/mouse/status/:userId", requireIdentity, aw(async (req, res) => res.json({ ...(await mouse.mouseStatus(uid(req))), ...(await mouseUse.useStatus(uid(req))) })));
+// Learning from real use, stage 1 (lib/mouseUse.js). The gateway calls use-anchor only after it verified the user's
+// passkey in the same request (/v1/sdk/passkey/auth/complete); the tenant API has no route to it. A sample of the
+// movement after that passkey is stored for the evaluation and trains nothing.
+app.post("/v1/mouse/use-anchor", requireIdentity, channelOn("mouse"), aw(async (req, res) => {
+  res.json(await mouseUse.recordUseAnchor(uid(req), { reason: req.body.reason }));
+}));
+app.post("/v1/mouse/use-sample", requireIdentity, channelOn("mouse"), async (req, res) => {
+  try { const r = await mouseUse.addUseSample(uid(req), req.body.windows, { client: req.body.client }); res.status(r.status).json(r.body); }
+  catch (err) { return sendError(res, "mouse-use-sample", err); }
+});
 // Destructive: drops the trained mouse profile and every stored session. The CALLER is
 // responsible for having verified a passkey first — this service is stateless about auth and
 // trusts its caller (same contract as /v1/keystroke/reset).
@@ -845,7 +849,8 @@ let server = null;
 (async () => {
   // The database first (schema, migration of an older file), then the operator's settings: every
   // request reads them from memory.
-  await db.open();
+  // The database may still be starting (a rollout, a restart of the whole machine): wait for it, bounded (lib/boot.js).
+  await waitFor("database", () => db.open());
   await runtimeSettings.load();
   server = app.listen(PORT, () => {
     console.log(`CA service on http://localhost:${PORT} (storage: ${db.kind})`);

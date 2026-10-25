@@ -66,6 +66,7 @@ const DATA_DIR = process.env.DATA_DIR || __dirname;
 // Where the records live (storage.js): "json" files in DATA_DIR, or "postgres" (DATABASE_URL).
 const STORAGE = (process.env.STORAGE || "json").toLowerCase();
 const { openStorage, siteKeyOf } = require("./storage");
+const { waitFor } = require("./boot");
 const { createDispatcher } = require("./webhooks");
 const createSettings = require("./settings");
 // Opened in boot(), before the server listens: storage, its records, and the operator defaults,
@@ -737,7 +738,8 @@ const GATEWAY_ENV = ["GATEWAY_PUBLIC_URL", "PORT", "DATA_DIR", "STORAGE", "DATAB
   "CONTINUUM_EXTENSION_ID", "DEMO_SIGNIN_URL", "DEMO_WEBHOOK_URL", "IDENTITY_ASSERTION_TTL", "GATEWAY_USER_ID_BASE",
   "GATEWAY_SESSION_TTL_SEC", "GATEWAY_RISK_TTL_SEC", "GATEWAY_REFRESH_TTL_SEC", "GATEWAY_CONSOLE_TTL_SEC",
   "GATEWAY_AUTO_APPROVE_TENANTS", "GATEWAY_ALLOW_PRIVATE_WEBHOOKS", "ONBOARDING_MODE", "MONITOR_EXCLUDE_TYPES", "CONTINUUM_PANEL",
-  "CONTINUUM_KEYSTROKE", "CONTINUUM_MOUSE", "ADAPTIVE_RETRAINING", "ADAPTIVE_MIN_GAP_HOURS", "KEYSTROKE_DECISION_WINDOWS", ...SECRET_ENV];
+  "CONTINUUM_KEYSTROKE", "CONTINUUM_MOUSE", "ADAPTIVE_RETRAINING", "ADAPTIVE_MIN_GAP_HOURS", "ADAPTIVE_RETRAIN_EVERY", "ADAPTIVE_SAMPLE_FROM",
+  "KEYSTROKE_DECISION_WINDOWS", "PASTE_ALLOWANCE", ...SECRET_ENV];
 const ENV_SETTING = Object.fromEntries([
   ...Object.entries(createSettings.APP).map(([k, d]) => [d.env, "defaults." + k]),
   ...Object.entries(createSettings.SERVER).map(([k, d]) => [d.env, "server." + k]),
@@ -1281,6 +1283,12 @@ app.post("/v1/sdk/mouse/check", auth, async (req, res) => {
   res.status(r.status).json({ ...d, ok: !passkeyTriggered, suspiciousStreak: streak, strikesToLock: MOUSE_STRIKES_TO_LOCK, requiresPasskeyChallenge: passkeyTriggered });
 });
 app.get("/v1/sdk/mouse/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/mouse/status/${req.uid}`, "GET", undefined, caAssert(req))));
+// A sample of the movement after a verified passkey (above). Only the windows are passed on; the client is the
+// extension when its own origin sends it.
+app.post("/v1/sdk/mouse/use-sample", auth, async (req, res) => {
+  const client = /^chrome-extension:\/\//.test(req.get("Origin") || "") ? "extension" : "sdk";
+  relay(res, await fwd(`${CA_URL}/v1/mouse/use-sample`, "POST", { userId: req.uid, windows: (req.body || {}).windows, client }, caAssert(req)));
+});
 
 // passkey (origin/rpId bind to the HOST app's origin)
 app.post("/v1/sdk/passkey/register/options", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/register/options`, "POST", { userId: req.uid, username: req.uname, rpId: rpFromOrigin(req), origin: originOf(req) })));
@@ -1292,8 +1300,22 @@ app.post("/v1/sdk/passkey/auth/complete", auth, async (req, res) => {
   // rather than to `fwd`, so a verified passkey never cleared the persisted lock and the
   // user stayed locked out on their next page load.
   if (r.status === 200) await fwd(`${CA_URL}/v1/lock/clear`, "POST", { userId: req.uid }, caAssert(req)).catch(() => {});
-  relay(res, r);
+  if (r.status !== 200) return relay(res, r);
+  let d; try { d = JSON.parse(r.text); } catch (e) { return relay(res, r); }
+  d.mouseUseSample = await mouseUseAnchor(req);
+  res.status(200).json(d);
 });
+// Learning from real use, stage 1 (ca-service lib/mouseUse.js): this passkey was verified in this very request, so the
+// movement right after it is the user's. ca-service records the moment with its own clock and says whether the client
+// may offer to record a sample now. Only this route reports a verified passkey; nothing else reaches use-anchor.
+async function mouseUseAnchor(req) {
+  const reason = (req.body || {}).reason;
+  try {
+    const a = await fwd(`${CA_URL}/v1/mouse/use-anchor`, "POST", { userId: req.uid, reason: reason === "mouse" || reason === "keystroke" ? reason : "other" }, caAssert(req));
+    if (a.status === 200) return JSON.parse(a.text);
+  } catch (e) { console.error(`[gateway] mouse use anchor not recorded for user ${req.uid}: ${e.message}`); }
+  return { offer: false };
+}
 
 // Adaptive retraining: the user retrains with the samples collected so far, and must pass the passkey
 // in this very request (a WebAuthn assertion for a challenge from /v1/sdk/passkey/auth/options). Only
@@ -1444,14 +1466,21 @@ app.post("/v1/server/passkey/auth/complete", serverAuth, serverRoute(async (req,
   let d = {}; try { d = JSON.parse(r.text); } catch (e) {}
   const stepUpToken = crypto.randomBytes(24).toString("base64url");
   await storage.putCeremony(stepUpToken, { kind: "stepup", uid: req.uid, at: Date.now() }, STEPUP_TTL_MS);
-  res.json({ ...d, stepUpToken });
+  // Learning from real use, stage 1: this passkey was verified here too, so the anchor is recorded as on the SDK
+  // route, and the tenant's backend passes the offer to its page (the demo app: routes/webauthn.js).
+  res.json({ ...d, stepUpToken, mouseUseSample: await mouseUseAnchor(req) });
+}));
+// The sample of the movement after that passkey, sent by the tenant's backend for its user. Only the windows are passed on.
+app.post("/v1/server/mouse/use-sample", serverAuth, serverRoute(async (req, res) => {
+  relay(res, await fwd(`${CA_URL}/v1/mouse/use-sample`, "POST", { userId: req.uid, windows: (req.body || {}).windows, client: "sdk" }, caAssert(req)));
 }));
 
 // ---- start ----
 // Storage first (records into memory), then the built-in tenants, then traffic. A failure here stops the
 // process with the reason, so an orchestrator restarts it instead of it serving with half its records.
 async function boot() {
-  storage = await openStorage({ kind: STORAGE, dataDir: DATA_DIR, databaseUrl: process.env.DATABASE_URL });
+  // The database may still be starting (a rollout, a restart of the whole machine): wait for it, bounded (boot.js).
+  storage = await waitFor("storage", () => openStorage({ kind: STORAGE, dataDir: DATA_DIR, databaseUrl: process.env.DATABASE_URL }));
   ({ tenants, identity: store, accounts } = storage.data);
   settings = createSettings({ initial: storage.data.settings, persist: (doc) => storage.saveSettings(doc) });
   // Changes made by another gateway copy (postgres): settings are taken over, counts recomputed.

@@ -1001,7 +1001,6 @@
           if (cfg.checkMinTextChars) CHECK_MIN_TEXT = cfg.checkMinTextChars;
           // Fixed Lu et al. window boundary (0.50) — the live decision threshold.
           if (cfg.decisionThreshold != null) _userThreshold = cfg.decisionThreshold;
-          if (cfg.rollingWindowCount) _rollingWindowCount = cfg.rollingWindowCount;
           if (cfg.recentWindowCount) _recentWindowCount = cfg.recentWindowCount;
           const hint = document.getElementById("keystrokeHint");
           if (hint)
@@ -1078,7 +1077,6 @@
       let passkeyRequired = false;
       // Fixed Lu et al. window boundary (overwritten by /config decisionThreshold).
       let _userThreshold = 0.5;
-      let _rollingWindowCount = 18;
       let _recentWindowCount = 20; // packet size (overwritten by /config)
       // Each /check only sends the most recent events the decision uses. The
       // verdict needs more than 20 windows (the packet; warmup lasts while

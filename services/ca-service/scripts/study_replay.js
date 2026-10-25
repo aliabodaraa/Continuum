@@ -5,9 +5,11 @@
 //
 // Mouse: low = score < the profile threshold; warm-up below VOTE_N windows; suspicious at >= VOTE_K
 // low (lib/mouse.js). Keystroke (server.js /v1/keystroke/check): low = score < 0.50; the packet vote,
-// the overwhelming-impostor fast path, warm-up, and the 2-of-3 debounce with the passkey condition.
-// The debounce history is also simulated across each participant's decisions in order; a mismatch
-// there means checks outside the study log (or a reset) touched it, and is reported separately.
+// the overwhelming-impostor fast path, warm-up, and the passkey condition: a suspicious check asks for it.
+// Checks logged before 2026-10-19 carry the parameters of the confirmation that was live then (a passkey
+// only after a second suspicious check). Those rows are replayed under their own logged parameters, with
+// the history simulated across each participant's decisions in order; a mismatch there means checks
+// outside the study log (or a reset) touched it, and is reported separately.
 const fs = require("fs");
 const path = require("path");
 const ks = require("../lib/keystrokeSecurity");
@@ -26,7 +28,7 @@ const fail = (f, d, what) => { mismatches += 1; console.error(`MISMATCH ${f} dec
 for (const f of fs.readdirSync(IN).filter((n) => n.endsWith(".jsonl")).sort()) {
   const decisions = fs.readFileSync(path.join(IN, f), "utf8").split("\n").filter(Boolean)
     .map((l) => JSON.parse(l)).filter((o) => o.type === "decision");
-  let history = [];   // simulated keystroke debounce history of this participant
+  let history = [];   // simulated history of this participant, for the rows logged under the earlier rule
   for (const d of decisions) {
     checked += 1;
     const s = d.scores || [];
@@ -54,11 +56,14 @@ for (const f of fs.readdirSync(IN).filter((n) => n.endsWith(".jsonl")).sort()) {
     const warmup = x.windowTotal <= (x.packetWindows || ks.RECENT_WINDOW_COUNT) && !overwhelming && !x.unverifiable && !x.pastePolicy && !x.degenerateInput;
     const effective = (!warmup && !!x.packetSuspicious) || !!x.degenerateInput;
     const strong = overwhelming || !!x.unverifiable || !!x.pastePolicy || !!x.degenerateInput;
-    const challenge = !!x.hasPasskey && effective && (strong || x.recentSuspicious >= x.suspiciousMin);
+    // Rows logged before 2026-10-19 carry the confirmation they were decided under (suspiciousMin); newer rows do not.
+    const earlierRule = x.suspiciousMin !== undefined;
+    const challenge = !!x.hasPasskey && effective && (!earlierRule || strong || x.recentSuspicious >= x.suspiciousMin);
     const verdict = challenge ? "challenge" : warmup ? "warmup" : effective ? "suspicious" : "ok";
     if (verdict !== d.verdict) fail(f, d, `verdict ${verdict} vs logged ${d.verdict}`);
     if (challenge !== d.promptRequired) fail(f, d, `prompt ${challenge} vs logged ${d.promptRequired}`);
-    // the debounce history, simulated from this participant's own decisions
+    if (!earlierRule) { history = []; continue; }
+    // the history of the earlier rule, simulated from this participant's own decisions
     history = history.concat([effective]).slice(-(x.suspiciousWindow || 3));
     const count = history.filter(Boolean).length;
     if (count !== x.recentSuspicious) {

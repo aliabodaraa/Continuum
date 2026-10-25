@@ -1,35 +1,29 @@
 # Start Continuum
 
-Run these commands from PowerShell:
+The live system on this PC is the Kubernetes cluster of Docker Desktop (since 2026-10-10): namespaces
+`continuum`, `continuum-storage`, `continuum-demo` and `continuum-observability`. Nothing is installed on the
+PC beyond Docker Desktop. From Git Bash, in this checkout:
 
-```powershell
-cd "C:\Users\aliab\OneDrive\Desktop\Master Thesis\project\continuum"
-$env:DOCKER_CONFIG="$PWD\tools\docker-config"
-docker compose --profile model up -d web model-api
+```bash
+scripts/k8s-local.sh status                 # is it up? (pods, services, the edge's address)
+K8S_OVERLAY=live scripts/k8s-local.sh up    # after a code change: build the images, deploy, restart, wait
+scripts/k8s-local.sh logs gateway           # a service's log (ca-service, passkey-service, model-inference, ...)
+scripts/k8s-local.sh operator               # the operator page: http://localhost:28081/operator.html
+scripts/k8s-local.sh grafana                # traces and metrics: http://localhost:3001 (admin / admin)
+scripts/k8s-local.sh e2e                    # the end-to-end suites against the cluster
+scripts/k8s-backup.sh                       # a backup (before any change; keep copies off the PC encrypted)
 ```
 
 Open:
 
-- Web app: `http://localhost:3000`
-- Model API health: `http://localhost:5000/health`
-- Typing enrollment: `http://localhost:3000/enroll.html`
+- the API and the extension's pages: http://localhost:8080 (console: `/console.html`)
+- the demo: http://localhost:3000
+- Acme: http://localhost:4200
 
-Current user flow:
+The pods start by themselves after Docker Desktop starts (they wait for PostgreSQL). A fresh PC:
+`scripts/k8s-local.sh platform`, then `k8s-restore.sh <backup> --secrets`, then `K8S_OVERLAY=live
+scripts/k8s-local.sh up` and `k8s-restore.sh <backup> --restore` (DEPLOY.md, "Kubernetes on this PC").
 
-1. Register or log in.
-2. Register a passkey on the dashboard.
-3. If the backend has poor or missing user rhythm data, the app forces the user to `Train Rhythm`.
-4. The website converts keydown/keyup timing into `(50, 6)` windows and trains a per-user CNN/LSTM model through the Python model API.
-5. Use the dashboard or opinion page. Suspicious CNN/LSTM rhythm scores require passkey verification.
-
-Per-user CNN/LSTM models are saved under:
-
-```text
-artifacts/users/user-<id>/final_model
-```
-
-Check containers:
-
-```powershell
-docker compose ps -a
-```
+For development with bind mounts and hot reload there is still `docker-compose.yml`
+(`docker compose --profile model up -d`, on 8080/3000/4200: stop the cluster's edge first or use the
+`local` overlay on 28080/23000/24200). The single-host product bundle is `docker-compose.bundle.yml`.

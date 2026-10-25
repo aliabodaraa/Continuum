@@ -46,15 +46,19 @@
   })();
   var MOUSE_N = 60, MOUSE_MS = 1600, KS_TAIL = 1400;   // as sdk/guard.js
   var events = [];            // key-event buffer
-  var lastWindowCount = 0, ksInFlight = false, ksMissed = false;
+  var lastWindowCount = 0, ksInFlight = false, ksMissed = false, ksPasteMissed = false;
   var mouseEvents = [], mouseDown = false, lastMouseWindows = 0;
   var mouseWindows = [], mouseSeq = 0, lastMouseKey = null, mouseInFlight = false, mouseTimer = null;
+  // Learning from real use, stage 1: a real-use mouse sample being recorded after a verified passkey and the user's
+  // yes (background.js). Its own events, from the start message on, never the check buffer above.
+  var useRec = null;   // { epoch, until, events }
+  var USE_SAMPLE_WINDOWS = 55;
   function capturing() { return !!capture && !capture.paused && !excluded && !dead && !onGatewayPage(); }
   function onGatewayPage() { return !!gatewayOrigin && origin === gatewayOrigin; }
   // Buffers are dropped when capture stops or resumes (the pause, a sign-out) and after a step-up, so no
   // check ever carries anything from around a pause or from before the lock.
   function clearCapture() {
-    events = []; lastWindowCount = 0; ksMissed = false;
+    events = []; lastWindowCount = 0; ksMissed = false; ksPasteMissed = false;
     mouseEvents = []; lastMouseWindows = 0; mouseWindows = []; lastMouseKey = null;
     progress.ks = 0; progress.mouse = 0; reportProgress();
   }
@@ -87,6 +91,16 @@
     if (!capturing() || windowCount <= lastWindowCount) return;
     if (ksInFlight) { ksMissed = true; return; }
     lastWindowCount = windowCount;
+    sendKeyCheck();
+  }
+  // A paste is judged at once: the server counts the pastes in each field against the organisation's allowance.
+  // Waiting for a new typing window (before 2026-10-25) never judged a paste that no typing followed.
+  function keyCheckNow() {
+    if (!capturing()) return;
+    if (ksInFlight) { ksPasteMissed = true; return; }
+    sendKeyCheck();
+  }
+  function sendKeyCheck() {
     ksInFlight = true; ksMissed = false;
     var tail = events.slice(-KS_TAIL);
     var typed = 0;
@@ -97,6 +111,7 @@
       }) } }, function (res) {
       ksInFlight = false;
       dlog("[continuum-guard] keystroke check", res);
+      if (ksPasteMissed) { ksPasteMissed = false; keyCheckNow(); return; }
       if (ksMissed) { ksMissed = false; var F = globalThis.ContinuumFeatures; if (F) keyCheckMaybe(F.stepsToWindows(F.eventSteps(events)).length); }
     });
   }
@@ -154,7 +169,8 @@
   onWin("keydown", blockWhileLocked);
   onWin("keyup", blockWhileLocked);
   onWin("beforeinput", blockWhileLocked);
-  function showLock() {
+  // pasted: the lock came from more pastes into one field than the organisation allows, not from the rhythm.
+  function showLock(pasted) {
     if (lockEl || dead) return;
     if (onGatewayPage() || isAuthOrigin(origin)) {
       // never lock the step-up's own pages, nor a sign-in page a passkey ceremony hands off to
@@ -170,7 +186,8 @@
     box.innerHTML =
       '<div style="font-size:34px;margin-bottom:10px">🔒</div>' +
       '<div style="font-weight:800;font-size:18px;margin-bottom:8px">Continuum Guard locked this page</div>' +
-      '<div style="color:#94a3b8;margin-bottom:18px">The recent typing or mouse rhythm does not match your profile. Verify it&#39;s you to continue.</div>' +
+      '<div style="color:#94a3b8;margin-bottom:18px">' + (pasted ? 'Text was pasted into a field more times than allowed.'
+        : 'The recent typing or mouse rhythm does not match your profile.') + ' Verify it&#39;s you to continue.</div>' +
       '<button id="__cgVerifyBtn" style="background:#4f46e5;color:#fff;border:0;border-radius:10px;padding:12px 22px;font:700 15px system-ui;cursor:pointer">Verify with passkey</button>' +
       '<div id="__cgErr" style="display:none;margin-top:16px;padding:12px 14px;border-radius:10px;background:#3f1d1d;border:1px solid #7f1d1d;color:#fecaca;font-size:13px;text-align:left"></div>';
     lockEl.appendChild(box);
@@ -200,7 +217,11 @@
   window.addEventListener("message", function (ev) {
     var d = ev && ev.data;
     if (!d || ev.source !== window) return;
-    if (d.type === "continuum-ext-passkey" && d.action === "verify") safeSend({ type: d.ok ? "cg:verified" : "cg:verify-failed" });
+    if (d.type === "continuum-ext-passkey" && d.action === "verify") {
+      safeSend(d.ok ? { type: "cg:verified", useOffer: d.useOffer && Number(d.useOffer.expiresInMs) > 0 ? { expiresInMs: Number(d.useOffer.expiresInMs) } : null }
+        : { type: "cg:verify-failed" });
+    }
+    else if (d.type === "continuum-ext-use-consent") safeSend({ type: "cg:use-consent", consent: d.consent === true });
     else if (d.type === "continuum-ext-link") safeSend({ type: "cg:link-code", link: String(d.link || ""), code: String(d.code || "") });
     else if (d.type === "continuum-ext-enrolled") safeSend({ type: "cg:enrolled" });
   });
@@ -213,7 +234,7 @@
       if (!res) return;
       if (res.gatewayOrigin) gatewayOrigin = res.gatewayOrigin;
       if (!res.locked && lockEl) hideLock();
-      else if (res.locked && !lockEl) showLock();
+      else if (res.locked && !lockEl) showLock(res.lockPasted);
     });
   });
 
@@ -232,8 +253,10 @@
       if (typeof msg.debug !== "undefined") debug = !!msg.debug;
       setCapture(msg.capture);
     }
-    if (msg.type === "cg:lock") showLock();
+    if (msg.type === "cg:lock") { useRec = null; showLock(msg.pasted); }
     if (msg.type === "cg:unlock") hideLock();
+    if (msg.type === "cg:use-sample-start" && msg.epoch) useRec = { epoch: msg.epoch, until: Number(msg.until) || 0, events: [] };
+    if (msg.type === "cg:use-sample-stop") useRec = null;
     if (msg.type === "cg:gateway-unreachable") showGatewayError(msg.message || "Can't reach the Continuum server");
     if (msg.type === "cg:reset") clearCapture();   // fresh evidence after a verified step-up
   }
@@ -245,7 +268,7 @@
       debug = !!res.debug;
       if (res.gatewayOrigin) gatewayOrigin = res.gatewayOrigin;   // before showLock, so the gateway is never locked
       setCapture(res.capture);
-      if (res.locked) showLock();   // navigated / reopened while locked
+      if (res.locked) showLock(res.lockPasted);   // navigated / reopened while locked
       dlog("[continuum-guard] handshake: capture=" + (capturing() ? "ON" : "OFF") + (capture ? "" : " (not signed in)") + (excluded ? " (site excluded)" : ""));
     } else {
       try { console.warn("[continuum-guard] handshake got NO reply — the service worker did not answer; reload the extension"); } catch (e) {}
@@ -290,6 +313,7 @@
     if (!capturing() || isHidden(e.target) || isPassword(e.target) || excludedField(e.target)) return;
     var n = 0; try { n = ((e.clipboardData && e.clipboardData.getData("text")) || "").length; } catch (x) {}
     events.push({ keyCode: 0, type: "paste", t: evtTime(e) - t0, field: fieldOf(e.target), ftype: typeOf(e.target), pastedLength: n });
+    keyCheckNow();
   };
   document.addEventListener("paste", onPaste, true); handlers.push(["paste", onPaste]);
 
@@ -297,6 +321,13 @@
   function recMouse(x, y, st, e) {
     if (lockEl || !capturing()) return;
     mouseEvents.push({ t: evtTime(e), x: x, y: y, state: st });
+    if (useRec) {
+      if (Date.now() > useRec.until) useRec = null;
+      else {
+        useRec.events.push({ t: evtTime(e), x: x, y: y, state: st });
+        if (useRec.events.length % 10 === 0) buildUseSample();
+      }
+    }
     if (mouseEvents.length > 3000) {
       // Same re-basing as the key buffer: without it no new window would be detected again.
       mouseEvents = mouseEvents.slice(-2000);
@@ -317,6 +348,16 @@
       if (mouseWindows.length !== progress.mouse) { progress.mouse = mouseWindows.length; reportProgress(); }
     }
     lastMouseWindows = windows.length;
+  }
+  // The first page to reach a sample's windows sends them; the worker keeps the first and stops the others.
+  function buildUseSample() {
+    var M = globalThis.ContinuumMouseFeatures;
+    if (!M || !useRec || !alive()) return;
+    var windows = M.stepsToWindows(M.eventsToSteps(useRec.events));
+    if (windows.length < USE_SAMPLE_WINDOWS) return;
+    var done = useRec;
+    useRec = null;
+    safeSend({ type: "cg:use-sample", epoch: done.epoch, windows: windows.slice(0, USE_SAMPLE_WINDOWS) });
   }
   function onM(type, fn) { document.addEventListener(type, fn, true); handlers.push([type, fn]); }
   onM("mousemove", function (e) { recMouse(e.clientX, e.clientY, mouseDown ? "Drag" : "Move", e); });

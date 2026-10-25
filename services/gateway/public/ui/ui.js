@@ -250,17 +250,25 @@
   var SETTING_TEXT = {
     panel: ["Panel on your pages", "The small Continuum panel in the corner of each page. When it is hidden, users can't switch protection or add samples themselves, so the choices below apply to everyone."],
     keystroke: ["Typing protection", "Check that the person typing is the account's owner."],
-    keystrokeDecisionWindows: ["Typing windows per decision", "How much typing each verdict looks at; half of these windows must look wrong. Fewer windows give the first verdict sooner (about 18 s of steady typing at 6, 42 s at 20) but flag the real user more often (about 24% of their verdicts at 6, 19% at 10, 15% at 20); impostors are caught about as often (~91%). Measured on 99 users."],
+    keystrokeDecisionWindows: ["Typing windows per decision", "How much typing each verdict looks at; half of these windows must look wrong. Fewer windows give the first verdict sooner (about 18 s of steady typing at 6, 42 s at 20) but flag the real user more often (about 10% of their verdicts at 6, 6% at 10, 3% at 20); impostors are caught about as often (~88%). Measured on 99 users."],
+    pasteAllowance: ["Pastes allowed per field", "How many times a user may paste into the same field before the passkey is asked for. Every paste counts, however short, and the count starts again after each passkey verification. Pasted text is never judged as typing, so each allowed paste lets whoever is at the keyboard enter text without being checked. Unlimited never asks."],
     mouse: ["Mouse protection", "Check that the person moving the mouse is the account's owner."],
     onboarding: ["Enrolment", "Required: users enrol their typing and mouse when they first sign in. On demand: only when they turn a channel on in the panel."],
-    adaptive: ["Adaptive retraining", "Offer to add clean stretches of typing as training samples (no two share a keystroke). After 3, the user retrains the model, confirming with their passkey."],
+    adaptive: ["Adaptive retraining", "Offer to add clean stretches of typing as training samples (no two share a keystroke). After the number of samples set below, the user retrains the model, confirming with their passkey."],
+    adaptiveRetrainEvery: ["Samples before a retrain", "How many accepted samples a user collects before they can retrain their typing model, confirming with their passkey. A sample is 20 windows of typing, about 250 characters. 3 is the setting that was measured. With 1 or 2 the user retrains sooner, on less new typing each time."],
+    adaptiveSampleFrom: ["Where a sample is taken from", "End: the last 20 windows the user typed (the default). Anywhere: the newest 20 windows in the recent typing that would be accepted, and the rest of it is ignored. Anywhere gives a mixed stretch more chances to produce a sample, so a stretch that is not the user's has more chances to pass. This has not been measured."],
     adaptiveGapHours: ["Pause after each retrain", "After a retrain, no new samples are offered for this many hours (3 by default)."],
     excludeFieldTypes: ["Fields never watched", "Field types Continuum ignores completely, separated by commas: an input's type (for example password, email), textarea, or contenteditable for rich-text editors."],
   };
   var CHOICE_TEXT = { show: "Shown", hide: "Hidden", eager: "Required at sign-in", lazy: "On demand" };
   // Labels that belong to one setting only (a bare number means different things in different settings).
-  var KEY_CHOICE_TEXT = { keystrokeDecisionWindows: { 6: "6 (fastest)", 10: "10", 20: "20 (most accurate)" } };
-  var SUB_OF = { keystrokeDecisionWindows: "keystroke", adaptiveGapHours: "adaptive" };
+  var KEY_CHOICE_TEXT = {
+    keystrokeDecisionWindows: { 6: "6 (fastest)", 10: "10", 20: "20 (most accurate)" },
+    pasteAllowance: { 0: "0 (ask at the first paste)", 1: "1", 2: "2", 3: "3", 5: "5", unlimited: "Unlimited" },
+    adaptiveRetrainEvery: { 1: "1", 2: "2", 3: "3 (measured)" },
+    adaptiveSampleFrom: { end: "End (what was typed last)", any: "Anywhere in the typing" },
+  };
+  var SUB_OF = { keystrokeDecisionWindows: "keystroke", pasteAllowance: "keystroke", adaptiveRetrainEvery: "adaptive", adaptiveSampleFrom: "adaptive", adaptiveGapHours: "adaptive" };
   function choiceText(key, v) { var k = KEY_CHOICE_TEXT[key]; return (k && k[v]) || CHOICE_TEXT[v] || String(v); }
   var SOURCE_TEXT = { organisation: "Your setting", operator: "Operator default", env: "Server default (.env)", "default": "Built-in default" };
   function showValue(v, key) { return Array.isArray(v) ? (v.join(", ") || "none") : v === true ? "on" : v === false ? "off" : choiceText(key, v); }

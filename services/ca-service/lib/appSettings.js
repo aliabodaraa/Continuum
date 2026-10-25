@@ -11,10 +11,17 @@
  *
  * Claim shape (short keys keep the assertion small):
  *   { panel: "show"|"hide", ks: "on"|"off", ms: "on"|"off", ob: "eager"|"lazy",
- *     ad: "on"|"off", gap: hours, ex: ["hidden", ...], kw: 6|10|20, m: [explicitly set keys] }
+ *     ad: "on"|"off", gap: hours, re: 1|2|3, sf: "end"|"any", ex: ["hidden", ...], kw: 6|10|20,
+ *     pa: "0"|"1"|"2"|"3"|"5"|"unlimited", m: [explicitly set keys] }
  */
 const onOff = (v, d) => (v === "on" || v === "off" ? v : d);
+// Pastes allowed into one field before the passkey is asked for (owner, 2026-10-25): a number, or Infinity
+// for "unlimited", the default. Every paste counts, however short (lib/keystrokeSecurity.js pastePolicyViolation).
+const PASTE_ALLOWANCE_CHOICES = ["0", "1", "2", "3", "5"];
+const pasteAllowance = (v, d) => (v === "unlimited" ? Infinity : PASTE_ALLOWANCE_CHOICES.includes(String(v)) ? Number(v) : d);
 const hours = (v, d) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : d);
+const RETRAIN_EVERY_CHOICES = [1, 2, 3];
+const retrainEvery = (v, d) => (RETRAIN_EVERY_CHOICES.includes(Number(v)) ? Number(v) : d);
 
 // Deployment defaults (.env). The gateway's operator page can override every one of them.
 const ENV = {
@@ -25,10 +32,16 @@ const ENV = {
   adaptive: process.env.ADAPTIVE_RETRAINING === "off" ? "off" : "on",
   // The pause after each adaptive retrain (lib/adaptive.js): no new samples for this many hours.
   adaptiveGapHours: hours(process.env.ADAPTIVE_MIN_GAP_HOURS, 3),
+  // Accepted samples that make a retrain possible (lib/adaptive.js): 1, 2 or 3. Only 3 was measured (experiment AR).
+  adaptiveRetrainEvery: retrainEvery(process.env.ADAPTIVE_RETRAIN_EVERY, 3),
+  // Where in the recent typing a sample is taken from. "end": the last windows, what the user typed last.
+  // "any": the newest run of windows that would be accepted, anywhere in it, and the rest ignored.
+  adaptiveSampleFrom: process.env.ADAPTIVE_SAMPLE_FROM === "any" ? "any" : "end",
   excludeFieldTypes: (process.env.MONITOR_EXCLUDE_TYPES || "hidden").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
   // Windows in the typing decision's packet; lib/keystrokeSecurity.js decisionWindows() accepts only
   // the measured lengths and falls back to 20.
   keystrokeDecisionWindows: Number(process.env.KEYSTROKE_DECISION_WINDOWS) || 20,
+  pasteAllowance: pasteAllowance(process.env.PASTE_ALLOWANCE, Infinity),
 };
 
 function forRequest(req) {
@@ -41,8 +54,11 @@ function forRequest(req) {
     onboarding: c.ob === "lazy" || c.ob === "eager" ? c.ob : ENV.onboarding,
     adaptive: onOff(c.ad, ENV.adaptive),
     adaptiveGapHours: hours(c.gap, ENV.adaptiveGapHours),
+    adaptiveRetrainEvery: retrainEvery(c.re, ENV.adaptiveRetrainEvery),
+    adaptiveSampleFrom: c.sf === "any" || c.sf === "end" ? c.sf : ENV.adaptiveSampleFrom,
     excludeFieldTypes: Array.isArray(c.ex) ? c.ex.map((s) => String(s).toLowerCase()) : ENV.excludeFieldTypes,
     keystrokeDecisionWindows: c.kw != null ? Number(c.kw) : ENV.keystrokeDecisionWindows,
+    pasteAllowance: pasteAllowance(c.pa, ENV.pasteAllowance),
     managed: Array.isArray(c.m) ? c.m.map(String) : [],
   };
 }

@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs");
 process.env.DB_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "ca-rules-")), "test.db");
 for (const k of ["CONTINUUM_KEYSTROKE", "CONTINUUM_MOUSE", "MONITOR_EXCLUDE_TYPES", "KEYSTROKE_DECISION_WINDOWS",
-  "ADAPTIVE_MIN_GAP_HOURS"]) delete process.env[k];
+  "ADAPTIVE_MIN_GAP_HOURS", "ADAPTIVE_RETRAIN_EVERY", "ADAPTIVE_SAMPLE_FROM", "PASTE_ALLOWANCE"]) delete process.env[k];
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -28,7 +28,18 @@ test("settings: without a signed claim the deployment defaults apply", () => {
   const st = appSettings.forRequest({});
   assert.equal(st.keystroke, "on");
   assert.equal(st.keystrokeDecisionWindows, 20);
+  assert.equal(st.adaptiveRetrainEvery, 3);
+  assert.equal(st.adaptiveSampleFrom, "end");
   assert.deepEqual(st.managed, []);
+});
+
+test("settings: samples before a retrain are 1, 2 or 3, and a sample is taken from the end or from anywhere", () => {
+  const at = (cfg) => appSettings.forRequest({ identity: { settings: cfg } });
+  for (const n of [1, 2, 3]) assert.equal(at({ re: n }).adaptiveRetrainEvery, n);
+  for (const n of [0, 4, "x", null]) assert.equal(at({ re: n }).adaptiveRetrainEvery, 3, `re ${n} falls back to 3`);
+  assert.equal(at({ sf: "any" }).adaptiveSampleFrom, "any");
+  assert.equal(at({ sf: "end" }).adaptiveSampleFrom, "end");
+  assert.equal(at({ sf: "middle" }).adaptiveSampleFrom, "end", "an unknown value falls back to the end");
 });
 
 test("settings: the signed claim decides, with safe fallbacks", () => {
@@ -39,6 +50,27 @@ test("settings: the signed claim decides, with safe fallbacks", () => {
   assert.deepEqual(st.excludeFieldTypes, ["email"]);
   assert.equal(st.adaptiveGapHours, 3);        // a negative gap is not a gap
   assert.deepEqual(st.managed, ["keystroke"]);
+});
+
+test("settings: pastes allowed per field are 0, 1, 2, 3, 5 or unlimited, and unlimited by default", () => {
+  const at = (cfg) => appSettings.forRequest({ identity: { settings: cfg } });
+  assert.equal(appSettings.forRequest({}).pasteAllowance, Infinity);
+  for (const v of ["0", "1", "2", "3", "5"]) assert.equal(at({ pa: v }).pasteAllowance, Number(v));
+  assert.equal(at({ pa: 2 }).pasteAllowance, 2);
+  assert.equal(at({ pa: "unlimited" }).pasteAllowance, Infinity);
+  for (const v of ["4", "-1", "lots", null]) assert.equal(at({ pa: v }).pasteAllowance, Infinity, `pa ${v} falls back to unlimited`);
+});
+
+test("paste rule: every paste counts, per field, against the allowance; unlimited never asks", () => {
+  const paste = (field, type = "textarea", len = 3) => ({ keyCode: 0, eventType: "paste", timestampRelative: 1, fieldName: field, fieldType: type, pastedLength: len });
+  const key = { keyCode: 65, eventType: "keydown", timestampRelative: 2, fieldName: "a", fieldType: "textarea" };
+  assert.deepEqual(ks.pasteCountsByField([paste("a"), paste("a"), paste("b", "text"), key]), { "a|textarea": 2, "b|text": 1 });
+  assert.equal(ks.pastePolicyViolation([paste("a", "textarea", 1)], 0), true, "0: the first paste asks, however short");
+  assert.equal(ks.pastePolicyViolation([paste("a"), paste("a")], 2), false);
+  assert.equal(ks.pastePolicyViolation([paste("a"), paste("a"), paste("a")], 2), true, "the third paste into one field");
+  assert.equal(ks.pastePolicyViolation([paste("a"), paste("b"), paste("c")], 1), false, "one paste into each of three fields");
+  assert.equal(ks.pastePolicyViolation(Array(50).fill(paste("a")), Infinity), false);
+  assert.equal(ks.pastePolicyViolation(undefined, 0), false);
 });
 
 test("excluded fields: their events are dropped, whatever the case; an empty list keeps everything", () => {

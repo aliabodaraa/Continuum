@@ -75,6 +75,15 @@
 
         <ul class="plan hidden" id="plan"></ul>
 
+        <!-- Learning from real use, stage 1: after a verified step-up, ask before the extension records a sample. -->
+        <div id="useAsk" class="hidden">
+          <p class="lead" id="useText"></p>
+          <div style="display:flex;gap:10px;margin-top:16px">
+            <button id="useYes" class="btn btn-primary btn-lg" type="button" style="flex:1">Record</button>
+            <button id="useNo" class="btn btn-secondary btn-lg" type="button" style="flex:1">Not now</button>
+          </div>
+        </div>
+
         <p id="status" class="status-line" role="status" aria-live="polite"></p>
       </div>
       <p class="foot-note" id="foot">Continuum Guard · continuous authentication</p>
@@ -191,11 +200,26 @@
           whenReady(function () {
             status("Waiting for your passkey…", "busy");
             window.Continuum.requireStepUp(reason,
-              function () {
+              function (verified) {
                 art("ok", "shieldCheck");
-                title("Verified", "Thanks, it's you. Your session is unlocked; you can close this tab.");
                 status("");
-                toExtension({ type: "continuum-ext-passkey", action: "verify", ok: true });
+                // The gateway says whether a real-use mouse sample may be recorded now (learning from real use, stage 1).
+                var offer = verified && verified.mouseUseSample && verified.mouseUseSample.offer ? verified.mouseUseSample : null;
+                toExtension({ type: "continuum-ext-passkey", action: "verify", ok: true, useOffer: offer ? { expiresInMs: offer.expiresInMs } : null });
+                if (!offer) { title("Verified", "Thanks, it's you. Your session is unlocked; you can close this tab."); return; }
+                title("Verified", "Thanks, it's you. Your session is unlocked.");
+                $("useText").textContent = "Record your real mouse use? If you agree, close this window and keep browsing as usual: Continuum Guard "
+                  + "records about 16 seconds of your mouse movement (only how the pointer moves, nothing you type or click on). It is kept to "
+                  + "test whether learning from real use lowers false passkey requests. Your profile does not change.";
+                $("useAsk").classList.remove("hidden");
+                function answer(yes) {
+                  $("useAsk").classList.add("hidden");
+                  title("Verified", yes ? "Recording starts now: keep browsing as usual. This window closes by itself."
+                    : "Thanks, it's you. Your session is unlocked; you can close this tab.");
+                  toExtension({ type: "continuum-ext-use-consent", consent: yes });
+                }
+                $("useYes").addEventListener("click", function () { answer(true); });
+                $("useNo").addEventListener("click", function () { answer(false); });
               },
               function (err) {
                 var why = /NotAllowed|not allowed|cancel|timed out/i.test(String(err)) ? C.MESSAGES.passkey_cancelled : String(err).replace(/[.!]?\s*$/, ".");

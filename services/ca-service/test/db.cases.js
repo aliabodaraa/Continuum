@@ -73,11 +73,11 @@ module.exports = function dbCases({ test, assert, db, lock, decisionState }) {
     assert.ok(await db.get("SELECT 1 AS one FROM session_locks WHERE user_id = ?", 502), "the other request's write survives the rollback");
   });
 
-  test("overlapping read-modify-writes of the decision history lose no update", async () => {
-    await Promise.all(Array.from({ length: 25 }, (_, i) => decisionState.pushKeystrokeVerdict(77, i % 5 !== 0, 100)));
-    const { history, suspiciousCount } = await decisionState.pushKeystrokeVerdict(77, false, 100);
-    assert.equal(history.length, 26);
-    assert.equal(suspiciousCount, 20);
+  test("overlapping read-modify-writes of the decision counters lose no update", async () => {
+    // 25 suspicious packets of one user handled at once (two copies of the service, say): every one counts
+    await Promise.all(Array.from({ length: 25 }, () => decisionState.updateMouseStreak(77, { isSuspicious: true, warmup: false })));
+    assert.equal(await decisionState.getMouseStreak(77), 25);
+    assert.equal(await decisionState.updateMouseStreak(77, { isSuspicious: true, warmup: false }), 26);
   });
 
   test("the schema holds every table the service uses", async () => {

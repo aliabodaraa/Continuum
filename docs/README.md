@@ -16,16 +16,16 @@ Architecture
 - **Python**: Model training (Continuum architecture), data processing, Flask inference API
 - **Node.js**: User registration/login, keystroke text collection, WebAuthn endpoints, dashboard
 - **SQLite**: User data, keystroke submissions, keystroke timings
-- **TensorFlow/Keras**: 1D CNN + 2LSTM model (best-performing from Continuum project)
+- **TensorFlow/Keras**: 1D CNN + 2GRU model (Lu et al. 2020)
 
 Model Details
 
-- **Architecture**: 1D Convolution (32 filters, kernel 2, valid padding) → LSTM (32 units, sequences) → Dropout → LSTM (32 units, sequences) → Dropout → Flatten → Dense (softmax) — faithful to Continuum Table 5 / Lu et al. (2020)
+- **Architecture**: 1D Convolution (32 filters, kernel 2, valid padding) → max pooling (2) → GRU (16 units, sequences) → Dropout → GRU (16 units) → Dropout → Dense (softmax), Lu et al.'s (2020) best Buffalo setting; the base served since 2026-10-25 is `artifacts/ws50-gru-v2`
 - **Window Size**: Default 50 (the Continuum/Lu et al. optimum)
 - **Features per digraph step**: `[id1, id2, dwell1, dwell2, dd, ud]` — key codes /254, hold times of both keys, down-down and up-down flight times in seconds (verified against the `Rand_WS*.h5` files)
-- **Preprocessing**: outlier clipping + z-score standardization (fit on train split only, stored in `artifacts/ws50/scaler.json` and reused for all realtime inference)
+- **Preprocessing**: outlier clipping + z-score standardization (fit on train split only, stored in `artifacts/ws50-gru-v2/scaler.json` and reused for all realtime inference)
 - **Evaluation**: leak-free group-aware split — the published `Rand_WS*.h5` files contain overlapping sliding windows in shuffled order, so a naive random split leaks near-duplicate windows into the test set and inflates accuracy. Windows sharing timing subsequences are grouped and never cross split boundaries (see `data_loader.py`).
-- **Per-user models**: fine-tuned from the pre-trained base model (transfer learning) using the user's enrollment typing as positives and real impostor windows (other app users + Buffalo dataset windows) as negatives.
+- **Per-user models**: fine-tuned from the pre-trained base model (transfer learning) using the user's enrollment typing as positives and windows of 200 Aalto typists as negatives (since 2026-09-25).
 
 Quick Start
 

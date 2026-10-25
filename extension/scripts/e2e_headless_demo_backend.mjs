@@ -28,8 +28,8 @@ import path from "node:path";
 const CHROME = path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe");
 const GW = process.env.CONTINUUM_GATEWAY || "http://localhost:8080";
 const DEMO = process.env.CONTINUUM_DEMO || "http://localhost:3000";
-import { K8S, inService, psql, internalUrl } from "./lib/stack.mjs";
-const SECRET = process.env.CA_SIGNING_SECRET || "dev-continuum-risk-secret";   // pk_demo's tenant secret in dev
+import { K8S, inService, psql, internalUrl, stackSecret, NETPOL_UNENFORCED } from "./lib/stack.mjs";
+const SECRET = stackSecret("CA_SIGNING_SECRET", "dev-continuum-risk-secret");   // pk_demo's tenant secret (the cluster's, or dev's)
 const SITE_KEY = "pk_demo";
 const PORT = 9341;
 const RUN = crypto.randomBytes(4).toString("hex");
@@ -187,7 +187,7 @@ try {
   // A cluster whose network plugin ignores NetworkPolicies (Docker Desktop's built-in Kubernetes) cannot keep the
   // demo off the internal network; there CONTINUUM_NETPOL_UNENFORCED=1 turns this check into a labelled note.
   // Everywhere else (Compose networks, an enforcing cluster) it stays a check.
-  const netpolUnenforced = process.env.CONTINUUM_NETPOL_UNENFORCED === "1";
+  const netpolUnenforced = NETPOL_UNENFORCED;
   const blocked = toCa !== 200 && toPk !== 200 && toGw === 200;
   if (netpolUnenforced && !blocked) {
     console.log(`  NOTE  this cluster does not enforce NetworkPolicies: the demo reaches ca ${toCa}, passkey ${toPk} (gateway ${toGw})`);

@@ -7,8 +7,8 @@ const path = require("path");
 
 // The environment must not leak into the expected defaults.
 for (const k of ["CONTINUUM_PANEL", "CONTINUUM_KEYSTROKE", "CONTINUUM_MOUSE", "ONBOARDING_MODE", "ADAPTIVE_RETRAINING",
-  "ADAPTIVE_MIN_GAP_HOURS", "MONITOR_EXCLUDE_TYPES", "KEYSTROKE_DECISION_WINDOWS", "GATEWAY_AUTO_APPROVE_TENANTS",
-  "GATEWAY_ALLOW_PRIVATE_WEBHOOKS"]) delete process.env[k];
+  "ADAPTIVE_MIN_GAP_HOURS", "ADAPTIVE_RETRAIN_EVERY", "ADAPTIVE_SAMPLE_FROM", "MONITOR_EXCLUDE_TYPES", "KEYSTROKE_DECISION_WINDOWS", "GATEWAY_AUTO_APPROVE_TENANTS",
+  "GATEWAY_ALLOW_PRIVATE_WEBHOOKS", "PASTE_ALLOWANCE"]) delete process.env[k];
 const createSettings = require("../settings");
 
 function fresh() {
@@ -23,6 +23,8 @@ test("built-in defaults apply when nothing is set", () => {
   assert.equal(values.keystroke, "on");
   assert.equal(values.keystrokeDecisionWindows, 20);
   assert.equal(values.adaptiveGapHours, 3);
+  assert.equal(values.adaptiveRetrainEvery, 3);
+  assert.equal(values.adaptiveSampleFrom, "end");
   assert.deepEqual(values.excludeFieldTypes, ["hidden"]);
   assert.ok(Object.values(sources).every((src) => src === "default"));
 });
@@ -48,6 +50,34 @@ test("only the measured decision packets are accepted (6, 10, 20)", () => {
   assert.equal(s.updateTenant({ settings: {} }, { keystrokeDecisionWindows: "6" }).settings.keystrokeDecisionWindows, 6);
   assert.equal(s.updateTenant({ settings: {} }, { keystrokeDecisionWindows: 10 }).settings.keystrokeDecisionWindows, 10);
   assert.throws(() => s.updateTenant({ settings: {} }, { keystrokeDecisionWindows: 7 }), { code: "bad_setting" });
+});
+
+test("adaptive samples: 1, 2 or 3 before a retrain, taken from the end or from anywhere, and ca-service is told", () => {
+  const { s } = fresh();
+  for (const n of [1, 2, 3]) assert.equal(s.updateTenant({ settings: {} }, { adaptiveRetrainEvery: String(n) }).settings.adaptiveRetrainEvery, n);
+  for (const n of [0, 4, "x"]) assert.throws(() => s.updateTenant({ settings: {} }, { adaptiveRetrainEvery: n }), { code: "bad_setting" });
+  assert.equal(s.updateTenant({ settings: {} }, { adaptiveSampleFrom: "any" }).settings.adaptiveSampleFrom, "any");
+  assert.throws(() => s.updateTenant({ settings: {} }, { adaptiveSampleFrom: "middle" }), { code: "bad_setting" });
+  const tenant = { settings: s.updateTenant({ settings: {} }, { adaptiveRetrainEvery: 1, adaptiveSampleFrom: "any" }).settings };
+  const c = s.claim(tenant);
+  assert.equal(c.re, 1);
+  assert.equal(c.sf, "any");
+  assert.ok(c.m.includes("adaptiveRetrainEvery") && c.m.includes("adaptiveSampleFrom"));
+  const defaults = s.claim(null);
+  assert.equal(defaults.re, 3);
+  assert.equal(defaults.sf, "end");
+});
+
+test("pastes allowed per field: 0, 1, 2, 3, 5 or unlimited, unlimited by default, and ca-service is told", () => {
+  const { s } = fresh();
+  assert.equal(s.effective(null).values.pasteAllowance, "unlimited");
+  assert.equal(s.claim(null).pa, "unlimited");
+  for (const v of ["0", 2, "5", "unlimited"]) {
+    const tenant = { settings: s.updateTenant({ settings: {} }, { pasteAllowance: v }).settings };
+    assert.equal(s.effective(tenant).values.pasteAllowance, String(v));
+    assert.equal(s.claim(tenant).pa, String(v));
+  }
+  for (const v of ["4", -1, "lots"]) assert.throws(() => s.updateTenant({ settings: {} }, { pasteAllowance: v }), { code: "bad_setting" });
 });
 
 test("on-demand enrolment needs the panel", async () => {

@@ -78,6 +78,7 @@ Both run against the local stack in a throwaway headless Chrome profile and clea
 
 ```
 node extension/scripts/e2e_headless_connect.mjs
-STUDY_LOGGING=1 docker compose up -d --no-deps ca-service   # once, for the study test
+# study logging is on in the cluster (STUDY_LOGGING: "1" in deploy/k8s/overlays/local/local-urls.yaml); under Compose:
+#   STUDY_LOGGING=1 docker compose up -d --no-deps ca-service
 node extension/scripts/e2e_headless_study.mjs
 ```

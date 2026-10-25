@@ -31,7 +31,7 @@ services:
       MODEL_HOST: 0.0.0.0
       MODEL_PORT: 5000
       MODEL_DEBUG: "0"
-      MODEL_UNITS: ${MODEL_UNITS:-32}
+      MODEL_UNITS: ${MODEL_UNITS:-16}
       # REQUIRED. Without it the scoring/training endpoints are unauthenticated and anything
       # that can reach the container is a biometric oracle. Generate: openssl rand -hex 32
       MODEL_API_KEY: ${MODEL_API_KEY:?Set MODEL_API_KEY in .env (openssl rand -hex 32)}

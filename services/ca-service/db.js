@@ -59,6 +59,19 @@ const TABLES = [
   // One row per scored mouse check (lib/mouse.js checkMouse): what the model saw and decided.
   ["mouse_decisions", `id ID, user_id USERID NOT NULL, checked_at NOWTEXT, window_count INT, threshold REAL,
     low_windows INT, vote_k INT, vote_n INT, warmup INT, suspicious INT, scores TEXT`],
+  // LEARNING FROM REAL USE, stage 1 (lib/mouseUse.js, the owner's plan of 2026-10-23): samples of ordinary mouse use
+  // recorded right after a verified passkey, stored and never trained on yet. Separate tables, so no query that builds
+  // a profile from mouse_samples can pick them up.
+  // A passkey the gateway verified (the anchor), and whether a sample was offered after it.
+  ["mouse_use_anchors", `id ID, user_id USERID NOT NULL, verified_at TEXT NOT NULL, reason TEXT, offered INT NOT NULL DEFAULT 0,
+    not_offered TEXT, expires_at TEXT, used_at TEXT, sample_id BIGINTEGER`],
+  // The sample: 55 windows of the movement after the anchor, with the profile in force and its scores of them.
+  ["mouse_use_samples", `id ID, user_id USERID NOT NULL, anchor_id BIGINTEGER NOT NULL, anchor_at TEXT NOT NULL, received_at TEXT NOT NULL,
+    source TEXT NOT NULL, client TEXT, windows TEXT NOT NULL, window_count INT NOT NULL, step_spread_px REAL,
+    profile_trained_at TEXT, decision_version TEXT, threshold REAL, scores TEXT, low_windows INT`],
+  // The windows of every scored check of the users the operator lists (MOUSE_LIVE_CAPTURE_USERS), for the offline
+  // evaluation only (stage 2); never trained on, deleted after it.
+  ["mouse_live_windows", `id ID, decision_id BIGINTEGER NOT NULL, user_id USERID NOT NULL, checked_at NOWTEXT, windows TEXT NOT NULL`],
   // USER STUDY LOGGING (lib/studyLog.js; written only when study logging is on). Full-precision scores.
   ["study_participants", `user_id USERID PRIMARY KEY, pseudonym TEXT NOT NULL UNIQUE, first_seen NOWTEXT`],
   ["study_profiles", `id ID, user_id USERID NOT NULL, channel TEXT NOT NULL, rule_version TEXT NOT NULL, threshold REAL,
@@ -93,6 +106,9 @@ const INDEXES = [
   "CREATE INDEX IF NOT EXISTS idx_jobs_state ON training_jobs(state, id)",
   "CREATE INDEX IF NOT EXISTS idx_jobs_user ON training_jobs(user_id, modality, state)",
   "CREATE INDEX IF NOT EXISTS idx_mouse_decisions_user ON mouse_decisions(user_id, id)",
+  "CREATE INDEX IF NOT EXISTS idx_mouse_use_anchors_user ON mouse_use_anchors(user_id, id)",
+  "CREATE INDEX IF NOT EXISTS idx_mouse_use_samples_user ON mouse_use_samples(user_id, id)",
+  "CREATE INDEX IF NOT EXISTS idx_mouse_live_windows_user ON mouse_live_windows(user_id, id)",
   "CREATE INDEX IF NOT EXISTS idx_study_windows_user ON study_windows(user_id, id)",
   "CREATE INDEX IF NOT EXISTS idx_study_decisions_user ON study_decisions(user_id, id)",
   "CREATE INDEX IF NOT EXISTS idx_study_profiles_user ON study_profiles(user_id, id)",
@@ -257,7 +273,7 @@ function open() {
       else if (STORAGE === "postgres") backend = await postgresBackend(process.env.DATABASE_URL);
       else throw new Error(`STORAGE must be sqlite or postgres (got ${process.env.STORAGE})`);
       return backend;
-    })();
+    })().catch((e) => { opening = null; throw e; });   // a failed attempt is not kept: the next open() tries again
   }
   return opening;
 }

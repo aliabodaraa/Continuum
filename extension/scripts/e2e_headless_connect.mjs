@@ -29,7 +29,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { K8S, inService, psql } from "./lib/stack.mjs";
+import { K8S, inService, psql, operatorUrl, stackSecret } from "./lib/stack.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // The extension under test: this checkout's, or another's (CONTINUUM_EXTENSION_DIR): a gateway admits one extension
@@ -44,12 +44,12 @@ const RUN = Math.random().toString(36).slice(2, 8);
 const EMAIL = `e2e-personal-${RUN}@example.invalid`, EMAIL_A = `e2e-orgadmin-${RUN}@example.invalid`, EMAIL_B = `e2e-other-${RUN}@example.invalid`;
 const FAKE_SUB = `e2e-nobody-${RUN}`;   // a demo user id that does not exist: the API checks touch no real account
 const DEMO_USER = `zze2e_${RUN}`, DEMO_PASS = "e2e-" + crypto.randomBytes(9).toString("hex");
-const DEMO_SECRET = process.env.CA_SIGNING_SECRET || "dev-continuum-risk-secret";   // the demo tenant's secret in dev
+const DEMO_SECRET = stackSecret("CA_SIGNING_SECRET", "dev-continuum-risk-secret");   // the demo tenant's secret (the cluster's, or dev's)
 const envFile = (() => { try { return fs.readFileSync(path.join(ROOT, ".env"), "utf8"); } catch { return ""; } })();
 const ADMIN_KEY = process.env.GATEWAY_ADMIN_KEY || (envFile.match(/^GATEWAY_ADMIN_KEY=(.*?)\s*$/m) || [])[1] || "";
 const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "cg-connect-e2e-"));
 // The gateway's identity records: identity.json (STORAGE=json), or, when CONTINUUM_GATEWAY_PG names the
-// PostgreSQL container of a side-by-side stack (docker-compose.side-by-side.yml), its gw_identities table.
+// PostgreSQL container of a Compose stack with STORAGE=postgres, its gw_identities table.
 // Containers the test acts on directly; defaults are the running stack's. For the side-by-side stack
 // (project continuum-next) set CONTINUUM_CONTAINER_PREFIX=continuum-next.
 const GW_PG = process.env.CONTINUUM_GATEWAY_PG || (K8S ? "k8s" : "");   // Kubernetes: always PostgreSQL
@@ -87,7 +87,7 @@ function asHost(url, host, headers = {}) {
 // The operator area (operator page, /v1/tenants, /v1/admin/*): the gateway itself (Compose), or, behind an edge
 // that never routes it (Kubernetes: Envoy marks every request it forwards), a private port-forward to the
 // gateway (scripts/k8s-local.sh operator => CONTINUUM_OPERATOR=http://localhost:28081).
-const OP = process.env.CONTINUUM_OPERATOR || GW;
+const OP = await operatorUrl(GW);
 const gw = (p, opts = {}) => http(GW + p, { ...opts, headers: { Origin: GW, ...(opts.headers || {}) } });
 const opApi = (p, opts = {}) => http(OP + p, { ...opts, headers: { Origin: GW, ...(opts.headers || {}) } });
 const admin = (p, opts = {}) => opApi(p, { ...opts, headers: { ...(opts.headers || {}), ...(ADMIN_KEY ? { "X-Admin-Key": ADMIN_KEY } : {}) } });
@@ -399,7 +399,7 @@ try {
   const opBefore = ADMIN_KEY ? (await admin("/v1/admin/settings")).d : null;
   const ownOperator = opBefore ? Object.fromEntries(opBefore.defaults.filter((x) => x.source === "operator").map((x) => [x.key, x.value])) : {};
   settingsRestore = () => admin("/v1/admin/settings", { method: "PUT", body: { defaults: { adaptiveGapHours: ownOperator.adaptiveGapHours ?? null } } });
-  check("the operator sees defaults, server switches and the environment (secrets hidden)", !!opBefore && opBefore.defaults.length === 8 &&
+  check("the operator sees defaults, server switches and the environment (secrets hidden)", !!opBefore && opBefore.defaults.length === 10 &&
     opBefore.environment.some((e) => e.name === "GATEWAY_ADMIN_KEY" && e.secret && e.value === null), opBefore && `${opBefore.defaults.length} defaults, ${opBefore.environment.length} env rows`);
   const gapSet = await admin("/v1/admin/settings", { method: "PUT", body: { defaults: { adaptiveGapHours: 2 } } });
   check("the operator changes a default for every organisation", gapSet.status === 200 && gapSet.d.defaults.find((x) => x.key === "adaptiveGapHours").value === 2, String(gapSet.status));
@@ -444,6 +444,15 @@ try {
     orgKw.status === 200 && confKw.d.recentWindowCount === 6 && (confKw.d.managed || []).includes("keystrokeDecisionWindows"), `7 → ${orgKwBad.status} ${orgKwBad.d.error}; 6 → ${orgKw.status}, config ${confKw.d.recentWindowCount}`);
   check("the server decides on the organisation's packet (the same 7 windows: warm-up at 20, a verdict at 6)", asText.d.warmup === true && asText6.d.warmup === false && asText6.d.packetWindows === 6,
     `20: warmup ${asText.d.warmup}; 6: warmup ${asText6.d.warmup}, packet ${asText6.d.packetWindows}`);
+  // the adaptive cycle: how many accepted samples make a retrain (1, 2 or 3) and where in the typing a sample is taken from
+  const orgReBad = await gw(`/v1/console/tenants/${orgKey}/settings`, { method: "POST", body: { adaptiveRetrainEvery: 4 }, headers: bearerA });
+  const orgSfBad = await gw(`/v1/console/tenants/${orgKey}/settings`, { method: "POST", body: { adaptiveSampleFrom: "middle" }, headers: bearerA });
+  const orgRe = await gw(`/v1/console/tenants/${orgKey}/settings`, { method: "POST", body: { adaptiveRetrainEvery: 2, adaptiveSampleFrom: "any" }, headers: bearerA });
+  const confRe = await http(GW + "/v1/sdk/keystroke/config", { headers: { ...bearerS, Origin: "http://localhost:4399" } });
+  check("an organisation can choose how many samples make a retrain (1 to 3; 4 is refused) and where a sample is taken from (the end or anywhere; \"middle\" is refused), and its pages are told",
+    orgReBad.status === 400 && orgReBad.d.error === "bad_setting" && orgSfBad.status === 400 && orgSfBad.d.error === "bad_setting" && orgRe.status === 200 &&
+    confRe.d.adaptiveRetrainEvery === 2 && ["adaptiveRetrainEvery", "adaptiveSampleFrom"].every((k) => (confRe.d.managed || []).includes(k)),
+    `4 → ${orgReBad.status}; middle → ${orgSfBad.status}; 2 and any → ${orgRe.status}, config ${confRe.d.adaptiveRetrainEvery}`);
   const rtNoPk = await http(GW + "/v1/sdk/keystroke/adaptive/retrain", { method: "POST", body: {}, headers: { ...bearerS, Origin: "http://localhost:4399" } });
   const rtBadPk = await http(GW + "/v1/sdk/keystroke/adaptive/retrain", { method: "POST", body: { challengeId: "nope", assertion: { id: "x", rawId: "x", type: "public-key", response: {} } }, headers: { ...bearerS, Origin: "http://localhost:4399" } });
   check("adaptive retraining needs the passkey in the same request (none / a bogus one are refused)", rtNoPk.status === 400 && rtNoPk.d.error === "passkey_required" && rtBadPk.status >= 400, `${rtNoPk.status} ${rtNoPk.d.error}; bogus ${rtBadPk.status}`);

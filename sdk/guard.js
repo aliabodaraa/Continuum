@@ -54,7 +54,7 @@
   var LS_COLLAPSE = "continuumGuardCollapsed";
 
   // window math (overwritten from config)
-  var WINDOW_SIZE = 50, WINDOW_STRIDE = 10, RECENT_WINDOW_COUNT = 20, CONTRIBUTE_WINDOW_COUNT = 6, KS_MIN_CHARS = 80;
+  var WINDOW_SIZE = 50, WINDOW_STRIDE = 10, RECENT_WINDOW_COUNT = 20, SAMPLE_WINDOWS = 20, KS_MIN_CHARS = 80;
   // MOUSE_MIN_WINDOWS = the number of windows the server's vote decides on (ca-service
   // lib/mouse.js VOTE_N, 60 = ~17 s of movement). Sending fewer leaves every check in warm-up, so
   // the value is taken from the server's own replies (bufferMax) whenever it reports one.
@@ -78,10 +78,13 @@
   // accepted samples (default 3 h). contribUntil: no offer before this time (null = not asked yet).
   var ADAPT_ENABLED = true, ADAPT_GAP_H = 3, contribUntil = null, contribFetching = false;
   // The cycle (owner's design, 2026-10-04): three samples, then the user retrains with a passkey, then a
-  // pause of ADAPT_GAP_H hours. A sample is only the typing since the previous one, after a gap of one
-  // window's keys, so no two samples share a keystroke (no window is learned twice).
-  var SAMPLE_GAP_KEYS = 50, SAMPLE_MIN_KEYS = 120, SAMPLE_MAX_EVENTS = 1400;
+  // pause of ADAPT_GAP_H hours. What is sent for a sample is only the typing since the previous one, after a
+  // gap of one window's keys, so no two samples share a keystroke (no window is learned twice). The server
+  // keeps the last SAMPLE_WINDOWS windows of it (2026-10-19), judges all of them and stores only them.
+  // sampleProbe: the server's last answer to "would this sample be accepted now?", asked once per new window.
+  var SAMPLE_GAP_KEYS = 50, SAMPLE_MAX_EVENTS = 1400;
   var contribEndIdx = 0, adaptPending = 0, adaptReady = false, learnMode = "", retrainDismissed = false;
+  var sampleProbe = { busy: false, forWindows: -1, eligible: false };
   // The floating panel: shown unless the page or the organisation hides it.
   var PANEL = cfg.panel === "hide" ? "hide" : "show", panelEl = null, ksAddEl = null, msAddEl = null;
   // Field types never watched: the organisation's setting (from /config), else the deployment's
@@ -89,7 +92,7 @@
   var EXCLUDE_TYPES = ["hidden"];
 
   var sessionToken = null, userId = null, latestRiskToken = null, locked = false, ready = false;
-  var identityToken = cfg.identity || null, started = false, ksInputHandler = null;
+  var identityToken = cfg.identity || null, started = false, ksInputHandler = null, ksPasteHandler = null;
   var readyCbs = [];
   var ONBOARD_MODE = cfg.onboarding || "eager"; // may be overridden by server config
   var ksBuilding = false, ksBuildTimer = null;   // typing model being built on the server's queue
@@ -112,10 +115,12 @@
     pkRegOpts: "/v1/sdk/passkey/register/options", pkRegDone: "/v1/sdk/passkey/register/complete",
     pkAuthOpts: "/v1/sdk/passkey/auth/options", pkAuthDone: "/v1/sdk/passkey/auth/complete",
     lockStatus: "/v1/sdk/lock/status", adaptiveRetrain: "/v1/sdk/keystroke/adaptive/retrain",
+    mouseUseSample: "/v1/sdk/mouse/use-sample",
   } : {
     config: "/api/text/config", ksStatus: "/api/text/typing-status", ksEnroll: "/api/text/enroll", ksCheck: "/api/text/check", ksContribute: "/api/text/contribute",
     mouseEnroll: "/api/mouse/enroll", mouseCheck: "/api/mouse/check", mouseStatus: "/api/mouse/status",
     ksReset: "/api/text/typing-reset", mouseReset: "/api/mouse/reset", adaptiveRetrain: "/api/text/adaptive-retrain",
+    mouseUseSample: "/api/mouse/use-sample",
   };
 
   // ---------- dependency loader ----------
@@ -129,7 +134,7 @@
   }
 
   // ---------- Shadow-DOM UI ----------
-  var shadow, dotEl, kbEl, ksToggleEl, mouseEl, toggleEl, modalEl, modalErrEl, modalBtnEl, wizEl, learnEl;
+  var shadow, dotEl, kbEl, ksToggleEl, mouseEl, toggleEl, modalEl, modalErrEl, modalBtnEl, wizEl, learnEl, useEl;
   function el(t, c, x) { var e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; }
 
   function buildUI() {
@@ -251,6 +256,14 @@
     learnEl.querySelector(".go").addEventListener("click", function () { if (learnMode === "retrain") retrainWithPasskey(); else contributeSample(); });
     learnEl.querySelector(".gh").addEventListener("click", function () { dismissLearn(); });
     shadow.appendChild(learnEl);
+    // The real-use mouse sample question (learning from real use, stage 1), bottom right, after a verified passkey.
+    useEl = el("div", "learn");
+    useEl.style.right = "16px"; useEl.style.bottom = "16px";
+    useEl.innerHTML = '<div class="lt"><span>🖱</span><span>Record your real mouse use?</span></div><div class="lm"></div>' +
+      '<div class="lp"><i></i></div><div class="lb"><button class="go">Record</button><button class="gh">Not now</button></div>';
+    useEl.querySelector(".go").addEventListener("click", startUseSample);
+    useEl.querySelector(".gh").addEventListener("click", function () { useOffer = null; hideUse(); });
+    shadow.appendChild(useEl);
     // Keep the prompt glued to the field as the page scrolls/resizes.
     window.addEventListener("scroll", positionLearn, true);
     window.addEventListener("resize", positionLearn);
@@ -269,15 +282,37 @@
   var stepUpOnFail = null;    // optional callback for a failed attempt (requireStepUp's onFail)
   var onProbation = false;    // after a step-up: any suspicious verdict re-challenges (no grace) until a genuine one clears it
   // Show the single passkey step-up modal, with the REASON (which modality flagged it).
-  function showModal(modality) {
+  // verdict: the check's answer, when there is one (a paste lock says so instead of blaming the rhythm).
+  function showModal(modality, verdict) {
+    // A lock: no movement from here on is the user's until the passkey says so.
+    abortUseSample();
+    stepUpReason = modality === "mouse" ? "mouse" : "keystroke";
     if (!modalEl) return;
+    if (signedOut) { modalEl.style.display = "flex"; return; }   // a passkey cannot help until the user signs in again
     var d = modalEl.querySelector(".d");
-    if (d) d.textContent = (modality === "mouse"
-      ? "Your mouse movement no longer matches your profile."
+    var pasted = !!(verdict && verdict.typingEvaluation && verdict.typingEvaluation.modelType === "paste-policy");
+    if (d) d.textContent = (pasted ? "Text was pasted into this field more times than allowed."
+      : modality === "mouse" ? "Your mouse movement no longer matches your profile."
       : "Your typing rhythm no longer matches your profile.") + " Verify with your passkey to continue.";
     modalEl.style.display = "flex";
   }
   function hideModal() { if (modalEl) { modalEl.style.display = "none"; modalErrEl.style.display = "none"; } }
+  // Demo mode: the app's own sign-in has ended (its API answers 401, as after a restart of a server that keeps its
+  // sessions in memory). No check can run until the user signs in again, so the checks stop, the panel says so instead
+  // of a stale verdict, and the modal offers the sign-in page instead of a passkey that cannot be verified.
+  var signedOut = false;
+  function sessionEnded() {
+    if (signedOut) return;
+    signedOut = true;
+    stopMouse(); abortUseSample();
+    setKb("bad", "signed out — sign in again");
+    if (mouseOn) setMouseRow("bad", "signed out — sign in again");
+    if (!modalEl) return;
+    modalEl.querySelector(".t").textContent = "Signed out";
+    modalEl.querySelector(".d").textContent = "Your session has ended. Sign in again to continue.";
+    modalBtnEl.textContent = "Sign in again"; modalErrEl.style.display = "none";
+    modalEl.style.display = "flex";
+  }
 
   // ---------- passkey WebAuthn (mode-aware) ----------
   function webauthn() { var w = window.SimpleWebAuthnBrowser; if (!w || !w.startAuthentication) throw new Error("Passkey library unavailable"); return w; }
@@ -338,18 +373,20 @@
   }
 
   async function stepUp() {
+    if (signedOut) { location.href = cfg.loginUrl; return; }
     modalErrEl.style.display = "none"; modalBtnEl.disabled = true; modalBtnEl.textContent = "Verifying…";
     try {
       var W = webauthn(), opt, ver;
       if (MODE === "gateway") {
         opt = await reqJson(EP.pkAuthOpts, "POST", {}); if (!opt.ok) throw new Error(opt.d.error || "Could not start verification");
         var assertion = await W.startAuthentication(opt.d);
-        ver = await reqJson(EP.pkAuthDone, "POST", { challengeId: opt.d.challengeId, assertion: assertion });
+        ver = await reqJson(EP.pkAuthDone, "POST", { challengeId: opt.d.challengeId, assertion: assertion, reason: stepUpReason });
       } else {
-        var me = await req("/api/auth/me").then(function (r) { return r.json(); });
-        opt = await reqJson("/api/webauthn/auth/options", "POST", { userId: me.userId }); if (!opt.ok) throw new Error(opt.d.error || "Could not start verification");
+        var me = await reqJson("/api/auth/me");
+        if (me.status === 401 || !me.d.userId) { sessionEnded(); return; }
+        opt = await reqJson("/api/webauthn/auth/options", "POST", { userId: me.d.userId }); if (!opt.ok) throw new Error(opt.d.error || "Could not start verification");
         var a2 = await W.startAuthentication(opt.d);
-        ver = await reqJson("/api/webauthn/auth/complete", "POST", { userId: me.userId, challengeId: opt.d.challengeId, assertion: a2 });
+        ver = await reqJson("/api/webauthn/auth/complete", "POST", { userId: me.d.userId, challengeId: opt.d.challengeId, assertion: a2, reason: stepUpReason });
       }
       if (!ver.ok) throw new Error(ver.d.error || "Verification failed");
       // Clean resume after step-up: reset BOTH the trackers AND the per-modality
@@ -358,16 +395,18 @@
       // silently froze keystroke checks until ~200 more keystrokes caught up.)
       if (ksTracker) ksTracker.reset();
       contribEndIdx = 0;
-      lastCheckedWindowCount = 0; checkInFlight = false; ksMissedWindow = false;
+      lastCheckedWindowCount = 0; checkInFlight = false; ksMissedWindow = false; ksPastePending = false;
       if (mouseTracker) mouseTracker.reset(); lastMouseEvents = 0;
       locked = false; onProbation = true; hideModal(); setKb("ok", "verified ✓"); if (mouseOn) setMouseRow("ok", "watching");
       stepUpOnFail = null;
-      if (stepUpOnSuccess) { var cb = stepUpOnSuccess; stepUpOnSuccess = null; try { cb(); } catch (e2) {} }
+      var verified = ver.d || {};
+      if (stepUpOnSuccess) { var cb = stepUpOnSuccess; stepUpOnSuccess = null; try { cb(verified); } catch (e2) {} }
+      offerUseSample(verified.mouseUseSample);
     } catch (e) {
       modalErrEl.textContent = e.message || "Verification failed"; modalErrEl.style.display = "block";
       if (stepUpOnFail) { try { stepUpOnFail(e.message || "Verification failed"); } catch (e3) {} }
     }
-    finally { modalBtnEl.disabled = false; modalBtnEl.textContent = "Verify with passkey"; }
+    finally { modalBtnEl.disabled = false; modalBtnEl.textContent = signedOut ? "Sign in again" : "Verify with passkey"; }
   }
 
   // `force` (post-step-up probation): re-challenge on a raw suspicious verdict too,
@@ -386,8 +425,72 @@
     // A clean verdict clears probation (see runKsCheck).
     var scored = d && Number(d.scoredWindowCount) > 0;
     var trigger = (d && d.requiresPasskeyChallenge) || (force && d && d.isSuspicious && scored);
-    if (trigger && !locked) { locked = true; showModal(modality); return true; }
+    if (trigger && !locked) { locked = true; showModal(modality, d); return true; }
     return false;
+  }
+
+  // ================= LEARNING FROM REAL USE (stage 1) =================
+  // A passkey just verified means the movement right after it is the user's. When the server says a sample may be
+  // recorded (ca-service lib/mouseUse.js: a trained mouse profile, at most one sample every few hours), the user is
+  // asked; if they agree, a fresh recorder takes the next MOUSE_SAMPLE_WINDOWS windows of ordinary use and sends them.
+  // They are stored for the evaluation and train nothing. The recorder starts only after the answer and is dropped at
+  // any lock, so no movement from before the passkey or around a lock is ever sent.
+  var stepUpReason = "keystroke", useOffer = null, useRec = null, useHideT = null;
+  function hideUse() { clearTimeout(useHideT); if (useEl) useEl.style.display = "none"; }
+  function showUse(mode, text) {
+    if (!useEl) return;
+    clearTimeout(useHideT);
+    var m = useEl.querySelector(".lm"), b = useEl.querySelector(".lb"), p = useEl.querySelector(".lp>i");
+    if (mode === "ask") {
+      m.textContent = "You just confirmed it's you. If you agree, keep using the page as usual: Continuum records about 16 s of your mouse "
+        + "movement (only how the pointer moves, nothing you type or click on). It is kept to test whether learning from real use "
+        + "lowers false passkey requests. Your profile does not change.";
+      b.style.display = "flex"; p.style.width = "0";
+      useHideT = setTimeout(function () { useOffer = null; hideUse(); }, Math.max(0, useOffer.until - Date.now()));
+    } else if (mode === "rec") {
+      m.textContent = "Recording your movement… " + text + " of 16 s. Keep using the page as usual.";
+      b.style.display = "none";
+    } else {
+      m.textContent = text; b.style.display = "none"; p.style.width = "0";
+      useHideT = setTimeout(hideUse, 6000);
+    }
+    useEl.style.display = "block";
+  }
+  function offerUseSample(o) {
+    // Both modes: on a tenant's own pages its backend passes the offer and the sample on (the demo app: /api/mouse/use-sample).
+    if (!EP.mouseUseSample || !o || !o.offer || !mouseOn || !window.mouseFeatures || !useEl) return;
+    abortUseSample();
+    // A few seconds short of the server's limit, so a sample that completes is never refused for arriving late.
+    useOffer = { until: Date.now() + Math.max(0, Number(o.expiresInMs) || 0) - 5000, need: Number(o.sampleWindows) || MOUSE_SAMPLE_WINDOWS };
+    showUse("ask");
+  }
+  function startUseSample() {
+    var o = useOffer; useOffer = null;
+    if (!o || Date.now() > o.until || locked) { hideUse(); return; }
+    useRec = { tracker: window.mouseFeatures.createMouseTracker(document.documentElement), until: o.until, need: o.need, sending: false };
+    useRec.iv = setInterval(useTick, 400);
+    showUse("rec", 0);
+  }
+  function useTick() {
+    var r = useRec;
+    if (!r || r.sending) return;
+    if (locked) { abortUseSample(); return; }
+    if (Date.now() > r.until) { abortUseSample(); showUse("done", "Not saved: the time for this sample ran out."); return; }
+    var w = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(r.tracker.getEvents()));
+    var n = w ? w.length : 0;
+    var bar = useEl.querySelector(".lp>i"); if (bar) bar.style.width = Math.min(100, Math.round((100 * n) / r.need)) + "%";
+    if (n < r.need) { showUse("rec", Math.min(16, Math.floor((16 * n) / r.need))); return; }
+    r.sending = true; clearInterval(r.iv); r.tracker.stop();
+    reqJson(EP.mouseUseSample, "POST", { windows: w.slice(0, r.need) }).then(function (res) {
+      if (useRec !== r) return;
+      useRec = null;
+      showUse("done", res.ok ? "Saved, thank you." : "Not saved: " + ((res.d && (res.d.note || res.d.error)) || "refused") + ".");
+    }).catch(function () { if (useRec === r) { useRec = null; showUse("done", "Not saved: Continuum could not be reached."); } });
+  }
+  function abortUseSample() {
+    if (useRec) { clearInterval(useRec.iv); try { useRec.tracker.stop(); } catch (e) {} useRec = null; }
+    useOffer = null;
+    hideUse();
   }
 
   // ================= ONBOARDING WIZARD =================
@@ -537,10 +640,25 @@
   // It builds the model in its training queue (F2 since T3.4: a logistic head per leave-one-sample-out
   // fold on the frozen embedding, about 6 s; S1's nine networks took 2-3 minutes), so the sample that completes the set comes back with
   // `training: true` and the wizard polls /status until the build is done.
+  // One sample recorder at a time, and a closed one stops recording. Until 2026-10-24 a second flow (the "+ train"
+  // button pressed again) ran beside the first: both trackers recorded the same movement and both saved it, which put
+  // two copies into the owner's profile on 2026-09-19 and raised his threshold. A flow closed with × or covered by
+  // another popup also kept its page-wide tracker and its timer, and went on saving samples in the background.
+  var endSampleFlow = null;
   function mouseSampleFlow(opts) {
-    // opts: { title, intro, stepBar, onClose, dismissLabel, allowReset, resolveOnTrained(result) }
+    // opts: { title, intro, stepBar, onClose, dismissLabel, allowReset, onEnrolled, resolveOnTrained(result), onAlreadyEnrolled }
+    if (endSampleFlow) endSampleFlow();
     var st = { onFile: 0, required: MOUSE_SAMPLES_REQUIRED, perSample: MOUSE_SAMPLE_WINDOWS, enrolled: false };
-    var tracker = null, iv = null, saving = false, addedNow = 0, building = false, pollT = null, note = "";
+    var tracker = null, iv = null, saving = false, addedNow = 0, building = false, pollT = null, note = "", ended = false;
+    function end() {
+      ended = true; stop(); clearTimeout(pollT);
+      if (tracker) { tracker.stop(); tracker = null; }
+      if (endSampleFlow === end) endSampleFlow = null;
+    }
+    endSampleFlow = end;
+    function close() { end(); opts.onClose(); }
+    // The profile exists: it takes no more enrolment samples, so the flow ends here.
+    function finish(d) { end(); if (opts.resolveOnTrained) opts.resolveOnTrained(d); }
     function pips() {
       var h = "";
       for (var i = 0; i < st.required; i++) h += '<span class="mpip' + (i < st.onFile ? " on" : "") + '"></span>';
@@ -554,7 +672,7 @@
     function subline() {
       if (building) return "Training on your samples — usually under a minute. You can leave this open.";
       if (note) return note;
-      if (st.onFile >= st.required) return st.enrolled ? "All " + st.required + " samples on file · each extra sample rebuilds your model from your latest ones" : "";
+      if (st.onFile >= st.required) return st.enrolled ? "All " + st.required + " samples on file." : "";
       return (st.required - st.onFile) + " more to go · about " + (st.required - st.onFile) * 16 + " s of movement";
     }
     function render() {
@@ -566,11 +684,11 @@
         + '<div id="mdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">this sample: 0 s of 16 s</div>'
         + (opts.dismissLabel ? '<div style="display:flex;gap:8px"><button class="b" id="mdone" style="flex:1;background:#475569">' + opts.dismissLabel + '</button></div>' : "")
         + (opts.allowReset ? '<div style="text-align:center;margin-top:10px"><a href="#" id="mreset" style="color:#dc2626;font-size:12px;font-weight:700;text-decoration:none">🗑️ Reset my mouse profile</a></div>' : "")
-        + '<div class="e"></div>', opts.onClose, "wide");
+        + '<div class="e"></div>', close, "wide");
       var pad = wizEl.querySelector("#cpad"), bar = wizEl.querySelector("#mbar"), diag = wizEl.querySelector("#mdiag"),
         e = wizEl.querySelector(".e"), load = wizEl.querySelector("#mwl"), loadT = wizEl.querySelector("#mwlt");
       var doneBtn = wizEl.querySelector("#mdone");
-      if (doneBtn) doneBtn.addEventListener("click", function () { stop(); clearTimeout(pollT); opts.onClose(); });
+      if (doneBtn) doneBtn.addEventListener("click", close);
       if (opts.allowReset) {
         wizEl.querySelector("#mreset").addEventListener("click", function (ev) {
           ev.preventDefault();
@@ -584,10 +702,12 @@
       }
       // Track on documentElement, NOT the pad: the live guard scores motion across the whole page,
       // so the sample must be the same kind of movement. The pad is only a visual target.
+      if (tracker) tracker.stop();
       tracker = window.mouseFeatures.createMouseTracker(document.documentElement);
       spawnClickTarget(pad, MOUSE_TARGETS, function () {});
       function tick() {
-        if (saving) return;
+        if (ended || saving) return;
+        if (!pad.isConnected) { end(); return; }   // closed, or replaced by another popup: stop recording
         var w = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(tracker.getEvents()));
         var n = w ? w.length : 0;
         var secs = Math.min(16, Math.floor((n * 16) / st.perSample));
@@ -601,9 +721,16 @@
         loadT.textContent = last && !st.enrolled ? "Saving sample " + (st.onFile + 1) + " and building your model…" : "Saving sample " + (st.onFile + 1) + "…";
         load.classList.add("on");
         var r = await reqJson(EP.mouseEnroll, "POST", { windows: windows });
+        if (ended) return;
         load.classList.remove("on");
         tracker.reset();
         saving = false;
+        if (r.status === 409 && r.d && r.d.error === "already_enrolled") {
+          // The profile exists (built meanwhile, or from another page) and takes no more enrolment samples.
+          end();
+          if (opts.onAlreadyEnrolled) opts.onAlreadyEnrolled(); else if (opts.resolveOnTrained) opts.resolveOnTrained(null);
+          return;
+        }
         if (!r.ok) {
           // e.g. the step-size gate: a mechanical or jittering movement is not stored. Redo it.
           e.textContent = ((r.d && r.d.error) || "This sample was not accepted") + " — this sample starts again.";
@@ -615,7 +742,7 @@
         st.onFile = Math.min(st.required, Math.floor(total / st.perSample)) || (st.onFile + 1);
         if (r.d && r.d.trained) { if (!st.enrolled && opts.onEnrolled) opts.onEnrolled(); st.enrolled = true; }
         if (r.d && r.d.training) { waitForModel(); return; }
-        if (st.enrolled && opts.resolveOnTrained) { stop(); opts.resolveOnTrained(r.d); return; }
+        if (st.enrolled) { finish(r.d); return; }
         refresh();
       }
       function refresh() {
@@ -631,7 +758,9 @@
         loadT.textContent = headline(); load.classList.add("on");
         var since = Date.now();
         (async function poll() {
-          if (!document.body.contains(load)) return;   // wizard closed or re-rendered
+          // Wizard closed or re-rendered. isConnected, not document.body.contains(): the wizard lives in the
+          // shadow root, which contains() never looks into, so this wait used to stop at its first poll.
+          if (ended || !load.isConnected) return;
           var d = {};
           try { var s = await reqJson(EP.mouseStatus); d = (s && s.d) || {}; } catch (e4) {}
           var waited = Date.now() - since;
@@ -650,13 +779,12 @@
           if (d.enrolled) {
             if (!st.enrolled && opts.onEnrolled) opts.onEnrolled();
             st.enrolled = true;
-            if (opts.resolveOnTrained) { opts.resolveOnTrained(d); return; }
-            note = "Model rebuilt with your latest samples. Add more if you like, or close.";
-          } else {
-            e.textContent = (d.trainingError ? "Building your model failed (" + d.trainingError + ")" : "Your model could not be built")
-              + " — save one more sample to try again.";
-            e.style.display = "block";
+            finish(d);
+            return;
           }
+          e.textContent = (d.trainingError ? "Building your model failed (" + d.trainingError + ")" : "Your model could not be built")
+            + " — save one more sample to try again.";
+          e.style.display = "block";
           refresh();
           iv = setInterval(tick, 400);
         })();
@@ -676,7 +804,8 @@
         st.enrolled = !!d.enrolled;
         building = !!d.training;
       } catch (e) {}
-      if (st.enrolled && !building && opts.resolveOnTrained && !opts.allowReset) { opts.resolveOnTrained(null); return; }
+      if (ended) return;   // a newer flow took over while the status was being read
+      if (st.enrolled && !building && opts.resolveOnTrained && !opts.allowReset) { finish(null); return; }
       render();
     })();
   }
@@ -693,6 +822,7 @@
         dismissLabel: optional ? "Continue later" : null,
         allowReset: false,
         resolveOnTrained: function () { resolve(); },
+        onAlreadyEnrolled: function () { resolve(); },
       });
     });
   }
@@ -784,22 +914,50 @@
       if (trained) renderTrained(); else if (building) { watchKsBuild(); renderBuilding(); } else render();
     })();
   }
+  // A trained mouse profile takes no more enrolment samples (the server answers 409 already_enrolled since
+  // 2026-10-24; until then every extra sample rebuilt the profile, with no passkey). The panel then offers only the
+  // reset, as it does for typing.
   function reinforceMouse() {
     if (!window.mouseFeatures) return;
+    (async function () {
+      var d = {};
+      try { var s = await reqJson(EP.mouseStatus); d = (s && s.d) || {}; } catch (e) {}
+      if (d.enrolled && !d.training) renderMouseTrained(d); else mouseSamples();
+    })();
+  }
+  function renderMouseTrained(d) {
+    if (endSampleFlow) endSampleFlow();
+    openWiz('<div class="t">Your mouse movement is trained</div><div class="d">Samples on file: <b>' + Number((d && d.samplesOnFile) || MOUSE_SAMPLES_REQUIRED)
+      + '</b>. A trained mouse model takes no more samples from this page. To enrol again, reset it; you will be asked for your passkey.</div>'
+      + '<div style="display:flex;gap:8px"><button class="b" id="mdone" style="flex:1">Close</button></div>'
+      + '<div style="text-align:center;margin-top:10px"><a href="#" id="mreset" style="color:#dc2626;font-size:12px;font-weight:700;text-decoration:none">🗑️ Reset my mouse profile</a></div><div class="e"></div>', closeWiz);
+    var e = wizEl.querySelector(".e");
+    wizEl.querySelector("#mdone").addEventListener("click", closeWiz);
+    wizEl.querySelector("#mreset").addEventListener("click", function (ev) {
+      ev.preventDefault();
+      resetProfile("mouse", e, function () {
+        try { stopMouse(); } catch (e3) {}
+        mouseOn = false; updateToggle(); setMouseRow("mut", "not enrolled");
+        mouseSamples();
+      });
+    });
+  }
+  function mouseSamples() {
     mouseSampleFlow({
       title: "Mouse samples",
-      intro: "Move to each dot at your natural speed. Each <b>sample</b> is about 16 seconds of movement and saves itself. Your mouse model is built after the last required sample; once it exists, every extra sample rebuilds it from your latest samples.",
+      intro: "Move to each dot at your natural speed. Each <b>sample</b> is about 16 seconds of movement and saves itself. Your mouse model is built after the last required sample.",
       onClose: closeWiz,
       dismissLabel: "Done",
       allowReset: true,
       // First model just built from these samples: start protecting the session straight away.
       onEnrolled: function () { if (obState) obState.mouse = true; if (!mouseOn) setMouse(true); },
-      resolveOnTrained: null,
+      resolveOnTrained: function (d) { renderMouseTrained(d || {}); },
+      onAlreadyEnrolled: function () { renderMouseTrained({}); },
     });
   }
 
   // ================= GUARD LOOPS =================
-  var ksTracker = null, ksOn = false, lastCheckedWindowCount = 0, checkInFlight = false, ksMissedWindow = false;
+  var ksTracker = null, ksOn = false, lastCheckedWindowCount = 0, checkInFlight = false, ksMissedWindow = false, ksPastePending = false;
   var cleanRun = 0, lastContributeKeys = -1e9, activeField = null, contributing = false, learnVisible = false;
   // Password fields ARE watched unless excluded: their timing is captured with keyCode 0 (the
   // tracker), and only their length counts toward the typed length.
@@ -835,7 +993,7 @@
     // Remember which field is being typed in — the adaptive prompt floats above it.
     if (e && e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") && e.target.type !== "password" && e.target.type !== "hidden") activeField = e.target;
     else if (e && e.target && e.target.isContentEditable) { var ed = e.target; while (ed.parentElement && ed.parentElement.isContentEditable) ed = ed.parentElement; activeField = ed; }
-    if (locked || !ksOn || !ksTracker) return;
+    if (locked || signedOut || !ksOn || !ksTracker) return;
     var text = currentTypedText();
     if (text.length < KS_MIN_CHARS) { setKb("mut", "type " + text.length + "/" + KS_MIN_CHARS + " chars to start"); return; }
     // Live feedback while the user keeps writing between verdicts (feels engaged
@@ -845,15 +1003,26 @@
     if (checkInFlight) { ksMissedWindow = true; return; }
     runKsCheck();
   }
-  async function runKsCheck() {
-    if (locked || !ksOn || !ksTracker) return;
+  // A paste is judged at once: the server counts the pastes in each field against the organisation's allowance.
+  // Before 2026-10-25 a check waited for a new typing window, so a paste that no typing followed was never judged.
+  function onKsPaste() {
+    setTimeout(function () {   // after the tracker has recorded the paste
+      if (locked || !ksOn || !ksTracker) return;
+      if (checkInFlight) { ksPastePending = true; return; }
+      runKsCheck(true);
+    }, 0);
+  }
+  // force: a paste's check, sent without a new window and before the text reaches the minimum length.
+  async function runKsCheck(force) {
+    if (locked || signedOut || !ksOn || !ksTracker) return;
     var events = ksTracker.getEvents(), text = currentTypedText();
-    if (text.length < KS_MIN_CHARS) return;
+    if (!force && text.length < KS_MIN_CHARS) return;
     checkInFlight = true; ksMissedWindow = false; pulse(); setKb("mut", withLast("checking…", lastKsPct));
     try {
       var timings = window.continuumKeystrokes.analyze(events);
       // The text's LENGTH only: what the user typed never leaves the page.
       var r = await reqJson(EP.ksCheck, "POST", { textLength: text.length, keystrokeEvents: events.slice(-1400), keystrokeTimings: timings, sourcePath: location.pathname });
+      if (r.status === 401 && MODE === "demo") { sessionEnded(); return; }
       var d = r.d; if (d && d.riskToken) latestRiskToken = d.riskToken;
       lastCheckedWindowCount = ksWindowCount(ksKeyCount(events));
       var ev = d.typingEvaluation || {};
@@ -874,7 +1043,10 @@
       else { setKb("ok", "verified <b>" + pct + "%</b>"); onProbation = false; cleanRun = (d.modelConfidence == null || d.modelConfidence >= ADAPT_CONFIDENCE_MIN) ? cleanRun + 1 : 0; }
       evalAdaptive(); // a clean run may now qualify to contribute a training sample
     } catch (e) { setKb("mut", "offline"); }
-    finally { checkInFlight = false; if (ksMissedWindow) onKsInput(); } // catch up on a window that formed mid-check
+    finally {   // catch up on a paste or a window that came mid-check
+      checkInFlight = false;
+      if (ksPastePending) { ksPastePending = false; runKsCheck(true); } else if (ksMissedWindow) onKsInput();
+    }
   }
 
   // ---- adaptive learning (SDK port of the demo's "Contribute" panel) ----
@@ -886,8 +1058,31 @@
     if (contribUntil === null) { fetchContribWindow(); hideLearn(); return; }
     if (Date.now() < contribUntil) { hideLearn(); return; }
     if (adaptReady) { if (!retrainDismissed && activeField) { setLearnMode("retrain"); showLearn(); } else hideLearn(); return; }
-    if (cleanRun >= ADAPT_CLEAN_RUN && activeField && sampleSegment().keys >= SAMPLE_MIN_KEYS) { setLearnMode("contribute"); showLearn(); }
-    else hideLearn();
+    // The popup shows only when a click would be accepted: after a clean run of checks, once the sample has
+    // its windows, the server's dry run says so.
+    if (cleanRun >= ADAPT_CLEAN_RUN && activeField && sampleWindowsNow() >= SAMPLE_WINDOWS) {
+      probeSample();
+      if (sampleProbe.eligible) { setLearnMode("contribute"); showLearn(); } else hideLearn();
+    } else hideLearn();
+  }
+  // The windows of the typing since the previous sample, counted from its key presses (the server counts exactly).
+  function sampleWindowsNow() { return ksWindowCount(ksKeyCount(sampleSegment().events)); }
+  // Ask the server whether the sample, as it is now, would be accepted. Nothing is stored. Asked once per new
+  // window, and the answer decides whether the popup shows.
+  async function probeSample() {
+    var seg = sampleSegment(), w = ksWindowCount(ksKeyCount(seg.events));
+    if (sampleProbe.busy || sampleProbe.forWindows === w) return;
+    sampleProbe.busy = true; sampleProbe.forWindows = w;
+    try {
+      var r = await reqJson(EP.ksContribute, "POST", { keystrokeEvents: seg.events, textLength: seg.keys, dryRun: true });
+      var d = r.ok && r.d ? r.d : {};
+      sampleProbe.eligible = d.eligible === true;
+      if (d.error === "adaptive_disabled") ADAPT_ENABLED = false;
+      else if (d.error === "adaptive_paused") { var until = Date.parse(d.nextContributionAt); contribUntil = isFinite(until) ? until : Date.now() + ADAPT_GAP_H * 3600000; }
+      else if (d.error === "ready_to_retrain") { adaptReady = true; adaptPending = Number(d.pending || ADAPT_RETRAIN_EVERY); }
+    } catch (e) { sampleProbe.eligible = false; }
+    finally { sampleProbe.busy = false; }
+    evalAdaptive();
   }
   // The typing since the previous sample, after a gap of SAMPLE_GAP_KEYS key presses.
   function sampleSegment() {
@@ -937,13 +1132,13 @@
   function showLearn() {
     if (!learnEl) return;
     if (!learnVisible) {
-      var go = learnEl.querySelector(".go"); if (go) { go.disabled = false; go.textContent = "Contribute sample"; }
+      var go = learnEl.querySelector(".go"); if (go) { go.disabled = false; go.textContent = learnMode === "retrain" ? "Retrain with passkey" : "Contribute sample"; }
       learnEl.style.display = "block"; learnVisible = true;
     }
     positionLearn();
   }
   function hideLearn() { if (learnEl && learnVisible) { learnEl.style.display = "none"; learnVisible = false; } }
-  function dismissLearn() { hideLearn(); lastContributeKeys = currentKeys(); cleanRun = 0; if (learnMode === "retrain") retrainDismissed = true; }
+  function dismissLearn() { hideLearn(); lastContributeKeys = currentKeys(); cleanRun = 0; sampleProbe.eligible = false; if (learnMode === "retrain") retrainDismissed = true; }
   async function contributeSample() {
     if (contributing || !ksTracker) return;
     contributing = true;
@@ -955,6 +1150,7 @@
       var r = await reqJson(EP.ksContribute, "POST", { keystrokeEvents: seg.events, textLength: seg.keys });
       if (r.ok && r.d && r.d.ok !== false) {
         contribEndIdx = seg.end;                      // the next sample starts after this one (plus the gap)
+        sampleProbe.forWindows = -1; sampleProbe.eligible = false;
         adaptPending = Number(r.d.pending || adaptPending + 1); adaptReady = !!r.d.ready;
         if (bar) bar.style.width = Math.min(100, (adaptPending / ADAPT_RETRAIN_EVERY) * 100) + "%";
         if (msg) msg.textContent = adaptReady ? "Added — " + ADAPT_RETRAIN_EVERY + " of " + ADAPT_RETRAIN_EVERY + ". Your model is ready to retrain." : "Added! " + adaptPending + " of " + ADAPT_RETRAIN_EVERY + ".";
@@ -1023,6 +1219,7 @@
     if (!window.continuumKeystrokes) return;
     if (!ksTracker) ksTracker = window.continuumKeystrokes.createTracker(document.documentElement, { skip: fieldExcluded });
     if (!ksInputHandler) { ksInputHandler = onKsInput; document.addEventListener("input", ksInputHandler, true); }
+    if (!ksPasteHandler) { ksPasteHandler = onKsPaste; document.addEventListener("paste", ksPasteHandler, true); }
     setKb("mut", ksBuilding ? "building your model…" : "type " + KS_MIN_CHARS + " chars to start");
   }
   // Typing enrolment trains on the server's queue (about a minute; since 2026-10-06). Meanwhile the user
@@ -1043,7 +1240,8 @@
   }
   function stopKeystroke() {
     if (ksInputHandler) { document.removeEventListener("input", ksInputHandler, true); ksInputHandler = null; }
-    checkInFlight = false; ksMissedWindow = false; lastCheckedWindowCount = 0;
+    if (ksPasteHandler) { document.removeEventListener("paste", ksPasteHandler, true); ksPasteHandler = null; }
+    checkInFlight = false; ksMissedWindow = false; ksPastePending = false; lastCheckedWindowCount = 0;
     cleanRun = 0; hideLearn();
     setKb("mut", "off");
   }
@@ -1081,11 +1279,11 @@
 
   var mouseTracker = null, mouseOn = false, mouseTimer = null, lastMouseEvents = 0;
   function updateToggle() { if (toggleEl) { toggleEl.className = "tgl" + (mouseOn ? " on" : ""); toggleEl.textContent = mouseOn ? "on" : "off"; } }
-  function setMouse(on) { mouseOn = !!on; try { localStorage.setItem(LS_MOUSE, mouseOn ? "1" : "0"); } catch (e) {} if (mouseOn) { startMouse(); setMouseRow("mut", "warming up…"); } else { stopMouse(); setMouseRow("mut", "off"); } updateToggle(); }
+  function setMouse(on) { mouseOn = !!on; try { localStorage.setItem(LS_MOUSE, mouseOn ? "1" : "0"); } catch (e) {} if (mouseOn) { startMouse(); setMouseRow("mut", "warming up…"); } else { stopMouse(); abortUseSample(); setMouseRow("mut", "off"); } updateToggle(); }
   function startMouse() { stopMouse(); if (mouseTracker) mouseTracker.reset(); lastMouseEvents = 0; mouseTimer = setInterval(mouseTick, MOUSE_CHECK_MS); }
   function stopMouse() { if (mouseTimer) clearInterval(mouseTimer); mouseTimer = null; }
   async function mouseTick() {
-    if (locked || !mouseTracker) return;
+    if (locked || signedOut || !mouseTracker) return;
     var count = mouseTracker.eventCount(); if (count <= lastMouseEvents) return; lastMouseEvents = count;
     var windows; try { windows = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(mouseTracker.getEvents())); } catch (e) { return; }
     if (!windows || windows.length < MOUSE_MIN_WINDOWS) { setMouseRow("mut", withLast("warming " + (windows ? windows.length : 0) + "/" + MOUSE_MIN_WINDOWS, lastMousePct)); return; }
@@ -1095,6 +1293,7 @@
       // sending fewer (this was 18, sized for the old packet rule) leaves it in warmup forever
       // — mouse would silently never challenge.
       var r = await reqJson(EP.mouseCheck, "POST", { windows: windows.slice(-MOUSE_MIN_WINDOWS) });
+      if (r.status === 401 && MODE === "demo") { sessionEnded(); return; }
       var d = r.d; if (d && d.riskToken) latestRiskToken = d.riskToken;
       if (d && d.bufferMax) MOUSE_MIN_WINDOWS = d.bufferMax;   // the server's vote length is authoritative
       if (d && d.enrolled === false) { setMouseRow("mut", "not enrolled"); stopMouse(); mouseOn = false; updateToggle(); return; }
@@ -1119,7 +1318,7 @@
   async function loadConfig() {
     try { var r = await reqJson(EP.config); if (!r.ok) return; var c = r.d;
       if (c.windowSize) WINDOW_SIZE = c.windowSize; if (c.windowStride) WINDOW_STRIDE = c.windowStride;
-      if (c.recentWindowCount) RECENT_WINDOW_COUNT = c.recentWindowCount; if (c.contributeWindowCount) CONTRIBUTE_WINDOW_COUNT = c.contributeWindowCount; if (c.checkMinTextChars) KS_MIN_CHARS = c.checkMinTextChars;
+      if (c.recentWindowCount) RECENT_WINDOW_COUNT = c.recentWindowCount; if (c.sampleWindowCount) SAMPLE_WINDOWS = c.sampleWindowCount; if (c.checkMinTextChars) KS_MIN_CHARS = c.checkMinTextChars;
       if (c.adaptiveConfidenceMin != null) ADAPT_CONFIDENCE_MIN = c.adaptiveConfidenceMin;
       if (c.adaptiveRetrainEvery != null) ADAPT_RETRAIN_EVERY = c.adaptiveRetrainEvery;
       if (Array.isArray(c.excludeFieldTypes)) EXCLUDE_TYPES = c.excludeFieldTypes.map(function (x) { return String(x).toLowerCase(); });
@@ -1180,7 +1379,8 @@
   function stopGuard() {
     stopKeystroke();
     stopMouse();
-    if (ksTracker) ksTracker.reset(); contribEndIdx = 0; if (mouseTracker) mouseTracker.reset();
+    abortUseSample();
+    if (ksTracker) ksTracker.reset(); contribEndIdx = 0; sampleProbe.forWindows = -1; sampleProbe.eligible = false; if (mouseTracker) mouseTracker.reset();
     checkInFlight = false; locked = false; ready = false;
   }
 

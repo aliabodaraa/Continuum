@@ -12,7 +12,7 @@
 //   node extension/scripts/e2e_headless_enrol_reload.mjs
 import { spawn, execFileSync } from "node:child_process"; import fs from "node:fs"; import os from "node:os"; import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { inService } from "./lib/stack.mjs";
+import { inService, operatorUrl } from "./lib/stack.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 // Containers the test acts on directly; defaults are the running stack's. For the side-by-side stack
 // (project continuum-next) set CONTINUUM_CONTAINER_PREFIX=continuum-next.
@@ -25,7 +25,7 @@ const ok = (n, c, d) => { console.log((c ? "  PASS  " : "  FAIL  ") + n + (d ? "
 // The operator area (operator page, /v1/tenants, /v1/admin/*): the gateway itself (Compose), or, behind an edge
 // that never routes it (Kubernetes: Envoy marks every request it forwards), a private port-forward to the
 // gateway (scripts/k8s-local.sh operator => CONTINUUM_OPERATOR=http://localhost:28081).
-const OP = process.env.CONTINUUM_OPERATOR || GW;
+const OP = await operatorUrl(GW);
 async function gw(p, body, method = "POST") {
   const r = await fetch((p.startsWith("/v1/tenants") ? OP : GW) + p, { method, headers: { "Content-Type": "application/json", Origin: GW, ...(token ? { Authorization: "Bearer " + token } : {}),
     ...(p.startsWith("/v1/tenants") ? { "X-Admin-Key": ADMIN_KEY } : {}) }, body: method === "GET" ? undefined : JSON.stringify(body || {}) });
