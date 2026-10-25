@@ -456,6 +456,13 @@ vote or training changes.
   `run_ru.py --mode test --amendment A1 --start "2026-10-25 14:35:00" --end "<his finish>"`. Keep A = final for this mix.
   RUN 2026-10-25 19:40 UTC (end 19:36:29, the 375th check): KEEP A. Requests A 0, B 0 in 10.0 min (3 sittings); B catches
   more impostors (raw 88 vs 77, scaled 82 vs 57). Results artifacts/phase7/ru_test_a1_result.*. Next: owner decides roll-back.
+  ROLLED BACK 2026-10-25 20:34 UTC (owner): ca-service c0e91809, real-use samples off unless MOUSE_USE_SAMPLES=on, live
+  capture env removed. The frozen next-day test is closed. Not in the paper or thesis (owner). Open: his 4 samples and his
+  mouse_live_windows rows are still stored; delete only if he asks (he runs the delete himself).
+  2026-10-25 21:00 UTC: owner asked to delete everything related to the experiment. Commands given to him (Claude does
+  not delete data): DELETE FROM mouse_use_samples / mouse_use_anchors / mouse_live_windows (4 / 10 / 960 rows, his only;
+  no foreign keys), and Remove-Item of the scratchpad exports ru/smoke, ru/test_a1 and 2518dc76's owner_mouse. Kept: the
+  normal mouse_decisions log, the pre-registration, the aggregate results and the switched-off code. Verify after he runs them.
 
 **Baseline to measure next (stage 1 changes no decision, so it runs in the same days):** the owner keeps mouse protection on for some days, then
 export his mouse_decisions since 2026-10-24 15:08:29 and run `analysis/phase7/owner_mouse_diagnosis.py --trained
