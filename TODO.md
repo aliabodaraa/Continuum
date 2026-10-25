@@ -22,10 +22,9 @@ the *reasoning* is the part worth keeping.
   check forever — an undefined failure mode in the authentication path. Now one bounded,
   credentialed client (`lib/modelClient.js`); a stalled model yields `503 model_unavailable`
   (*no verdict*, neither pass nor lock), logged at `[SECURITY]`.
-- **Escalation evidence was in process memory.** The keystroke debounce and mouse strike
-  counter lived in two `Map`s and a session field, so any restart amnestied an impostor
-  mid-escalation. Now persisted in `decision_state`; callers keep their threshold, not the
-  count.
+- **Escalation evidence was in process memory.** The mouse strike counter lived in a `Map`
+  and a session field, so any restart amnestied an impostor mid-escalation. Now persisted in
+  `decision_state`; callers keep their threshold, not the count.
 - **Retrains were detached promises.** `setImmediate` guarded by an in-memory `Set` lost both
   the run and the guard on restart, with nothing recording that work had been owed. Now the
   `training_jobs` queue with boot-time recovery of interrupted runs.
@@ -271,3 +270,272 @@ the deployed rule catches **84.4%** of impostor runs.
 *Why it is not simply "raise the percentile":* the percentile and the vote were chosen together
 against a measured interruption budget (Experiment I). Moving either one alone re-opens that
 trade-off, which is why this needs a pre-registered experiment rather than a tuning pass.
+
+---
+
+## 8. Typing: how much enrolment is enough? (asked by the owner 2026-10-20, deferred by him; RUNNING 2026-10-21 as experiment EC, artifacts/phase7/PREREGISTRATION_EC.md)
+
+**The gap.** No test shows where more typing samples stop helping, so no "best number of samples" can
+be stated for the typing channel. What exists is weak: a cross-user correlation of enrolment size with
+performance, r = +0.04 at about 300 windows (a flat region only, and between different people), and
+experiment AR2, where learning from all later typing (arm D) added +0.0485 AUC, which mixes more data
+with more recent data. The mouse has its own enrolment curve (flat after about 330 windows); it says
+nothing about typing.
+
+**Why it matters.** The server gate is 5 samples and 12 windows (`MIN_TRAINING_SAMPLES`,
+`MIN_POSITIVE_WINDOWS`), but the SDK wizard (`ENROL_PASSAGES`, `KS_ENROLL_SAMPLES = 5`) always collects
+five passages of about 300 characters, which is about 26 windows each, so a live enrolment is about 130
+windows. AR2's enrolment (5 samples of 330 steps, a median of 145 windows) matches it. What does not
+match is the headline typing table (experiment KS): its models learn from the first 70% of the owner's
+typing, a median of 306 windows, more than twice a live enrolment, so its numbers (per-user AUC 0.969,
+FAR 11.9%, FRR 3.3%) are optimistic for a new user. AR2's "enrolment only" row (AUC 0.9186, FAR 15.0%,
+FRR 13.5%) is the live-faithful one, but it is also tested on a later session, so training volume and
+drift are mixed. The cheapest fix is one extra run of the KS evaluation with the live enrolment (the
+first 5 passages, about 130 to 145 windows) against the same held-out last 30%, about 100 trainings and
+30 to 60 minutes; the full curve below separates the two causes. The console options (1, 2 or 3 samples
+before a retrain, each sample = 20 windows) also lack an evidence-based "best" value: AR2 ranks
+1 > 2 > 3 samples by AUC (+0.0089, +0.0019, +0.0009) but one sample raises the FRR and its safety
+against a poisoning impostor was not measured (only 3 forced samples were).
+
+**What to run.** A pre-registered learning curve on the 99 KeyRecs targets with the KS recipe
+(arm A200, same held-out last 30%, same impostors): train each user on the first 12, 20, 40, 80, 150
+and about 300 windows, then report per-user AUC, FAR/FRR at the live rule and the share of users who
+fall below a stated floor, with paired intervals. Roughly 600 trainings, about 18 s each, so 2 to 3
+hours of compute with two or three workers capped on memory (a Docker Desktop restart killed the first
+AR2 run). Then translate to the console: adding k samples means 20 k more windows. Add a
+quality-filtered variant (study page roadmap row 7) only if the first curve is not flat.
+
+**Not to claim until then:** a saturation point, an optimal number of samples, or that the minimum
+enrolment of 12 windows is sufficient. Study page roadmap row 6 already lists this experiment.
+
+**Result 2026-10-21 (experiment EC, docs/recovery/RESULTS_EC.md):** per-user AUC 0.570 / 0.737 / 0.851 / 0.873 / 0.916 / 0.938 / 0.965 at 12 / 26 / 52 / 78 / 130 / 208 / all windows. No saturation below all, so more typing kept helping. The live enrolment (130) is 0.049 below all, as AR2 found. 12 windows is useless (FRR 99%). Options are with the owner.
+
+## 9. Mouse: make the training follow SapiMouse where it does not yet (asked by the owner 2026-10-21; FS run 2026-10-21; SapiMouse's settings ADOPTED by the owner 2026-10-22, DEPLOYED 2026-10-22 06:51 UTC)
+
+The owner wants everything about mouse training to rest on the SapiMouse paper (Antal, Fejer & Buza, IEEE SACI 2021)
+or another peer-reviewed source, never on our own choices alone or on preprints.
+
+**Already from SapiMouse:** the data; the input (|dx|, |dy|); the FCN, which SapiMouse took from Fawaz et al. 2019; the
+design of a network trained once to identify people, then frozen with a small per-user model on top; and the protocol of
+enrolling from one session and testing on another against people the network never saw.
+
+**Ours, each measured on our data:**
+- The base-network training settings. `train_mouse_fcn.py` uses `repr_arch_study.train_base`: Adam 1e-3, batch 128, up
+  to 40 epochs, early stopping 12, plateau 5. SapiMouse uses Adam 1e-4, batch 16, 100 epochs and keeps the lowest
+  validation loss.
+- The 50-step windows with stride 10, carried over from Lu's typing window rather than from a mouse paper. Measured
+  2026-10-20: with a classifier trained against other people, windows beat SapiMouse's blocks (0.95 vs 0.92).
+- The cleaning rules: drop the step after a pause over 0.5 s, drop zero moves, skip windows with a path below 0.08.
+  SapiMouse drops steps with dt above the recording's mean plus one SD.
+- The per-user classifier: a logistic head against a fixed cohort. Its use of others' data is supported by Matthiesen
+  et al. [37]. Its threshold holds across sessions, while SapiMouse's one-class SVM threshold did not
+  (`docs/recovery/RESULTS_E_NATIVE.md`).
+- The enrolment of 440 windows, the 20th-percentile threshold and the 33-of-60 vote.
+
+**Result 2026-10-21 (experiment FS, docs/recovery/RESULTS_FS.md):** with SapiMouse's training settings the base-80 network gives a per-user AUC of 0.9677 vs 0.9688 at 60 windows (-0.0012 [-0.0162, +0.0155], not shown non-inferior at -0.010 with 19 users). FAR is 9.3% vs 10.8% and the live loop gives 0.37 vs 0.48 requests per minute. The current settings stay under the frozen rule. Adopting SapiMouse's recipe anyway is the owner's decision.
+
+**First candidate change:** retrain the deployed FCN on windows with SapiMouse's training settings. Use the
+`analysis/phase6/e_native_blocks.py` recipe (`train_base_sapimouse`). This shifts every embedding, so the deployed
+cohort, the per-user heads and every mouse number must be rebuilt and re-measured: paper Table 6, thesis Table 15, the
+timing table and the study pages. Register the comparison first (the current recipe vs SapiMouse's recipe on the same
+development users, per-user AUC of 60-window decisions, non-inferiority), then decide with the owner.
+
+**Deployed 2026-10-22 06:51 UTC.** The cluster's model services run the network trained with SapiMouse's recipe
+(cohort sha a5506e4677d5, was 40b54f05cfce) and ca-service runs decision version f2-sm-loso-p20-33of60. The three
+enrolled profiles were retrained from their stored samples. Owner (739935229538144): threshold 0.316 -> 0.303,
+leave-one-sample-out median 0.687 -> 0.711. The other two profiles: 0.746 -> 0.735 and 0.626 -> 0.587. Edge /ready and
+/health 200. The undo images are model-api 8d69698976ec and ca-service 15a4a0ecaefd (with `artifacts/mouse-fcn-a5-ours`
+moved back for any rebuild).
+
+**Follow-up (owner's decision 2026-10-22: "if it improves, change nothing else").** After a few days of the owner's
+ordinary use, export his mouse_decisions since 2026-10-22 06:51:10 and run `analysis/phase7/owner_mouse_diagnosis.py
+--trained "2026-10-22 06:51:10" --loso '{"10":0.181,"20":0.303,"50":0.711}'`. Compare requests per minute with the old
+profile's 0.52 (the lab expects about 0.37 with the new network). If it is clearly lower, keep everything. If not,
+measure "two consecutive suspicious checks" on the stored SapiMouse scores before changing the rule.
+SUPERSEDED 2026-10-24: he made no mouse check after 2026-10-19 08:53, so this profile was never measured live; it was
+rebuilt by step 0 below. Use the command given there.
+
+**Step 0 of learning from real use, DEPLOYED 2026-10-24 (owner's plan of 2026-10-23; his choices "delete the two copies
+only", "stage 1 after step 0", deploy "yes now").** Found while planning stage 1: two of the 8 samples in the owner's
+profile repeated two others (35 = 34 recorded 109 steps later, 81% of 20-step runs shared; 37 = 36 recorded 11 steps
+later, 98%; saved 1-2 s apart on 2026-09-19). In leave-one-sample-out each copy had its twin in training, so the
+threshold was too high: 0.303 against 0.262 without them. On his 1,159 old live checks the clean threshold would have
+given 5 suspicious checks instead of 16 (about 0.16 instead of 0.52 per minute; approximate, the head also changes a
+little). The cause, reproduced in headless Chrome against the deployed SDK: two sample flows at once ("+ train" pressed
+twice) recorded the same movement and both saved it (100% shared); a flow closed with × kept recording in the
+background; and the wait for the model stopped at its first poll (document.body.contains cannot see into the shadow
+root). Changes:
+- ca-service `lib/mouse.js`: a sample sharing more than 5% of its 20-step runs with a stored sample is refused (80
+  SapiMouse base users, 1,214 samples: independent pairs share none, the pieces either side of a cut at most 3.7%);
+  once the profile exists, enrolment answers 409 `already_enrolled` (re-enrol after the passkey reset), as typing
+  since 2026-10-05. `scripts/dedup_mouse_samples.js` (report, `--apply`) removed the older sample of each repeated pair
+  and rebuilt the profile. `test/mouseSamples.test.js` (5 tests; all 81 ca-service tests pass with PostgreSQL).
+- SDK `guard.js`, `js/mouse-features.js`: one sample recorder at a time, a closed or covered one stops (the tracker
+  detaches), the wait uses isConnected, a trained profile's "+ train" shows the trained state and the reset.
+  `extension/scripts/e2e_headless_sdk_mouse.mjs` 13/13 (the deployed SDK failed 12 of them); the typing popup test
+  still passes.
+- Images: ca-service 9cf1bc80 (only `lib/mouse.js` and the new script differ from 8c75edb3), gateway 7bd0d6c3 and
+  web-demo 59c73896 (the running images plus the two SDK files only; the gateway's pending `ui.js` typing text was left
+  out). Undo: `docker tag continuum/ca-service:ep30 continuum/ca-service:local`, `continuum/gateway:pre-s0`,
+  `continuum/web-demo:pre-s0` to `:local`, then the rollouts. Samples 34 and 36 remain in the owner's export of
+  2026-10-22 only.
+- Result: samples 34 and 36 removed (13 samples left), threshold 0.30277 -> 0.26208394455013234, exactly the offline
+  value; leave-one-sample-out p10 0.153, p20 0.262, p50 0.585. Every other profile had no repeated sample and is
+  unchanged. Edge 200, both origins serve the new SDK (md5 checked).
+
+**Stage 1 of learning from real use, DEPLOYED 2026-10-24 about 20:50 UTC (owner: plan approved, live windows "yes, my
+account only", "record a sample now" button "not now", deploy "yes now").** Collection only: no score, threshold,
+vote or training changes.
+- ca-service: new tables `mouse_use_anchors`, `mouse_use_samples`, `mouse_live_windows` (`db.js`); `lib/mouseUse.js`
+  (an anchor is recorded only when the gateway verified a passkey in the same request; a sample must arrive within
+  3 min, one per passkey, at most one per 3 h, the enrolment's checks plus the repeat check, the profile in force and
+  its 55 scores stored, never a gate); routes `POST /v1/mouse/use-anchor`, `POST /v1/mouse/use-sample`; the status
+  reports `useSamples`. `lib/mouse.js`: the 60 windows of every check of the users in `MOUSE_LIVE_CAPTURE_USERS`
+  (set on the live deployment with `kubectl set env`, the owner's id only, not in the manifests) go to
+  `mouse_live_windows`; a reset deletes all three tables' rows. `test/mouseUse.test.js` 7/7; all 88 ca-service and 44
+  gateway tests pass.
+- gateway: `/v1/sdk/passkey/auth/complete` adds `mouseUseSample` (the offer) to a verified answer; new
+  `POST /v1/sdk/mouse/use-sample`; `connect.html` asks on the extension's verify page. SDK `guard.js`: the question
+  after a step-up (only with the mouse on), a fresh recorder, dropped at any lock; the verification carries its
+  reason. `e2e_headless_sdk_use_sample.mjs` 12/12.
+- extension (the owner reloads it): `content.js` records on the start message only, `background.js` keeps the offer and
+  the recording in storage.session and waits for them after a restart, the popup shows the last sample.
+  `e2e_headless_ext_use_sample.mjs` 12/12 with a simulated gateway, including a worker stopped mid-sample. The study
+  page loads the SDK with the mouse off, so participants are never asked.
+- Images: ca-service 9b55775f (db.js, lib/mouse.js, lib/mouseUse.js, server.js differ from 9cf1bc80), gateway
+  0e3933bc (server.js, public/connect.html, sdk-public/guard.js differ from 7bd0d6c3; built from it). web-demo stays
+  59c73896: its own pages run the SDK in demo mode, where stage 1 never runs. Undo: retag `:s0` for both, roll out,
+  `kubectl -n continuum set env deployment/ca-service MOUSE_LIVE_CAPTURE_USERS-`; the new tables stay unused.
+- Design fact for stage 2: a sample (55 windows) is complete before the first mouse check after the passkey can run
+  (60 windows), so no live vote has judged its movement when it is stored. Its stored scores allow that check offline.
+- After stage 2: remove the env (command above) and delete the owner's `mouse_live_windows` rows.
+- 2026-10-25, the owner's first test found no anchor: he uses the demo app's own pages (demo mode), whose passkey goes
+  through the tenant API (traces 09:09:32 `/v1/server/mouse/check` -> `/v1/server/lock/set` -> `/v1/server/passkey/auth/complete`),
+  and stage 1 was wired only to `/v1/sdk/passkey/auth/complete`. Owner: "wire it to the demo". DEPLOYED 2026-10-25: gateway
+  98feb60a (FROM the running paste image a61ba5bf, only server.js and sdk-public/guard.js): `/v1/server/passkey/auth/complete`
+  records the anchor and returns the offer, new `POST /v1/server/mouse/use-sample`; web-demo b9c93949 (FROM s0 59c73896:
+  routes/webauthn.js relays the reason and the offer, routes/auth/mouse.js `/api/mouse/use-sample` (refused while locked by
+  the app.js gate), services/caClient.js, services/passkeyClient.js, sdk-assets/guard.js); SDK: the question in demo mode too.
+  `e2e_headless_sdk_use_sample.mjs` 15/15 (adds the demo page). ca-service unchanged. Undo: retag `continuum/gateway:paste` and
+  `continuum/web-demo:s0` to `:local`, roll out.
+- 2026-10-25 09:54-09:55 UTC, first end-to-end run on the demo (owner present): a replay of held-out SapiMouse user8's real
+  movement, steps rescaled x1.24 to the owner's step size, injected into his dashboard tab by Claude in Chrome. Live checks
+  25, 28, 32, 36 low of 60 (the first included 10 of his own windows): lock at 09:54:53. He passed the passkey, the
+  question showed, "Record": real-use sample 1 stored 09:55:28 (anchor 3, 24 s after the passkey, 55 windows, 0 below
+  his threshold). EXCLUDE FROM STAGE 2: his mouse_decisions and mouse_live_windows rows from 09:54:33 to 09:54:54 UTC are
+  the injected impostor (checks 09:54:48, :50, :51, :53). Anchors 1 and 2 (09:36:52, 09:37:43) were offered and not used.
+- 2026-10-25 13:11:51 UTC, TEMPORARY (owner: "stop the 3-hour idea for now, bring it back later", chose "no gap"):
+  `MOUSE_USE_SAMPLE_GAP_HOURS=0` set with `kubectl set env` (not in the manifests), so the remaining three real-use samples
+  can be taken today on demand. ca-service image unchanged (563515c9). RESTORE after the 4th sample:
+  `kubectl -n continuum set env deployment/ca-service MOUSE_USE_SAMPLE_GAP_HOURS-` (back to 3 h). Samples taken while
+  the gap is 0 come from passkeys asked on purpose, not from alarms; record their anchor times for stage 2.
+  DONE: samples 2, 3, 4 at 13:31:14, 13:33:53, 13:35:35 UTC (anchors 6, 7, 8 verified 13:31:06, 13:33:44, 13:35:26,
+  each after `window.Continuum.requireStepUp("mouse")` called by Claude in Chrome in his demo dashboard tab at 13:30:38,
+  13:32:17, 13:35:09; 55 windows each, 2, 2 and 0 below his threshold; each took about 8 s, not the 16 s told to him).
+  Gap RESTORED 13:36:15 UTC (env removed, running code reads 3 h, image 563515c9 unchanged, edge :8080 200). Real-use
+  samples now 1 to 4. Not alarms: his decisions and live windows between 13:30:38 and 13:35:35 UTC belong to these
+  on-demand step-ups and samples, so leave them out of the false-request count.
+- 2026-10-25 found while collecting: the web-demo pod (and most pods) restarted at 09:58:29 UTC (exit 0, model-inference
+  OOMKilled 09:58:38, a node-wide event). The demo keeps sessions in memory (app.js `session({...})`, no store), so every
+  user was signed out silently: the open dashboard kept showing, its checks stopped (no demo mouse checks from 09:58 to
+  13:30; his 218 checks at 12:44-12:54 came from the extension), and the step-up modal said "userId required" (demo-mode
+  `stepUp()` posts `me.userId` from a 401 `/api/auth/me`). To propose (not done): the SDK says "Your session has ended,
+  sign in again" on a 401, and/or a persistent session store for the demo.
+  SDK part BUILT 2026-10-25 (owner "yes"): sdk/guard.js demo mode, e2e_headless_sdk_session_end.mjs 14/14, image
+  continuum/web-demo:se 9860237c (only sdk-assets/guard.js differs from s1d). Deploy needs the owner's OK; it signs demo
+  users out once. The persistent session store is still only an idea. Gateway mode still shows a stale state on a 401.
+  DEPLOYED 2026-10-25 14:10 UTC (web-demo 9860237c). Undo: retag continuum/web-demo:s1d as :local and roll out.
+- 2026-10-25 STAGE 2 (RU) FROZEN: artifacts/phase7/PREREGISTRATION_RU.md (sha256 72786bf8, 13:48 UTC); code
+  services/model-api/analysis/phase7/run_ru.py. Test data = his live checks from 2026-10-25 21:00:00 UTC; cut-off = end
+  (20:59:59 UTC) of the first day with >= 1,125 non-warm-up checks from >= 2 sittings, at the latest 2026-10-28 20:59:59 UTC.
+  Then export (same three \copy queries as the smoke, period filter instead of the 13:30:38 limit) and run
+  `run_ru.py --mode test --end "<cut-off>"` in the model-api image (mounts as for the smoke, see COORDINATION 25 Oct 14:15).
+  Do NOT export or look at checks after 21:00 UTC before the cut-off. Smoke (not evidence) warns B asks more (14 vs 4).
+  AMENDMENT A1 (owner wants the decision today; PREREGISTRATION_RU_A1.md, sha256 b39a80a5): same-day test from
+  2026-10-25 14:35:00 UTC until he says he has finished (latest 20:59:59 UTC), >= 375 non-warm-up checks; run
+  `run_ru.py --mode test --amendment A1 --start "2026-10-25 14:35:00" --end "<his finish>"`. Keep A = final for this mix.
+  RUN 2026-10-25 19:40 UTC (end 19:36:29, the 375th check): KEEP A. Requests A 0, B 0 in 10.0 min (3 sittings); B catches
+  more impostors (raw 88 vs 77, scaled 82 vs 57). Results artifacts/phase7/ru_test_a1_result.*. Next: owner decides roll-back.
+
+**Baseline to measure next (stage 1 changes no decision, so it runs in the same days):** the owner keeps mouse protection on for some days, then
+export his mouse_decisions since 2026-10-24 15:08:29 and run `analysis/phase7/owner_mouse_diagnosis.py --trained
+"2026-10-24 15:08:29" --loso '{"10":0.153,"20":0.262,"50":0.585}'`. This is the clean baseline (new network, no copies)
+for learning from real use; compare with 0.52 (old network, with copies).
+
+**Windows vs blocks re-run, DONE 2026-10-22 (docs/recovery/RESULTS_ENW.md):** with both networks trained with
+SapiMouse's recipe, windows still beat blocks with the binary head (0.949 vs 0.918, p 0.04, 14 of 20 people), and the
+one-class SVM is a tie (0.892 vs 0.915, p 0.13). The segmentation stays. Paper and Arabic copy now say 14 of 20 (was
+16). Thesis Table 11 says both networks were trained as in [2], with 0.91 vs 0.89 (was 0.90). All three documents
+rebuilt and installed.
+
+**23 Oct 2026, owner "apply" (three items).**
+1. Paper Table 6, thesis Table 15 and the Arabic copy now use rows of 9, 34 and 60 windows, the movement of one, three
+   and five SapiMouse blocks. The values are 12.2/21.9/15.4%/0.924, 10.6/12.1/11.4%/0.960 and the unchanged 60 row.
+   One sentence was added: sixty windows cover the movement of the five blocks whose scores [2] averages.
+2. One line each explains the enrolment amounts.
+   - Typing: EC in paper 3-2, thesis 3 and the Arabic copy, and Table 2 now reads "give a per-user AUC of 0.92".
+   - Mouse: MC in paper 3-3, thesis 3, the Arabic copy and the thesis Table 11 row. The stale "0.856 vs 0.861" was
+     removed.
+3. Experiment PR (persistent suspicion) is pre-registered (f7458474) and its script is written (`run_pr.py`).
+
+**DONE 23 Oct 00:34:** Docker was started (owner: "start it"). The live cluster came back healthy. fs_paper_numbers FS_table equals the new rows. The ROC figure was redrawn at 34/60. All three documents were rebuilt, diffed and INSTALLED, and the preview folder was removed. **PR result** (docs/recovery/RESULTS_PR.md): the pre-registered pick is A6, six consecutive suspicious checks. It gives 0.14 vs 0.37 requests per minute and 95.3% vs 98.1% caught (lower bound -4.99, at the margin), 8 s later. A3 is the safer middle point (0.25/min, 96.7%). Deployment needs the owner: MOUSE_STRIKES_TO_LOCK in the gateway and the demo, plus a rollout. (Original note follows.) Previously: the previews were in `paper/build/preview`, NOT installed. **Waiting for Docker** (Docker Desktop was found closed on 23
+Oct, after an orderly exit at 12:49 local on 22 Oct, so the live cluster is down; it is not restarted without the
+owner):
+- (a) `fs_paper_numbers.py`: its FS_table rows must equal the new table;
+- (b) `fs_roc_figure.py` at 34 and 60, copied to `paper/figures/fig_mouse_sapimouse_roc_sm.png`, because the thesis
+  caption already says 34;
+- (c) `run_pr.py`;
+- then rebuild, diff and install the three documents.
+
+## 10. Mouse: a console choice of the decision length, like typing's 6 / 10 / 20 (asked by the owner 2026-10-21, not started)
+
+The console lets an organisation choose the typing packet (6, 10 or 20 windows) but offers only on/off for the mouse,
+which always decides on 60 windows. The owner asked how the verdict would work for the other lengths of the mouse
+table and asked to record it.
+
+**The rule for any length N.** The passkey is asked when at least ceil(0.55 N) of the last N windows are below the
+user's personal threshold, the share of today's 33 of 60. That gives 9 of 15, 19 of 33 and 33 of 60 (17 of 30 and 6 of
+10 by the same rule). The threshold (20th percentile of the leave-one-sample-out scores), the check every 1.6 s and the
+passkey at the first suspicious check stay as they are. The first verdict comes after (40 + 10 N) x 0.0269 s of
+movement: about 5 s at 15, 10 s at 33 and 17 s at 60.
+
+**Measured already** (stage D, 19 users, F2; `analysis/phase6/mouse_decision_length.py`, paper Table 6, thesis
+Table 15): 15 windows FAR 14.2%, FRR 15.1%; 33 windows FAR 12.9%, FRR 10.0%; 60 windows FAR 10.8%, FRR 10.0%. These are
+step-disjoint decisions, each window counted once.
+
+**To measure before adding it.** The live loop at 15, 33 and 60: one check per about 6 new windows (1.6 s), each on
+the last N windows, replayed on the stage D F2 scores (`p1lib.replay(..., "vote", N, K)` as in
+`analysis/phase2/analyze_c.live_loop`). Report the genuine passkey prompts per minute, the users never prompted, the
+impostor runs caught and the time to catch. A short decision changes more from one check to the next, so the step-disjoint
+FRR does not tell how often the real user is asked. Decide the choices and the default with the owner after this.
+
+**Measured 2026-10-21** (`analysis/phase6/mouse_live_decision_length.py`, artifacts/phase6/mouse_live_decision_length.*; the 60-window row reproduces the recorded deployed live loop 0.48 / 73.7% / 96.1%):
+
+| Decision | Genuine passkey requests per minute of movement | Users never asked | Impostor runs caught | Mean time to catch |
+|:--:|:--:|:--:|:--:|:--:|
+| 15 windows (9 low) | 2.48 | 32% | 99.7% | 7.0 s |
+| 33 windows (19 low) | 0.85 | 63% | 98.1% | 11.9 s |
+| 60 windows (33 low, deployed) | 0.48 | 74% | 96.1% | 18.1 s |
+
+With the network trained as in SapiMouse (adopted 2026-10-22; `analysis/phase7/fs_paper_numbers.py`): 15 windows 2.45/min, 32%, 99.7%, 6.9 s; 33 windows 0.92/min, 47%, 98.6%, 11.6 s; 60 windows 0.37/min, 79%, 97.0%, 17.8 s.
+
+The step-disjoint FRR of 33 equals 60's (10.0%), but in the live loop 33 asks the real user 1.8 times as often and 15 about 5 times as often, because a short decision changes more between checks. Impostors are caught a little more often and faster. If a choice is offered, 15 is not a reasonable option. Decide with the owner.
+
+**Where it would go**, following `keystrokeDecisionWindows`:
+- `services/gateway/settings.js` (a `mouseDecisionWindows` entry, choices 15 / 33 / 60, default 60, its own claim),
+  `services/ca-service/lib/appSettings.js`, the console text in `services/gateway/public/ui/ui.js`, and both test files.
+- `services/ca-service/lib/mouse.js`: `VOTE_N` / `VOTE_K` become per request. `MOUSE_DECISION_VERSION`
+  (`f2-loso-p20-33of60`) is stored with every profile, and a profile with another version is rebuilt. The threshold does
+  not depend on N, so the version must stop naming N and K, or every change of the setting would rebuild every
+  profile.
+- Clients: the SDK takes the vote length only from a check's reply (`bufferMax`), and the extension has
+  `MOUSE_N = 60` fixed. Both wait for 60 windows before their first check, so the length must come with the start-up
+  config (`/config`, as `recentWindowCount` does for typing), or the first verdict at 15 would still come after 17 s.
+- The console text must quote the live-loop numbers measured above.
+
+**Done 2026-10-21 (owner: "sure"): the typing option's console text now quotes paper Table 4.** It said fewer windows
+"flag the real user more often (about 24% of their verdicts at 6, 19% at 10, 15% at 20); impostors are caught about as
+often (~91%)", a source that was never found. `services/gateway/public/ui/ui.js` now says about 10%, 6% and 3%, and
+~88% caught, from the deployed model (`analysis/phase3/packet_length_a200.py`: FRR 10.1%, 6.2%, 3.3%, FAR 12.4%,
+12.6%, 11.9%). The running gateway still serves the old text until its image is rebuilt and rolled out (asked the
+owner first). The mouse console text, when added, must likewise quote the measured numbers.
