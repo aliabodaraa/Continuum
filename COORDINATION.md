@@ -700,3 +700,4 @@ Branch: `experiment/recovery-plan`
 - [26 Oct 06:37 UTC] PAPER/THESIS: mouse result table "Deployed" -> "Proposed" (Arabic "المقترح"), owner's word; installed. Pages 14 / 14 / 55.
 - [26 Oct 06:45 UTC] PAPER/THESIS: typing result table "Default" -> "Proposed, as many windows as [Lu]" (Arabic "المقترح"), so both result tables use "Proposed" (owner); installed. Pages 14 / 14 / 55.
 - [26 Oct 06:50 UTC] PAPER/THESIS: result tables final form (owner): first column "Role" with "Shorter alternatives" (merged) and "Proposed" in both the typing and mouse tables; installed. Pages 14 / 14 / 55.
+- [26 Oct 06:50 UTC] PAPER/THESIS: result tables' "Shorter alternatives" -> "Tested alternatives" (Arabic "بدائل مختبرة"), thesis TAR header shortened so its percentages stay on one line; installed. Pages 14 / 14 / 55.
