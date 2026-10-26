@@ -701,3 +701,4 @@ Branch: `experiment/recovery-plan`
 - [26 Oct 06:45 UTC] PAPER/THESIS: typing result table "Default" -> "Proposed, as many windows as [Lu]" (Arabic "المقترح"), so both result tables use "Proposed" (owner); installed. Pages 14 / 14 / 55.
 - [26 Oct 06:50 UTC] PAPER/THESIS: result tables final form (owner): first column "Role" with "Shorter alternatives" (merged) and "Proposed" in both the typing and mouse tables; installed. Pages 14 / 14 / 55.
 - [26 Oct 06:50 UTC] PAPER/THESIS: result tables' "Shorter alternatives" -> "Tested alternatives" (Arabic "بدائل مختبرة"), thesis TAR header shortened so its percentages stay on one line; installed. Pages 14 / 14 / 55.
+- [26 Oct 07:00 UTC] PAPER/THESIS: mouse section 4-4 now says plainly that 40.3% / 4.1% (20th percentile) and 19.4% / 12.3% (10th) are SapiMouse's one-class method run live, against 10.0% / 9.3% for our channel (owner); installed. Pages 14 / 14 / 55.
