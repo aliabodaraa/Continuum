@@ -704,3 +704,4 @@ Branch: `experiment/recovery-plan`
 - [26 Oct 07:00 UTC] PAPER/THESIS: mouse section 4-4 now says plainly that 40.3% / 4.1% (20th percentile) and 19.4% / 12.3% (10th) are SapiMouse's one-class method run live, against 10.0% / 9.3% for our channel (owner); installed. Pages 14 / 14 / 55.
 - [26 Oct 07:01 UTC] PAPER: "higher for 14 of 20 people" removed from mouse section 4-4 of the paper and the Arabic copy (owner); the thesis keeps it. Installed, pages 14 / 14.
 - [26 Oct 07:06 UTC] PAPER: mouse 4-4 now gives the measured reason the SapiMouse threshold failed ("the one-class scores of the legitimate user fell there"; RESULTS_E_NATIVE.md) in the paper and the Arabic copy (owner); the thesis already said it. Installed, pages 14 / 14.
+- [26 Oct 07:15 UTC] PAPER/THESIS: conclusions reordered (owner): system-level conclusion first, then mouse, typing, retraining; the thesis's six conclusions follow the same order. Installed, pages 14 / 14 / 55.
