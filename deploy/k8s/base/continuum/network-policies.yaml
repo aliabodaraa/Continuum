@@ -120,7 +120,7 @@ spec:
     - from:
         - podSelector:
             matchExpressions:
-              - { key: app.kubernetes.io/name, operator: In, values: [gateway, ca-service, passkey-service, db-migrate] }
+              - { key: app.kubernetes.io/name, operator: In, values: [gateway, ca-service, passkey-service, db-migrate, pg-backup] }
         - podSelector:
             matchLabels: { cnpg.io/cluster: continuum-pg }          # replication between instances
         - namespaceSelector:

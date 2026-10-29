@@ -11,6 +11,7 @@ const webauthnRoute = require("./routes/webauthn");
 const passkey = require("./services/passkeyClient");
 const ca = require("./services/caClient");
 const { attachContinuumId } = require("./services/continuumId");
+const SqliteSessionStore = require("./lib/sessionStore");
 
 const app = express();
 
@@ -18,6 +19,8 @@ const app = express();
 app.use(bodyParser.json({ limit: "5mb" }));
 app.use(
   session({
+    // On the demo's own database, so a sign-in survives a restart of the server (lib/sessionStore.js).
+    store: new SqliteSessionStore(db),
     secret: process.env.SESSION_SECRET || "continuum-secret-key-change-in-production",
     resave: false,
     saveUninitialized: true,

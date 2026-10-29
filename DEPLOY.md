@@ -325,6 +325,22 @@ scripts/k8s-restore.sh <backup> --restore             # into the cluster, compar
 scripts/k8s-restore.sh <backup> --secrets             # a new PC: the secrets first, then k8s-local.sh deploy
 ```
 
+A copy of the three databases also goes into the object store by itself, once a day
+(`deploy/k8s/base/continuum/pg-backup.yaml`, a CronJob at 10:00 UTC; a run missed while the PC was off starts
+when it is back): pg_dump per database with its checksums from the same snapshot, each dump proven readable
+(`pg_restore --list`), each file read back from the store and compared. Bucket `backups`, prefix
+`postgres/day-DD/` (31 slots that overwrite themselves), and `postgres/LATEST` names the newest. It is a logical
+copy, not WAL archiving: a restore returns to the moment of the copy. Run one now and read its log:
+
+```bash
+kubectl -n continuum create job --from=cronjob/pg-backup pg-backup-now
+kubectl -n continuum logs job/pg-backup-now --all-containers
+```
+
+Restore one database from it: `pg_restore --no-owner --no-privileges --dbname=<db> <db>.dump` as that database's
+role (what `k8s-restore.sh --restore` does for the full backups), then `psql -d <db> -f checksums.sql` must print
+the lines of `<db>.checksums`.
+
 The end-to-end suites target this cluster by default (`scripts/k8s-local.sh e2e`, or
 `node extension/scripts/e2e_headless_<suite>.mjs` with `CONTINUUM_GATEWAY` / `CONTINUUM_DEMO` on the overlay's
 addresses): each makes its own port-forward for the operator area and reads the tenant secret from the

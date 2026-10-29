@@ -88,11 +88,11 @@ node_checks() {
     echo "JavaScript syntax: ok"
     for f in scripts/*.sh; do bash -n "$f" || exit 1; done
     echo "shell syntax: ok"
-    for d in services/ca-service services/gateway services/passkey-service; do
+    for d in services/ca-service services/gateway services/passkey-service apps/demo; do
       (cd "$d" && npm ci --omit=dev --no-audit --no-fund --loglevel=error >/dev/null) \
         || { echo "npm ci failed in $d (is package-lock.json in step with package.json?)"; exit 1; }
     done
-    node --test --test-reporter=spec services/gateway/test/*.test.js services/ca-service/test/*.test.js services/passkey-service/test/*.test.js
+    node --test --test-reporter=spec services/gateway/test/*.test.js services/ca-service/test/*.test.js services/passkey-service/test/*.test.js apps/demo/test/*.test.js
   '
 }
 

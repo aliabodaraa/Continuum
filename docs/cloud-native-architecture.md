@@ -464,10 +464,13 @@ sequenceDiagram
   (`models/<user>/<modality>/<version>/`). ca-service stores which version is current. Inference loads
   a version it has not cached. Immutability makes the per-pod cache safe without invalidation.
   Base models are versioned with the code, inside the image.
-- **Backups and recovery:** CloudNativePG continuous WAL archiving to object storage, with
-  point-in-time recovery, plus nightly base backups. The object store keeps versions. Restores are
-  drilled, as `scripts/data-import.sh --verify-only` does today. **Before the running stack moves to
-  PostgreSQL, the backup script must also dump PostgreSQL** (open item).
+- **Backups and recovery:** since 2026-10-29 a daily CronJob (`deploy/k8s/base/continuum/pg-backup.yaml`)
+  copies each database into the object store (pg_dump with checksums from the same snapshot, proven
+  readable, read back from the store and compared; bucket `backups`, 31 daily slots). `scripts/k8s-backup.sh`
+  is the full backup a person keeps off the machine, and `scripts/k8s-restore.sh --verify-only` drills a
+  restore. Still planned: continuous WAL archiving with point-in-time recovery through the Barman Cloud
+  plugin (it needs cert-manager; the operator's built-in Barman support is deprecated and absent from the
+  minimal PostgreSQL image the cluster runs).
 - **Scaling:** reads already hit memory in the gateway. Connection pools are sized per pod (5) times
   the HPA maximum, kept under the server's limit. A PgBouncer pooler (CloudNativePG `Pooler`) is added
   only if the pod count makes that sum too large.

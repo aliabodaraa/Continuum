@@ -1,0 +1,214 @@
+# A copy of the three databases into the object store, once a day, proven readable and read back (2026-10-29).
+# scripts/k8s-backup.sh stays the full backup (models, the demo's SQLite, the secrets, paper/) that a person runs
+# and keeps off this machine; this job is the copy nothing waits for. It is a logical backup (pg_dump): a restore
+# returns to the moment of the copy. Continuous WAL archiving with point-in-time recovery needs the Barman Cloud
+# plugin (cert-manager) or an image with Barman Cloud (the cluster runs the minimal image, and the operator's
+# built-in Barman support is deprecated): docs/cloud-native-architecture.md section 11.
+#   dump (init container, the cluster's own PostgreSQL image): per database, one read-only transaction exports
+#        its snapshot to pg_dump (custom format) and takes the checksums in the same snapshot, as k8s-backup.sh
+#        does, so the checksum lines describe exactly what the dump holds; pg_restore --list proves each dump
+#        readable before it leaves the pod.
+#   upload (the model image: it has boto3 and the store's credentials): bucket "backups", prefix postgres/day-DD/
+#        (DD = day of month: 31 slots that overwrite themselves, so the store holds a month and nothing lists or
+#        expires objects); each file is read back and its SHA-256 compared; postgres/LATEST names the newest slot.
+# Restore one database: pg_restore --no-owner --no-privileges --dbname=<db> <db>.dump as that database's role, then
+# psql -f checksums.sql prints the lines of <db>.checksums when the restore is whole (DEPLOY.md, "Kubernetes on
+# this PC"). Run one now: kubectl -n continuum create job --from=cronjob/pg-backup pg-backup-now
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup
+  labels:
+    app.kubernetes.io/name: pg-backup
+    app.kubernetes.io/component: backup
+spec:
+  schedule: "0 10 * * *"          # 13:00 in Damascus, when this PC is usually on; a run missed while it was off starts when it is back
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 259200   # three days of logs
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: pg-backup
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+          initContainers:
+            - name: dump
+              image: ghcr.io/cloudnative-pg/postgresql:16.15-minimal-bookworm   # the cluster's image: the same pg_dump
+              command: ["bash", "/scripts/dump.sh"]
+              env:
+                - { name: PGHOST, value: continuum-pg-rw }
+                - { name: PGPORT, value: "5432" }
+                - name: GATEWAY_USER
+                  valueFrom: { secretKeyRef: { name: pg-gateway, key: username } }
+                - name: GATEWAY_PASSWORD
+                  valueFrom: { secretKeyRef: { name: pg-gateway, key: password } }
+                - name: CA_USER
+                  valueFrom: { secretKeyRef: { name: pg-ca, key: username } }
+                - name: CA_PASSWORD
+                  valueFrom: { secretKeyRef: { name: pg-ca, key: password } }
+                - name: PASSKEY_USER
+                  valueFrom: { secretKeyRef: { name: pg-passkey, key: username } }
+                - name: PASSKEY_PASSWORD
+                  valueFrom: { secretKeyRef: { name: pg-passkey, key: password } }
+              volumeMounts:
+                - { name: out, mountPath: /out }
+                - { name: scripts, mountPath: /scripts, readOnly: true }
+                - { name: tmp, mountPath: /tmp }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { memory: 256Mi }
+          containers:
+            - name: upload
+              image: continuum/model-api
+              command: ["python", "/scripts/upload.py"]
+              env:
+                - { name: S3_ENDPOINT, value: "http://seaweedfs.continuum-storage:8333" }
+                - { name: BACKUP_S3_BUCKET, value: backups }
+                - name: S3_ACCESS_KEY
+                  valueFrom: { secretKeyRef: { name: model-store, key: MODEL_S3_ACCESS_KEY } }
+                - name: S3_SECRET_KEY
+                  valueFrom: { secretKeyRef: { name: model-store, key: MODEL_S3_SECRET_KEY } }
+                - { name: HOME, value: /tmp }
+              volumeMounts:
+                - { name: out, mountPath: /out, readOnly: true }
+                - { name: scripts, mountPath: /scripts, readOnly: true }
+                - { name: tmp, mountPath: /tmp }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { memory: 512Mi }
+          volumes:
+            - { name: out, emptyDir: {} }
+            - { name: tmp, emptyDir: {} }
+            - name: scripts
+              configMap: { name: pg-backup-scripts }
+---
+# The job's two steps and the checksum query. checksums.sql is a copy of scripts/pg-checksums.sql (Kustomize
+# reads no file outside this folder); scripts/test_pg_backup_manifest.py keeps the two the same.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pg-backup-scripts
+data:
+  dump.sh: |
+    #!/usr/bin/env bash
+    # Mirrors scripts/k8s-backup.sh: one read-only transaction per database exports its snapshot to pg_dump and
+    # takes the checksums in that snapshot. Reads PGHOST, PGPORT and <DB>_USER / <DB>_PASSWORD; writes to /out.
+    set -euo pipefail
+    cd /out
+    stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    slot="day-$(date -u +%d)"
+    printf '%s %s\n' "$stamp" "$slot" > INFO
+    export PGHOST PGPORT PGSSLMODE=prefer
+    for db in gateway ca passkey; do
+      u="${db^^}_USER"; p="${db^^}_PASSWORD"
+      export PGUSER="${!u}" PGPASSWORD="${!p}" PGDATABASE="$db"
+      rm -f "$db.rc" "$db.err"
+      { printf '%s\n' '\set ON_ERROR_STOP 1' 'BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY;' \
+          'SELECT pg_export_snapshot() AS snap \gset' '\setenv SNAP :snap' \
+          "\\! pg_dump --format=custom --no-owner --no-privileges --snapshot=\"\$SNAP\" --file=/out/$db.dump 2>/out/$db.err; echo \$? > /out/$db.rc"
+        cat /scripts/checksums.sql
+        echo 'COMMIT;'
+      } | psql -X -q -t -A -v ON_ERROR_STOP=1 > "$db.checksums"
+      [ -f "$db.rc" ] && [ "$(cat "$db.rc")" = 0 ] || { echo "pg_dump $db failed:"; cat "$db.err" 2>/dev/null; exit 1; }
+      pg_restore --list "$db.dump" > /dev/null   # readable before it leaves the pod
+      rm -f "$db.rc" "$db.err"
+      echo "$db: $(wc -l < "$db.checksums") checksum lines, $(stat -c %s "$db.dump") bytes"
+    done
+    sha256sum INFO *.dump *.checksums > SHA256SUMS
+    echo "dump done: $stamp $slot"
+  upload.py: |
+    """The files the dump step left in /out go to the object store, each read back and compared. Bucket
+    BACKUP_S3_BUCKET (default backups), prefix postgres/<slot>/ with the slot from INFO; postgres/LATEST names it."""
+    import hashlib
+    import os
+    import sys
+    import time
+
+    import boto3
+    from botocore.config import Config
+    from botocore.exceptions import ClientError, EndpointConnectionError
+
+    OUT = "/out"
+    client = boto3.client(
+        "s3", endpoint_url=os.environ["S3_ENDPOINT"], aws_access_key_id=os.environ["S3_ACCESS_KEY"],
+        aws_secret_access_key=os.environ["S3_SECRET_KEY"], region_name=os.environ.get("S3_REGION", "us-east-1"),
+        config=Config(s3={"addressing_style": "path"}, retries={"max_attempts": 5, "mode": "standard"},
+                      connect_timeout=5, read_timeout=120))
+    bucket = os.environ.get("BACKUP_S3_BUCKET", "backups")
+    # The store may still be starting (a run right after this PC wakes up): wait for it, up to two minutes.
+    deadline = time.time() + 120
+    while True:
+        try:
+            client.head_bucket(Bucket=bucket)
+            break
+        except ClientError as e:
+            if str(e.response.get("Error", {}).get("Code")) in ("404", "NoSuchBucket"):
+                client.create_bucket(Bucket=bucket)
+                print(f"bucket {bucket} created")
+                break
+            raise
+        except EndpointConnectionError:
+            if time.time() > deadline:
+                raise
+            print("the object store is not answering yet; waiting")
+            time.sleep(5)
+    stamp, slot = open(os.path.join(OUT, "INFO"), encoding="utf-8").read().split()
+    prefix = f"postgres/{slot}/"
+    names = ["INFO", "SHA256SUMS"] + sorted(n for n in os.listdir(OUT) if n.endswith((".dump", ".checksums")))
+    total = 0
+    for name in names:
+        with open(os.path.join(OUT, name), "rb") as f:
+            data = f.read()
+        client.put_object(Bucket=bucket, Key=prefix + name, Body=data)
+        back = client.get_object(Bucket=bucket, Key=prefix + name)["Body"].read()
+        if hashlib.sha256(back).hexdigest() != hashlib.sha256(data).hexdigest():
+            sys.exit(f"{prefix}{name}: the copy in the store differs from the file")
+        total += len(data)
+        print(f"{prefix}{name}: {len(data)} bytes, read back equal")
+    client.put_object(Bucket=bucket, Key="postgres/LATEST", Body=f"{prefix} {stamp}\n".encode())
+    print(f"upload done: {len(names)} files, {total} bytes, s3://{bucket}/{prefix} ({stamp})")
+  checksums.sql: |
+    -- What a PostgreSQL database holds, in a few lines: per table of schema public its row count and a hash of
+    -- its content (every row's text form hashed, the hashes sorted and hashed again), per sequence its value. Two
+    -- databases that print the same lines hold the same data. scripts/k8s-backup.sh runs it in the dump's own
+    -- snapshot and keeps the output beside the dump; scripts/k8s-restore.sh runs it on what it restored.
+    --   psql -X -q -t -A -v ON_ERROR_STOP=1 -d <db> -f scripts/pg-checksums.sql
+    -- A row's text form depends on these settings, so both sides fix them (inside the backup's transaction, too).
+    SET TimeZone = 'UTC';
+    SET DateStyle = 'ISO, YMD';
+    SET IntervalStyle = 'postgres';
+    SET extra_float_digits = 1;
+    SET bytea_output = 'hex';
+    SELECT format('SELECT %L, count(*), coalesce(md5(string_agg(h, %L ORDER BY h COLLATE "C")), %L) FROM (SELECT md5(t::text) AS h FROM public.%I t) s',
+                  'table ' || c.relname, '', '-', c.relname)
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'r'
+    ORDER BY c.relname COLLATE "C"
+    \gexec
+    SELECT format('SELECT %L, last_value, is_called FROM public.%I', 'sequence ' || c.relname, c.relname)
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'S'
+    ORDER BY c.relname COLLATE "C"
+    \gexec

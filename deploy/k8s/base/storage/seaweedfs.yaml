@@ -83,5 +83,9 @@ spec:
             matchLabels: { kubernetes.io/metadata.name: continuum }
           podSelector:
             matchLabels: { app.kubernetes.io/component: model }
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: continuum }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: pg-backup }     # the daily database copy (pg-backup.yaml)
       ports:
         - { port: 8333, protocol: TCP }

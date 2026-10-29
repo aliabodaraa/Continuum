@@ -53,6 +53,13 @@ spec:
               valueFrom: { configMapKeyRef: { name: continuum-urls, key: PASSKEY_ORIGIN } }
             - name: PASSKEY_API_KEY
               valueFrom: { secretKeyRef: { name: continuum-secrets, key: PASSKEY_API_KEY } }
+          # The service opens its port only once its store answers (server.js waits up to 120 s for PostgreSQL
+          # after a node restart), so without a startup probe the liveness probe killed it while it waited: 19
+          # restarts by 29 Oct 2026 against 8 for the services that listen first.
+          startupProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
           readinessProbe:
             httpGet: { path: /ready, port: http }
             periodSeconds: 5

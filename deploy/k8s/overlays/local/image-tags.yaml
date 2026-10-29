@@ -41,6 +41,8 @@ imageTag: { name: continuum/model-api, newTag: local }
 fieldSpecs:
   - kind: Deployment
     path: spec/template/spec/containers[]/image
+  - kind: CronJob                 # the daily database copy uploads with this image (base/continuum/pg-backup.yaml)
+    path: spec/jobTemplate/spec/template/spec/containers[]/image
 ---
 apiVersion: builtin
 kind: ImageTagTransformer

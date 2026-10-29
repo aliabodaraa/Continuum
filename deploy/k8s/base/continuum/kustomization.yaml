@@ -14,5 +14,6 @@ resources:
   - ca-service.yaml
   - passkey-service.yaml
   - model.yaml
+  - pg-backup.yaml
   - network-policies.yaml
   - edge.yaml
