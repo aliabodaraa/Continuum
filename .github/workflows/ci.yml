@@ -144,7 +144,9 @@ jobs:
           echo "runs as uid $uid"
 
       - name: Vulnerability scan (report only for now)
-        uses: aquasecurity/trivy-action@0.28.0
+        # Pinned to the commit of v0.36.0: the project's tags gained a "v", and the old "0.28.0" tag no longer
+        # resolves, which failed every image job at "Set up job" from 6 Oct to 29 Oct 2026.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25   # v0.36.0
         with:
           image-ref: continuum-ci/${{ matrix.name }}:${{ github.sha }}
           severity: CRITICAL,HIGH
