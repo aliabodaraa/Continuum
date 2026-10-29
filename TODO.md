@@ -445,6 +445,14 @@ vote or training changes.
   continuum/web-demo:se 9860237c (only sdk-assets/guard.js differs from s1d). Deploy needs the owner's OK; it signs demo
   users out once. The persistent session store is still only an idea. Gateway mode still shows a stale state on a 401.
   DEPLOYED 2026-10-25 14:10 UTC (web-demo 9860237c). Undo: retag continuum/web-demo:s1d as :local and roll out.
+  2026-10-29 (owner approved an architecture review's four fixes, all LIVE): the demo's sessions now persist in its SQLite
+  (apps/demo/lib/sessionStore.js, web-demo fbb7b533; the restart signs users out no more); passkey-service has a startupProbe
+  (it was probe-killed at every node restart: 19 restarts); a daily pg_dump copy of the three databases to SeaweedFS
+  (deploy/k8s/base/continuum/pg-backup.yaml, 10:00 UTC, 31 slots, read back and checksummed; first run OK; restore =
+  pg_restore + checksums.sql, DEPLOY.md); the old ticketing project in namespace default scaled to 0 (its deletion is the
+  owner's: `kubectl -n default delete deploy,svc --all`). STILL OPEN from the review: TLS at the edge (cert-manager),
+  mTLS/mesh, alerts and Loki logs, WAL archiving/PITR (Barman Cloud plugin needs cert-manager), CI on GitHub (billing;
+  a self-hosted runner keeps the repo private), deploys by digest from CI, key rotation, tenant secrets in clear.
 - 2026-10-25 STAGE 2 (RU) FROZEN: artifacts/phase7/PREREGISTRATION_RU.md (sha256 72786bf8, 13:48 UTC); code
   services/model-api/analysis/phase7/run_ru.py. Test data = his live checks from 2026-10-25 21:00:00 UTC; cut-off = end
   (20:59:59 UTC) of the first day with >= 1,125 non-warm-up checks from >= 2 sittings, at the latest 2026-10-28 20:59:59 UTC.
