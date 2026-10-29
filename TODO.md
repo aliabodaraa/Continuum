@@ -471,6 +471,7 @@ vote or training changes.
   not delete data): DELETE FROM mouse_use_samples / mouse_use_anchors / mouse_live_windows (4 / 10 / 960 rows, his only;
   no foreign keys), and Remove-Item of the scratchpad exports ru/smoke, ru/test_a1 and 2518dc76's owner_mouse. Kept: the
   normal mouse_decisions log, the pre-registration, the aggregate results and the switched-off code. Verify after he runs them.
+  DONE 2026-10-29: he ran them; all three tables 0 rows, the exports gone; the day-29 backup slot re-taken without them.
 
 **Baseline to measure next (stage 1 changes no decision, so it runs in the same days):** the owner keeps mouse protection on for some days, then
 export his mouse_decisions since 2026-10-24 15:08:29 and run `analysis/phase7/owner_mouse_diagnosis.py --trained
