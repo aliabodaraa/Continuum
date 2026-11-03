@@ -397,6 +397,8 @@ app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: false, limit: "16kb" }));   // the organisation's sign-in posts a form (/v1/link/callback)
 // The operator page only for this machine (see "the operator" below); everyone else gets a plain 404.
 app.use((req, res, next) => (req.path === "/operator.html" && !operatorHost(req) ? res.status(404).type("text/plain").send("Not found") : next()));
+// The bare address opens the console's sign-in (it answered Express's "Cannot GET /" before 2026-11-03).
+app.get("/", (req, res) => res.redirect(302, "/console.html"));
 app.use(express.static(GATEWAY_PAGES));
 app.use(express.static(SDK_PUBLIC));
 // Liveness: the process answers. Readiness: it can also reach its storage (with postgres, the database

@@ -7,6 +7,7 @@ const express = require("express");
 const db = require("../../db/init");
 const ca = require("../../services/caClient");
 const { requireFreshPasskey } = require("../../middleware/requireFreshPasskey");
+const { isAdmin } = require("../../lib/admins");
 
 const router = express.Router();
 
@@ -113,10 +114,12 @@ router.get("/decisions", requireAuth, async (req, res, next) => {
 });
 
 // CSV export — the CA service holds decisions by user_id; usernames (needed for
-// the All-Users export) are joined here from the app's users table.
+// the All-Users export) are joined here from the app's users table. Every user's
+// records only for the app's admins (lib/admins.js).
 router.get("/decisions/export", requireAuth, async (req, res, next) => {
   try {
     const all = req.query.all === "1";
+    if (all && !isAdmin(req)) return res.status(403).json({ error: "admins_only" });
     let rows;
     if (all) {
       const { data } = await ca.keystrokeDecisionsAll(req.session.userId);
@@ -143,14 +146,16 @@ router.get("/decisions/export", requireAuth, async (req, res, next) => {
 });
 
 // Research metrics — CA service returns per-user_id aggregates + profiles; the
-// username mapping + summary are assembled here.
+// username mapping + summary are assembled here. Every user's row only for the
+// app's admins (lib/admins.js); anyone else sees their own.
 router.get("/metrics", requireAuth, async (req, res, next) => {
   try {
     const { data } = await ca.keystrokeMetrics(req.session.userId);
     const names = {};
     for (const u of db.prepare("SELECT id, username FROM users").all()) names[u.id] = u.username;
     const profileMap = data.profileMap || {};
-    const users = (data.rows || []).map((r) => {
+    const admin = isAdmin(req);
+    const users = (data.rows || []).filter((r) => admin || Number(r.user_id) === Number(req.session.userId)).map((r) => {
       const profile = profileMap[r.user_id] || {};
       const frr = r.total > 0 ? r.suspicious_count / r.total : null;
       const tar = r.total > 0 ? r.genuine_count / r.total : null;
@@ -177,6 +182,7 @@ router.get("/metrics", requireAuth, async (req, res, next) => {
     const avgScore = scores.length ? +(scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(4) : null;
     res.json({
       users,
+      allUsers: admin,
       summary: {
         totalUsers: users.length,
         totalDecisions,

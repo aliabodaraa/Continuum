@@ -25,3 +25,4 @@ data:
   RP_ID: localhost
   COOKIE_SECURE: "0"
   CONTINUUM_GATEWAY_URL: http://localhost:28080
+  DEMO_ADMIN_USERS: ali                  # reads every user's records (apps/demo/lib/admins.js)

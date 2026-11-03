@@ -11,6 +11,7 @@ data:
   COOKIE_SECURE: "1"
   CONTINUUM_GATEWAY_URL: https://api.example.com
   CONTINUUM_SITE_KEY: pk_demo
+  DEMO_ADMIN_USERS: ""                   # usernames that may read every user's records; nobody by default
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

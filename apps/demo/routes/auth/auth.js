@@ -6,6 +6,7 @@ const db = require("../../db/init");
 const passkey = require("../../services/passkeyClient");
 const ca = require("../../services/caClient");
 const { resolveContinuumId } = require("../../services/continuumId");
+const { isAdmin } = require("../../lib/admins");
 
 const router = express.Router();
 const profileUploadDir = path.join(__dirname, "../../public/uploads/profiles");
@@ -333,6 +334,7 @@ router.get("/me", async (req, res) => {
     passkeysRegistered: hasPasskey,
     continuousAuthLocked: !!req.session.continuousAuthLocked,
     typingStatus,
+    isAdmin: isAdmin(req),   // reads every user's records (lib/admins.js); the dashboard shows those buttons only then
   });
 });
 

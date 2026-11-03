@@ -360,6 +360,10 @@
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v7.5L4.5 19a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L14 9.5V2"/><path d="M8.5 2h7"/></svg>
           Lab
         </a>
+        <a href="/guest-demo.html" class="nav-btn" title="Drop-in SDK demo: a plain app protected by one script tag">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          SDK Demo
+        </a>
         <a href="/dashboard.html" class="nav-btn">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
           Dashboard
@@ -658,8 +662,10 @@
             : "var(--warning)";
           document.getElementById("rhythmSamples").textContent =
             `${s.sampleCount} / ${s.requiredSamples}`;
+          // "per-user-cnn-lstm" is ca-service's stored profile tag, older than the network: the live typing
+          // model is a CNN+GRU (ws50-gru-v2), so the label says what it is.
           document.getElementById("rhythmModel").textContent =
-            s.modelType || "per-user CNN+LSTM";
+            !s.modelType || s.modelType === "per-user-cnn-lstm" ? "per-user CNN+GRU" : s.modelType;
           if (window._waveSetState) window._waveSetState(s.trained);
         } catch {}
       }

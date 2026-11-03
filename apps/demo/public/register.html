@@ -127,8 +127,8 @@
       </div>
 
       <div class="brand-hero">
-        <div class="brand-headline">Get started in<br><span>three steps</span>.</div>
-        <div class="brand-desc">Set up your account in minutes. Your behavioral biometric profile builds automatically as you type.</div>
+        <div class="brand-headline">Get started in<br><span>four steps</span>.</div>
+        <div class="brand-desc">Set up your account in minutes. Your behavioural profile is built from a few minutes of typing and mouse movement.</div>
         <div class="steps-list">
           <div class="step-item">
             <div class="step-num">1</div>
@@ -140,15 +140,22 @@
           <div class="step-item">
             <div class="step-num">2</div>
             <div class="step-body">
-              <div class="step-title">Enroll your keystroke rhythm</div>
-              <div class="step-desc">Type three passages so the system can learn your unique digraph timing patterns (dwell, DD, UD intervals).</div>
+              <div class="step-title">Register a passkey</div>
+              <div class="step-desc">Your device's fingerprint, face or PIN, or a security key. It confirms it is you when your typing or mouse movement looks unusual.</div>
             </div>
           </div>
           <div class="step-item">
             <div class="step-num">3</div>
             <div class="step-body">
-              <div class="step-title">Register a FIDO2 passkey</div>
-              <div class="step-desc">Add a hardware key or device biometric for step-up challenges when your typing looks unusual.</div>
+              <div class="step-title">Teach your typing rhythm</div>
+              <div class="step-desc">Type five short passages so the system can learn how long you hold keys and move between them.</div>
+            </div>
+          </div>
+          <div class="step-item">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">Teach your mouse movement</div>
+              <div class="step-desc">Move between targets for about two minutes (eight short samples).</div>
             </div>
           </div>
         </div>
@@ -156,7 +163,7 @@
 
       <div class="brand-footer">
         Master's Thesis Research &mdash; Keystroke Dynamics Continuous Authentication<br>
-        Built on Buffalo Free-Text Dataset · 148 users · EER 12.61% (CNN+GRU)
+        Typing model: CNN+GRU, base trained on the Buffalo free-text dataset (148 users)
       </div>
     </div>
 
@@ -167,7 +174,7 @@
 
         <div class="info-box">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <p>After creating your account you will be asked to type three short passages to build your personal keystroke model.</p>
+          <p>After creating your account you will register a passkey, then type five short passages and move the mouse for about two minutes to build your personal models.</p>
         </div>
 
         <div id="alertError" class="alert alert-error"></div>

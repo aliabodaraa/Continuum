@@ -668,9 +668,9 @@
             <div class="stat-sub">accumulated training data</div>
           </div>
           <div class="stat-box">
-            <div class="stat-label">Training Fit</div>
+            <div class="stat-label">Decision Rule</div>
             <div class="stat-value" id="mouseAcc" style="color: var(--success)">--</div>
-            <div class="stat-sub" title="Balanced accuracy on the validation split of this user's own fine-tuning run (choose_user_threshold in model-api). It is a training diagnostic, NOT live accuracy — live performance is lower and must be measured against unseen impostors.">balanced acc. on train split</div>
+            <div class="stat-sub" id="mouseRuleSub" title="The passkey is asked when this many of the last windows score below the user's own threshold: the 20th percentile of the scores each enrolment sample gets from a head trained without it.">low windows ask for the passkey</div>
           </div>
         </div>
       </div>
@@ -688,7 +688,8 @@
               >
               <a
                 href="/api/text/decisions/export?all=1"
-                class="btn btn-secondary btn-sm"
+                class="btn btn-secondary btn-sm admin-only"
+                style="display: none"
                 download="auth_decisions_all.csv"
                 >All Users CSV</a
               >
@@ -760,7 +761,8 @@
               <a
                 id="metricsExportBtn"
                 href="/api/text/decisions/export?all=1"
-                class="btn btn-secondary btn-sm"
+                class="btn btn-secondary btn-sm admin-only"
+                style="display: none"
                 download="all_decisions.csv"
                 >Export All CSV</a
               >
@@ -1018,6 +1020,8 @@
           }
           const data = await res.json();
           applyUserBadge(data.username);
+          // Every user's records are for the app's admins only (the server refuses the others too).
+          document.querySelectorAll(".admin-only").forEach((e) => { e.style.display = data.isAdmin ? "" : "none"; });
           passkeySetupRequired = !!data.passkeySetupRequired;
           continuousAuthLocked = !!data.continuousAuthLocked;
           rhythmEnrollmentRequired = !!(
@@ -1050,11 +1054,11 @@
           }
           el("mouseSessions").textContent = d.sessions ?? 0;
           el("mouseWindows").textContent = (d.totalWindows ?? 0).toLocaleString();
-          const acc =
-            d.profile && d.profile.balanced_accuracy != null
-              ? (d.profile.balanced_accuracy * 100).toFixed(1) + "%"
-              : "--";
-          el("mouseAcc").textContent = acc;
+          // The live rule: K of the last N windows below the user's own threshold (the deployed head has no
+          // training accuracy to show; that box said "--" since the F2 head replaced the fine-tuned network).
+          el("mouseAcc").textContent = d.voteK && d.voteN ? d.voteK + " of " + d.voteN : "--";
+          const thr = d.profile && d.profile.threshold != null ? Number(d.profile.threshold) : null;
+          if (thr != null && Number.isFinite(thr)) el("mouseRuleSub").textContent = "low windows (below " + thr.toFixed(3) + ") ask for the passkey";
         } catch {
           /* mouse route unavailable — leave placeholders */
         }
