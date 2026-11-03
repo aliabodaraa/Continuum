@@ -38,6 +38,14 @@ var showVerdictPref = true;
 // The pause (popup button or Alt+Shift+P): while on, no page captures anything on either channel and no
 // check is sent. Persisted, and never lifted automatically.
 var paused = false;
+// The gateway not answering (Continuum stopped on this PC, the network down). Nothing is checked then, so nothing may
+// look as if it were: the pages stop collecting (as for the pause), the icon shows the logo off with "!", the popup
+// says the page is not protected, and the last verdicts are dropped (no stale "it's you"). Set by any request to the
+// gateway that fails or gets 502/503/504, cleared by the next answer; a probe every 30 s (chrome.alarms: this worker
+// sleeps) notices the return without waiting for movement. Kept in storage.local, so a restarted worker does not
+// resume collecting while the gateway is still away. Before 2026-11-03 the bars kept filling with the server down.
+var offline = null;   // { since, message }
+var PROBE_ALARM = "cg-gateway-probe";
 
 // MV3: this worker is stopped after ~30 s idle and restarted from scratch, so everything that gates
 // behaviour is persisted (the lock in cg_progress, the settings, the account) and read back at start.
@@ -86,7 +94,13 @@ function connKey() {
 function showVerdict() { return studyOn() ? !!study.showVerdict : showVerdictPref; }
 function studyInfo() { return studyOn() ? { participant: study.participant, condition: study.condition, client: study.client } : null; }
 // What the content scripts need: capture on or off, and whether it is the study (no password-field events).
-function captureInfo() { var c = conn(); return c ? { kind: c.kind, paused: paused } : null; }
+// offline: the gateway does not answer, nothing is collected. off: the channels the organisation turned off, not
+// collected either.
+function captureInfo() {
+  var c = conn();
+  return c ? { kind: c.kind, paused: paused, offline: !!offline, off: { keystroke: !!state.disabled.keystroke, mouse: !!state.disabled.mouse } } : null;
+}
+function disabledKey() { return Object.keys(state.disabled).sort().join(","); }
 // The signed-in organisation's settings (its console, or the operator's default): which channels are on,
 // the "fields never watched" and the typing packet. The field types and the packet are kept in storage
 // because the worker loses its variables when idle. The server enforces all of them anyway.
@@ -98,10 +112,12 @@ function refreshOrgConfig() {
   gw("/v1/sdk/keystroke/config", null, "GET").then(function (r) {
     if (!r || r.status !== 200) return;
     // A channel switched back on is used again at once (it used to wait up to 10 minutes for a retry).
+    var before = disabledKey();
     ["keystroke", "mouse"].forEach(function (ch) {
       if (r.d[ch] === "off") { if (!state.disabled[ch]) state.disabled[ch] = Date.now(); }
       else if (r.d[ch] === "on") delete state.disabled[ch];
     });
+    if (disabledKey() !== before) broadcastConfig();   // the pages stop or resume collecting that channel
     refreshAllBadges();
     if (Array.isArray(r.d.excludeFieldTypes)) {
       excludeTypes = r.d.excludeFieldTypes.map(function (x) { return String(x).toLowerCase(); });
@@ -135,16 +151,58 @@ function resetUser() {
   session = null; probation = false; openPrompt = null;
   stopUseRecording();
   state.verdict = null; state.mouseVerdict = null; state.error = null; state.notEnrolled = null;
+  // Another gateway, or none: whether the old one answered says nothing about it.
+  offline = null;
+  try { api.storage.local.remove("cg_offline"); } catch (e) {}
+  if (api.alarms) api.alarms.clear(PROBE_ALARM);
 }
 
 // ---- talking to the gateway ----
+// Every request to the gateway goes through here, so a failure or a recovery is noticed whatever the call.
+async function gfetch(url, opts) {
+  var r;
+  try { r = await fetch(url, opts); }
+  catch (e) { setOffline((e && e.message) || "unreachable"); throw e; }
+  if (r.status === 502 || r.status === 503 || r.status === 504) setOffline("HTTP " + r.status);   // the edge answers, nothing behind it
+  else setOnline();
+  return r;
+}
+function setOffline(message) {
+  var first = !offline;
+  offline = { since: (offline && offline.since) || Date.now(), message: String(message || "unreachable") };
+  state.error = "Can't reach Continuum at " + ((conn() || {}).gateway || "the gateway") + " (" + offline.message + "): nothing is checked";
+  if (!first) return;
+  state.verdict = null; state.mouseVerdict = null;   // no stale "it's you" while nothing is checked
+  try { api.storage.local.set({ cg_offline: offline }); } catch (e) {}
+  if (api.alarms) api.alarms.create(PROBE_ALARM, { periodInMinutes: 0.5 });
+  broadcastConfig();   // captureInfo() now says offline: the pages stop collecting and drop their buffers
+  refreshAllBadges();
+  persistProgress(true);
+}
+function setOnline() {
+  if (!offline) return;
+  offline = null;
+  state.error = null;
+  try { api.storage.local.remove("cg_offline"); } catch (e) {}
+  if (api.alarms) api.alarms.clear(PROBE_ALARM);
+  broadcastConfig();   // collecting resumes, from empty buffers
+  refreshAllBadges();
+}
+// The gateway's /health needs no sign-in. Any answer below 500 means it is back.
+function probeGateway() {
+  var c = conn();
+  if (!c || !offline) { if (api.alarms) api.alarms.clear(PROBE_ALARM); return Promise.resolve(); }
+  return gfetch(c.gateway + "/health", { cache: "no-store" }).catch(function () {});
+}
+if (api.alarms && api.alarms.onAlarm) api.alarms.onAlarm.addListener(function (a) { if (a && a.name === PROBE_ALARM) probeGateway(); });
+
 async function sessionToken(force) {
   var c = conn();
   if (!c) throw new Error("not signed in");
   var key = connKey();
   if (session && session.key === key && !force) return session.token;
   var body = c.kind === "study" ? { siteKey: c.siteKey, externalId: "study:" + study.participant } : { siteKey: c.siteKey, refreshToken: account.refreshToken };
-  var r = await fetch(c.gateway + "/v1/sdk/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  var r = await gfetch(c.gateway + "/v1/sdk/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   var d = await r.json().catch(function () { return {}; });
   if (!r.ok || !d.token) {
     // The refresh token was revoked or has expired, or the organisation was: sign in again.
@@ -160,7 +218,7 @@ async function gw(path, body, method) {
   if (!c) throw new Error("not signed in");
   for (var attempt = 0; attempt < 2; attempt++) {
     var token = await sessionToken(attempt > 0);
-    var r = await fetch(c.gateway + path, { method: method || "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    var r = await gfetch(c.gateway + path, { method: method || "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
       body: method === "GET" ? undefined : JSON.stringify(body || {}) });
     if (r.status === 401 && attempt === 0) continue;   // session expired: mint a new one once
     return { status: r.status, d: await r.json().catch(function () { return {}; }) };
@@ -206,9 +264,16 @@ function promptEvent(event) {
 function onVerdict(channel, r, sessionId) {
   var d = (r && r.d) || {};
   state.lastCheckAt = Date.now();
-  // The organisation turned this channel off (its console or the operator page): stop sending it.
-  if (r && r.status === 409 && /_disabled$/.test(String(d.error || ""))) { state.disabled[channel] = Date.now(); refreshAllBadges(); return; }
-  if (d.checked) delete state.disabled[channel];
+  // The organisation turned this channel off (its console or the operator page): stop sending it, and the pages stop
+  // collecting it.
+  if (r && r.status === 409 && /_disabled$/.test(String(d.error || ""))) {
+    var wasOff = !!state.disabled[channel];
+    state.disabled[channel] = Date.now();
+    if (!wasOff) broadcastConfig();
+    refreshAllBadges();
+    return;
+  }
+  if (d.checked && state.disabled[channel]) { delete state.disabled[channel]; broadcastConfig(); }
   if (r && r.status === 423 && !state.locked) { challenge(channel, null, sessionId); return; }   // locked server-side
   if (d.enrolled === false || (d.typingEvaluation && d.typingEvaluation.modelAvailable === false)) {
     state.notEnrolled = channel; state.error = null; refreshAllBadges(); return;
@@ -343,7 +408,7 @@ function revoke(acc) {
 }
 
 // ---- restore at worker start ----
-api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "cg_account", "cg_paused", "cg_show_verdict", "cg_study_paused", "cg_exclude_types", "cg_ks_packet"], function (d) {
+api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "cg_account", "cg_paused", "cg_show_verdict", "cg_study_paused", "cg_exclude_types", "cg_ks_packet", "cg_offline"], function (d) {
   d = d || {};
   if (Array.isArray(d.cg_exclude_types)) excludeTypes = d.cg_exclude_types;
   if (Number(d.cg_ks_packet) > 0) RECENT = Number(d.cg_ks_packet);
@@ -367,8 +432,16 @@ api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "
     state.lockPasted = !!p.lockPasted;
     if (Date.now() - (p.at || 0) < 10 * 60 * 1000) { state.verdict = p.verdict || null; state.mouseVerdict = p.mouseVerdict || null; }
   }
+  // The gateway was away when this worker stopped: stay offline (nothing collected) and ask it now.
+  if (d.cg_offline && conn() && !offline) {
+    offline = d.cg_offline;
+    state.verdict = null; state.mouseVerdict = null;
+    state.error = "Can't reach Continuum at " + conn().gateway + " (" + (offline.message || "unreachable") + "): nothing is checked";
+    if (api.alarms) api.alarms.create(PROBE_ALARM, { periodInMinutes: 0.5 });
+  }
   broadcastConfig();
   refreshAllBadges();
+  if (offline) probeGateway();
 });
 if (api.storage.session && api.storage.session.get) {
   api.storage.session.get("cg_link_pending", function (d) { var p = d && d.cg_link_pending; if (p) pendingGateway = p.gateway; });
@@ -460,6 +533,7 @@ function statusObj(tabId) {
     connected: !!c, kind: c ? c.kind : null, gateway: c ? c.gateway : null,
     account: account ? { kind: account.kind, tenantName: account.tenantName, label: account.label, gateway: account.gateway, siteKey: account.siteKey, onboarding: account.onboarding } : null,
     study: studyInfo(), paused: paused, showVerdict: showVerdict(),
+    offline: offline ? { since: offline.since, message: offline.message } : null,
     locked: state.locked, lockReason: state.lockReason, verdict: state.verdict, mouseVerdict: state.mouseVerdict,
     error: state.error, notEnrolled: state.notEnrolled, lastCheckAt: state.lastCheckAt, exclusions: config.exclusions,
     disabled: { keystroke: !!state.disabled.keystroke, mouse: !!state.disabled.mouse },
@@ -484,6 +558,8 @@ if (api.tabs && api.tabs.onRemoved) api.tabs.onRemoved.addListener(function (tab
 // One bar's state: { frac 0..1, color, text } from the verdict if there is one, else the tab's progress.
 function barState(channel, tabId) {
   var p = tabProgress[tabId] || { ks: 0, mouse: 0 };
+  // Turned off by the organisation: nothing collected or checked, an empty bar.
+  if (state.disabled[channel]) return { frac: 0, color: COL_TRACK, text: "off (organisation setting)" };
   if (channel === "keystroke") {
     var v = state.verdict;
     if (v && v.status === "genuine") return { frac: 1, color: COL_OK, text: "it's you (" + v.mean + "%)" };
@@ -534,6 +610,7 @@ function badgeForState() {
   if (!conn()) return { text: "", color: "#64748b" };
   if (state.locked) return { text: "🔒", color: "#dc2626" };
   if (paused) return { text: "II", color: "#64748b" };
+  if (offline) return { text: "!", color: "#b45309" };
   if (!showVerdict()) return studyOn() ? { text: "REC", color: "#dc2626" } : RECORDING;
   var v = state.verdict, mv = state.mouseVerdict;
   if ((v && v.status === "suspicious") || (mv && mv.status === "suspicious")) return { text: "!", color: "#dc2626" };
@@ -567,18 +644,20 @@ function applyBadgeToTab(tabId, url) {
     // pages (content.js onGatewayPage), so nothing is recorded there: no dot, no bars.
     var capturable = /^https?:/i.test(url || "") && origin !== gatewayOrigin()
       && !/^https?:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)/i.test(url || "");
-    // The two bars whenever the live verdict is shown on a page that records; the lock and the pause keep
-    // the logo with their badge.
-    if (capturable && showVerdict() && !state.locked && !paused) { drawBars(tabId); return; }
+    // The two bars whenever the live verdict is shown on a page that records; the lock, the pause and an unreachable
+    // gateway keep the logo with their badge.
+    if (capturable && showVerdict() && !state.locked && !paused && !offline) { drawBars(tabId); return; }
     var b = badgeForState(), title = "Continuum Guard";
     if (b === RECORDING) {
       if (capturable) title = "Continuum Guard — recording; the verdict comes after about 17 s of mouse movement or a paragraph of typing";
       else { b = { text: "", color: b.color }; title = "Continuum Guard — this page can't be recorded"; }
     }
+    var away = !!offline && !state.locked && !paused;
+    if (away) title = "Continuum Guard — can't reach Continuum: nothing is checked, this page is not protected";
     actionSafe(api.action.setBadgeText, { tabId: tabId, text: b.text });
     actionSafe(api.action.setBadgeBackgroundColor, { tabId: tabId, color: b.color });
     actionSafe(api.action.setTitle, { tabId: tabId, title: title });
-    setLogo(tabId, ICON_ON);
+    setLogo(tabId, away ? ICON_OFF : ICON_ON);
   }
 }
 function updateBadge() {
@@ -658,7 +737,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       if (c.kind === "study") body = Object.assign({}, msg.body, { study: studyContext(msg.sessionId, msg.clientTs, ch === "mouse" ? { windowKeys: msg.windowKeys || [] } : null) });
       gw(path, body)
         .then(function (r) { onVerdict(ch, r, msg.sessionId); reply({ ok: true, status: r.status }); })
-        .catch(function (e) { state.error = (e && e.message) || "gateway unreachable"; refreshAllBadges(); reply({ ok: false, error: state.error }); });
+        .catch(function (e) { if (!offline) state.error = (e && e.message) || "gateway unreachable"; refreshAllBadges(); reply({ ok: false, error: state.error }); });
       return true;
     }
     case "cg:open-verify":

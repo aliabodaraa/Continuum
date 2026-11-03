@@ -399,7 +399,8 @@ try {
   const opBefore = ADMIN_KEY ? (await admin("/v1/admin/settings")).d : null;
   const ownOperator = opBefore ? Object.fromEntries(opBefore.defaults.filter((x) => x.source === "operator").map((x) => [x.key, x.value])) : {};
   settingsRestore = () => admin("/v1/admin/settings", { method: "PUT", body: { defaults: { adaptiveGapHours: ownOperator.adaptiveGapHours ?? null } } });
-  check("the operator sees defaults, server switches and the environment (secrets hidden)", !!opBefore && opBefore.defaults.length === 10 &&
+  // 11 settings an organisation can choose (services/gateway/settings.js), pasteAllowance the latest (25 Oct 2026)
+  check("the operator sees defaults, server switches and the environment (secrets hidden)", !!opBefore && opBefore.defaults.length === 11 &&
     opBefore.environment.some((e) => e.name === "GATEWAY_ADMIN_KEY" && e.secret && e.value === null), opBefore && `${opBefore.defaults.length} defaults, ${opBefore.environment.length} env rows`);
   const gapSet = await admin("/v1/admin/settings", { method: "PUT", body: { defaults: { adaptiveGapHours: 2 } } });
   check("the operator changes a default for every organisation", gapSet.status === 200 && gapSet.d.defaults.find((x) => x.key === "adaptiveGapHours").value === 2, String(gapSet.status));

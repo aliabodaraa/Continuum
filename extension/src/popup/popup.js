@@ -57,7 +57,7 @@ function refresh() {
     var excluded = (s.exclusions || []).indexOf(curOrigin) >= 0;
     q("site").textContent = curRestricted ? (curOrigin || "browser page") + " (not monitorable)"
       : curOrigin ? (excluded ? curOrigin + " (excluded)" : curOrigin) : "—";
-    q("dot").className = "dot" + (s.paused || s.locked || curRestricted || excluded ? " off" : "");
+    q("dot").className = "dot" + (s.paused || s.locked || s.offline || curRestricted || excluded ? " off" : "");
 
     // What is missing on the server before anything can be scored.
     var ob = (s.account && !s.study && s.account.onboarding) || null;
@@ -70,6 +70,8 @@ function refresh() {
     var vd = q("verdict"), cls = "", txt;
     if (s.locked) { txt = "🔒 Locked — verify with your passkey on the page (" + (s.lockReason === "mouse" ? "mouse movement" : "typing rhythm") + " didn't match)"; cls = "v-warn"; }
     else if (s.paused) { txt = "⏸ Paused: nothing is recorded"; }
+    // Never "Protected" while the server cannot be reached: nothing is collected or checked then.
+    else if (s.offline) { txt = "⚠ Can't reach Continuum: nothing is checked, this page is not protected"; cls = "v-warn"; }
     else if (curRestricted) {
       txt = /^chrome:\/\/(newtab|new-tab-page)/i.test(curUrl)
         ? "This is Chrome's New Tab page (not google.com): extensions can't run here."
@@ -94,8 +96,8 @@ function refresh() {
     show("rowMouse", s.showVerdict);
     if (s.showVerdict) {
       var bars = s.bars || {}, off = s.disabled || {};
-      q("keys").textContent = off.keystroke ? "off (organisation setting)" : ksBuilding ? "building your model…" : keysText(s.verdict, bars.keystroke);
-      q("mouse").textContent = off.mouse ? "off (organisation setting)" : mouseText(s.mouseVerdict, bars.mouse);
+      q("keys").textContent = off.keystroke ? "off (organisation setting)" : s.offline ? "not checked (server unreachable)" : ksBuilding ? "building your model…" : keysText(s.verdict, bars.keystroke);
+      q("mouse").textContent = off.mouse ? "off (organisation setting)" : s.offline ? "not checked (server unreachable)" : mouseText(s.mouseVerdict, bars.mouse);
     }
 
     // Learning from real use, stage 1: a sample being recorded after a passkey, or how the last one went.

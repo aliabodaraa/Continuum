@@ -53,7 +53,11 @@
   // yes (background.js). Its own events, from the start message on, never the check buffer above.
   var useRec = null;   // { epoch, until, events }
   var USE_SAMPLE_WINDOWS = 55;
-  function capturing() { return !!capture && !capture.paused && !excluded && !dead && !onGatewayPage(); }
+  // capture.offline: the worker cannot reach the gateway, so nothing would be checked: nothing is collected either.
+  function capturing() { return !!capture && !capture.paused && !capture.offline && !excluded && !dead && !onGatewayPage(); }
+  // A channel the organisation turned off is not collected (capture.off from the worker).
+  function channelOn(ch) { return !(capture && capture.off && capture.off[ch]); }
+  function offKey() { return capture && capture.off ? (capture.off.keystroke ? "k" : "") + (capture.off.mouse ? "m" : "") : ""; }
   function onGatewayPage() { return !!gatewayOrigin && origin === gatewayOrigin; }
   // Buffers are dropped when capture stops or resumes (the pause, a sign-out) and after a step-up, so no
   // check ever carries anything from around a pause or from before the lock.
@@ -77,9 +81,9 @@
     }, 300);
   }
   function setCapture(v) {
-    var was = capturing();
+    var was = capturing(), wasOff = offKey();
     capture = v && v.kind ? v : null;
-    if (capturing() !== was) clearCapture();
+    if (capturing() !== was || offKey() !== wasOff) clearCapture();
     if (capture && !mouseTimer) mouseTimer = setInterval(mouseTick, MOUSE_MS);
     if (!capture && mouseTimer) { clearInterval(mouseTimer); mouseTimer = null; }
   }
@@ -286,7 +290,7 @@
   function rec(type, e) {
     if (dead) return;
     if (!alive()) { teardown(); return; }
-    if (!capturing()) return;
+    if (!capturing() || !channelOn("keystroke")) return;
     try {
       var tgt = e.target;
       if (isHidden(tgt) || isPassword(tgt) || excludedField(tgt)) return;   // no event at all from a password or excluded field
@@ -310,7 +314,7 @@
   on("keyup");
   // A paste, with its LENGTH only: the server refuses pasted text as typing rhythm.
   var onPaste = function (e) {
-    if (!capturing() || isHidden(e.target) || isPassword(e.target) || excludedField(e.target)) return;
+    if (!capturing() || !channelOn("keystroke") || isHidden(e.target) || isPassword(e.target) || excludedField(e.target)) return;
     var n = 0; try { n = ((e.clipboardData && e.clipboardData.getData("text")) || "").length; } catch (x) {}
     events.push({ keyCode: 0, type: "paste", t: evtTime(e) - t0, field: fieldOf(e.target), ftype: typeOf(e.target), pastedLength: n });
     keyCheckNow();
@@ -319,7 +323,7 @@
 
   // ---- mouse (positions + timing only) ----
   function recMouse(x, y, st, e) {
-    if (lockEl || !capturing()) return;
+    if (lockEl || !capturing() || !channelOn("mouse")) return;
     mouseEvents.push({ t: evtTime(e), x: x, y: y, state: st });
     if (useRec) {
       if (Date.now() > useRec.until) useRec = null;
