@@ -110,7 +110,9 @@ option — a rise in these is either an outage or someone arranging one.
   both, or by the **developer console** (`/console.html`): an organisation signs in with a
   Continuum account (email + passkey), registers its tenant, sees the secret once, and waits
   for the operator's approval (`status` pending → active; revoked is final). The operator
-  approves and revokes on `/operator.html`, which with the admin API (`/v1/tenants`,
+  approves and revokes on `/operator.html`. Both pages are English or Arabic (right-to-left),
+  switched by a button on the page and remembered per browser (`public/ui/i18n-ar.js` holds the
+  Arabic for every string; names, keys and addresses are never translated). The operator page, with the admin API (`/v1/tenants`,
   `/v1/admin/*`) answers only on the gateway's own host names (`GATEWAY_OPERATOR_HOSTS`, default
   localhost; proxied requests are never local) and locks for 15 minutes after 10 wrong admin
   keys. Every change to a tenant or an account is appended to an activity log (`audit.jsonl`):

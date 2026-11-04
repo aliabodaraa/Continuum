@@ -39,15 +39,18 @@
     code: '<path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/>',
     clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
   };
+  var FLIP = { chevron: 1, back: 1, logout: 1 };   // point the other way in a right-to-left page
   function icon(name, cls) {
     var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     s.setAttribute("viewBox", "0 0 24 24");
-    s.setAttribute("class", "icon" + (cls ? " " + cls : ""));
+    s.setAttribute("class", "icon" + (cls ? " " + cls : "") + (FLIP[name] ? " flip" : ""));
     s.setAttribute("aria-hidden", "true");
     s.innerHTML = ICONS[name] || ICONS.info;
     return s;
   }
-  // el("div.card.card-pad", {onclick: f, "data-x": 1}, [children | "text"])
+  // el("div.card.card-pad", {onclick: f, "data-x": 1}, [children | "text"]). Text children and these attributes
+  // are UI strings: they are translated while Arabic is on (see "language" below). User data goes in as text().
+  var TR_ATTR = { placeholder: 1, title: 1, "aria-label": 1 };
   function el(spec, attrs, kids) {
     if (Array.isArray(attrs) || typeof attrs === "string" || (attrs && attrs.nodeType)) { kids = attrs; attrs = null; }
     var parts = String(spec).split(/(?=[.#])/), node = document.createElement(parts[0] || "div");
@@ -59,10 +62,10 @@
       var v = attrs[k];
       if (v == null || v === false) continue;
       if (k.indexOf("on") === 0 && typeof v === "function") node.addEventListener(k.slice(2), v);
-      else if (k === "text") node.textContent = v;
+      else if (k === "text") node.textContent = tr(v);
       else if (k === "value") node.value = v;
       else if (k === "checked" || k === "disabled") node[k] = !!v;
-      else node.setAttribute(k, v === true ? "" : v);
+      else node.setAttribute(k, v === true ? "" : TR_ATTR[k] ? tr(String(v)) : v);
     }
     append(node, kids);
     return node;
@@ -72,7 +75,7 @@
     if (!Array.isArray(kids)) kids = [kids];
     kids.forEach(function (c) {
       if (c == null || c === false) return;
-      node.appendChild(typeof c === "string" || typeof c === "number" ? document.createTextNode(String(c)) : c);
+      node.appendChild(typeof c === "string" || typeof c === "number" ? document.createTextNode(tr(String(c))) : c);
     });
     return node;
   }
@@ -81,6 +84,73 @@
     var m = el("span.brand-mark"); m.appendChild(icon("logo"));
     return el("div.brand", [m, el("div", ["Continuum", sub ? el("small", sub) : null])]);
   }
+
+  // ---- language: English, or Arabic right-to-left ----
+  // The pages are written in English; ui/i18n-ar.js maps each of their strings to Arabic. While Arabic is on,
+  // el() looks every text child and placeholder/title/aria-label up there, t() does the same for strings with
+  // {placeholders}, and plural() picks the Arabic form for a count. Names, emails, keys and URLs are appended
+  // with text(), which is never translated. The choice is kept in this browser (localStorage) and applied to
+  // <html lang dir> before the page renders; the pages re-render themselves through onLang.
+  var LANG_KEY = "continuumLang", lang = "en", langHooks = [];
+  try { if (localStorage.getItem(LANG_KEY) === "ar") lang = "ar"; } catch (e) {}
+  function dict() { return lang === "ar" && window.CUI_AR ? window.CUI_AR : null; }
+  function tr(s) {
+    var d = dict();
+    if (!d || typeof s !== "string") return s;
+    var m = /^(\s*)([\s\S]*?)(\s*)$/.exec(s), v = m && d[m[2]];
+    return typeof v === "string" ? m[1] + v + m[3] : s;
+  }
+  function fill(s, vars) { return s.replace(/\{(\w+)\}/g, function (_, k) { return vars[k] == null ? "" : String(vars[k]); }); }
+  // t("Delete {name}?", { name: "Acme" }) -> "Delete Acme?"; a node among the vars -> an array of text nodes and nodes
+  function t(s, vars) {
+    var out = tr(s);
+    if (!vars) return out;
+    var hasNode = Object.keys(vars).some(function (k) { return vars[k] && vars[k].nodeType; });
+    if (!hasNode) return fill(out, vars);
+    var parts = [], re = /\{(\w+)\}/g, last = 0, m;
+    while ((m = re.exec(out))) {
+      if (m.index > last) parts.push(text(out.slice(last, m.index)));
+      parts.push(vars[m[1]] == null ? "" : vars[m[1]]);
+      last = re.lastIndex;
+    }
+    if (last < out.length) parts.push(text(out.slice(last)));
+    return parts;
+  }
+  // plural(3, "{n} website", "{n} websites"): English by n === 1; Arabic has one form per CLDR category
+  // ({zero, one, two, few, many, other} under the plural key), "other" when the category has none.
+  function plural(n, one, other, vars) {
+    vars = Object.assign({ n: n }, vars || {});
+    var d = dict(), spec = d && d[other];
+    if (spec && typeof spec === "object") {
+      var r = n % 100, cat = n === 0 ? "zero" : n === 1 ? "one" : n === 2 ? "two" : r >= 3 && r <= 10 ? "few" : r >= 11 ? "many" : "other";
+      return fill(spec[cat] || spec.other || other, vars);
+    }
+    return fill(tr(n === 1 ? one : other), vars);
+  }
+  function text(s) { return document.createTextNode(s == null ? "" : String(s)); }
+  function locale() { return lang === "ar" ? "ar-SY-u-nu-latn" : undefined; }   // Arabic month names, Western digits
+  function applyLang() {
+    var h = document.documentElement;
+    h.lang = lang; h.dir = lang === "ar" ? "rtl" : "ltr";
+    if (!h.getAttribute("data-title")) h.setAttribute("data-title", document.title);
+    document.title = tr(h.getAttribute("data-title"));
+  }
+  function setLang(l) {
+    lang = l === "ar" ? "ar" : "en";
+    try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
+    applyLang();
+    langHooks.forEach(function (f) { f(lang); });
+  }
+  function onLang(f) { langHooks.push(f); }
+  // the switch: it names the other language, in that language
+  function langButton() {
+    var other = lang === "ar" ? "en" : "ar";
+    var b = el("button.btn.btn-ghost.btn-sm.lang-btn", { type: "button", lang: other, title: other === "ar" ? "التبديل إلى العربية" : "Switch to English" },
+      [icon("globe", "sm"), other === "ar" ? "العربية" : "English"]);
+    b.addEventListener("click", function () { setLang(other); });
+    return b;
+  }
+  applyLang();
 
   // ---- plain-language errors ----
   var MESSAGES = {
@@ -128,13 +198,14 @@
     ca_settings_failed: "The scoring service didn't accept the change. Is it running?",
   };
   function explain(e) {
-    if (!e) return "Something went wrong.";
-    if (e.name === "NotAllowedError" || e.name === "AbortError") return MESSAGES.passkey_cancelled;
-    if (e.name === "NotSupportedError" || e.name === "SecurityError") return MESSAGES.passkey_unavailable;
-    if (e.code && MESSAGES[e.code]) return MESSAGES[e.code];
-    if (/No passkeys registered/i.test(e.message || "")) return "This account has no passkey yet.";
-    return e.message || "Something went wrong.";
+    if (!e) return tr("Something went wrong.");
+    if (e.name === "NotAllowedError" || e.name === "AbortError") return tr(MESSAGES.passkey_cancelled);
+    if (e.name === "NotSupportedError" || e.name === "SecurityError") return tr(MESSAGES.passkey_unavailable);
+    if (e.code && MESSAGES[e.code]) return tr(MESSAGES[e.code]);
+    if (/No passkeys registered/i.test(e.message || "")) return tr("This account has no passkey yet.");
+    return e.message || tr("Something went wrong.");
   }
+  function msg(code) { return tr(MESSAGES[code] || code); }   // one of MESSAGES, in the page's language
   function api(path, opts) {
     opts = opts || {};
     var headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
@@ -192,7 +263,7 @@
   }
   function copyText(text, btn) {
     var done = function () {
-      if (btn) { var old = btn.innerHTML; btn.innerHTML = ""; btn.appendChild(icon("check", "sm")); btn.appendChild(document.createTextNode(" Copied")); setTimeout(function () { btn.innerHTML = old; }, 1500); }
+      if (btn) { var old = btn.innerHTML; btn.innerHTML = ""; btn.appendChild(icon("check", "sm")); btn.appendChild(text(tr(" Copied"))); setTimeout(function () { btn.innerHTML = old; }, 1500); }
       else toast("ok", "Copied");
     };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { fallback(); });
@@ -208,7 +279,7 @@
   function codeBlock(text) {
     var pre = el("pre.code"), btn = el("button.copy-btn", { type: "button" }, "Copy");
     pre.textContent = text;
-    btn.addEventListener("click", function () { copyText(text, null); btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1500); });
+    btn.addEventListener("click", function () { copyText(text, null); btn.textContent = tr("Copied"); setTimeout(function () { btn.textContent = tr("Copy"); }, 1500); });
     pre.appendChild(btn);
     return pre;
   }
@@ -219,13 +290,13 @@
   function when(iso) {
     if (!iso) return "—";
     var d = new Date(iso), s = (Date.now() - d.getTime()) / 1000;
-    if (s < 60) return "just now";
-    if (s < 3600) return Math.floor(s / 60) + " min ago";
-    if (s < 86400) return Math.floor(s / 3600) + " h ago";
-    if (s < 7 * 86400) return Math.floor(s / 86400) + " d ago";
-    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    if (s < 60) return tr("just now");
+    if (s < 3600) return plural(Math.floor(s / 60), "{n} min ago", "{n} min ago");
+    if (s < 86400) return plural(Math.floor(s / 3600), "{n} h ago", "{n} h ago");
+    if (s < 7 * 86400) return plural(Math.floor(s / 86400), "{n} d ago", "{n} d ago");
+    return d.toLocaleDateString(locale(), { year: "numeric", month: "short", day: "numeric" });
   }
-  function fullDate(iso) { return iso ? new Date(iso).toLocaleString() : ""; }
+  function fullDate(iso) { return iso ? new Date(iso).toLocaleString(locale()) : ""; }
 
   // ---- Continuum account passkeys ----
   // purpose "console" -> { consoleToken, email }; "link" (+ linkId) -> { linkId, code, email }
@@ -304,11 +375,11 @@
       }
       var fallback = level === "organisation" ? it.operatorDefault : (it.envValue != null ? it.envValue : it.builtIn);
       var badge = el("span.badge.badge-neutral.small");
-      var reset = el("a.small", { href: "#", style: "margin-left:8px" }, "Use the default");
+      var reset = el("a.small", { href: "#", style: "margin-inline-start:8px" }, "Use the default");
       reset.addEventListener("click", function (e) { e.preventDefault(); cleared = true; sync(); });
       function sync() {
         var changed = !cleared && JSON.stringify(read()) !== JSON.stringify(it.value);
-        badge.textContent = cleared ? "Default: " + showValue(fallback, it.key) + " (after saving)" : changed ? "Changed (not saved)" : SOURCE_TEXT[it.source] || it.source;
+        badge.textContent = cleared ? t("Default: {v} (after saving)", { v: tr(showValue(fallback, it.key)) }) : changed ? tr("Changed (not saved)") : tr(SOURCE_TEXT[it.source] || it.source);
         reset.style.display = (own && !cleared && !opts.disabled) ? "" : "none";
         if (opts.onChange) opts.onChange();
       }
@@ -335,7 +406,7 @@
       if (!rows.panel || !rows.onboarding) return;
       var hidden = rows.panel.read() === "hide";
       var lazy = rows.onboarding.ctl.querySelector('[data-v="lazy"]');
-      if (lazy) { lazy.disabled = hidden || !!opts.disabled; lazy.title = hidden ? "Needs the panel" : ""; if (hidden && rows.onboarding.read() === "lazy") rows.onboarding.ctl.querySelector('[data-v="eager"]').click(); }
+      if (lazy) { lazy.disabled = hidden || !!opts.disabled; lazy.title = hidden ? tr("Needs the panel") : ""; if (hidden && rows.onboarding.read() === "lazy") rows.onboarding.ctl.querySelector('[data-v="eager"]').click(); }
     }
     node.addEventListener("click", function () { setTimeout(function () { constrain(); syncGroup(); }, 0); });
     constrain();
@@ -355,7 +426,8 @@
     };
   }
 
-  window.CUI = { icon: icon, el: el, append: append, clear: clear, brand: brand, api: api, explain: explain, MESSAGES: MESSAGES,
+  window.CUI = { icon: icon, el: el, append: append, clear: clear, brand: brand, api: api, explain: explain, MESSAGES: MESSAGES, msg: msg,
     toast: toast, modal: modal, copyText: copyText, copyField: copyField, codeBlock: codeBlock, badge: badge, when: when, fullDate: fullDate,
-    passkeyRegister: passkeyRegister, passkeyLogin: passkeyLogin, settingsForm: settingsForm, showValue: showValue, SOURCE_TEXT: SOURCE_TEXT };
+    passkeyRegister: passkeyRegister, passkeyLogin: passkeyLogin, settingsForm: settingsForm, showValue: showValue, SOURCE_TEXT: SOURCE_TEXT,
+    tr: tr, t: t, plural: plural, text: text, lang: function () { return lang; }, setLang: setLang, onLang: onLang, langButton: langButton };
 })();

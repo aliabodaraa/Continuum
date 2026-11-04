@@ -22,7 +22,7 @@
     var input = el("input.input.mono#opKey", { type: "password", autocomplete: "off", placeholder: cfg.operatorKeyRequired ? "Paste GATEWAY_ADMIN_KEY" : "No key needed on this server" });
     var msg = el("div.field-error#opMsg");
     var btn = el("button.btn.btn-primary.btn-lg.btn-block#opSignIn", { type: "submit" }, [icon("shield"), "Open operator view"]);
-    var form = el("form", [el("label.field", [el("span.label", "Admin key"), input, el("p.hint", ["The line ", el("span.mono", "GATEWAY_ADMIN_KEY="), " in ", el("span.mono", "continuum/.env"), "."])]), el("div", { style: "margin-top:18px" }, btn), msg]);
+    var form = el("form", [el("label.field", [el("span.label", "Admin key"), input, el("p.hint", C.t("The line {line} in {file}.", { line: el("span.mono", "GATEWAY_ADMIN_KEY="), file: el("span.mono", "continuum/.env") }))]), el("div", { style: "margin-top:18px" }, btn), msg]);
     form.addEventListener("submit", function (ev) {
       ev.preventDefault(); msg.textContent = ""; btn.disabled = true;
       var k = input.value.trim();
@@ -31,13 +31,13 @@
         all = d.tenants; route();
       }).catch(function (e) {
         btn.disabled = false;
-        if (e.code === "too_many_attempts") msg.textContent = "Too many wrong keys. Operator sign-in is paused for about " + Math.ceil((e.data.retryAfterSec || 900) / 60) + " minutes.";
-        else if (e.code === "invalid_admin_key") msg.textContent = "That key is not right." + (e.data && e.data.attemptsLeft != null ? " " + e.data.attemptsLeft + (e.data.attemptsLeft === 1 ? " try" : " tries") + " left before a 15-minute pause." : "");
+        if (e.code === "too_many_attempts") msg.textContent = C.plural(Math.ceil((e.data.retryAfterSec || 900) / 60), "Too many wrong keys. Operator sign-in is paused for about {n} minute.", "Too many wrong keys. Operator sign-in is paused for about {n} minutes.");
+        else if (e.code === "invalid_admin_key") msg.textContent = C.t("That key is not right.") + (e.data && e.data.attemptsLeft != null ? " " + C.plural(e.data.attemptsLeft, "{n} try left before a 15-minute pause.", "{n} tries left before a 15-minute pause.") : "");
         else msg.textContent = C.explain(e);
       });
     });
     C.clear(root).appendChild(el("div.center", el("div.solo", [
-      el("div.solo-head", C.brand("Operator")),
+      el("div.solo-head", { style: "justify-content:space-between" }, [C.brand("Operator"), C.langButton()]),
       el("div.card", el("div.card-body", { style: "padding:28px" }, [
         el("div.big-icon.info", icon("shield")),
         el("h1", "Operator sign-in"),
@@ -56,8 +56,8 @@
     pendingCount = el("span.count.hidden", "0");
     var orgItem = item("organisations", "#/organisations", "building", "Organisations"); orgItem.appendChild(pendingCount);
     var side = el("aside.sidebar", [C.brand("Operator"), el("nav.nav", [el("div.nav-label", "Manage"), orgItem, item("activity", "#/activity", "history", "Activity"), item("settings", "#/settings", "sliders", "Settings")]),
-      el("div.sidebar-foot", el("div.account", [el("div.avatar", { style: "background:#0f1222" }, icon("shield", "sm")), el("div.who", [el("b", "Operator"), el("span", location.host)]), el("span.spacer"),
-        el("button.btn.btn-ghost.btn-icon#opSignOut", { type: "button", title: "Sign out", "aria-label": "Sign out", onclick: function () { key = null; try { sessionStorage.removeItem("continuumOperator"); } catch (e) {} route(); } }, icon("logout"))]))]);
+      el("div.sidebar-foot", [el("div.lang-row", C.langButton()), el("div.account", [el("div.avatar", { style: "background:#0f1222" }, icon("shield", "sm")), el("div.who", [el("b", "Operator"), el("span", { dir: "ltr" }, C.text(location.host))]), el("span.spacer"),
+        el("button.btn.btn-ghost.btn-icon#opSignOut", { type: "button", title: "Sign out", "aria-label": "Sign out", onclick: function () { key = null; try { sessionStorage.removeItem("continuumOperator"); } catch (e) {} route(); } }, icon("logout"))])])]);
     main = el("main.main");
     C.clear(root).appendChild(el("div.shell", [side, el("div", [el("div.mobilebar", [el("button.btn.btn-ghost.btn-icon", { type: "button", "aria-label": "Menu", onclick: function () { side.classList.toggle("open"); } }, icon("menu")), C.brand("Operator")]), main])]));
   }
@@ -77,8 +77,8 @@
     var drawSeg = function () { C.clear(seg); FILTERS.forEach(function (f) { seg.appendChild(el("button" + (filter === f[0] ? ".on" : ""), { type: "button", id: "filter-" + f[0], onclick: function () { filter = f[0]; drawSeg(); draw(); } }, f[1])); }); };
     var refresh = el("button.btn.btn-secondary", { type: "button", onclick: function () { load(); } }, [icon("refresh", "sm"), "Refresh"]);
     page([el("div.page-head", [el("div", [el("h1", "All organisations"), el("p.sub", "Approve new sign-ups, revoke any organisation, and see how many people each one protects.")]), el("span.spacer"), refresh]),
-      el("div.row.wrap", { style: "margin-bottom:14px" }, [seg, el("div", { style: "flex:1;min-width:220px;max-width:360px;margin-left:auto" }, search)]),
-      el("div.card", el("div.table-wrap", el("table.table", [el("thead", el("tr", [el("th", "Organisation"), el("th.hide-sm", "Owner"), el("th", "Status"), el("th.hide-sm", "Users"), el("th.hide-sm", "Created"), el("th", { style: "text-align:right" }, "Actions")])), tbody])))]);
+      el("div.row.wrap", { style: "margin-bottom:14px" }, [seg, el("div", { style: "flex:1;min-width:220px;max-width:360px;margin-inline-start:auto" }, search)]),
+      el("div.card", el("div.table-wrap", el("table.table", [el("thead", el("tr", [el("th", "Organisation"), el("th.hide-sm", "Owner"), el("th", "Status"), el("th.hide-sm", "Users"), el("th.hide-sm", "Created"), el("th", { style: "text-align:end" }, "Actions")])), tbody])))]);
     drawSeg();
     function draw() {
       var q = search.value.trim().toLowerCase();
@@ -93,8 +93,8 @@
         if (t.builtIn) acts.appendChild(el("span.muted.small", "Built in"));
         var users = el("span.muted", stats[t.siteKey] ? String(stats[t.siteKey].users) : "…");
         tbody.appendChild(el("tr.click", { "data-key": t.siteKey, onclick: function () { details(t); } }, [
-          el("td", [el("div", { style: "font-weight:600" }, t.name), el("div.mono.muted", t.siteKey)]),
-          el("td.hide-sm", t.owner || el("span.muted", t.builtIn ? "built in" : "operator")),
+          el("td", [el("div", { style: "font-weight:600" }, C.text(t.name)), el("div.mono.muted", t.siteKey)]),
+          el("td.hide-sm", t.owner ? C.text(t.owner) : el("span.muted", t.builtIn ? "built in" : "operator")),
           el("td", C.badge(t.status)), el("td.hide-sm", users),
           el("td.hide-sm.muted.nowrap", { title: C.fullDate(t.createdAt) }, C.when(t.createdAt)), el("td.nowrap", acts)]));
         if (!stats[t.siteKey]) call("/v1/admin/tenants/" + t.siteKey + "/stats").then(function (s) { stats[t.siteKey] = s; users.textContent = String(s.users); }).catch(function () { users.textContent = "—"; });
@@ -107,24 +107,24 @@
   function setStatus(t, status, btn) {
     if (btn) btn.disabled = true;
     return call("/v1/tenants/" + t.siteKey + "/status", { body: { status: status } }).then(function (r) {
-      C.toast("ok", status === "active" ? t.name + " is active." : t.name + " was revoked.");
+      C.toast("ok", C.t(status === "active" ? "{name} is active." : "{name} was revoked.", { name: t.name }));
       all = all.map(function (x) { return x.siteKey === t.siteKey ? r : x; });
       updatePending(); renderOrgs();
     }).catch(function (e) { if (btn) btn.disabled = false; C.toast("bad", C.explain(e)); });
   }
   function confirmRevoke(t) {
-    C.modal({ title: "Revoke " + t.name + "?", text: "Its site key stops working at once, for all its users. You can re-activate it later from this page.",
+    C.modal({ title: C.t("Revoke {name}?", { name: t.name }), text: "Its site key stops working at once, for all its users. You can re-activate it later from this page.",
       actions: [{ label: "Cancel" }, { label: "Revoke", kind: "danger", id: "opRevokeGo", onClick: function (close) { close(); return setStatus(t, "revoked"); } }] });
   }
   function details(t) {
     var s = stats[t.siteKey], sites = (t.origins || []).filter(function (o) { return o.indexOf("chrome-extension://") !== 0; });
-    C.modal({ title: t.name, text: t.siteKey, body: el("div.kv", [
+    C.modal({ title: C.text(t.name), text: el("span.mono", t.siteKey), body: el("div.kv", [
       el("div.k", "Status"), el("div.v", C.badge(t.status)),
-      el("div.k", "Owner"), el("div.v", t.owner || (t.builtIn ? "built in" : "operator")),
+      el("div.k", "Owner"), el("div.v", t.owner ? C.text(t.owner) : (t.builtIn ? "built in" : "operator")),
       el("div.k", "Websites"), el("div.v", sites.length ? sites.join(", ") : el("span.muted", "None")),
       el("div.k", "Extension"), el("div.v", t.allowExtension ? ["Allowed", t.signInUrl ? el("div.mono.muted.small", t.signInUrl) : null] : el("span.muted", "Off")),
       el("div.k", "Alerts"), el("div.v", t.webhookUrl ? el("span.mono", t.webhookUrl) : el("span.muted", "Off")),
-      el("div.k", "People"), el("div.v", s ? s.users + " users · " + s.passkey + " with a passkey · " + s.typing + " typing · " + s.mouse + " mouse" : "…"),
+      el("div.k", "People"), el("div.v", s ? C.t("{users} users · {passkey} with a passkey · {typing} typing · {mouse} mouse", s) : "…"),
       el("div.k", "Created"), el("div.v", C.fullDate(t.createdAt)),
     ]) });
   }
@@ -149,10 +149,10 @@
       if (!d.entries.length) { box.appendChild(el("div.empty", [el("div.art", icon("history")), el("h3", "Nothing yet")])); return; }
       box.appendChild(el("ul.timeline", d.entries.map(function (e) {
         var a = ACT[e.action] || [e.action, "info", ""];
-        var who = e.actor && e.actor.type === "operator" ? "operator" : e.actor && e.actor.type === "system" ? "Continuum" : (e.actor && e.actor.email) || "someone";
+        var who = e.actor && e.actor.type === "operator" ? C.t("operator") : e.actor && e.actor.type === "system" ? "Continuum" : (e.actor && e.actor.email) || C.t("someone");
         var extra = e.detail && e.detail.email ? " (" + e.detail.email + ")" : e.detail && e.detail.changed ? " (" + e.detail.changed.join(", ") + ")"
-          : e.detail && e.action === "webhook.undeliverable" ? " — gave up after " + e.detail.attempts + " tries (" + e.detail.error + ")" : "";
-        return el("li", [el("span.dot" + (a[2] ? "." + a[2] : ""), icon(a[1], "sm")), el("div", [el("div.what", a[0] + extra + (e.name ? " · " + e.name : "")), el("div.when", { title: C.fullDate(e.at) }, "by " + who + " · " + C.when(e.at))])]);
+          : e.detail && e.action === "webhook.undeliverable" ? C.t(" — gave up after {n} tries ({error})", { n: e.detail.attempts, error: e.detail.error }) : "";
+        return el("li", [el("span.dot" + (a[2] ? "." + a[2] : ""), icon(a[1], "sm")), el("div", [el("div.what", C.text(C.t(a[0]) + extra + (e.name ? " · " + e.name : ""))), el("div.when", { title: C.fullDate(e.at) }, C.t("by {who} · {when}", { who: who, when: C.when(e.at) }))])]);
       })));
     }).catch(function (e) { C.clear(box).appendChild(el("div.callout.bad", [icon("alert"), el("div", C.explain(e))])); });
   }
@@ -166,10 +166,10 @@
   function switchCard(title, sub, items, saveKey, id) {
     var rows = items.map(function (it) {
       var cb = el("input", { type: "checkbox", checked: !!it.value, id: "set-" + it.key });
-      var cleared = false, badge = el("span.badge.badge-neutral.small"), reset = el("a.small", { href: "#", style: "margin-left:8px" }, "Use the default");
+      var cleared = false, badge = el("span.badge.badge-neutral.small"), reset = el("a.small", { href: "#", style: "margin-inline-start:8px" }, "Use the default");
       function sync() {
         var changed = !cleared && cb.checked !== !!it.value;
-        badge.textContent = cleared ? "Default: " + (it.envValue != null ? (it.envValue ? "on" : "off") : (it.builtIn ? "on" : "off")) + " (after saving)" : changed ? "Changed (not saved)" : C.SOURCE_TEXT[it.source] || it.source;
+        badge.textContent = cleared ? C.t("Default: {v} (after saving)", { v: C.tr((it.envValue != null ? it.envValue : it.builtIn) ? "on" : "off") }) : changed ? C.tr("Changed (not saved)") : C.tr(C.SOURCE_TEXT[it.source] || it.source);
         reset.style.display = it.source === "operator" && !cleared ? "" : "none";
       }
       cb.addEventListener("change", function () { cleared = false; sync(); });
@@ -194,7 +194,7 @@
   function saveSettings(body, btn) {
     btn.disabled = true;
     return call("/v1/admin/settings", { method: "PUT", body: body })
-      .then(function (d) { C.toast("ok", d.changed && d.changed.length ? "Saved: " + d.changed.length + " change" + (d.changed.length > 1 ? "s" : "") + "." : "Saved."); drawSettings(d); })
+      .then(function (d) { C.toast("ok", d.changed && d.changed.length ? C.plural(d.changed.length, "Saved: {n} change.", "Saved: {n} changes.") : "Saved."); drawSettings(d); })
       .catch(function (e) { C.toast("bad", C.explain(e)); btn.disabled = false; });
   }
   function renderSettings() {
@@ -238,5 +238,6 @@
     renderOrgs();
   }
   window.addEventListener("hashchange", route);
+  C.onLang(function () { built = false; nav = {}; route(); });   // the language button: everything is redrawn
   C.api("/v1/console/config").then(function (c) { cfg = c; if (!c.operatorKeyRequired) key = key || ""; }).catch(function () {}).then(route);
 })();

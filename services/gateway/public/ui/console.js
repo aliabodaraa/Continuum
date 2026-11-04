@@ -44,9 +44,9 @@
       ev.preventDefault();
       msg.textContent = "";
       var v = email.value.trim();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { msg.textContent = C.MESSAGES.bad_email; email.focus(); return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { msg.textContent = C.msg("bad_email"); email.focus(); return; }
       btn.disabled = true;
-      var old = btn.innerHTML; btn.innerHTML = '<span class="spinner"></span> Waiting for your passkey…';
+      var old = btn.innerHTML; btn.innerHTML = ""; append(btn, [el("span.spinner"), " Waiting for your passkey…"]);
       (creating ? C.passkeyRegister(v, { purpose: "console" }) : C.passkeyLogin(v, { purpose: "console" }))
         .then(function (r) { signIn(r.consoleToken); })
         .catch(function (e) { msg.textContent = C.explain(e); btn.disabled = false; btn.innerHTML = old; });
@@ -67,6 +67,7 @@
         el("div.foot", "Your passkey is your password: no password is ever stored."),
       ]),
       el("div.auth-side", el("div.auth-card", [
+        el("div.row", { style: "justify-content:flex-end;margin-bottom:10px" }, C.langButton()),
         el("h2", creating ? "Create your account" : "Sign in to the console"),
         el("p.sub", creating ? "For organisations that want to use Continuum." : "Welcome back. Use the passkey on this device."),
         form,
@@ -90,7 +91,7 @@
       el("div.nav-label", "Monitor"), item("activity", "#/activity", "history", "Activity")]);
     var who = el("div.account", [el("div.avatar#avatar", "·"), el("div.who", [el("b#meEmail", "…"), el("span", "Organisation admin")]), el("span.spacer"),
       el("button.btn.btn-ghost.btn-icon#signOutBtn", { type: "button", title: "Sign out", "aria-label": "Sign out", onclick: signOut }, icon("logout"))]);
-    append(side, [C.brand("Console"), nav, el("div.sidebar-foot", who)]);
+    append(side, [C.brand("Console"), nav, el("div.sidebar-foot", [el("div.lang-row", C.langButton()), who])]);
     var menuBtn = el("button.btn.btn-ghost.btn-icon", { type: "button", "aria-label": "Menu", onclick: function () { side.classList.toggle("open"); } }, icon("menu"));
     shellMain = el("main.main");
     C.clear(root).appendChild(el("div.shell", [side, el("div", [el("div.mobilebar", [menuBtn, C.brand()]), shellMain])]));
@@ -127,7 +128,7 @@
         return;
       }
       var pending = list.filter(function (t) { return t.status === "pending"; }).length;
-      if (pending) body.appendChild(el("div.callout.warn", { style: "margin-bottom:16px" }, [icon("clock"), el("div", [el("strong", pending + (pending === 1 ? " organisation is" : " organisations are") + " waiting for approval. "), "Their site keys start working as soon as the operator approves them."])]));
+      if (pending) body.appendChild(el("div.callout.warn", { style: "margin-bottom:16px" }, [icon("clock"), el("div", [el("strong", C.plural(pending, "{n} organisation is waiting for approval.", "{n} organisations are waiting for approval.") + " "), "Their site keys start working as soon as the operator approves them."])]));
       var search = el("input.input", { type: "search", placeholder: "Search by name or site key", "aria-label": "Search" });
       var tbody = el("tbody");
       var draw = function () {
@@ -136,12 +137,12 @@
         list.filter(function (t) { return !q || t.name.toLowerCase().indexOf(q) >= 0 || t.siteKey.indexOf(q) >= 0; }).forEach(function (t) {
           var go = function () { location.hash = "#/organisations/" + t.siteKey; };
           tbody.appendChild(el("tr.click", { onclick: go, "data-key": t.siteKey }, [
-            el("td", [el("div", { style: "font-weight:600" }, t.name), el("div.mono.muted", t.siteKey)]),
+            el("td", [el("div", { style: "font-weight:600" }, C.text(t.name)), el("div.mono.muted", t.siteKey)]),
             el("td", C.badge(t.status)),
-            el("td.hide-sm", nonExt(t.origins).length + (nonExt(t.origins).length === 1 ? " website" : " websites")),
+            el("td.hide-sm", C.plural(nonExt(t.origins).length, "{n} website", "{n} websites")),
             el("td.hide-sm", t.allowExtension ? el("span.badge.badge-neutral.badge-plain", [icon("puzzle", "sm"), " Allowed"]) : el("span.muted", "Off")),
             el("td.hide-sm.muted.nowrap", { title: C.fullDate(t.createdAt) }, C.when(t.createdAt)),
-            el("td", { style: "text-align:right;color:var(--faint)" }, icon("chevron")),
+            el("td", { style: "text-align:end;color:var(--faint)" }, icon("chevron")),
           ]));
         });
       };
@@ -159,7 +160,7 @@
       C.clear(chips);
       if (!list.length) chips.appendChild(el("span.muted.small", "No websites yet."));
       list.forEach(function (o, i) {
-        chips.appendChild(el("span.chip-item", [o, readOnly ? null : el("button", { type: "button", "aria-label": "Remove " + o, onclick: function () { list.splice(i, 1); draw(); if (onChange) onChange(); } }, icon("x", "sm"))]));
+        chips.appendChild(el("span.chip-item", [C.text(o), readOnly ? null : el("button", { type: "button", "aria-label": C.t("Remove {site}", { site: o }), onclick: function () { list.splice(i, 1); draw(); if (onChange) onChange(); } }, icon("x", "sm"))]));
       });
     };
     draw();
@@ -201,18 +202,18 @@
         var name = el("input.input#wName", { value: st.name, maxlength: 80, placeholder: "Acme Notes" });
         append(body, [el("h2", "What's it called?"), el("p.muted", { style: "margin:4px 0 18px" }, "Your users see this name when they sign in to the browser extension."),
           el("label.field", [el("span.label", "Organisation name"), name])]);
-        next.addEventListener("click", function () { st.name = name.value.trim(); if (!st.name) { err.textContent = C.MESSAGES.name_required; return; } st.step = 1; draw(); });
+        next.addEventListener("click", function () { st.name = name.value.trim(); if (!st.name) { err.textContent = C.msg("name_required"); return; } st.step = 1; draw(); });
         setTimeout(function () { name.focus(); }, 20);
         name.addEventListener("keydown", function (e) { if (e.key === "Enter") next.click(); });
       } else if (st.step === 1) {
         var chips = siteChips(st.sites);
         append(body, [el("h2", "Which websites will use it?"), el("p.muted", { style: "margin:4px 0 18px" }, "Your site key appears in your pages, so only these websites may use it. Add the address only, without a page path."),
           siteAdder(st.sites, chips, null, { input: "wSiteInput", add: "wSiteAdd" }), el("div", { style: "margin-top:14px" }, chips.node),
-          el("div.callout.info", { style: "margin-top:18px" }, [icon("info"), el("div", ["Examples: ", el("span.mono", "https://app.acme.com"), " or ", el("span.mono", "http://localhost:3000"), "."])])]);
+          el("div.callout.info", { style: "margin-top:18px" }, [icon("info"), el("div", C.t("Examples: {a} or {b}.", { a: el("span.mono", "https://app.acme.com"), b: el("span.mono", "http://localhost:3000") }))])]);
         next.addEventListener("click", function () {
           var pendingInput = document.getElementById("wSiteInput");
           if (pendingInput && pendingInput.value.trim()) document.getElementById("wSiteAdd").click();
-          if (!st.sites.length) { err.textContent = "Add at least one website. (You can rely on the browser extension alone: skip this by allowing it in the next step.)"; st.allowSkip = true; }
+          if (!st.sites.length) { err.textContent = C.t("Add at least one website. (You can rely on the browser extension alone: skip this by allowing it in the next step.)"); st.allowSkip = true; }
           if (!st.sites.length && !st.allowSkipConfirmed) { st.allowSkipConfirmed = true; return; }
           st.step = 2; draw();
         });
@@ -222,7 +223,7 @@
         var extId = el("input.input.mono#wExtId", { value: st.extId, placeholder: "32 letters, from chrome://extensions" });
         var more = el("div", { style: "margin-top:18px" }, [
           el("label.field", [el("span.label", "Sign-in page for the extension"), signIn,
-            el("p.hint", ["Your users prove who they are here, with their usual account at your app. With ", el("span.mono", "@continuum/node"), " it is ", el("span.mono", "/continuum/link"), " on your site."])]),
+            el("p.hint", C.t("Your users prove who they are here, with their usual account at your app. With {pkg} it is {path} on your site.", { pkg: el("span.mono", "@continuum/node"), path: el("span.mono", "/continuum/link") }))]),
           cfg.extensionId ? null : el("label.field", [el("span.label", "Extension id"), extId]),
         ]);
         var sync = function () { more.classList.toggle("hidden", !sw.checked); };
@@ -231,15 +232,15 @@
           el("label.row", { style: "gap:12px;cursor:pointer" }, [el("span.switch", [sw, el("span")]), el("div", [el("b", "Let your users use the browser extension"), el("div.muted.small", "You can switch this off at any time.")])]), more]);
         next.addEventListener("click", function () {
           st.ext = sw.checked; st.signIn = signIn.value.trim(); st.extId = extId.value.trim();
-          if (st.ext && !st.signIn) { err.textContent = "Add the sign-in page your users will use for the extension."; return; }
-          if (!st.ext && !st.sites.length) { err.textContent = C.MESSAGES.origins_required; return; }
+          if (st.ext && !st.signIn) { err.textContent = C.t("Add the sign-in page your users will use for the extension."); return; }
+          if (!st.ext && !st.sites.length) { err.textContent = C.msg("origins_required"); return; }
           st.step = 3; draw();
         });
       } else {
         var hook = el("input.input.mono#wHook", { value: st.hook, placeholder: "https://app.acme.com/continuum/events" });
         append(body, [el("h2", "Alerts (optional)"), el("p.muted", { style: "margin:4px 0 18px" }, "Continuum can tell your server the moment one of your users turns suspicious, so you can log them out or block a payment."),
           el("label.field", [el("span.label", "Risk-change webhook"), hook, el("p.hint", "A public https:// address on your server. Leave it empty to skip; you can add it later and send a test alert.")]),
-          el("div.callout", { style: "margin-top:18px" }, [icon("info"), el("div", [el("strong", "Review: "), st.name + " · " + st.sites.length + (st.sites.length === 1 ? " website" : " websites") + " · extension " + (st.ext ? "allowed" : "off")])])]);
+          el("div.callout", { style: "margin-top:18px" }, [icon("info"), el("div", [el("strong", "Review: "), C.t("{name} · {sites} · {ext}", { name: st.name, sites: C.plural(st.sites.length, "{n} website", "{n} websites"), ext: C.t(st.ext ? "extension allowed" : "extension off") })])])]);
         next.addEventListener("click", function () {
           st.hook = hook.value.trim();
           next.disabled = true; err.textContent = "";
@@ -255,12 +256,12 @@
   }
   function renderCreated(r) {
     var saved = el("input#savedCheck", { type: "checkbox" });
-    var done = el("a.btn.btn-primary#doneBtn", { href: "#/organisations/" + r.siteKey, "aria-disabled": "true", style: "pointer-events:none;opacity:.55" }, ["Go to " + r.name, icon("chevron", "sm")]);
+    var done = el("a.btn.btn-primary#doneBtn", { href: "#/organisations/" + r.siteKey, "aria-disabled": "true", style: "pointer-events:none;opacity:.55" }, [C.t("Go to {name}", { name: r.name }), icon("chevron", "sm")]);
     saved.addEventListener("change", function () { done.style.pointerEvents = saved.checked ? "" : "none"; done.style.opacity = saved.checked ? "" : ".55"; done.setAttribute("aria-disabled", String(!saved.checked)); });
     page([el("div.card", [
       el("div.card-body", { style: "padding:32px" }, [
         el("div.big-icon.ok", icon("check")),
-        el("h1", r.name + " is registered"),
+        el("h1", C.t("{name} is registered", { name: r.name })),
         el("p.muted", { style: "margin-top:6px" }, r.status === "pending" ? "It starts working as soon as the operator approves it. Meanwhile, set up your site with the keys below." : "It is active. Set up your site with the keys below."),
         el("div", { style: "margin-top:18px" }, C.badge(r.status)),
         el("div.stack", { style: "margin-top:24px" }, [
@@ -269,7 +270,7 @@
           el("div.callout.warn", [icon("alert"), el("div", [el("strong", "Copy the secret now. "), "For your safety it is shown only this once. If you lose it, make a new one on the Keys tab."])]),
         ]),
       ]),
-      el("div.card-foot", [el("label.row", { style: "gap:8px;cursor:pointer;margin-right:auto" }, [saved, "I've saved the secret somewhere safe"]), done]),
+      el("div.card-foot", [el("label.row", { style: "gap:8px;cursor:pointer;margin-inline-end:auto" }, [saved, "I've saved the secret somewhere safe"]), done]),
     ])]);
   }
 
@@ -289,8 +290,8 @@
       var tabs = el("div.tabs", TABS.map(function (x) { return el("a.tab" + (x[0] === tab ? ".active" : ""), { href: "#/organisations/" + key + "/" + x[0], id: "tab-" + x[0] }, [icon(x[2], "sm"), x[1]]); }));
       var pane = el("div", { style: "margin-top:22px" });
       append(body, [
-        el("div.crumbs", [el("a", { href: "#/organisations" }, "Organisations"), icon("chevron", "sm"), t.name]),
-        el("div.page-head", [el("div", [el("div.row", [el("h1", t.name), C.badge(t.status)]), el("div.row", { style: "margin-top:8px" }, [el("span.mono.muted", t.siteKey),
+        el("div.crumbs", [el("a", { href: "#/organisations" }, "Organisations"), icon("chevron", "sm"), C.text(t.name)]),
+        el("div.page-head", [el("div", [el("div.row", [el("h1", C.text(t.name)), C.badge(t.status)]), el("div.row", { style: "margin-top:8px" }, [el("span.mono.muted", t.siteKey),
           el("button.btn.btn-ghost.btn-sm", { type: "button", onclick: function (e) { C.copyText(t.siteKey, e.currentTarget); } }, [icon("copy", "sm"), "Copy"])])]),
           el("span.spacer"), el("a.btn.btn-secondary", { href: "#/quickstart/" + key }, [icon("code", "sm"), "Connect your app"])]),
         t.status === "pending" ? el("div.callout.warn", { style: "margin-bottom:18px" }, [icon("clock"), el("div", [el("strong", "Waiting for approval. "), "The operator has to approve this organisation before its site key works. You can prepare everything meanwhile."])]) : null,
@@ -319,7 +320,7 @@
     call("/v1/console/tenants/" + t.siteKey + "/stats").then(function (s) {
       var pct = function (n) { return s.users ? Math.round(100 * n / s.users) : 0; };
       var tile = function (ic, label, n, bar) {
-        return el("div.stat", [el("div.l", [icon(ic, "sm"), label]), el("div.n", String(n)), bar != null ? el("div.bar", el("i", { style: "width:" + bar + "%" })) : el("div.small.muted", { style: "margin-top:10px" }, s.anonymous ? s.anonymous + " anonymous visitors" : "signed-in people")]);
+        return el("div.stat", [el("div.l", [icon(ic, "sm"), label]), el("div.n", String(n)), bar != null ? el("div.bar", el("i", { style: "width:" + bar + "%" })) : el("div.small.muted", { style: "margin-top:10px" }, s.anonymous ? C.plural(s.anonymous, "{n} anonymous visitor", "{n} anonymous visitors") : "signed-in people")]);
       };
       C.clear(tiles);
       append(tiles, [tile("users", "Users", s.users, null), tile("fingerprint", "With a passkey", s.passkey, pct(s.passkey)),
@@ -341,10 +342,10 @@
     });
     append(pane, [
       el("div.card", [el("div.card-head", el("div", [el("h3", "Site key"), el("p.muted.small", "Public. It goes in your pages, and only your websites may use it.")])),
-        el("div.card-body", [C.copyField(t.siteKey), el("p.hint", ["In your page: ", el("span.mono", '<script src="' + cfg.publicUrl + '/guard.js" data-site-key="' + t.siteKey + '">')])])]),
+        el("div.card-body", [C.copyField(t.siteKey), el("p.hint", C.t("In your page: {code}", { code: el("span.mono", '<script src="' + cfg.publicUrl + '/guard.js" data-site-key="' + t.siteKey + '">') }))])]),
       el("div.card", { style: "margin-top:18px" }, [el("div.card-head", el("div", [el("h3", "Secret"), el("p.muted.small", "Private. It lives on your server as CONTINUUM_SECRET and proves who your users are.")])),
-        el("div.card-body", [el("div.copy", [el("code", "••••••••••••••••••••••••••••••••••••••••••••••••"), el("span.badge.badge-neutral.badge-plain", [icon("lock", "sm"), " Hidden"])]),
-          el("p.hint", t.serverManaged ? "Built into this server: the secret is CA_SIGNING_SECRET in the server's .env file, which the demo app reads too. Change it there and restart both." : t.secretRotatedAt ? "Last changed " + C.when(t.secretRotatedAt) + "." : "Shown once, when the organisation was created. Lost it? Make a new one.")]),
+        el("div.card-body", [el("div.copy", [el("code", "••••••••••••••••••••••••••••••••••••••••••••••••"), el("span.badge.badge-neutral.badge-plain", [icon("lock", "sm"), " Kept hidden"])]),
+          el("p.hint", t.serverManaged ? "Built into this server: the secret is CA_SIGNING_SECRET in the server's .env file, which the demo app reads too. Change it there and restart both." : t.secretRotatedAt ? C.t("Last changed {when}.", { when: C.when(t.secretRotatedAt) }) : "Shown once, when the organisation was created. Lost it? Make a new one.")]),
         el("div.card-foot", rotate)]),
       el("div.card", { style: "margin-top:18px" }, [el("div.card-head", el("div", [el("h3", "Verify verdicts"), el("p.muted.small", "Continuum signs every verdict. Check it with these public keys, in any language.")])),
         el("div.card-body", el("div.kv", [el("div.k", "JWKS"), el("div.v", C.copyField(cfg.publicUrl + "/.well-known/jwks.json")),
@@ -373,11 +374,11 @@
     append(pane, [el("div.card", [el("div.card-head", el("div", [el("h3", "Browser extension"), el("p.muted.small", "Continuum Guard protects your users on every website, with the profile they enrolled in your app.")])),
       el("div.card-body.stack", [
         el("label.row", { style: "gap:12px;cursor:pointer" }, [el("span.switch", [sw, el("span")]), el("b", "Let your users use the browser extension")]),
-        el("label.field", [el("span.label", "Sign-in page"), signIn, el("p.hint", ["Your users sign in here with their usual account. With ", el("span.mono", "@continuum/node"), " it is ", el("span.mono", "/continuum/link"), " on your site."])]),
+        el("label.field", [el("span.label", "Sign-in page"), signIn, el("p.hint", C.t("Your users sign in here with their usual account. With {pkg} it is {path} on your site.", { pkg: el("span.mono", "@continuum/node"), path: el("span.mono", "/continuum/link") }))]),
         cfg.extensionId ? null : el("label.field", [el("span.label", "Extension id"), extId]),
       ]), locked ? null : el("div.card-foot", btn)]),
-      el("div.card", { style: "margin-top:18px" }, [el("div.card-head", el("h3", "How your users sign in")), el("div.card-body", el("ol", { style: "margin:0;padding-left:18px;color:var(--text-2)" }, [
-        el("li", ["In the extension's settings they choose ", el("b", "My organisation"), " and type your site key: ", el("span.mono", t.siteKey), "."]),
+      el("div.card", { style: "margin-top:18px" }, [el("div.card-head", el("h3", "How your users sign in")), el("div.card-body", el("ol", { style: "margin:0;padding-inline-start:18px;color:var(--text-2)" }, [
+        el("li", C.t("In the extension's settings they choose {org} and type your site key: {key}.", { org: el("b", "My organisation"), key: el("span.mono", t.siteKey) })),
         el("li", "The extension opens your sign-in page, and they log in with their usual account."),
         el("li", "Your server vouches for them; the extension never sees their password or your secret."),
         el("li", "From then on they are the same Continuum user as in your app, so their enrolled typing and mouse are used."),
@@ -414,8 +415,8 @@
       testBtn.disabled = true; C.clear(result).appendChild(el("div.muted", [el("span.spinner"), " Sending…"]));
       call("/v1/console/tenants/" + t.siteKey + "/test-webhook", { body: {} }).then(function (r) {
         C.clear(result).appendChild(r.ok
-          ? el("div.callout.ok", [icon("check"), el("div", [el("strong", "Delivered. "), "Your server answered " + r.status + " in " + r.ms + " ms."])])
-          : el("div.callout.bad", [icon("alert"), el("div", [el("strong", "Not delivered. "), r.error === "timeout" ? "Your server did not answer within 5 seconds." : r.error ? "Your server could not be reached." : "Your server answered " + r.status + "."])]));
+          ? el("div.callout.ok", [icon("check"), el("div", [el("strong", "Delivered. "), C.t("Your server answered {status} in {ms} ms.", { status: r.status, ms: r.ms })])])
+          : el("div.callout.bad", [icon("alert"), el("div", [el("strong", "Not delivered. "), r.error === "timeout" ? "Your server did not answer within 5 seconds." : r.error ? "Your server could not be reached." : C.t("Your server answered {status}.", { status: r.status })])]));
       }).catch(function (e) { C.clear(result).appendChild(failed(e)); }).then(function () { testBtn.disabled = false; });
     });
     append(pane, el("div.card", [el("div.card-head", el("div", [el("h3", "Risk-change alerts"), el("p.muted.small", "A signed message reaches your server the moment one of your users turns suspicious, and when they are back to normal.")])),
@@ -436,10 +437,10 @@
     if (!entries.length) return el("div.empty", [el("div.art", icon("history")), el("h3", "Nothing yet"), el("p", "Changes to your organisations will appear here.")]);
     return el("ul.timeline", entries.map(function (e) {
       var a = ACTIONS[e.action] || [e.action, "info", ""];
-      var who = e.actor && e.actor.type === "operator" ? "the operator" : e.actor && e.actor.type === "system" ? "Continuum" : (e.actor && e.actor.email) || "someone";
-      var extra = e.detail && e.detail.changed ? " (" + e.detail.changed.join(", ") + ")" : e.detail && e.action === "webhook.tested" ? (e.detail.ok ? " — delivered" : " — not delivered")
-        : e.detail && e.action === "webhook.undeliverable" ? " — gave up after " + e.detail.attempts + " tries (" + e.detail.error + ")" : "";
-      return el("li", [el("span.dot" + (a[2] ? "." + a[2] : ""), icon(a[1], "sm")), el("div", [el("div.what", a[0] + extra + (showOrg && e.name ? " · " + e.name : "")), el("div.when", { title: C.fullDate(e.at) }, "by " + who + " · " + C.when(e.at))])]);
+      var who = e.actor && e.actor.type === "operator" ? C.t("the operator") : e.actor && e.actor.type === "system" ? "Continuum" : (e.actor && e.actor.email) || C.t("someone");
+      var extra = e.detail && e.detail.changed ? " (" + e.detail.changed.join(", ") + ")" : e.detail && e.action === "webhook.tested" ? C.t(e.detail.ok ? " — delivered" : " — not delivered")
+        : e.detail && e.action === "webhook.undeliverable" ? C.t(" — gave up after {n} tries ({error})", { n: e.detail.attempts, error: e.detail.error }) : "";
+      return el("li", [el("span.dot" + (a[2] ? "." + a[2] : ""), icon(a[1], "sm")), el("div", [el("div.what", C.text(C.t(a[0]) + extra + (showOrg && e.name ? " · " + e.name : ""))), el("div.when", { title: C.fullDate(e.at) }, C.t("by {who} · {when}", { who: who, when: C.when(e.at) }))])]);
     }));
   }
   function tabActivity(t, pane) {
@@ -451,13 +452,13 @@
   function tabSettings(t, pane, locked) {
     var deleteBtn = el("button.btn.btn-danger#deleteBtn", { type: "button" }, [icon("trash", "sm"), "Delete organisation"]);
     deleteBtn.addEventListener("click", function () {
-      var input = el("input.input#deleteConfirm", { placeholder: t.name, autocomplete: "off" });
-      C.modal({ title: "Delete " + t.name + "?", text: "This removes the organisation, its keys and its settings, and erases every one of its users' passkeys and typing and mouse profiles. It can't be undone.",
-        body: el("label.field", [el("span.label", ["Type ", el("b", t.name), " to confirm"]), input]),
+      var input = el("input.input#deleteConfirm", { autocomplete: "off" }); input.placeholder = t.name;
+      C.modal({ title: C.t("Delete {name}?", { name: t.name }), text: "This removes the organisation, its keys and its settings, and erases every one of its users' passkeys and typing and mouse profiles. It can't be undone.",
+        body: el("label.field", [el("span.label", C.t("Type {name} to confirm", { name: el("b", C.text(t.name)) })), input]),
         actions: [{ label: "Cancel" }, { label: "Delete for good", kind: "danger", id: "deleteGo", onClick: function (close) {
           if (input.value !== t.name) { C.toast("bad", "The name you typed doesn't match. Nothing was deleted."); return; }
           return call("/v1/console/tenants/" + t.siteKey + "/delete", { body: { confirm: input.value } })
-            .then(function (r) { close(); orgs = null; C.toast("ok", t.name + " was deleted" + (r.users ? ", with its " + r.users + (r.users === 1 ? " user." : " users.") : ".")); location.hash = "#/organisations"; })
+            .then(function (r) { close(); orgs = null; C.toast("ok", r.users ? C.t("{name} was deleted, with its {users}.", { name: t.name, users: C.plural(r.users, "{n} user", "{n} users") }) : C.t("{name} was deleted.", { name: t.name })); location.hash = "#/organisations"; })
             .catch(function (e) { close(); orgs = null; C.toast("bad", C.explain(e)); renderOrg(t.siteKey, "settings"); });
         } }] });
     });
@@ -466,13 +467,13 @@
     renameBtn.addEventListener("click", function () { save(t, { name: name.value.trim() }, renameBtn).then(function () { renderOrg(t.siteKey, "settings"); }, function () {}); });
     var revokeBtn = el("button.btn.btn-danger#revokeBtn", { type: "button", disabled: locked }, [icon("trash", "sm"), "Revoke organisation"]);
     revokeBtn.addEventListener("click", function () {
-      var input = el("input.input#revokeConfirm", { placeholder: t.name, autocomplete: "off" });
-      C.modal({ title: "Revoke " + t.name + "?", text: "Its site key stops working at once, for all its users. This can't be undone from the console.",
-        body: el("label.field", [el("span.label", ["Type ", el("b", t.name), " to confirm"]), input]),
+      var input = el("input.input#revokeConfirm", { autocomplete: "off" }); input.placeholder = t.name;
+      C.modal({ title: C.t("Revoke {name}?", { name: t.name }), text: "Its site key stops working at once, for all its users. This can't be undone from the console.",
+        body: el("label.field", [el("span.label", C.t("Type {name} to confirm", { name: el("b", C.text(t.name)) })), input]),
         actions: [{ label: "Cancel" }, { label: "Revoke", kind: "danger", id: "revokeGo", onClick: function (close) {
-          if (input.value !== t.name) { C.toast("bad", C.MESSAGES.confirm_name_mismatch); return; }
+          if (input.value !== t.name) { C.toast("bad", C.msg("confirm_name_mismatch")); return; }
           return call("/v1/console/tenants/" + t.siteKey + "/revoke", { body: { confirm: input.value } })
-            .then(function () { close(); orgs = null; C.toast("ok", t.name + " was revoked."); renderOrg(t.siteKey, "overview"); })
+            .then(function () { close(); orgs = null; C.toast("ok", C.t("{name} was revoked.", { name: t.name })); renderOrg(t.siteKey, "overview"); })
             .catch(function (e) { C.toast("bad", C.explain(e)); });
         } }] });
     });
@@ -501,7 +502,7 @@
       C.clear(body);
       if (!list.length) { body.appendChild(el("div.card", el("div.empty", [el("div.art", icon("code")), el("h3", "Register an organisation first"), el("p", "The steps below use its site key."), el("a.btn.btn-primary", { href: "#/organisations/new" }, [icon("plus"), "New organisation"])]))); return; }
       var t = list.filter(function (x) { return x.siteKey === key; })[0] || list[0];
-      var pick = el("select.input", { "aria-label": "Organisation", style: "max-width:320px" }, list.map(function (x) { return el("option", { value: x.siteKey, selected: x.siteKey === t.siteKey }, x.name); }));
+      var pick = el("select.input", { "aria-label": "Organisation", style: "max-width:320px" }, list.map(function (x) { return el("option", { value: x.siteKey, selected: x.siteKey === t.siteKey }, C.text(x.name)); }));
       pick.addEventListener("change", function () { location.hash = "#/quickstart/" + pick.value; });
       var P = cfg.publicUrl;
       var step = function (n, title, text, kids) { return el("div.card", { style: "margin-top:18px" }, [el("div.card-head", [el("span.avatar", { style: "background:var(--accent-weak);color:var(--accent-text)" }, String(n)), el("div", [el("h3", title), el("p.muted.small", text)])]), el("div.card-body.stack", kids)]); };
@@ -512,7 +513,7 @@
           C.codeBlock("# .env on your server\nCONTINUUM_SECRET=<your secret>\nCONTINUUM_GATEWAY_URL=" + P + "\nCONTINUUM_JWKS_URI=" + P + "/.well-known/jwks.json"),
           C.codeBlock('const continuum = require("@continuum/node")({ secret: process.env.CONTINUUM_SECRET });\napp.use(continuum);   // /continuum/identity, /continuum/link, /continuum/events\n\n// block a sensitive action while the user looks suspicious\napp.post("/transfer", continuum.protect, handler);')]),
         step(3, "Let your users use the browser extension", "Optional: protection on every website, with the same enrolled profile.", [
-          el("p", ["Set the sign-in page to ", el("span.mono", (nonExt(t.origins)[0] || "https://your-app") + "/continuum/link"), " on the ", el("a", { href: "#/organisations/" + t.siteKey + "/extension" }, "Extension tab"), "."])]),
+          el("p", C.t("Set the sign-in page to {url} on the {tab}.", { url: el("span.mono", (nonExt(t.origins)[0] || "https://your-app") + "/continuum/link"), tab: el("a", { href: "#/organisations/" + t.siteKey + "/extension" }, "Extension tab") }))]),
         step(4, "Verify verdicts anywhere", "Every verdict is a signed token; any language can check it with the public keys.", [
           el("div.kv", [el("div.k", "JWKS"), el("div.v", C.copyField(P + "/.well-known/jwks.json")), el("div.k", "Discovery"), el("div.v", C.copyField(P + "/.well-known/continuum-configuration"))])]),
       ]);
@@ -533,5 +534,6 @@
     renderList();
   }
   window.addEventListener("hashchange", route);
+  C.onLang(function () { shellBuilt = false; navLinks = {}; route(); });   // the language button: everything is redrawn
   C.api("/v1/console/config").then(function (c) { cfg = c; }).catch(function () {}).then(route);
 })();

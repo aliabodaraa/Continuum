@@ -79,7 +79,8 @@ Each app that uses the gateway is a tenant with its own site key and secret. The
 - **The developer console** (`https://auth.example.com/console.html`): the app's developer signs in
   with a Continuum account (email + passkey), runs the four-step wizard, and gets the keys and
   ready-to-copy code. The organisation then waits for the operator's approval (below), unless
-  `GATEWAY_AUTO_APPROVE_TENANTS=1`.
+  `GATEWAY_AUTO_APPROVE_TENANTS=1`. The console and the operator page can be switched to Arabic
+  (right-to-left) with the language button on the page; the choice stays in that browser.
 - **The admin API**, by the operator directly, as below.
 
 ### The operator page and the admin API answer only on the gateway's machine
