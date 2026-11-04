@@ -320,6 +320,8 @@
   // level: "organisation" | "operator" -- the level whose own values this form edits.
   var SETTING_TEXT = {
     panel: ["Panel on your pages", "The small Continuum panel in the corner of each page. When it is hidden, users can't switch protection or add samples themselves, so the choices below apply to everyone."],
+    panelLanguage: ["Panel language", "The language of the Continuum panel and its windows (the passkey check, enrolment, training) on your pages and in the browser extension. Automatic: the page's own language on your site, the browser's in the extension. The enrolment passages stay English either way: the typing model is trained on them."],
+    panelTheme: ["Panel colours", "Light or dark colours for the panel and its windows. Automatic follows the device's light or dark mode."],
     keystroke: ["Typing protection", "Check that the person typing is the account's owner."],
     keystrokeDecisionWindows: ["Typing windows per decision", "How much typing each verdict looks at; half of these windows must look wrong. Fewer windows give the first verdict sooner (about 18 s of steady typing at 6, 42 s at 20) but flag the real user more often (about 10% of their verdicts at 6, 6% at 10, 3% at 20); impostors are caught about as often (~88%). Measured on 99 users."],
     pasteAllowance: ["Pastes allowed per field", "How many times a user may paste into the same field before the passkey is asked for. Every paste counts, however short, and the count starts again after each passkey verification. Pasted text is never judged as typing, so each allowed paste lets whoever is at the keyboard enter text without being checked. Unlimited never asks."],
@@ -334,18 +336,22 @@
   var CHOICE_TEXT = { show: "Shown", hide: "Hidden", eager: "Required at sign-in", lazy: "On demand" };
   // Labels that belong to one setting only (a bare number means different things in different settings).
   var KEY_CHOICE_TEXT = {
+    panelLanguage: { auto: "Automatic (the page's language)", en: "English", ar: "Arabic" },
+    panelTheme: { auto: "Automatic (the device's mode)", light: "Light", dark: "Dark" },
     keystrokeDecisionWindows: { 6: "6 (fastest)", 10: "10", 20: "20 (most accurate)" },
     pasteAllowance: { 0: "0 (ask at the first paste)", 1: "1", 2: "2", 3: "3", 5: "5", unlimited: "Unlimited" },
     adaptiveRetrainEvery: { 1: "1", 2: "2", 3: "3 (measured)" },
     adaptiveSampleFrom: { end: "End (what was typed last)", any: "Anywhere in the typing" },
   };
-  var SUB_OF = { keystrokeDecisionWindows: "keystroke", pasteAllowance: "keystroke", adaptiveRetrainEvery: "adaptive", adaptiveSampleFrom: "adaptive", adaptiveGapHours: "adaptive" };
+  var SUB_OF = { panelLanguage: "panel", panelTheme: "panel", keystrokeDecisionWindows: "keystroke", pasteAllowance: "keystroke", adaptiveRetrainEvery: "adaptive", adaptiveSampleFrom: "adaptive", adaptiveGapHours: "adaptive" };
   function choiceText(key, v) { var k = KEY_CHOICE_TEXT[key]; return (k && k[v]) || CHOICE_TEXT[v] || String(v); }
   var SOURCE_TEXT = { organisation: "Your setting", operator: "Operator default", env: "Server default (.env)", "default": "Built-in default" };
   function showValue(v, key) { return Array.isArray(v) ? (v.join(", ") || "none") : v === true ? "on" : v === false ? "off" : choiceText(key, v); }
   function settingsForm(items, opts) {
     opts = opts || {};
-    var level = opts.level || "organisation", rows = {}, nodes = {}, node = el("div.settings-list");
+    var level = opts.level || "organisation", rows = {}, nodes = {}, figs = {}, node = el("div.settings-list");
+    var ILL = window.CUI_ILLUS || null;   // ui/illus.js: the panel preview and the figures, when loaded
+    var current = function () { var o = {}; Object.keys(rows).forEach(function (k) { o[k] = rows[k].effective(); }); return o; };
     items.forEach(function (it) {
       var txt = SETTING_TEXT[it.key] || [it.key, ""];
       var own = it.source === level, cleared = false, ctl, read;
@@ -381,15 +387,27 @@
         var changed = !cleared && JSON.stringify(read()) !== JSON.stringify(it.value);
         badge.textContent = cleared ? t("Default: {v} (after saving)", { v: tr(showValue(fallback, it.key)) }) : changed ? tr("Changed (not saved)") : tr(SOURCE_TEXT[it.source] || it.source);
         reset.style.display = (own && !cleared && !opts.disabled) ? "" : "none";
+        if (figs[it.key]) figs[it.key].update(cleared ? fallback : read());
         if (opts.onChange) opts.onChange();
       }
       rows[it.key] = { it: it, read: read, isCleared: function () { return cleared; }, ctl: ctl,
         effective: function () { return cleared ? fallback : read(); } };
+      var fig = ILL && ILL.figure ? ILL.figure(it.key, it.value, current) : null;
       nodes[it.key] = el("div.setting-row" + (SUB_OF[it.key] ? ".sub" : ""), [
-        el("div.setting-text", [el("b", txt[0]), el("p.muted.small", txt[1]), el("div", [badge, reset])]),
+        el("div.setting-text", [el("b", txt[0]), el("p.muted.small", txt[1]), fig ? fig.node : null, el("div", [badge, reset])]),
         el("div.setting-ctl", ctl)]);
+      if (fig) figs[it.key] = fig;
       sync();
     });
+    // The preview of the panel, above the list, redrawn after every change (the figures that depend on two
+    // settings too). Only where the panel's own settings are in the form.
+    var pv = ILL && ILL.preview && rows.panel ? ILL.preview() : null;
+    function redraw() {
+      var v = current();
+      if (pv) pv.update(v);
+      Object.keys(figs).forEach(function (k) { figs[k].update(v[k]); });
+    }
+    if (pv) node.appendChild(pv.node);
     // A setting and the one that means nothing while it is off form one section (typing protection and
     // its windows; adaptive retraining and its pause); the second hides while the first is off.
     Object.keys(nodes).forEach(function (k) {
@@ -400,7 +418,7 @@
     function syncGroup() {
       Object.keys(SUB_OF).forEach(function (s) { if (rows[SUB_OF[s]] && nodes[s]) nodes[s].style.display = rows[SUB_OF[s]].effective() === "off" ? "none" : ""; });
     }
-    node.addEventListener("change", function () { setTimeout(syncGroup, 0); });
+    node.addEventListener("change", function () { setTimeout(function () { syncGroup(); redraw(); }, 0); });
     // "On demand" enrolment needs the panel: keep the form from offering an impossible pair.
     function constrain() {
       if (!rows.panel || !rows.onboarding) return;
@@ -408,9 +426,10 @@
       var lazy = rows.onboarding.ctl.querySelector('[data-v="lazy"]');
       if (lazy) { lazy.disabled = hidden || !!opts.disabled; lazy.title = hidden ? tr("Needs the panel") : ""; if (hidden && rows.onboarding.read() === "lazy") rows.onboarding.ctl.querySelector('[data-v="eager"]').click(); }
     }
-    node.addEventListener("click", function () { setTimeout(function () { constrain(); syncGroup(); }, 0); });
+    node.addEventListener("click", function () { setTimeout(function () { constrain(); syncGroup(); redraw(); }, 0); });
     constrain();
     syncGroup();
+    redraw();
     return {
       node: node,
       collect: function () {

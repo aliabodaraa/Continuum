@@ -29,6 +29,7 @@
       "js": [
         "src/features.js",
         "src/features-mouse.js",
+        "src/lang-ar.js",
         "src/content.js"
       ],
       "run_at": "document_start",

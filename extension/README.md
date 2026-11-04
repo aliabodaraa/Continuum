@@ -46,7 +46,10 @@ opens only on the gateway's own machine and signs in with `GATEWAY_ADMIN_KEY`.
 2. The settings page opens. Check the server address (`http://localhost:8080` for the local stack),
    then choose **Personal** or **My organisation**.
 3. Enrolment opens by itself (passkey, five typing samples, eight mouse samples) and trains on the server.
-4. The popup then shows the live verdict of each channel (it can be hidden in the settings).
+4. The popup then shows the live verdict of each channel (it can be hidden in the settings). The popup
+   and the lock overlay follow the organisation's panel language (English or Arabic, right-to-left) and
+   colours (light or dark), as set in its console; "auto" is the browser's language and the device's mode
+   (`src/lang-ar.js` holds the Arabic).
 
 The toolbar icon (Chrome allows one badge, so with the live verdict shown the icon itself becomes **two bars**):
 **left = typing, right = mouse**. Each fills while the page collects evidence (typing: 20 windows, about 240

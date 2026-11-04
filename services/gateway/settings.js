@@ -19,6 +19,10 @@ const path = require("path");
 
 const APP = {
   panel: { env: "CONTINUUM_PANEL", def: "show", choices: ["show", "hide"], claim: "panel" },
+  // the language and the colours of the panel and its windows, on the organisation's pages (the SDK) and in the
+  // browser extension; "auto" follows the page's language (in the extension, the browser's) and the device's mode
+  panelLanguage: { env: "CONTINUUM_PANEL_LANGUAGE", def: "auto", choices: ["auto", "en", "ar"], claim: "lang" },
+  panelTheme: { env: "CONTINUUM_PANEL_THEME", def: "auto", choices: ["auto", "light", "dark"], claim: "theme" },
   keystroke: { env: "CONTINUUM_KEYSTROKE", def: "on", choices: ["on", "off"], claim: "ks" },
   // windows in the typing decision: only the measured packets (ca-service keystrokeSecurity.js)
   keystrokeDecisionWindows: { env: "KEYSTROKE_DECISION_WINDOWS", def: 20, choices: [6, 10, 20], claim: "kw" },

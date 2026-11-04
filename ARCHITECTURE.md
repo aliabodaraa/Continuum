@@ -112,7 +112,11 @@ option — a rise in these is either an outage or someone arranging one.
   for the operator's approval (`status` pending → active; revoked is final). The operator
   approves and revokes on `/operator.html`. Both pages are English or Arabic (right-to-left),
   switched by a button on the page and remembered per browser (`public/ui/i18n-ar.js` holds the
-  Arabic for every string; names, keys and addresses are never translated). The operator page, with the admin API (`/v1/tenants`,
+  Arabic for every string; names, keys and addresses are never translated). An organisation's
+  Protection tab (and the operator's defaults) shows a live preview of the panel and an animated
+  figure under each setting (`public/ui/illus.js`); two of the settings, the panel's language and
+  colours (`panelLanguage`, `panelTheme`), reach the SDK and the extension through the signed claim
+  like the others. The operator page, with the admin API (`/v1/tenants`,
   `/v1/admin/*`) answers only on the gateway's own host names (`GATEWAY_OPERATOR_HOSTS`, default
   localhost; proxied requests are never local) and locks for 15 minutes after 10 wrong admin
   keys. Every change to a tenant or an account is appended to an activity log (`audit.jsonl`):

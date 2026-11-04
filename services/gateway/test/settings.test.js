@@ -8,7 +8,7 @@ const path = require("path");
 // The environment must not leak into the expected defaults.
 for (const k of ["CONTINUUM_PANEL", "CONTINUUM_KEYSTROKE", "CONTINUUM_MOUSE", "ONBOARDING_MODE", "ADAPTIVE_RETRAINING",
   "ADAPTIVE_MIN_GAP_HOURS", "ADAPTIVE_RETRAIN_EVERY", "ADAPTIVE_SAMPLE_FROM", "MONITOR_EXCLUDE_TYPES", "KEYSTROKE_DECISION_WINDOWS", "GATEWAY_AUTO_APPROVE_TENANTS",
-  "GATEWAY_ALLOW_PRIVATE_WEBHOOKS", "PASTE_ALLOWANCE"]) delete process.env[k];
+  "GATEWAY_ALLOW_PRIVATE_WEBHOOKS", "PASTE_ALLOWANCE", "CONTINUUM_PANEL_LANGUAGE", "CONTINUUM_PANEL_THEME"]) delete process.env[k];
 const createSettings = require("../settings");
 
 function fresh() {
@@ -78,6 +78,22 @@ test("pastes allowed per field: 0, 1, 2, 3, 5 or unlimited, unlimited by default
     assert.equal(s.claim(tenant).pa, String(v));
   }
   for (const v of ["4", -1, "lots"]) assert.throws(() => s.updateTenant({ settings: {} }, { pasteAllowance: v }), { code: "bad_setting" });
+});
+
+test("the panel's language and colours: automatic by default, English or Arabic, light or dark, and ca-service is told", () => {
+  const { s } = fresh();
+  assert.deepEqual([s.effective(null).values.panelLanguage, s.effective(null).values.panelTheme], ["auto", "auto"]);
+  assert.deepEqual([s.claim(null).lang, s.claim(null).theme], ["auto", "auto"]);
+  const tenant = { settings: s.updateTenant({ settings: {} }, { panelLanguage: "ar", panelTheme: "dark" }).settings };
+  const c = s.claim(tenant);
+  assert.deepEqual([c.lang, c.theme], ["ar", "dark"]);
+  assert.ok(c.m.includes("panelLanguage") && c.m.includes("panelTheme"));
+  assert.equal(s.updateTenant({ settings: {} }, { panelTheme: "light" }).settings.panelTheme, "light");
+  for (const [k, v] of [["panelLanguage", "fr"], ["panelLanguage", "AR"], ["panelTheme", "blue"]]) {
+    assert.throws(() => s.updateTenant({ settings: {} }, { [k]: v }), { code: "bad_setting" });
+  }
+  const row = s.describe(tenant).find((r) => r.key === "panelLanguage");
+  assert.deepEqual([row.value, row.source, row.choices], ["ar", "organisation", ["auto", "en", "ar"]]);
 });
 
 test("on-demand enrolment needs the panel", async () => {

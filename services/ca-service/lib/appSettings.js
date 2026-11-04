@@ -12,9 +12,14 @@
  * Claim shape (short keys keep the assertion small):
  *   { panel: "show"|"hide", ks: "on"|"off", ms: "on"|"off", ob: "eager"|"lazy",
  *     ad: "on"|"off", gap: hours, re: 1|2|3, sf: "end"|"any", ex: ["hidden", ...], kw: 6|10|20,
- *     pa: "0"|"1"|"2"|"3"|"5"|"unlimited", m: [explicitly set keys] }
+ *     pa: "0"|"1"|"2"|"3"|"5"|"unlimited", lang: "auto"|"en"|"ar", theme: "auto"|"light"|"dark",
+ *     m: [explicitly set keys] }
  */
 const onOff = (v, d) => (v === "on" || v === "off" ? v : d);
+// The panel's language and colours: passed on to the SDK and the extension, which resolve "auto" themselves.
+const LANGS = ["auto", "en", "ar"], THEMES = ["auto", "light", "dark"];
+const oneOf = (list) => (v, d) => (list.includes(v) ? v : d);
+const panelLanguage = oneOf(LANGS), panelTheme = oneOf(THEMES);
 // Pastes allowed into one field before the passkey is asked for (owner, 2026-10-25): a number, or Infinity
 // for "unlimited", the default. Every paste counts, however short (lib/keystrokeSecurity.js pastePolicyViolation).
 const PASTE_ALLOWANCE_CHOICES = ["0", "1", "2", "3", "5"];
@@ -26,6 +31,8 @@ const retrainEvery = (v, d) => (RETRAIN_EVERY_CHOICES.includes(Number(v)) ? Numb
 // Deployment defaults (.env). The gateway's operator page can override every one of them.
 const ENV = {
   panel: process.env.CONTINUUM_PANEL === "hide" ? "hide" : "show",
+  panelLanguage: panelLanguage(process.env.CONTINUUM_PANEL_LANGUAGE, "auto"),
+  panelTheme: panelTheme(process.env.CONTINUUM_PANEL_THEME, "auto"),
   keystroke: process.env.CONTINUUM_KEYSTROKE === "off" ? "off" : "on",
   mouse: process.env.CONTINUUM_MOUSE === "off" ? "off" : "on",
   onboarding: process.env.ONBOARDING_MODE === "lazy" ? "lazy" : "eager",
@@ -49,6 +56,8 @@ function forRequest(req) {
   if (!c) return { ...ENV, managed: [] };
   return {
     panel: c.panel === "hide" || c.panel === "show" ? c.panel : ENV.panel,
+    panelLanguage: panelLanguage(c.lang, ENV.panelLanguage),
+    panelTheme: panelTheme(c.theme, ENV.panelTheme),
     keystroke: onOff(c.ks, ENV.keystroke),
     mouse: onOff(c.ms, ENV.mouse),
     onboarding: c.ob === "lazy" || c.ob === "eager" ? c.ob : ENV.onboarding,

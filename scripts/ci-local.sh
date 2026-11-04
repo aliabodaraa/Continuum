@@ -65,7 +65,7 @@ step() {
 
 # The files git would commit, minus model weights, datasets and images: what CI checks out.
 sources() {
-  git ls-files -co --exclude-standard -z -- services apps sdk extension packages scripts tools examples \
+  git ls-files -co --exclude-standard -z -- services apps sdk extension packages scripts tools examples deploy \
     | grep -zvE '\.(h5|keras|bin|png|jpg|jpeg|gif|ico|zip|npz|npy|pkl|db)$' \
     | tar --null -T - -cf -
 }

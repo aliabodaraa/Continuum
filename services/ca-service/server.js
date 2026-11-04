@@ -291,6 +291,9 @@ app.get("/v1/keystroke/config", async (req, res) => {
     // explicitly in the console or on the operator page: those override the page's own
     // data-* attributes; the rest are defaults a page may still override.
     panel: st.panel,
+    // the panel's language and colours (auto | en | ar, auto | light | dark), for the SDK and the extension
+    panelLanguage: st.panelLanguage,
+    panelTheme: st.panelTheme,
     keystroke: st.keystroke,
     mouse: st.mouse,
     adaptiveEnabled: st.adaptive === "on",

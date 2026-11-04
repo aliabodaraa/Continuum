@@ -105,6 +105,10 @@ function disabledKey() { return Object.keys(state.disabled).sort().join(","); }
 // the "fields never watched" and the typing packet. The field types and the packet are kept in storage
 // because the worker loses its variables when idle. The server enforces all of them anyway.
 var excludeTypes = ["hidden"];
+// The panel's language and colours as the organisation set them (its console: panelLanguage auto | en | ar,
+// panelTheme auto | light | dark), for the popup and the lock overlay; "auto" is the browser's language and the
+// device's mode. Kept in storage like the rest, and sent to the pages with the capture config.
+var look = { lang: "auto", theme: "auto" };
 var orgConfigAt = 0;
 function refreshOrgConfig() {
   if (!conn()) return;
@@ -128,6 +132,8 @@ function refreshOrgConfig() {
       api.storage.local.set({ cg_ks_packet: RECENT });
       refreshAllBadges();
     }
+    var nl = { lang: ["auto", "en", "ar"].indexOf(r.d.panelLanguage) >= 0 ? r.d.panelLanguage : "auto", theme: ["auto", "light", "dark"].indexOf(r.d.panelTheme) >= 0 ? r.d.panelTheme : "auto" };
+    if (nl.lang !== look.lang || nl.theme !== look.theme) { look = nl; api.storage.local.set({ cg_look: look }); broadcastConfig(); }
   }).catch(function () {});
 }
 // At most once per `minMs`: while the popup is open (it polls the status every second) and while a
@@ -155,6 +161,8 @@ function resetUser() {
   offline = null;
   try { api.storage.local.remove("cg_offline"); } catch (e) {}
   if (api.alarms) api.alarms.clear(PROBE_ALARM);
+  look = { lang: "auto", theme: "auto" };
+  try { api.storage.local.remove("cg_look"); } catch (e) {}
 }
 
 // ---- talking to the gateway ----
@@ -408,10 +416,11 @@ function revoke(acc) {
 }
 
 // ---- restore at worker start ----
-api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "cg_account", "cg_paused", "cg_show_verdict", "cg_study_paused", "cg_exclude_types", "cg_ks_packet", "cg_offline"], function (d) {
+api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "cg_account", "cg_paused", "cg_show_verdict", "cg_study_paused", "cg_exclude_types", "cg_ks_packet", "cg_offline", "cg_look"], function (d) {
   d = d || {};
   if (Array.isArray(d.cg_exclude_types)) excludeTypes = d.cg_exclude_types;
   if (Number(d.cg_ks_packet) > 0) RECENT = Number(d.cg_ks_packet);
+  if (d.cg_look && d.cg_look.lang) look = { lang: d.cg_look.lang, theme: d.cg_look.theme || "auto" };
   loadStudy(d.cg_study);
   loadAccount(d.cg_account);
   paused = d.cg_paused === true;
@@ -537,6 +546,7 @@ function statusObj(tabId) {
     locked: state.locked, lockReason: state.lockReason, verdict: state.verdict, mouseVerdict: state.mouseVerdict,
     error: state.error, notEnrolled: state.notEnrolled, lastCheckAt: state.lastCheckAt, exclusions: config.exclusions,
     disabled: { keystroke: !!state.disabled.keystroke, mouse: !!state.disabled.mouse },
+    look: look,
     bars: tabId != null ? { keystroke: barState("keystroke", tabId).text, mouse: barState("mouse", tabId).text } : null,
     useSample: { recording: !!(useRec && useRec.until > Date.now()), last: lastUseSample },
   };
@@ -711,7 +721,7 @@ function broadcastConfig() {
   api.tabs.query({}, function (tabs) {
     (tabs || []).forEach(function (t) {
       try {
-        api.tabs.sendMessage(t.id, { type: "cg:config", capture: captureInfo(), exclusions: config.exclusions, gatewayOrigin: gatewayOrigin(), debug: debugLog, excludeTypes: excludeTypes },
+        api.tabs.sendMessage(t.id, { type: "cg:config", capture: captureInfo(), exclusions: config.exclusions, gatewayOrigin: gatewayOrigin(), debug: debugLog, excludeTypes: excludeTypes, look: look },
           function () { void api.runtime.lastError; });
       } catch (e) {}
     });
@@ -722,7 +732,7 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
   if (!msg) return;
   switch (msg.type) {
     case "cg:hello":
-      reply({ capture: captureInfo(), excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, lockPasted: state.lockPasted, gatewayOrigin: gatewayOrigin(), debug: debugLog, excludeTypes: excludeTypes });
+      reply({ capture: captureInfo(), excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, lockPasted: state.lockPasted, gatewayOrigin: gatewayOrigin(), debug: debugLog, excludeTypes: excludeTypes, look: look });
       return true;
     case "cg:check": {
       // From a content script: { channel, sessionId, clientTs, body, windowKeys }.

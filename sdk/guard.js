@@ -37,6 +37,8 @@
     // Page attr wins; otherwise the server's deployment config (docker env) applies.
     onboarding: (script && script.getAttribute("data-onboarding")) || "",
     panel: (script && script.getAttribute("data-panel")) || "",   // "show" | "hide"
+    lang: (script && script.getAttribute("data-lang")) || "",     // "auto" | "en" | "ar"
+    theme: (script && script.getAttribute("data-theme")) || "",   // "auto" | "light" | "dark"
     // The × in mandatory popups signs the user out via these (same-origin; a
     // consumer overrides with data-logout-url / data-login-url).
     logoutUrl: (script && script.getAttribute("data-logout-url")) || "/api/auth/logout",
@@ -46,12 +48,41 @@
   // Which of the managed settings this page chose itself. The organisation's console and the
   // operator page override a page's choice; a deployment default does not (see loadConfig).
   var PAGE_SET = { keystroke: !!(script && script.hasAttribute("data-keystroke")), mouse: !!(script && script.hasAttribute("data-mouse")),
-                   onboarding: !!cfg.onboarding, panel: !!cfg.panel };
+                   onboarding: !!cfg.onboarding, panel: !!cfg.panel, panelLanguage: !!cfg.lang, panelTheme: !!cfg.theme };
   var LS_MOUSE = "continuumGuardMouse";
   var LS_KEYSTROKE = "continuumGuardKeystroke";
   var LS_EXT = "continuumExternalId";
   var LS_POS = "continuumGuardPos";
   var LS_COLLAPSE = "continuumGuardCollapsed";
+
+  // ---------- language and colours ----------
+  // Chosen by the organisation (its console, or the operator's default): panelLanguage auto | en | ar and
+  // panelTheme auto | light | dark, from /config (loadConfig). A page may set its own with data-lang and
+  // data-theme; the organisation's explicit choice overrides it, as for the other managed settings. "auto" is the
+  // page's own language (<html lang>, else the browser's) and the device's light or dark mode. Every phrase is
+  // written in English in this file and looked up in /js/guard-ar.js, which loads only when Arabic is used. The
+  // enrolment passages stay English in both languages: they are what the typing model is trained on.
+  var LANG_PREF = cfg.lang || "auto", THEME_PREF = cfg.theme || "auto", LANG = "en", THEME = "light";
+  var darkMq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  var reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  function resolveLang(pref) {
+    if (pref === "en" || pref === "ar") return pref;
+    var page = String(document.documentElement.getAttribute("lang") || "");
+    return (page || String(navigator.language || "")).toLowerCase().indexOf("ar") === 0 ? "ar" : "en";
+  }
+  function resolveTheme(pref) { return pref === "light" || pref === "dark" ? pref : darkMq && darkMq.matches ? "dark" : "light"; }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function phrase(s) { var d = LANG === "ar" ? window.continuumGuardAR : null; return d && typeof d[s] === "string" ? d[s] : s; }
+  // t() is plain text (textContent), its {slots} filled as given; h() goes into innerHTML, its slots escaped
+  // (the phrases themselves are this file's own, a few with <b>).
+  function t(s, vars) { var out = phrase(s); return vars ? out.replace(/\{(\w+)\}/g, function (m, k) { return vars[k] == null ? "" : String(vars[k]); }) : out; }
+  function h(s, vars) { var out = phrase(s); return vars ? out.replace(/\{(\w+)\}/g, function (m, k) { return vars[k] == null ? "" : esc(vars[k]); }) : out; }
+  function loadLang() {
+    if (resolveLang(LANG_PREF) !== "ar" || window.continuumGuardAR) return Promise.resolve();
+    return loadScript(url("/js/guard-ar.js")).catch(function () {});   // without it the panel stays English
+  }
+  // A short animation (Web Animations API), skipped when the device asks for less motion.
+  function play(node, frames, opts) { if (!reduceMotion && node && node.animate) { try { node.animate(frames, opts); } catch (e) {} } }
 
   // window math (overwritten from config)
   var WINDOW_SIZE = 50, WINDOW_STRIDE = 10, RECENT_WINDOW_COUNT = 20, SAMPLE_WINDOWS = 20, KS_MIN_CHARS = 80;
@@ -130,12 +161,171 @@
     if (!window.continuumKeystrokes) j.push(loadScript(url("/js/keystroke-tracker.js")));
     if (!window.mouseFeatures) j.push(loadScript(url("/js/mouse-features.js")));
     if (!window.SimpleWebAuthnBrowser) j.push(loadScript(url("/vendor/simplewebauthn/index.umd.min.js")));
+    j.push(loadLang());   // Arabic from the start when the page asks for it (the organisation's choice follows in loadConfig)
     return Promise.all(j);
   }
 
   // ---------- Shadow-DOM UI ----------
-  var shadow, dotEl, kbEl, ksToggleEl, mouseEl, toggleEl, modalEl, modalErrEl, modalBtnEl, wizEl, learnEl, useEl;
+  var shadow, rootEl, logoEl, sumEl, sumDotEl, KS = null, MS = null;
+  var kbEl, ksToggleEl, mouseEl, toggleEl, modalEl, modalErrEl, modalBtnEl, wizEl, learnEl, useEl, cfmEl;
   function el(t, c, x) { var e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; }
+  // Line icons (24 x 24, stroked), the same family as the gateway's pages.
+  var ICON = {
+    logo: '<path class="beat" d="M3 12h4l3-8 4 16 3-8h4"/>',
+    keyboard: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/>',
+    mouse: '<rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    chevron: '<path d="m6 9 6 6 6-6"/>',
+    finger: '<path d="M12 10a2 2 0 0 0-2 2c0 1-.1 2.5-.3 4M14 13.1c0 2.4 0 6.4-1 8.9M17.3 21c.1-.6.4-2.3.5-3M2 12a10 10 0 0 1 18-6M2 16h.01M21.8 16c.2-2 .1-5.4 0-6M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .3-2M8.7 22c.2-.7.4-1.3.6-2M9 6.8a6 6 0 0 1 9 5.2v2"/>',
+    door: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/>',
+    trash: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+    alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+    x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  };
+  function svg(name, cls) { return '<svg viewBox="0 0 24 24" aria-hidden="true"' + (cls ? ' class="' + cls + '"' : "") + ">" + ICON[name] + "</svg>"; }
+  // Light by default, dark under data-theme="dark" (applyLook); right-to-left under dir="rtl". Sides are written as
+  // inline-start/end so the layout mirrors by itself. Every animation stops under prefers-reduced-motion.
+  var CSS = [
+    ".cg{--font:system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans Arabic',Tahoma,Arial,sans-serif;",
+    "--glass:rgba(255,255,255,.84);--card:#fff;--card2:#f5f7fb;--row:rgba(15,23,42,.035);--text:#0f172a;--text2:#334155;--muted:#64748b;--faint:#94a3b8;",
+    "--line:rgba(15,23,42,.08);--line2:rgba(15,23,42,.14);--track:rgba(15,23,42,.09);--acc:#6366f1;--acc2:#8b5cf6;--accw:rgba(99,102,241,.14);",
+    "--ok:#16a34a;--okw:rgba(22,163,74,.12);--warn:#d97706;--warnw:rgba(217,119,6,.14);--bad:#dc2626;--badw:rgba(220,38,38,.1);--mut:#94a3b8;",
+    "--veil:rgba(15,23,42,.42);--shadow:0 22px 48px -18px rgba(15,23,42,.42),0 3px 10px rgba(15,23,42,.08);--pop:0 40px 90px -28px rgba(15,23,42,.55);",
+    "font:500 12.5px/1.45 var(--font);color:var(--text);-webkit-font-smoothing:antialiased;text-align:start}",
+    ".cg[data-theme=dark]{--glass:rgba(15,23,42,.82);--card:#111a2e;--card2:#0b1324;--row:rgba(255,255,255,.04);--text:#e5e9f5;--text2:#cbd5e1;--muted:#94a3b8;--faint:#64748b;",
+    "--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.15);--track:rgba(255,255,255,.1);--acc:#818cf8;--acc2:#a78bfa;--accw:rgba(129,140,248,.18);",
+    "--ok:#4ade80;--okw:rgba(74,222,128,.13);--warn:#fbbf24;--warnw:rgba(251,191,36,.14);--bad:#f87171;--badw:rgba(248,113,113,.14);--mut:#64748b;",
+    "--veil:rgba(2,6,23,.64);--shadow:0 22px 48px -18px rgba(0,0,0,.75),0 3px 10px rgba(0,0,0,.35);--pop:0 40px 90px -28px rgba(0,0,0,.85)}",
+    ".cg *{box-sizing:border-box}.cg svg{display:block}",
+    // ---- the panel ----
+    ".panel{width:276px;background:var(--glass);-webkit-backdrop-filter:blur(16px) saturate(1.5);backdrop-filter:blur(16px) saturate(1.5);border:1px solid var(--line2);border-radius:20px;box-shadow:var(--shadow);overflow:hidden;animation:cg-in .55s cubic-bezier(.2,.9,.25,1.1) both;transition:width .4s cubic-bezier(.2,.8,.2,1),box-shadow .3s}",
+    ".panel:hover{box-shadow:var(--shadow),0 0 0 4px var(--accw)}",
+    ".panel.collapsed{width:216px}",
+    ".hd{display:flex;align-items:center;gap:10px;padding:11px;cursor:grab;user-select:none}.hd:active{cursor:grabbing}",
+    ".logo{position:relative;width:34px;height:34px;flex:none;border-radius:11px;display:grid;place-items:center;background:linear-gradient(135deg,var(--acc),var(--acc2));box-shadow:0 8px 18px -8px var(--acc)}",
+    ".logo svg,.b2 svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:2.3;stroke-linecap:round;stroke-linejoin:round}",
+    ".logo .beat{stroke-dasharray:44;stroke-dashoffset:0}",
+    ".logo .rp{position:absolute;inset:-3px;border-radius:13px;border:2px solid var(--acc);opacity:0;pointer-events:none}",
+    ".ttl{flex:1;min-width:0}.ttl b{display:block;font-size:13.5px;font-weight:800;letter-spacing:-.01em;color:var(--text)}",
+    ".sum{display:flex;align-items:center;gap:6px;margin-top:1px;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden}",
+    ".sum span:last-child{overflow:hidden;text-overflow:ellipsis}",
+    ".sdot{position:relative;width:7px;height:7px;flex:none;border-radius:50%;background:var(--mut);transition:background .3s}",
+    ".sdot::after{content:'';position:absolute;inset:0;border-radius:50%;background:inherit;opacity:0}",
+    ".sdot.ok{background:var(--ok)}.sdot.ok::after{animation:cg-breathe 2.4s ease-out infinite}.sdot.col{background:var(--acc)}.sdot.col::after{animation:cg-breathe 1.8s ease-out infinite}",
+    ".sdot.warn{background:var(--warn)}.sdot.bad{background:var(--bad)}.sdot.bad::after{animation:cg-breathe 1.1s ease-out infinite}",
+    ".cx{width:28px;height:28px;flex:none;border:0;border-radius:9px;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;padding:0;transition:background .2s,color .2s}",
+    ".cx:hover{background:var(--row);color:var(--text)}",
+    ".cx svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform .4s cubic-bezier(.2,.8,.2,1)}",
+    ".panel.collapsed .cx svg{transform:rotate(180deg)}",
+    ".pbody{display:grid;grid-template-rows:1fr;transition:grid-template-rows .4s cubic-bezier(.2,.8,.2,1)}.panel.collapsed .pbody{grid-template-rows:0fr}",
+    ".pin{min-height:0;overflow:hidden}.rows{display:grid;gap:7px;padding:0 10px 10px}",
+    ".row{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:14px;background:var(--row);border:1px solid var(--line);transition:background .35s,border-color .35s}",
+    ".row.ok{--c:var(--ok)}.row.col{--c:var(--acc)}.row.warn{--c:var(--warn)}.row.mut{--c:var(--mut)}",
+    ".row.bad{--c:var(--bad);background:var(--badw);border-color:color-mix(in srgb,var(--bad) 32%,transparent)}",
+    ".ring{position:relative;width:38px;height:38px;flex:none}",
+    ".ring .r{width:38px;height:38px;transform:rotate(-90deg)}",
+    ".ring circle{fill:none;stroke-width:3}.ring .tr{stroke:var(--track)}",
+    ".ring .pr{stroke:var(--c,var(--mut));stroke-linecap:round;stroke-dasharray:100;transition:stroke-dashoffset .8s cubic-bezier(.2,.8,.2,1),stroke .35s}",
+    ".row.busy .r{animation:cg-turn 1s linear infinite}.row.busy .pr{stroke-dasharray:26 74;stroke:var(--acc)}",
+    ".ring .ic{position:absolute;inset:0;display:grid;place-items:center;color:var(--c,var(--mut));transition:color .35s}",
+    ".ring .ic svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}",
+    ".info{flex:1;min-width:0}.lbl{display:block;font-weight:700;font-size:12.5px;color:var(--text)}",
+    ".st{position:relative;display:block;margin-top:1px;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .35s}",
+    ".st::first-letter{text-transform:uppercase}.st b{font-weight:800}.st .pct{font-variant-numeric:tabular-nums}",
+    ".st.ok{color:var(--ok)}.st.col{color:var(--acc)}.st.warn{color:var(--warn)}.st.bad{color:var(--bad)}",
+    ".sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}",
+    ".add{width:28px;height:28px;flex:none;border-radius:9px;border:1px solid var(--line2);background:transparent;color:var(--acc);display:grid;place-items:center;cursor:pointer;padding:0;transition:background .2s,transform .2s}",
+    ".add:hover{background:var(--accw);transform:translateY(-1px)}",
+    ".add svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round}",
+    ".tgl{position:relative;width:36px;height:21px;flex:none;border:0;border-radius:999px;background:var(--track);cursor:pointer;padding:0;font-size:0;color:transparent;transition:background .3s}",
+    ".tgl::before{content:'';position:absolute;top:2.5px;inset-inline-start:2.5px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.25);transition:transform .35s cubic-bezier(.3,1.5,.5,1)}",
+    ".tgl.on{background:var(--ok)}.tgl.on::before{transform:translateX(15px)}.cg[dir=rtl] .tgl.on::before{transform:translateX(-15px)}",
+    ".tgl:focus-visible,.add:focus-visible,.cx:focus-visible,.b:focus-visible,.wizx:focus-visible{outline:3px solid var(--accw);outline-offset:1px}",
+    // ---- windows: the step-up, the onboarding wizard, the training popups, a confirmation ----
+    ".ov{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:16px;background:var(--veil);-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);animation:cg-fade .3s ease both}",
+    ".card{position:relative;width:100%;max-width:480px;max-height:calc(100vh - 32px);overflow:auto;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:24px;padding:28px 30px;font:500 14px/1.6 var(--font);box-shadow:var(--pop);animation:cg-pop .5s cubic-bezier(.2,.9,.25,1.15) both}",
+    // Mouse enrolment gets a much larger card. The click target spawns inside the pad, so its size sets how far apart
+    // consecutive hops can be, and a 480px card taught the model one cramped amplitude that never matched full-page movement.
+    ".card.wide{max-width:min(1100px,94vw)}.card.wide .pad{height:min(60vh,520px)}",
+    ".card.center .t,.card.center .d{text-align:center}",
+    ".wizx{position:absolute;top:12px;inset-inline-end:12px;width:32px;height:32px;border:0;border-radius:10px;background:transparent;color:var(--faint);display:grid;place-items:center;cursor:pointer;padding:0;transition:background .2s,color .2s,transform .3s}",
+    ".wizx:hover{background:var(--card2);color:var(--text);transform:rotate(90deg)}",
+    ".wizx svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}",
+    ".brand{display:flex;align-items:center;gap:8px;margin-bottom:16px;font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--acc)}.cg[dir=rtl] .brand{letter-spacing:0}",
+    ".brand .b2{width:22px;height:22px;flex:none;border-radius:7px;display:grid;place-items:center;background:linear-gradient(135deg,var(--acc),var(--acc2))}.brand .b2 svg{width:14px;height:14px;stroke-width:2.6}",
+    ".hero{display:grid;place-items:center;margin:4px 0 18px}",
+    ".orb{position:relative;width:76px;height:76px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 32% 28%,var(--acc2),var(--acc));box-shadow:0 16px 34px -12px var(--acc)}",
+    ".orb svg{position:relative;width:36px;height:36px;fill:none;stroke:#fff;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}",
+    ".orb::before,.orb::after{content:'';position:absolute;inset:-10px;border-radius:50%;border:2px solid var(--acc);opacity:0;animation:cg-ring 2.4s ease-out infinite}.orb::after{animation-delay:1.2s}",
+    ".orb .scan{position:absolute;inset:0;border-radius:50%;overflow:hidden}",
+    ".orb .scan::after{content:'';position:absolute;left:0;right:0;top:-30%;height:30%;background:linear-gradient(180deg,transparent,rgba(255,255,255,.5),transparent);animation:cg-scan 2.2s ease-in-out infinite}",
+    ".orb.bad{background:radial-gradient(circle at 32% 28%,#fb7185,var(--bad));box-shadow:0 16px 34px -12px var(--bad)}.orb.bad::before,.orb.bad::after{border-color:var(--bad)}",
+    ".orb.ok{background:radial-gradient(circle at 32% 28%,#4ade80,#16a34a);box-shadow:0 16px 34px -12px #16a34a}.orb.ok::before,.orb.ok::after{border-color:#16a34a;animation-iteration-count:2}",
+    ".orb.ok svg path{stroke-dasharray:24;stroke-dashoffset:24;animation:cg-draw .7s .2s ease forwards}",
+    ".t{font-size:20px;font-weight:800;letter-spacing:-.01em;color:var(--text);margin-bottom:6px}.cg[dir=rtl] .t{letter-spacing:0}",
+    ".d{font-size:13.5px;color:var(--muted);line-height:1.7;margin-bottom:18px}.d b{color:var(--text)}.d a{color:var(--acc);font-weight:700;text-decoration:none}",
+    ".b{position:relative;overflow:hidden;width:100%;border:0;border-radius:13px;padding:13px 16px;background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;font:700 14.5px var(--font);cursor:pointer;box-shadow:0 12px 26px -12px var(--acc);transition:transform .18s,filter .2s,opacity .2s}",
+    ".b::after{content:'';position:absolute;top:0;bottom:0;left:-60%;width:40%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.38),transparent);transform:skewX(-18deg)}",
+    ".b:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.06)}.b:hover:not(:disabled)::after{animation:cg-shine .9s ease}",
+    ".b:active:not(:disabled){transform:scale(.99)}.b:disabled{opacity:.55;cursor:default}",
+    ".b.sec{background:var(--card2);color:var(--text2);box-shadow:none;border:1px solid var(--line2)}",
+    ".b.bad{background:linear-gradient(135deg,#f43f5e,var(--bad));box-shadow:0 12px 26px -12px var(--bad)}",
+    ".row2{display:flex;gap:8px}.row2 .b{flex:1}",
+    ".e{display:none;margin-top:12px;padding:10px 12px;border-radius:11px;background:var(--badw);color:var(--bad);font-size:12.5px;line-height:1.5}",
+    ".foot{text-align:center;margin-top:12px}",
+    ".danger{display:inline-flex;align-items:center;gap:6px;color:var(--bad);font-size:12px;font-weight:700;text-decoration:none}",
+    ".danger svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}",
+    ".wizload{position:absolute;inset:0;z-index:2;border-radius:24px;display:none;align-items:center;justify-content:center;gap:10px;background:color-mix(in srgb,var(--card) 86%,transparent);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);font-weight:800;color:var(--acc)}",
+    ".wizload.on{display:flex;animation:cg-fade .25s ease both}",
+    ".wizspin{width:22px;height:22px;flex:none;border-radius:50%;border:3px solid var(--accw);border-top-color:var(--acc);animation:cg-spin .7s linear infinite}",
+    ".steps{display:flex;gap:8px;margin:0 0 18px}.steps .s{flex:1;min-width:0}",
+    ".steps .s i{position:relative;display:block;height:5px;border-radius:999px;background:var(--track);overflow:hidden}",
+    ".steps .s i::after{content:'';position:absolute;inset:0;border-radius:inherit;background:linear-gradient(90deg,var(--acc),var(--acc2));transform:scaleX(0);transform-origin:left}",
+    ".cg[dir=rtl] .steps .s i::after{transform-origin:right}",
+    ".steps .s.done i::after{background:var(--ok);transform:scaleX(1)}.steps .s.on i::after{animation:cg-grow 1.2s cubic-bezier(.2,.8,.2,1) forwards}",
+    ".steps .s span{display:block;margin-top:6px;font-size:11px;font-weight:700;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+    ".steps .s.on span{color:var(--acc)}.steps .s.done span{color:var(--ok)}",
+    // the typing passage and the box stay left-to-right: they are English text to copy
+    ".passage{direction:ltr;text-align:left;unicode-bidi:isolate;margin-bottom:10px;padding:13px 15px;border-radius:13px;background:var(--card2);border:1px solid var(--line);font-size:13.5px;line-height:1.75;color:var(--text2);user-select:none}",
+    ".ta{display:block;width:100%;min-height:104px;direction:ltr;text-align:left;padding:12px 13px;border:1px solid var(--line2);border-radius:13px;background:var(--card);color:var(--text);font:inherit;resize:none;transition:border-color .2s,box-shadow .2s}",
+    ".ta:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 4px var(--accw)}.ta::placeholder{color:var(--faint)}",
+    ".bar{height:8px;margin:12px 0;border-radius:999px;background:var(--track);overflow:hidden}",
+    ".bar>i{position:relative;display:block;height:100%;width:0;border-radius:inherit;overflow:hidden;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .4s cubic-bezier(.2,.8,.2,1)}",
+    ".bar>i::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.42),transparent);animation:cg-shim 1.6s linear infinite}",
+    ".diag{font-size:11.5px;color:var(--faint);margin:6px 0 10px;font-variant-numeric:tabular-nums}",
+    ".samplecount{font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:8px}.samplecount b{color:var(--acc)}",
+    ".pad{position:relative;overflow:hidden;height:260px;margin-bottom:12px;border-radius:16px;border:2px dashed color-mix(in srgb,var(--acc) 40%,transparent);background:radial-gradient(120% 120% at 50% 0%,var(--accw),transparent 70%),var(--card2);display:flex;align-items:center;justify-content:center;text-align:center;color:var(--acc);font-weight:700}",
+    ".padlabel{opacity:.7}",
+    // the target jumps (no glide): how the user moves to it is what the mouse model learns
+    ".pt{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--acc2),var(--acc));box-shadow:0 0 0 6px var(--accw),0 8px 18px -6px var(--acc);cursor:pointer;animation:cg-pt 1.2s ease-in-out infinite}",
+    ".pt::after{content:'';position:absolute;inset:-6px;border-radius:50%;border:2px solid var(--acc);animation:cg-ring 1.6s ease-out infinite}",
+    ".msamp{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 12px}.msamp .mhead{font-size:15px;font-weight:800;color:var(--text)}",
+    ".msamp .mpips{display:flex;gap:6px}.msamp .mpip{width:14px;height:14px;border-radius:50%;border:2px solid var(--acc);background:transparent;transition:background .3s}",
+    ".msamp .mpip.on{background:var(--acc);animation:cg-popin .45s cubic-bezier(.3,1.6,.5,1)}.msamp .msub{font-size:12px;color:var(--muted)}",
+    ".learn{position:fixed;z-index:2147483646;display:none;width:300px;max-width:calc(100vw - 16px);padding:12px 13px;border-radius:16px;background:var(--glass);-webkit-backdrop-filter:blur(14px) saturate(1.4);backdrop-filter:blur(14px) saturate(1.4);border:1px solid color-mix(in srgb,var(--ok) 45%,transparent);box-shadow:var(--shadow);font:500 12.5px/1.5 var(--font);color:var(--text);animation:cg-up .45s cubic-bezier(.2,.9,.25,1.1) both}",
+    ".learn .lt{display:flex;align-items:center;gap:8px;margin-bottom:3px;font-weight:800;color:var(--text)}",
+    ".learn .li{width:24px;height:24px;flex:none;border-radius:8px;display:grid;place-items:center;background:var(--okw);color:var(--ok)}",
+    ".learn .li svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}",
+    ".learn .lm{color:var(--muted);font-size:12px}",
+    ".learn .lp{height:6px;margin-top:10px;border-radius:999px;background:var(--track);overflow:hidden}",
+    ".learn .lp>i{display:block;height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,var(--ok),#22d3ee);transition:width .5s cubic-bezier(.2,.8,.2,1)}",
+    ".learn .lb{display:flex;gap:8px;margin-top:11px}",
+    ".learn button{border:0;border-radius:10px;padding:7px 13px;font:800 11.5px var(--font);cursor:pointer;transition:transform .15s,filter .2s}",
+    ".learn button:hover:not(:disabled){transform:translateY(-1px)}.learn .go{background:var(--ok);color:#fff}.cg[data-theme=dark] .learn .go{color:#052e16}",
+    ".learn .go:disabled{opacity:.6;cursor:default}.learn .gh{background:transparent;color:var(--muted);border:1px solid var(--line2)}",
+    "@keyframes cg-in{from{opacity:0;transform:translateY(14px) scale(.97)}}@keyframes cg-up{from{opacity:0;transform:translateY(10px)}}",
+    "@keyframes cg-fade{from{opacity:0}}@keyframes cg-pop{from{opacity:0;transform:translateY(16px) scale(.96)}}",
+    "@keyframes cg-spin{to{transform:rotate(360deg)}}@keyframes cg-turn{from{transform:rotate(-90deg)}to{transform:rotate(270deg)}}",
+    "@keyframes cg-breathe{0%{opacity:.6;transform:scale(1)}100%{opacity:0;transform:scale(2.7)}}",
+    "@keyframes cg-ring{0%{opacity:.55;transform:scale(.86)}100%{opacity:0;transform:scale(1.35)}}",
+    "@keyframes cg-scan{0%{top:-30%}100%{top:100%}}@keyframes cg-draw{to{stroke-dashoffset:0}}",
+    "@keyframes cg-shine{to{left:130%}}@keyframes cg-shim{from{transform:translateX(-100%)}to{transform:translateX(100%)}}",
+    "@keyframes cg-grow{to{transform:scaleX(.55)}}@keyframes cg-pt{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}",
+    "@keyframes cg-popin{0%{transform:scale(.4)}100%{transform:scale(1)}}",
+    "@media (prefers-reduced-motion:reduce){.cg *,.cg *::before,.cg *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}",
+  ].join("");
 
   function buildUI() {
     var host = el("div"); host.id = "continuum-guard-host";
@@ -149,73 +339,40 @@
     // the viewport's bottom-right. <html> can't be a fixed-positioning containing block.
     (document.documentElement || document.body).appendChild(host);
     shadow = host.attachShadow ? host.attachShadow({ mode: "open" }) : host;
-    var st = el("style");
-    st.textContent =
-      ".panel{width:236px;background:#0f172a;color:#e2e8f0;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:12px 14px;font:500 12.5px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.35)}" +
-      ".hd{display:flex;align-items:center;gap:8px;font-weight:800;margin-bottom:9px;cursor:move;user-select:none}" +
-      ".cx{margin-left:6px;cursor:pointer;background:transparent;border:0;color:#94a3b8;font:800 15px/1 system-ui;width:20px;height:20px;border-radius:5px;padding:0}.cx:hover{background:rgba(255,255,255,.12);color:#fff}" +
-      ".panel.collapsed{width:auto}.panel.collapsed .hd{margin-bottom:0}.panel.collapsed .pbody{display:none}" +
-      ".dot{width:9px;height:9px;border-radius:50%;background:#22c55e;transition:transform .15s}.dot.pulse{transform:scale(1.7);box-shadow:0 0 0 4px rgba(56,189,248,.35)}" +
-      ".hd .tag{font-size:9px;font-weight:700;color:#7dd3fc;border:1px solid rgba(125,211,252,.4);border-radius:999px;padding:1px 6px;margin-left:auto}" +
-      ".row{display:flex;align-items:center;gap:8px;padding:5px 0}.row .ic{width:16px;text-align:center}.row .st{flex:1;color:#cbd5e1}.row .st b{color:#fff}" +
-      ".ok{color:#86efac!important}.warn{color:#fcd34d!important}.bad{color:#fca5a5!important}.mut{color:#64748b!important}" +
-      ".tgl{cursor:pointer;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#cbd5e1;border-radius:7px;padding:3px 8px;font:700 10px system-ui}.tgl.on{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.5);color:#86efac}" +
-      ".tgl.add{color:#7dd3fc;border-color:rgba(125,211,252,.35)}.tgl.add:hover{background:rgba(125,211,252,.12)}" +
-      ".ov{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(15,23,42,.65);backdrop-filter:blur(4px)}" +
-      ".card{position:relative;background:#fff;border-radius:16px;padding:26px 30px;max-width:480px;width:92%;font-family:system-ui;box-shadow:0 24px 60px rgba(0,0,0,.4)}" +
-      ".wizx{position:absolute;top:10px;right:12px;width:28px;height:28px;border:0;background:transparent;color:#94a3b8;font:400 22px/1 system-ui;cursor:pointer;border-radius:7px}.wizx:hover{background:#f1f5f9;color:#0f172a}" +
-      ".wizload{position:absolute;inset:0;border-radius:16px;background:rgba(255,255,255,.82);display:none;align-items:center;justify-content:center;gap:10px;font-weight:800;color:#4f46e5;z-index:2}.wizload.on{display:flex}" +
-      ".wizspin{width:20px;height:20px;border:3px solid #c7d2fe;border-top-color:#4f46e5;border-radius:50%;animation:cspin .7s linear infinite}@keyframes cspin{to{transform:rotate(360deg)}}" +
-      ".samplecount{font-size:12px;font-weight:700;color:#475569;margin-bottom:8px}.samplecount b{color:#4f46e5}" +
-      ".msamp{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 10px}.msamp .mhead{font-size:15px;font-weight:800;color:#1e1b4b}" +
-      ".msamp .mpips{display:flex;gap:5px}.msamp .mpip{width:14px;height:14px;border-radius:50%;border:2px solid #4f46e5;background:transparent}.msamp .mpip.on{background:#4f46e5}" +
-      ".msamp .msub{font-size:12px;color:#64748b}" +
-      ".brand{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;color:#4f46e5;letter-spacing:.4px;margin-bottom:12px}" +
-      ".brand .b2{width:16px;height:16px;border-radius:5px;background:linear-gradient(135deg,#6366f1,#22d3ee)}" +
-      ".t{font-size:19px;font-weight:800;color:#0f172a;margin-bottom:6px}.d{font-size:13.5px;color:#475569;line-height:1.6;margin-bottom:16px}" +
-      ".b{width:100%;background:#4f46e5;color:#fff;border:0;border-radius:10px;padding:12px;font:700 15px system-ui;cursor:pointer}.b:disabled{opacity:.55;cursor:default}" +
-      ".e{display:none;color:#dc2626;font-size:12px;margin-top:10px}" +
-      ".passage{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;font-size:13px;color:#334155;line-height:1.6;margin-bottom:10px;user-select:none}" +
-      ".ta{width:100%;min-height:96px;border:1px solid #cbd5e1;border-radius:10px;padding:11px;font:inherit;resize:none}" +
-      ".pad{position:relative;overflow:hidden;height:260px;border:2px dashed #c7d2fe;border-radius:12px;background:#eef2ff;display:flex;align-items:center;justify-content:center;color:#6366f1;font-weight:700;margin-bottom:12px;text-align:center}" +
-      // Mouse enrollment gets a much larger card. The click target spawns inside the pad, so
-      // its size sets how far apart consecutive hops can be — and a 480px card taught the
-      // model one cramped amplitude that never matched full-page movement.
-      ".card.wide{max-width:min(1100px,94vw)}.card.wide .pad{height:min(60vh,520px)}" +
-      ".pt{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#4f46e5;box-shadow:0 0 0 6px rgba(79,70,229,.18);cursor:pointer;animation:cptpulse 1s ease-in-out infinite}@keyframes cptpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}" +
-      ".bar{height:8px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin:10px 0}.bar>i{display:block;height:100%;background:#4f46e5;width:0}" +
-      ".steps{display:flex;gap:6px;margin-bottom:14px}.steps .s{flex:1;height:5px;border-radius:999px;background:#e2e8f0}.steps .s.on{background:#4f46e5}.steps .s.done{background:#22c55e}" +
-      // Floating "adaptive learning" prompt — positioned above the active text field.
-      ".learn{position:fixed;z-index:2147483646;width:290px;max-width:calc(100vw - 16px);background:#052e2b;border:1px solid rgba(34,197,94,.5);border-radius:12px;padding:11px 13px;font:500 12.5px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#d1fae5;box-shadow:0 12px 34px rgba(0,0,0,.4);display:none}" +
-      ".learn .lt{font-weight:800;color:#86efac;margin-bottom:3px;display:flex;align-items:center;gap:6px}" +
-      ".learn .lm{color:#a7f3d0;font-size:12px}" +
-      ".learn .lp{height:5px;background:rgba(255,255,255,.12);border-radius:999px;margin-top:9px;overflow:hidden}.learn .lp>i{display:block;height:100%;width:0;background:#22c55e;transition:width .3s}" +
-      ".learn .lb{display:flex;gap:8px;margin-top:10px}" +
-      ".learn button{border:0;border-radius:8px;padding:6px 12px;font:800 11px system-ui;cursor:pointer}" +
-      ".learn .go{background:#22c55e;color:#052e2b}.learn .go:disabled{opacity:.6;cursor:default}" +
-      ".learn .gh{background:transparent;color:#86efac;border:1px solid rgba(134,239,172,.4)}";
-    shadow.appendChild(st);
+    var st = el("style"); st.textContent = CSS; shadow.appendChild(st);
+    // One root carries the language (lang, dir) and the colours (data-theme); the host, which the page's own CSS can
+    // reach, carries nothing but its position.
+    rootEl = el("div", "cg"); shadow.appendChild(rootEl);
+    applyLook();
 
     var panel = el("div", "panel"); panelEl = panel;
-    var hd = el("div", "hd"); dotEl = el("span", "dot");
-    hd.appendChild(dotEl); hd.appendChild(el("span", null, "Continuum")); hd.appendChild(el("span", "tag", "GUARD"));
-    var cx = el("button", "cx", "–"); cx.title = "Collapse"; hd.appendChild(cx);
+    panel.setAttribute("role", "region"); panel.setAttribute("aria-label", "Continuum");
+    var hd = el("div", "hd");
+    logoEl = el("span", "logo"); logoEl.innerHTML = svg("logo") + '<span class="rp"></span>';
+    var ttl = el("span", "ttl"), sum = el("span", "sum");
+    ttl.appendChild(el("b", null, "Continuum"));
+    sumDotEl = el("span", "sdot"); sumEl = el("span"); sum.appendChild(sumDotEl); sum.appendChild(sumEl);
+    sum.setAttribute("aria-live", "polite"); ttl.appendChild(sum);
+    var cx = el("button", "cx"); cx.type = "button"; cx.innerHTML = svg("chevron");
+    hd.appendChild(logoEl); hd.appendChild(ttl); hd.appendChild(cx);
     panel.appendChild(hd);
-    var pbody = el("div", "pbody");
-    var kr = el("div", "row"); kr.appendChild(el("span", "ic", "⌨")); kbEl = el("span", "st mut", "keystroke: idle"); kr.appendChild(kbEl);
-    var ksAdd = el("button", "tgl add", "+ train"); ksAdd.title = "Add typing samples"; ksAdd.addEventListener("click", reinforceKeystroke); kr.appendChild(ksAdd); ksAddEl = ksAdd;
-    ksToggleEl = el("button", "tgl", "off"); ksToggleEl.addEventListener("click", toggleKeystrokeCtl); kr.appendChild(ksToggleEl);
-    pbody.appendChild(kr);
-    var mr = el("div", "row"); mr.appendChild(el("span", "ic", "🖱")); mouseEl = el("span", "st mut", "mouse: off"); mr.appendChild(mouseEl);
-    var msAdd = el("button", "tgl add", "+ train"); msAdd.title = "Add mouse samples"; msAdd.addEventListener("click", reinforceMouse); mr.appendChild(msAdd); msAddEl = msAdd;
-    toggleEl = el("button", "tgl", "off"); toggleEl.addEventListener("click", toggleMouseCtl); mr.appendChild(toggleEl);
-    pbody.appendChild(mr);
-    panel.appendChild(pbody); shadow.appendChild(panel);
+    var pbody = el("div", "pbody"), pin = el("div", "pin"), rows = el("div", "rows");
+    KS = channelRow("keyboard", "Typing", "keystroke:", reinforceKeystroke, "Add typing samples", toggleKeystrokeCtl, "Typing protection");
+    MS = channelRow("mouse", "Mouse", "mouse:", reinforceMouse, "Add mouse samples", toggleMouseCtl, "Mouse protection");
+    kbEl = KS.st; ksAddEl = KS.add; ksToggleEl = KS.tgl; mouseEl = MS.st; msAddEl = MS.add; toggleEl = MS.tgl;
+    rows.appendChild(KS.row); rows.appendChild(MS.row);
+    pin.appendChild(rows); pbody.appendChild(pin); panel.appendChild(pbody); rootEl.appendChild(panel);
+    setKb("mut", "idle"); setMouseRow("mut", "off");
     applyPanel();
 
     // ---- collapse / expand (persisted) ----
     var collapsed = false; try { collapsed = localStorage.getItem(LS_COLLAPSE) === "1"; } catch (e) {}
-    function applyCollapse() { panel.classList[collapsed ? "add" : "remove"]("collapsed"); cx.textContent = collapsed ? "+" : "–"; cx.title = collapsed ? "Expand" : "Collapse"; }
+    function applyCollapse() {
+      panel.classList[collapsed ? "add" : "remove"]("collapsed");
+      var k = collapsed ? "Expand" : "Collapse";
+      cx.setAttribute("data-tt", k); cx.setAttribute("data-ta", k); cx.title = t(k); cx.setAttribute("aria-label", t(k));
+      cx.setAttribute("aria-expanded", String(!collapsed));
+    }
     cx.addEventListener("click", function (e) { e.stopPropagation(); collapsed = !collapsed; try { localStorage.setItem(LS_COLLAPSE, collapsed ? "1" : "0"); } catch (e2) {} applyCollapse(); });
     applyCollapse();
 
@@ -223,7 +380,7 @@
     try { var sp = JSON.parse(localStorage.getItem(LS_POS) || "null"); if (sp && sp.left != null) { host.style.left = sp.left + "px"; host.style.top = sp.top + "px"; host.style.right = "auto"; host.style.bottom = "auto"; } } catch (e) {}
     var dragging = false, ox = 0, oy = 0, sx = 0, sy = 0;
     hd.addEventListener("mousedown", function (e) {
-      if (e.target === cx) return;
+      if (cx.contains(e.target)) return;
       var r = host.getBoundingClientRect(); ox = r.left; oy = r.top; sx = e.clientX; sy = e.clientY;
       host.style.right = "auto"; host.style.bottom = "auto"; host.style.left = ox + "px"; host.style.top = oy + "px";
       dragging = true; e.preventDefault();
@@ -239,45 +396,159 @@
       try { var r = host.getBoundingClientRect(); localStorage.setItem(LS_POS, JSON.stringify({ left: Math.round(r.left), top: Math.round(r.top) })); } catch (e) {}
     });
 
+    // ---- the passkey step-up ----
     modalEl = el("div", "ov");
-    modalEl.innerHTML = '<div class="card"><button class="wizx" title="Sign out">×</button><div class="brand"><span class="b2"></span>CONTINUUM</div><div class="t">Identity check required</div><div class="d">Your recent activity no longer matches your profile. Verify with your passkey to continue.</div><button class="b">Verify with passkey</button><div class="e"></div></div>';
+    modalEl.innerHTML = '<div class="card center" role="dialog" aria-modal="true"><button class="wizx" type="button">' + svg("x") + "</button>"
+      + '<div class="brand"><span class="b2">' + svg("logo") + '</span>CONTINUUM</div><div class="hero"><div class="orb"></div></div>'
+      + '<div class="t"></div><div class="d"></div><button class="b" type="button"></button><div class="e"></div></div>';
     modalBtnEl = modalEl.querySelector(".b"); modalErrEl = modalEl.querySelector(".e");
     modalEl.querySelector(".wizx").addEventListener("click", doLogout);
-    modalBtnEl.addEventListener("click", stepUp); shadow.appendChild(modalEl);
+    modalBtnEl.addEventListener("click", stepUp); rootEl.appendChild(modalEl);
+    modalText("Identity check required", "Your recent activity no longer matches your profile. Verify with your passkey to continue.", "Verify with passkey", "finger");
 
-    wizEl = el("div", "ov"); shadow.appendChild(wizEl); // onboarding wizard overlay
+    wizEl = el("div", "ov"); rootEl.appendChild(wizEl); // onboarding wizard overlay
 
     // Floating adaptive-learning prompt (positioned above the active text field).
-    learnEl = el("div", "learn");
-    learnEl.innerHTML = '<div class="lt"><span>↻</span><span>Your typing looks like you</span></div>' +
-      '<div class="lm">Add this clean sample so your model keeps learning your rhythm.</div>' +
-      '<div class="lp"><i></i></div>' +
-      '<div class="lb"><button class="go">Contribute sample</button><button class="gh">Not now</button></div>';
+    learnEl = el("div", "learn"); learnEl.setAttribute("role", "status");
+    learnEl.innerHTML = '<div class="lt"><span class="li">' + svg("refresh") + "</span><span>" + h("Your typing looks like you") + "</span></div>"
+      + '<div class="lm">' + h("Add this clean sample so your model keeps learning your rhythm.") + '</div><div class="lp"><i></i></div>'
+      + '<div class="lb"><button class="go" type="button">' + h("Contribute sample") + '</button><button class="gh" type="button" data-t="Not now">' + h("Not now") + "</button></div>";
     learnEl.querySelector(".go").addEventListener("click", function () { if (learnMode === "retrain") retrainWithPasskey(); else contributeSample(); });
     learnEl.querySelector(".gh").addEventListener("click", function () { dismissLearn(); });
-    shadow.appendChild(learnEl);
+    rootEl.appendChild(learnEl);
     // The real-use mouse sample question (learning from real use, stage 1), bottom right, after a verified passkey.
-    useEl = el("div", "learn");
+    useEl = el("div", "learn"); useEl.setAttribute("role", "status");
     useEl.style.right = "16px"; useEl.style.bottom = "16px";
-    useEl.innerHTML = '<div class="lt"><span>🖱</span><span>Record your real mouse use?</span></div><div class="lm"></div>' +
-      '<div class="lp"><i></i></div><div class="lb"><button class="go">Record</button><button class="gh">Not now</button></div>';
+    useEl.innerHTML = '<div class="lt"><span class="li">' + svg("mouse") + "</span><span>" + h("Record your real mouse use?") + '</span></div><div class="lm"></div>'
+      + '<div class="lp"><i></i></div><div class="lb"><button class="go" type="button">' + h("Record") + '</button><button class="gh" type="button">' + h("Not now") + "</button></div>";
     useEl.querySelector(".go").addEventListener("click", startUseSample);
     useEl.querySelector(".gh").addEventListener("click", function () { useOffer = null; hideUse(); });
-    shadow.appendChild(useEl);
+    rootEl.appendChild(useEl);
     // Keep the prompt glued to the field as the page scrolls/resizes.
     window.addEventListener("scroll", positionLearn, true);
     window.addEventListener("resize", positionLearn);
   }
 
-  function pulse() { if (dotEl) { dotEl.classList.add("pulse"); setTimeout(function () { dotEl.classList.remove("pulse"); }, 220); } }
+  // One channel's line in the panel: a ring (its progress, in the colour of its state) around the channel's icon,
+  // the label, the status, "+" (add samples) and the switch. The status starts with the channel's name for screen
+  // readers ("keystroke: verified"), hidden on screen where the label says it.
+  function channelRow(icon, label, prefix, onAdd, addTitle, onToggle, toggleLabel) {
+    var row = el("div", "row mut"), ring = el("span", "ring");
+    ring.innerHTML = '<svg class="r" viewBox="0 0 36 36" aria-hidden="true"><circle class="tr" cx="18" cy="18" r="15.9155"/>'
+      + '<circle class="pr" cx="18" cy="18" r="15.9155" pathLength="100"/></svg><span class="ic">' + svg(icon) + "</span>";
+    var info = el("span", "info"), lbl = el("span", "lbl", t(label)), stEl = el("span", "st mut");
+    lbl.setAttribute("data-t", label);
+    info.appendChild(lbl); info.appendChild(stEl);
+    var add = el("button", "add"); add.type = "button"; add.innerHTML = svg("plus");
+    add.setAttribute("data-tt", addTitle); add.setAttribute("data-ta", addTitle); add.title = t(addTitle); add.setAttribute("aria-label", t(addTitle));
+    add.addEventListener("click", onAdd);
+    var tg = el("button", "tgl", "off"); tg.type = "button"; tg.setAttribute("role", "switch"); tg.setAttribute("aria-checked", "false");
+    tg.setAttribute("data-ta", toggleLabel); tg.setAttribute("aria-label", t(toggleLabel));
+    tg.addEventListener("click", onToggle);
+    row.appendChild(ring); row.appendChild(info); row.appendChild(add); row.appendChild(tg);
+    var pr = ring.querySelector(".pr"); pr.style.strokeDashoffset = "100";
+    return { row: row, pr: pr, st: stEl, add: add, tgl: tg, prefix: prefix, state: null };
+  }
+
+  function applyLook() {
+    LANG = resolveLang(LANG_PREF); THEME = resolveTheme(THEME_PREF);
+    if (!rootEl) return;
+    rootEl.setAttribute("lang", LANG); rootEl.setAttribute("dir", LANG === "ar" ? "rtl" : "ltr"); rootEl.setAttribute("data-theme", THEME);
+  }
+  // The language or the colours changed (the organisation's settings arrived, or the device changed mode): load the
+  // Arabic when needed, then redraw the panel's own words. A window already open keeps its words until it redraws.
+  function relook() {
+    return loadLang().then(function () {
+      applyLook();
+      if (!rootEl) return;
+      var each = function (sel, f) { var n = rootEl.querySelectorAll(sel); for (var i = 0; i < n.length; i++) f(n[i]); };
+      each("[data-t]", function (n) { n.textContent = t(n.getAttribute("data-t")); });
+      each("[data-tt]", function (n) { n.title = t(n.getAttribute("data-tt")); });
+      each("[data-ta]", function (n) { n.setAttribute("aria-label", t(n.getAttribute("data-ta"))); });
+      if (KS && KS.state) drawRow(KS);
+      if (MS && MS.state) drawRow(MS);
+      updateSummary();
+    });
+  }
+  if (darkMq) {
+    var onScheme = function () { if (THEME_PREF === "auto") applyLook(); };
+    if (darkMq.addEventListener) darkMq.addEventListener("change", onScheme); else if (darkMq.addListener) darkMq.addListener(onScheme);
+  }
+
+  // The panel's one-line summary under its title, from the two channels.
+  function updateSummary() {
+    if (!sumEl) return;
+    var k = KS && KS.state ? KS.state.cls : "mut", m = MS && MS.state ? MS.state.cls : "mut", has = function (c) { return k === c || m === c; };
+    var cls = signedOut || locked || has("bad") ? "bad" : has("warn") ? "warn" : has("ok") ? "ok" : has("col") ? "col" : "mut";
+    var key = signedOut ? "Signed out" : locked ? "Locked: verify it's you" : cls === "bad" ? "Attention needed" : cls === "warn" ? "Watching closely"
+      : cls === "ok" ? "Protected" : cls === "col" ? "Getting ready" : "Standing by";
+    sumDotEl.className = "sdot " + cls; sumEl.setAttribute("data-t", key); sumEl.textContent = t(key);
+  }
+
+  // A check is on its way: the logo's line runs once and a ring goes out from it.
+  function pulse() {
+    if (!logoEl) return;
+    play(logoEl.querySelector(".beat"), [{ strokeDashoffset: 44 }, { strokeDashoffset: 0 }], { duration: 900, easing: "ease-out" });
+    play(logoEl.querySelector(".rp"), [{ opacity: 0.7, transform: "scale(.9)" }, { opacity: 0, transform: "scale(1.5)" }], { duration: 900, easing: "ease-out" });
+  }
   // Last scored verdict per channel, kept so TRANSIENT states ("analyzing…", "checking…")
   // can still show it. Dropping the number mid-check made the panel look like it had lost
   // track of the user, when in fact the previous verdict is exactly what is still in force
   // until the next one lands.
   var lastKsPct = null, lastMousePct = null;
-  function withLast(h, pct) { return pct == null ? h : h + " · <b>" + pct + "%</b>"; }
-  function setKb(c, h) { if (kbEl) { kbEl.className = "st " + c; kbEl.innerHTML = "keystroke: " + h; } }
-  function setMouseRow(c, h) { if (mouseEl) { mouseEl.className = "st " + c; mouseEl.innerHTML = "mouse: " + h; } }
+  // A channel's state. cls: ok | col (collecting) | warn | bad | mut; text: English with {slots}, shown in the panel's
+  // language; o.vars fill the slots, o.pct is the last score (after the text), o.prog 0..1 fills the ring, o.busy
+  // spins it while a check is on its way, o.keep stays in the previous colour and ring (between checks the last
+  // verdict still holds). Kept, so a change of language redraws it.
+  function setRow(ch, cls, text, o) {
+    if (!ch) return;
+    o = o || {};
+    var prev = ch.state;
+    if (o.keep && prev) { cls = prev.cls; if (o.prog == null) o.prog = prev.prog; }
+    var prog = o.prog != null ? o.prog : cls === "ok" || cls === "bad" ? 1 : cls === "mut" ? 0 : prev ? prev.prog : 0;
+    ch.state = { cls: cls, text: text, o: o, prog: Math.max(0, Math.min(1, Number(prog) || 0)) };
+    drawRow(ch, prev);
+    if (cls === "bad" && (!prev || prev.cls !== "bad")) {
+      play(panelEl, [{ transform: "translateX(0)" }, { transform: "translateX(-5px)" }, { transform: "translateX(5px)" }, { transform: "translateX(-3px)" }, { transform: "translateX(0)" }], { duration: 420, easing: "ease-in-out" });
+    }
+    updateSummary();
+  }
+  function drawRow(ch, prev) {
+    var s = ch.state, o = s.o;
+    ch.st.className = "st " + s.cls;
+    ch.st.innerHTML = '<span class="sr">' + esc(t(ch.prefix)) + " </span>" + h(s.text, o.vars) + (o.pct != null ? ' · <b class="pct">' + Number(o.pct) + "%</b>" : "");
+    ch.row.className = "row " + s.cls + (o.busy ? " busy" : "");
+    ch.pr.style.strokeDashoffset = String(100 - s.prog * 100);
+    if (prev && prev.cls !== s.cls) play(ch.st, [{ opacity: 0.2, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }], { duration: 380, easing: "ease-out" });
+  }
+  function setKb(cls, text, o) { setRow(KS, cls, text, o); }
+  function setMouseRow(cls, text, o) { setRow(MS, cls, text, o); }
+  // The step-up window's words (English, shown in the panel's language) and its picture (finger: a passkey check;
+  // door: signed out).
+  function modalText(title, text, button, pic) {
+    if (!modalEl) return;
+    modalEl.querySelector(".t").textContent = t(title);
+    modalEl.querySelector(".d").textContent = t(text);
+    modalBtnEl.textContent = t(button);
+    var x = modalEl.querySelector(".wizx"); x.title = t("Sign out"); x.setAttribute("aria-label", t("Sign out"));
+    var orb = modalEl.querySelector(".orb");
+    orb.className = "orb" + (pic === "door" ? " bad" : "");
+    orb.innerHTML = (pic === "door" ? "" : '<span class="scan"></span>') + svg(pic === "door" ? "door" : "finger");
+  }
+  // A question in the panel's own window (window.confirm cannot follow its language or colours). Resolves true when
+  // the user confirms.
+  function confirmBox(title, text, ok) {
+    return new Promise(function (resolve) {
+      if (!cfmEl) { cfmEl = el("div", "ov"); rootEl.appendChild(cfmEl); }
+      cfmEl.innerHTML = '<div class="card center" role="alertdialog" aria-modal="true"><div class="hero"><div class="orb bad">' + svg("trash") + "</div></div>"
+        + '<div class="t">' + h(title) + '</div><div class="d">' + h(text) + '</div><div class="row2"><button class="b sec" type="button" id="cfmNo">'
+        + h("Cancel") + '</button><button class="b bad" type="button" id="cfmYes">' + h(ok) + "</button></div></div>";
+      function done(v) { cfmEl.style.display = "none"; cfmEl.innerHTML = ""; resolve(v); }
+      cfmEl.querySelector("#cfmNo").addEventListener("click", function () { done(false); });
+      cfmEl.querySelector("#cfmYes").addEventListener("click", function () { done(true); });
+      cfmEl.style.display = "flex";
+    });
+  }
   var stepUpOnSuccess = null; // optional callback for external step-up requests
   var stepUpOnFail = null;    // optional callback for a failed attempt (requireStepUp's onFail)
   var onProbation = false;    // after a step-up: any suspicious verdict re-challenges (no grace) until a genuine one clears it
@@ -288,13 +559,13 @@
     abortUseSample();
     stepUpReason = modality === "mouse" ? "mouse" : "keystroke";
     if (!modalEl) return;
-    if (signedOut) { modalEl.style.display = "flex"; return; }   // a passkey cannot help until the user signs in again
-    var d = modalEl.querySelector(".d");
+    if (signedOut) { modalEl.style.display = "flex"; updateSummary(); return; }   // a passkey cannot help until the user signs in again
     var pasted = !!(verdict && verdict.typingEvaluation && verdict.typingEvaluation.modelType === "paste-policy");
-    if (d) d.textContent = (pasted ? "Text was pasted into this field more times than allowed."
-      : modality === "mouse" ? "Your mouse movement no longer matches your profile."
-      : "Your typing rhythm no longer matches your profile.") + " Verify with your passkey to continue.";
+    modalText("Identity check required", pasted ? "Text was pasted into this field more times than allowed. Verify with your passkey to continue."
+      : modality === "mouse" ? "Your mouse movement no longer matches your profile. Verify with your passkey to continue."
+      : "Your typing rhythm no longer matches your profile. Verify with your passkey to continue.", "Verify with passkey", "finger");
     modalEl.style.display = "flex";
+    updateSummary();
   }
   function hideModal() { if (modalEl) { modalEl.style.display = "none"; modalErrEl.style.display = "none"; } }
   // Demo mode: the app's own sign-in has ended (its API answers 401, as after a restart of a server that keeps its
@@ -308,26 +579,25 @@
     setKb("bad", "signed out — sign in again");
     if (mouseOn) setMouseRow("bad", "signed out — sign in again");
     if (!modalEl) return;
-    modalEl.querySelector(".t").textContent = "Signed out";
-    modalEl.querySelector(".d").textContent = "Your session has ended. Sign in again to continue.";
-    modalBtnEl.textContent = "Sign in again"; modalErrEl.style.display = "none";
+    modalText("Signed out", "Your session has ended. Sign in again to continue.", "Sign in again", "door");
+    modalErrEl.style.display = "none";
     modalEl.style.display = "flex";
   }
 
   // ---------- passkey WebAuthn (mode-aware) ----------
-  function webauthn() { var w = window.SimpleWebAuthnBrowser; if (!w || !w.startAuthentication) throw new Error("Passkey library unavailable"); return w; }
+  function webauthn() { var w = window.SimpleWebAuthnBrowser; if (!w || !w.startAuthentication) throw new Error(t("Passkey library unavailable")); return w; }
 
   async function registerPasskey() {
     var W = webauthn();
     var opt = MODE === "gateway"
       ? await reqJson(EP.pkRegOpts, "POST", {})
       : await (async function () { var me = await req("/api/auth/me").then(function (r) { return r.json(); }); return reqJson("/api/webauthn/register/options", "POST", {}); })();
-    if (!opt.ok) throw new Error(opt.d.error || "Could not start registration");
+    if (!opt.ok) throw new Error(opt.d.error || t("Could not start registration"));
     var att = await W.startRegistration(opt.d);
     var done = MODE === "gateway"
       ? await reqJson(EP.pkRegDone, "POST", { credential: att })
       : await reqJson("/api/webauthn/register/complete", "POST", { credential: att });
-    if (!done.ok) throw new Error(done.d.error || "Registration failed");
+    if (!done.ok) throw new Error(done.d.error || t("Registration failed"));
     return true;
   }
 
@@ -340,17 +610,17 @@
     var W = webauthn(), opt, ver;
     if (MODE === "gateway") {
       opt = await reqJson(EP.pkAuthOpts, "POST", {});
-      if (!opt.ok) throw new Error((opt.d && opt.d.error) || "Could not start verification");
+      if (!opt.ok) throw new Error((opt.d && opt.d.error) || t("Could not start verification"));
       var as1 = await W.startAuthentication(opt.d);
       ver = await reqJson(EP.pkAuthDone, "POST", { challengeId: opt.d.challengeId, assertion: as1 });
     } else {
       var me = await req("/api/auth/me").then(function (r) { return r.json(); });
       opt = await reqJson("/api/webauthn/auth/options", "POST", { userId: me.userId });
-      if (!opt.ok) throw new Error((opt.d && opt.d.error) || "Could not start verification");
+      if (!opt.ok) throw new Error((opt.d && opt.d.error) || t("Could not start verification"));
       var as2 = await W.startAuthentication(opt.d);
       ver = await reqJson("/api/webauthn/auth/complete", "POST", { userId: me.userId, challengeId: opt.d.challengeId, assertion: as2 });
     }
-    if (!ver.ok) throw new Error((ver.d && ver.d.error) || "Verification failed");
+    if (!ver.ok) throw new Error((ver.d && ver.d.error) || t("Verification failed"));
     return true;
   }
 
@@ -358,37 +628,37 @@
   // user is told exactly what is about to be destroyed before the ceremony, and nothing is
   // deleted if they cancel the prompt or the assertion fails.
   async function resetProfile(kind, errEl, onDone) {
-    var label = kind === "mouse" ? "mouse movement" : "typing rhythm";
-    if (!window.confirm("Delete your enrolled " + label + " profile?\n\nThis cannot be undone — you will need to train again from scratch. You will be asked for your passkey to confirm.")) return;
+    var ask = kind === "mouse" ? "Delete your enrolled mouse movement profile?" : "Delete your enrolled typing rhythm profile?";
+    if (!(await confirmBox(ask, "This cannot be undone: you will need to train again from scratch. You will be asked for your passkey to confirm.", "Delete"))) return;
     errEl.style.display = "none";
     try {
       await verifyPasskeyForAction();
       var r = await reqJson(kind === "mouse" ? EP.mouseReset : EP.ksReset, "POST", {});
-      if (!r.ok) throw new Error((r.d && r.d.error) || "Reset failed");
+      if (!r.ok) throw new Error((r.d && r.d.error) || t("Reset failed"));
       if (onDone) onDone(r.d);
     } catch (err) {
-      errEl.textContent = (err && err.message) || "Reset failed";
+      errEl.textContent = (err && err.message) || t("Reset failed");
       errEl.style.display = "block";
     }
   }
 
   async function stepUp() {
     if (signedOut) { location.href = cfg.loginUrl; return; }
-    modalErrEl.style.display = "none"; modalBtnEl.disabled = true; modalBtnEl.textContent = "Verifying…";
+    modalErrEl.style.display = "none"; modalBtnEl.disabled = true; modalBtnEl.textContent = t("Verifying…");
     try {
       var W = webauthn(), opt, ver;
       if (MODE === "gateway") {
-        opt = await reqJson(EP.pkAuthOpts, "POST", {}); if (!opt.ok) throw new Error(opt.d.error || "Could not start verification");
+        opt = await reqJson(EP.pkAuthOpts, "POST", {}); if (!opt.ok) throw new Error(opt.d.error || t("Could not start verification"));
         var assertion = await W.startAuthentication(opt.d);
         ver = await reqJson(EP.pkAuthDone, "POST", { challengeId: opt.d.challengeId, assertion: assertion, reason: stepUpReason });
       } else {
         var me = await reqJson("/api/auth/me");
         if (me.status === 401 || !me.d.userId) { sessionEnded(); return; }
-        opt = await reqJson("/api/webauthn/auth/options", "POST", { userId: me.d.userId }); if (!opt.ok) throw new Error(opt.d.error || "Could not start verification");
+        opt = await reqJson("/api/webauthn/auth/options", "POST", { userId: me.d.userId }); if (!opt.ok) throw new Error(opt.d.error || t("Could not start verification"));
         var a2 = await W.startAuthentication(opt.d);
         ver = await reqJson("/api/webauthn/auth/complete", "POST", { userId: me.d.userId, challengeId: opt.d.challengeId, assertion: a2, reason: stepUpReason });
       }
-      if (!ver.ok) throw new Error(ver.d.error || "Verification failed");
+      if (!ver.ok) throw new Error(ver.d.error || t("Verification failed"));
       // Clean resume after step-up: reset BOTH the trackers AND the per-modality
       // check counters, so the window baseline restarts from zero with the tracker.
       // (Resetting the tracker alone left lastCheckedWindowCount stale-high, which
@@ -403,10 +673,10 @@
       if (stepUpOnSuccess) { var cb = stepUpOnSuccess; stepUpOnSuccess = null; try { cb(verified); } catch (e2) {} }
       offerUseSample(verified.mouseUseSample);
     } catch (e) {
-      modalErrEl.textContent = e.message || "Verification failed"; modalErrEl.style.display = "block";
-      if (stepUpOnFail) { try { stepUpOnFail(e.message || "Verification failed"); } catch (e3) {} }
+      modalErrEl.textContent = e.message || t("Verification failed"); modalErrEl.style.display = "block";
+      if (stepUpOnFail) { try { stepUpOnFail(e.message || t("Verification failed")); } catch (e3) {} }
     }
-    finally { modalBtnEl.disabled = false; modalBtnEl.textContent = signedOut ? "Sign in again" : "Verify with passkey"; }
+    finally { modalBtnEl.disabled = false; modalBtnEl.textContent = t(signedOut ? "Sign in again" : "Verify with passkey"); }
   }
 
   // `force` (post-step-up probation): re-challenge on a raw suspicious verdict too,
@@ -442,13 +712,11 @@
     clearTimeout(useHideT);
     var m = useEl.querySelector(".lm"), b = useEl.querySelector(".lb"), p = useEl.querySelector(".lp>i");
     if (mode === "ask") {
-      m.textContent = "You just confirmed it's you. If you agree, keep using the page as usual: Continuum records about 16 s of your mouse "
-        + "movement (only how the pointer moves, nothing you type or click on). It is kept to test whether learning from real use "
-        + "lowers false passkey requests. Your profile does not change.";
+      m.textContent = t("You just confirmed it's you. If you agree, keep using the page as usual: Continuum records about 16 s of your mouse movement (only how the pointer moves, nothing you type or click on). It is kept to test whether learning from real use lowers false passkey requests. Your profile does not change.");
       b.style.display = "flex"; p.style.width = "0";
       useHideT = setTimeout(function () { useOffer = null; hideUse(); }, Math.max(0, useOffer.until - Date.now()));
     } else if (mode === "rec") {
-      m.textContent = "Recording your movement… " + text + " of 16 s. Keep using the page as usual.";
+      m.textContent = t("Recording your movement… {s} of 16 s. Keep using the page as usual.", { s: text });
       b.style.display = "none";
     } else {
       m.textContent = text; b.style.display = "none"; p.style.width = "0";
@@ -475,7 +743,7 @@
     var r = useRec;
     if (!r || r.sending) return;
     if (locked) { abortUseSample(); return; }
-    if (Date.now() > r.until) { abortUseSample(); showUse("done", "Not saved: the time for this sample ran out."); return; }
+    if (Date.now() > r.until) { abortUseSample(); showUse("done", t("Not saved: the time for this sample ran out.")); return; }
     var w = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(r.tracker.getEvents()));
     var n = w ? w.length : 0;
     var bar = useEl.querySelector(".lp>i"); if (bar) bar.style.width = Math.min(100, Math.round((100 * n) / r.need)) + "%";
@@ -484,8 +752,8 @@
     reqJson(EP.mouseUseSample, "POST", { windows: w.slice(0, r.need) }).then(function (res) {
       if (useRec !== r) return;
       useRec = null;
-      showUse("done", res.ok ? "Saved, thank you." : "Not saved: " + ((res.d && (res.d.note || res.d.error)) || "refused") + ".");
-    }).catch(function () { if (useRec === r) { useRec = null; showUse("done", "Not saved: Continuum could not be reached."); } });
+      showUse("done", res.ok ? t("Saved, thank you.") : t("Not saved: {why}.", { why: (res.d && (res.d.note || res.d.error)) || t("refused") }));
+    }).catch(function () { if (useRec === r) { useRec = null; showUse("done", t("Not saved: Continuum could not be reached.")); } });
   }
   function abortUseSample() {
     if (useRec) { clearInterval(useRec.iv); try { useRec.tracker.stop(); } catch (e) {} useRec = null; }
@@ -523,8 +791,8 @@
   function nextPassage() { return ENROL_PASSAGES[passageOrder[passageAt++ % passageOrder.length]]; }
 
   function wizStepBar(active, total, doneN) {
-    var s = '<div class="steps">';
-    for (var i = 0; i < total; i++) s += '<span class="s ' + (i < doneN ? "done" : i === active ? "on" : "") + '"></span>';
+    var names = ["Passkey", "Typing", "Mouse"], s = '<div class="steps">';
+    for (var i = 0; i < total; i++) s += '<div class="s ' + (i < doneN ? "done" : i === active ? "on" : "") + '"><i></i><span>' + h(names[i] || "") + "</span></div>";
     return s + "</div>";
   }
   // Sign the user out (the × on mandatory popups). Same-origin so the app's session
@@ -540,7 +808,9 @@
   // teaches the model one cramped amplitude. A wide pad lets the target land far apart, which
   // is what produces the range of movement the guard actually sees on a full page.
   function openWiz(html, onClose, cls) {
-    wizEl.innerHTML = '<div class="card' + (cls ? " " + cls : "") + '"><button class="wizx" title="Sign out">×</button><div class="brand"><span class="b2"></span>CONTINUUM · secure onboarding</div>' + html + "</div>";
+    var x = esc(t(!onClose || onClose === doLogout ? "Sign out" : "Close"));
+    wizEl.innerHTML = '<div class="card' + (cls ? " " + cls : "") + '" role="dialog" aria-modal="true"><button class="wizx" type="button" title="' + x + '" aria-label="' + x + '">' + svg("x")
+      + '</button><div class="brand"><span class="b2">' + svg("logo") + "</span>CONTINUUM · " + h("secure onboarding") + "</div>" + html + "</div>";
     wizEl.querySelector(".wizx").addEventListener("click", onClose || doLogout);
     wizEl.style.display = "flex";
   }
@@ -572,12 +842,13 @@
   // Step 1 — passkey registration
   function wizPasskey() {
     return new Promise(function (resolve) {
-      openWiz(wizStepBar(0, 3, 0) + '<div class="t">Create your passkey</div><div class="d">This device becomes your key. It is used to verify you if your typing or mouse rhythm ever looks off.</div><button class="b" id="cw">Set up passkey</button><div class="e"></div>');
+      openWiz(wizStepBar(0, 3, 0) + '<div class="hero"><div class="orb"><span class="scan"></span>' + svg("finger") + '</div></div><div class="t">' + h("Create your passkey") + '</div><div class="d">'
+        + h("This device becomes your key. It is used to verify you if your typing or mouse rhythm ever looks off.") + '</div><button class="b" id="cw">' + h("Set up passkey") + '</button><div class="e"></div>', null, "center");
       var b = wizEl.querySelector("#cw"), e = wizEl.querySelector(".e");
       b.addEventListener("click", async function () {
-        e.style.display = "none"; b.disabled = true; b.textContent = "Waiting for device…";
+        e.style.display = "none"; b.disabled = true; b.textContent = t("Waiting for device…");
         try { await registerPasskey(); resolve(); }
-        catch (err) { e.textContent = err.message; e.style.display = "block"; b.disabled = false; b.textContent = "Set up passkey"; }
+        catch (err) { e.textContent = err.message; e.style.display = "block"; b.disabled = false; b.textContent = t("Set up passkey"); }
       });
     });
   }
@@ -588,7 +859,10 @@
     return new Promise(function (resolve) {
       var got = 0;               // seeded from samples already on file (below)
       async function render() {
-        openWiz((optional ? "" : wizStepBar(1, 3, 1)) + '<div class="t">Teach your typing rhythm</div><div class="d">Type the passage below naturally. Sample <b>' + (got + 1) + " / " + KS_ENROLL_SAMPLES + '</b>. <a href="#" id="cnew" style="color:#4f46e5;font-weight:700;text-decoration:none">new text</a></div><div class="passage" id="cpass"></div><textarea class="ta" id="cta" placeholder="Type it here…"></textarea><div class="bar"><i id="cbar"></i></div><div id="cdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">typed 0 · captured 0 keystrokes</div><button class="b" id="cs" disabled>Submit sample</button><div class="e"></div>', optional ? function () { closeWiz(); resolve(false); } : null);
+        openWiz((optional ? "" : wizStepBar(1, 3, 1)) + '<div class="t">' + h("Teach your typing rhythm") + '</div><div class="d">' + h("Type the passage below naturally.") + " <b>"
+          + h("Sample {n} of {total}", { n: got + 1, total: KS_ENROLL_SAMPLES }) + '</b> · <a href="#" id="cnew">' + h("new text") + '</a></div><div class="passage" id="cpass" lang="en"></div>'
+          + '<textarea class="ta" id="cta" lang="en" placeholder="' + esc(t("Type it here…")) + '"></textarea><div class="bar"><i id="cbar"></i></div><div class="diag" id="cdiag">'
+          + h("typed {chars} · captured {keys} keystrokes", { chars: 0, keys: 0 }) + '</div><button class="b" id="cs" disabled>' + h("Submit sample") + '</button><div class="e"></div>', optional ? function () { closeWiz(); resolve(false); } : null);
         var ta = wizEl.querySelector("#cta"), bar = wizEl.querySelector("#cbar"), btn = wizEl.querySelector("#cs"), e = wizEl.querySelector(".e"), diag = wizEl.querySelector("#cdiag"), pass = wizEl.querySelector("#cpass"), newBtn = wizEl.querySelector("#cnew");
         var tracker = window.continuumKeystrokes.createTracker(ta);
         var NEED_KEYS = 100, NEED_CHARS = 120;
@@ -598,7 +872,7 @@
           var chars = ta.value.trim().length;
           var keys = window.continuumKeystrokes.analyze(tracker.getEvents()).keyCount || 0;
           bar.style.width = Math.min(100, Math.round((keys / NEED_KEYS) * 100)) + "%";
-          diag.textContent = "typed " + chars + " · captured " + keys + " keystrokes";
+          diag.textContent = t("typed {chars} · captured {keys} keystrokes", { chars: chars, keys: keys });
           // Gate on CAPTURED keystrokes so a sample with no real timing is never
           // submitted (which would be silently rejected server-side).
           btn.disabled = keys < NEED_KEYS || chars < NEED_CHARS;
@@ -606,11 +880,11 @@
         ta.addEventListener("input", refresh);
         ta.addEventListener("keyup", refresh);
         btn.addEventListener("click", async function () {
-          e.style.display = "none"; btn.disabled = true; btn.textContent = "Saving…";
+          e.style.display = "none"; btn.disabled = true; btn.textContent = t("Saving…");
           var events = tracker.getEvents(), timings = window.continuumKeystrokes.analyze(events);
           var r = await reqJson(EP.ksEnroll, "POST", { textContent: ta.value.trim(), keystrokeEvents: events, keystrokeTimings: timings, sourcePath: "onboarding" });
           console.debug("[continuum] keystroke enroll", r.status, r.d);
-          if (!r.ok) { e.textContent = "(" + r.status + ") " + ((r.d && r.d.error) || "rejected"); e.style.display = "block"; btn.disabled = false; btn.textContent = "Submit sample"; return; }
+          if (!r.ok) { e.textContent = "(" + r.status + ") " + ((r.d && r.d.error) || t("rejected")); e.style.display = "block"; btn.disabled = false; btn.textContent = t("Submit sample"); return; }
           got += 1;
           if (r.d.training) watchKsBuild();   // the model is built from the queue: no waiting here
           if ((r.d.typingStatus && r.d.typingStatus.trained) || r.d.training || got >= KS_ENROLL_SAMPLES) return resolve();
@@ -665,25 +939,25 @@
       return h;
     }
     function headline() {
-      if (building) return st.enrolled ? "Updating your mouse model…" : "Building your mouse model…";
-      if (st.onFile >= st.required) return st.enrolled ? "Mouse protection is on ✓" : "Building your mouse model…";
-      return "Sample " + (st.onFile + 1) + " of " + st.required;
+      if (building) return t(st.enrolled ? "Updating your mouse model…" : "Building your mouse model…");
+      if (st.onFile >= st.required) return t(st.enrolled ? "Mouse protection is on ✓" : "Building your mouse model…");
+      return t("Sample {n} of {total}", { n: st.onFile + 1, total: st.required });
     }
     function subline() {
-      if (building) return "Training on your samples — usually under a minute. You can leave this open.";
+      if (building) return t("Training on your samples, usually under a minute. You can leave this open.");
       if (note) return note;
-      if (st.onFile >= st.required) return st.enrolled ? "All " + st.required + " samples on file." : "";
-      return (st.required - st.onFile) + " more to go · about " + (st.required - st.onFile) * 16 + " s of movement";
+      if (st.onFile >= st.required) return st.enrolled ? t("All {n} samples on file.", { n: st.required }) : "";
+      return t("{n} more to go · about {s} s of movement", { n: st.required - st.onFile, s: (st.required - st.onFile) * 16 });
     }
     function render() {
-      openWiz((opts.stepBar || "") + '<div class="wizload" id="mwl"><span class="wizspin"></span><span id="mwlt">Saving sample…</span></div>'
-        + '<div class="t">' + opts.title + '</div><div class="d">' + opts.intro + '</div>'
-        + '<div class="msamp"><div class="mhead" id="mhead">' + headline() + '</div><div class="mpips">' + pips() + '</div>'
-        + '<div class="msub" id="msub">' + subline() + '</div></div>'
-        + '<div class="pad" id="cpad"><span class="padlabel">move to the dot</span></div><div class="bar"><i id="mbar"></i></div>'
-        + '<div id="mdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">this sample: 0 s of 16 s</div>'
-        + (opts.dismissLabel ? '<div style="display:flex;gap:8px"><button class="b" id="mdone" style="flex:1;background:#475569">' + opts.dismissLabel + '</button></div>' : "")
-        + (opts.allowReset ? '<div style="text-align:center;margin-top:10px"><a href="#" id="mreset" style="color:#dc2626;font-size:12px;font-weight:700;text-decoration:none">🗑️ Reset my mouse profile</a></div>' : "")
+      openWiz((opts.stepBar || "") + '<div class="wizload" id="mwl"><span class="wizspin"></span><span id="mwlt">' + h("Saving sample…") + "</span></div>"
+        + '<div class="t">' + opts.title + '</div><div class="d">' + opts.intro + "</div>"
+        + '<div class="msamp"><div class="mhead" id="mhead">' + esc(headline()) + '</div><div class="mpips">' + pips() + "</div>"
+        + '<div class="msub" id="msub">' + esc(subline()) + "</div></div>"
+        + '<div class="pad" id="cpad"><span class="padlabel">' + h("move to the dot") + '</span></div><div class="bar"><i id="mbar"></i></div>'
+        + '<div class="diag" id="mdiag">' + h("this sample: {s} s of 16 s", { s: 0 }) + "</div>"
+        + (opts.dismissLabel ? '<div class="row2"><button class="b sec" id="mdone">' + opts.dismissLabel + "</button></div>" : "")
+        + (opts.allowReset ? '<div class="foot"><a href="#" id="mreset" class="danger">' + svg("trash") + h("Reset my mouse profile") + "</a></div>" : "")
         + '<div class="e"></div>', close, "wide");
       var pad = wizEl.querySelector("#cpad"), bar = wizEl.querySelector("#mbar"), diag = wizEl.querySelector("#mdiag"),
         e = wizEl.querySelector(".e"), load = wizEl.querySelector("#mwl"), loadT = wizEl.querySelector("#mwlt");
@@ -712,13 +986,13 @@
         var n = w ? w.length : 0;
         var secs = Math.min(16, Math.floor((n * 16) / st.perSample));
         bar.style.width = Math.min(100, Math.round((n / st.perSample) * 100)) + "%";
-        diag.textContent = "this sample: " + secs + " s of 16 s (" + Math.min(n, st.perSample) + " / " + st.perSample + " windows)";
+        diag.textContent = t("this sample: {s} s of 16 s ({n} / {m} windows)", { s: secs, n: Math.min(n, st.perSample), m: st.perSample });
         if (n >= st.perSample) save(w.slice(0, st.perSample));
       }
       async function save(windows) {
         saving = true; e.style.display = "none";
         var last = st.onFile + 1 >= st.required;
-        loadT.textContent = last && !st.enrolled ? "Saving sample " + (st.onFile + 1) + " and building your model…" : "Saving sample " + (st.onFile + 1) + "…";
+        loadT.textContent = t(last && !st.enrolled ? "Saving sample {n} and building your model…" : "Saving sample {n}…", { n: st.onFile + 1 });
         load.classList.add("on");
         var r = await reqJson(EP.mouseEnroll, "POST", { windows: windows });
         if (ended) return;
@@ -733,7 +1007,7 @@
         }
         if (!r.ok) {
           // e.g. the step-size gate: a mechanical or jittering movement is not stored. Redo it.
-          e.textContent = ((r.d && r.d.error) || "This sample was not accepted") + " — this sample starts again.";
+          e.textContent = t("{why} — this sample starts again.", { why: (r.d && r.d.error) || t("This sample was not accepted") });
           e.style.display = "block";
           return;
         }
@@ -767,12 +1041,12 @@
           if (d.training && waited >= MOUSE_TRAIN_GIVE_UP_MS) {
             // Never a spinner forever: the job stays queued on the server and finishes on its own.
             building = false; load.classList.remove("on"); refresh();
-            e.textContent = "Your model is still being built. You can close this: nothing is lost, and mouse protection starts once it is ready.";
+            e.textContent = t("Your model is still being built. You can close this: nothing is lost, and mouse protection starts once it is ready.");
             e.style.display = "block";
             return;
           }
           if (d.training) {
-            if (waited >= MOUSE_TRAIN_SLOW_MS) loadT.textContent = headline() + " (taking longer than usual)";
+            if (waited >= MOUSE_TRAIN_SLOW_MS) loadT.textContent = headline() + " " + t("(taking longer than usual)");
             pollT = setTimeout(poll, MOUSE_TRAIN_POLL_MS); return;
           }
           building = false; load.classList.remove("on");
@@ -782,8 +1056,8 @@
             finish(d);
             return;
           }
-          e.textContent = (d.trainingError ? "Building your model failed (" + d.trainingError + ")" : "Your model could not be built")
-            + " — save one more sample to try again.";
+          e.textContent = (d.trainingError ? t("Building your model failed ({why})", { why: d.trainingError }) : t("Your model could not be built"))
+            + " — " + t("save one more sample to try again.");
           e.style.display = "block";
           refresh();
           iv = setInterval(tick, 400);
@@ -815,11 +1089,11 @@
   function wizMouse(optional) {
     return new Promise(function (resolve) {
       mouseSampleFlow({
-        title: "Teach your mouse motion",
-        intro: "Move to each dot at your natural speed, as you would when using the site. Each <b>sample</b> is about 16 seconds of movement and saves itself; your mouse model is built after the last one. Until then the mouse channel does not judge you.",
+        title: h("Teach your mouse motion"),
+        intro: h("Move to each dot at your natural speed, as you would when using the site. Each <b>sample</b> is about 16 seconds of movement and saves itself; your mouse model is built after the last one. Until then the mouse channel does not judge you."),
         stepBar: optional ? "" : wizStepBar(2, 3, 2),
         onClose: optional ? function () { closeWiz(); resolve(false); } : doLogout,
-        dismissLabel: optional ? "Continue later" : null,
+        dismissLabel: optional ? h("Continue later") : null,
         allowReset: false,
         resolveOnTrained: function () { resolve(); },
         onAlreadyEnrolled: function () { resolve(); },
@@ -848,9 +1122,9 @@
       if (cfg.mouse !== "off" && !ob.mouse) { await wizMouse(); ob.mouse = true; }
     }
     // brief "all set" then close
-    openWiz('<div class="t">You\'re verified ✓</div><div class="d">' + (ksBuilding
+    openWiz('<div class="hero"><div class="orb ok">' + svg("check") + '</div></div><div class="t">' + h("You're verified") + '</div><div class="d">' + h(ksBuilding
       ? "Your typing model is being built (about a minute). Carry on: typing protection starts by itself once it is ready."
-      : "Continuum is now protecting this session — it will quietly confirm it\'s you as you use the app.") + '</div><button class="b" id="cd">Continue</button>', closeWiz);
+      : "Continuum is now protecting this session. It will quietly confirm it's you as you use the app.") + '</div><button class="b" id="cd">' + h("Continue") + "</button>", closeWiz, "center");
     await new Promise(function (res) { wizEl.querySelector("#cd").addEventListener("click", res); });
     closeWiz();
   }
@@ -862,10 +1136,10 @@
     // A trained model learns more only through the adaptive popup (the retrain asks for the passkey);
     // the server refuses enrolment samples once the model exists. What is left here: reset and start over.
     function renderTrained() {
-      openWiz('<div class="t">Your typing rhythm is trained</div><div class="d">Samples on file: <b>' + total + '</b>. '
-        + (ADAPT_ENABLED ? "It learns more only from the popup that offers clean stretches of your typing, and the retrain asks for your passkey."
+      openWiz('<div class="t">' + h("Your typing rhythm is trained") + '</div><div class="d">' + h("Samples on file: {n}.", { n: total }) + " "
+        + h(ADAPT_ENABLED ? "It learns more only from the popup that offers clean stretches of your typing, and the retrain asks for your passkey."
           : "Adaptive retraining is off for this organisation, so the model stays as it was trained.")
-        + '</div><div style="display:flex;gap:8px"><button class="b" id="cdone" style="flex:1">Close</button></div><div style="text-align:center;margin-top:10px"><a href="#" id="creset" style="color:#dc2626;font-size:12px;font-weight:700;text-decoration:none">🗑️ Reset my typing profile</a></div><div class="e"></div>', closeWiz);
+        + '</div><div class="row2"><button class="b" id="cdone">' + h("Close") + '</button></div><div class="foot"><a href="#" id="creset" class="danger">' + svg("trash") + h("Reset my typing profile") + '</a></div><div class="e"></div>', closeWiz);
       var e = wizEl.querySelector(".e");
       wizEl.querySelector("#cdone").addEventListener("click", closeWiz);
       wizEl.querySelector("#creset").addEventListener("click", function (ev) {
@@ -874,11 +1148,16 @@
       });
     }
     function renderBuilding() {
-      openWiz('<div class="t">Your typing model is being built</div><div class="d">This takes about a minute. You can close this and carry on: typing protection starts by itself once the model is ready.</div><button class="b" id="cdone">Close</button>', closeWiz);
+      openWiz('<div class="t">' + h("Your typing model is being built") + '</div><div class="d">' + h("This takes about a minute. You can close this and carry on: typing protection starts by itself once the model is ready.") + '</div><button class="b" id="cdone">' + h("Close") + "</button>", closeWiz);
       wizEl.querySelector("#cdone").addEventListener("click", closeWiz);
     }
     function render() {
-      openWiz('<div class="wizload" id="cwl"><span class="wizspin"></span>Saving sample…</div><div class="t">Strengthen your typing rhythm</div><div class="d">Type the passage naturally, then save it as a training sample. <a href="#" id="cnew" style="color:#4f46e5;font-weight:700;text-decoration:none">new text</a></div><div class="samplecount">Samples on file: <b id="ctot">' + (total == null ? "…" : total) + '</b> · added now: <b>' + added + '</b></div><div class="passage" id="cpass"></div><textarea class="ta" id="cta" placeholder="Type it here…"></textarea><div class="bar"><i id="cbar"></i></div><div id="cdiag" style="font-size:11px;color:#64748b;margin:6px 0 8px">typed 0 · captured 0 keystrokes</div><div style="display:flex;gap:8px"><button class="b" id="cs" disabled style="flex:1">Save sample</button><button class="b" id="cdone" style="flex:0 0 96px;background:#475569">Done</button></div><div style="text-align:center;margin-top:10px"><a href="#" id="creset" style="color:#dc2626;font-size:12px;font-weight:700;text-decoration:none">🗑️ Reset my typing profile</a></div><div class="e"></div>', closeWiz);
+      openWiz('<div class="wizload" id="cwl"><span class="wizspin"></span>' + h("Saving sample…") + '</div><div class="t">' + h("Strengthen your typing rhythm") + '</div><div class="d">'
+        + h("Type the passage naturally, then save it as a training sample.") + ' <a href="#" id="cnew">' + h("new text") + '</a></div><div class="samplecount">'
+        + h("Samples on file: {n} · added now: {m}", { n: total == null ? "…" : total, m: added }) + '</div><div class="passage" id="cpass" lang="en"></div><textarea class="ta" id="cta" lang="en" placeholder="'
+        + esc(t("Type it here…")) + '"></textarea><div class="bar"><i id="cbar"></i></div><div class="diag" id="cdiag">' + h("typed {chars} · captured {keys} keystrokes", { chars: 0, keys: 0 })
+        + '</div><div class="row2"><button class="b" id="cs" disabled>' + h("Save sample") + '</button><button class="b sec" id="cdone" style="flex:0 0 96px">' + h("Done")
+        + '</button></div><div class="foot"><a href="#" id="creset" class="danger">' + svg("trash") + h("Reset my typing profile") + '</a></div><div class="e"></div>', closeWiz);
       var ta = wizEl.querySelector("#cta"), bar = wizEl.querySelector("#cbar"), btn = wizEl.querySelector("#cs"), done = wizEl.querySelector("#cdone"), e = wizEl.querySelector(".e"), diag = wizEl.querySelector("#cdiag"), pass = wizEl.querySelector("#cpass"), newBtn = wizEl.querySelector("#cnew"), load = wizEl.querySelector("#cwl");
       var tracker = window.continuumKeystrokes.createTracker(ta);
       var NEED_KEYS = 100, NEED_CHARS = 120;
@@ -892,14 +1171,14 @@
           total = 0; added = 0; render();
         });
       });
-      function refresh() { var chars = ta.value.trim().length, keys = window.continuumKeystrokes.analyze(tracker.getEvents()).keyCount || 0; bar.style.width = Math.min(100, Math.round((keys / NEED_KEYS) * 100)) + "%"; diag.textContent = "typed " + chars + " · captured " + keys + " keystrokes"; btn.disabled = keys < NEED_KEYS || chars < NEED_CHARS; }
+      function refresh() { var chars = ta.value.trim().length, keys = window.continuumKeystrokes.analyze(tracker.getEvents()).keyCount || 0; bar.style.width = Math.min(100, Math.round((keys / NEED_KEYS) * 100)) + "%"; diag.textContent = t("typed {chars} · captured {keys} keystrokes", { chars: chars, keys: keys }); btn.disabled = keys < NEED_KEYS || chars < NEED_CHARS; }
       ta.addEventListener("input", refresh); ta.addEventListener("keyup", refresh);
       btn.addEventListener("click", async function () {
         e.style.display = "none"; load.classList.add("on");
         var events = tracker.getEvents(), r = await reqJson(EP.ksEnroll, "POST", { textContent: ta.value.trim(), keystrokeEvents: events, keystrokeTimings: window.continuumKeystrokes.analyze(events), sourcePath: "reinforce" });
         load.classList.remove("on");
         if (r.status === 409 && r.d && r.d.error === "already_enrolled") { renderTrained(); return; }
-        if (!r.ok) { e.textContent = "(" + r.status + ") " + ((r.d && r.d.error) || "rejected"); e.style.display = "block"; return; }
+        if (!r.ok) { e.textContent = "(" + r.status + ") " + ((r.d && r.d.error) || t("rejected")); e.style.display = "block"; return; }
         added += 1; if (total != null) total += 1;
         if (r.d && r.d.typingStatus && r.d.typingStatus.trained) { renderTrained(); return; }
         if (r.d && r.d.training) { watchKsBuild(); renderBuilding(); return; }
@@ -927,10 +1206,10 @@
   }
   function renderMouseTrained(d) {
     if (endSampleFlow) endSampleFlow();
-    openWiz('<div class="t">Your mouse movement is trained</div><div class="d">Samples on file: <b>' + Number((d && d.samplesOnFile) || MOUSE_SAMPLES_REQUIRED)
-      + '</b>. A trained mouse model takes no more samples from this page. To enrol again, reset it; you will be asked for your passkey.</div>'
-      + '<div style="display:flex;gap:8px"><button class="b" id="mdone" style="flex:1">Close</button></div>'
-      + '<div style="text-align:center;margin-top:10px"><a href="#" id="mreset" style="color:#dc2626;font-size:12px;font-weight:700;text-decoration:none">🗑️ Reset my mouse profile</a></div><div class="e"></div>', closeWiz);
+    openWiz('<div class="t">' + h("Your mouse movement is trained") + '</div><div class="d">' + h("Samples on file: {n}.", { n: Number((d && d.samplesOnFile) || MOUSE_SAMPLES_REQUIRED) })
+      + " " + h("A trained mouse model takes no more samples from this page. To enrol again, reset it; you will be asked for your passkey.") + "</div>"
+      + '<div class="row2"><button class="b" id="mdone">' + h("Close") + "</button></div>"
+      + '<div class="foot"><a href="#" id="mreset" class="danger">' + svg("trash") + h("Reset my mouse profile") + '</a></div><div class="e"></div>', closeWiz);
     var e = wizEl.querySelector(".e");
     wizEl.querySelector("#mdone").addEventListener("click", closeWiz);
     wizEl.querySelector("#mreset").addEventListener("click", function (ev) {
@@ -944,10 +1223,10 @@
   }
   function mouseSamples() {
     mouseSampleFlow({
-      title: "Mouse samples",
-      intro: "Move to each dot at your natural speed. Each <b>sample</b> is about 16 seconds of movement and saves itself. Your mouse model is built after the last required sample.",
+      title: h("Mouse samples"),
+      intro: h("Move to each dot at your natural speed. Each <b>sample</b> is about 16 seconds of movement and saves itself. Your mouse model is built after the last required sample."),
       onClose: closeWiz,
-      dismissLabel: "Done",
+      dismissLabel: h("Done"),
       allowReset: true,
       // First model just built from these samples: start protecting the session straight away.
       onEnrolled: function () { if (obState) obState.mouse = true; if (!mouseOn) setMouse(true); },
@@ -995,10 +1274,10 @@
     else if (e && e.target && e.target.isContentEditable) { var ed = e.target; while (ed.parentElement && ed.parentElement.isContentEditable) ed = ed.parentElement; activeField = ed; }
     if (locked || signedOut || !ksOn || !ksTracker) return;
     var text = currentTypedText();
-    if (text.length < KS_MIN_CHARS) { setKb("mut", "type " + text.length + "/" + KS_MIN_CHARS + " chars to start"); return; }
+    if (text.length < KS_MIN_CHARS) { setKb("col", "type {n}/{m} characters to start", { vars: { n: text.length, m: KS_MIN_CHARS }, prog: text.length / KS_MIN_CHARS }); return; }
     // Live feedback while the user keeps writing between verdicts (feels engaged
     // instead of frozen on the last "verified ✓").
-    if (!checkInFlight) setKb("mut", withLast("analyzing…", lastKsPct));
+    if (!checkInFlight) setKb("mut", "analyzing…", { pct: lastKsPct, keep: true });
     if (ksWindowCount(ksKeyCount(ksTracker.getEvents())) <= lastCheckedWindowCount) return; // no new window yet
     if (checkInFlight) { ksMissedWindow = true; return; }
     runKsCheck();
@@ -1017,7 +1296,7 @@
     if (locked || signedOut || !ksOn || !ksTracker) return;
     var events = ksTracker.getEvents(), text = currentTypedText();
     if (!force && text.length < KS_MIN_CHARS) return;
-    checkInFlight = true; ksMissedWindow = false; pulse(); setKb("mut", withLast("checking…", lastKsPct));
+    checkInFlight = true; ksMissedWindow = false; pulse(); setKb("mut", "checking…", { pct: lastKsPct, keep: true, busy: true });
     try {
       var timings = window.continuumKeystrokes.analyze(events);
       // The text's LENGTH only: what the user typed never leaves the page.
@@ -1030,17 +1309,17 @@
       if (pct != null) lastKsPct = pct;   // survives into the next transient state
       // demo mode: its own gate answers 423 until the model exists; that is not a lock
       if (d.rhythmEnrollmentRequired) { setKb("mut", ksBuilding ? "building your model…" : "not enrolled — add samples"); cleanRun = 0; return; }
-      if (r.status === 423) { setKb("bad", "<b>locked</b> — verify"); maybeChallenge(d, "keystroke", onProbation); return; }
+      if (r.status === 423) { setKb("bad", "locked — verify"); maybeChallenge(d, "keystroke", onProbation); return; }
       // During post-step-up probation, ANY suspicious verdict re-challenges — even a
       // warmup one — so passing step-up grants no grace window to a persisting impostor.
-      if (maybeChallenge(d, "keystroke", onProbation)) { setKb("bad", "<b>rhythm mismatch</b>"); cleanRun = 0; hideLearn(); return; }
-      if (d.checked === false) { setKb("mut", withLast("gathering…", lastKsPct)); return; }
+      if (maybeChallenge(d, "keystroke", onProbation)) { setKb("bad", "rhythm mismatch"); cleanRun = 0; hideLearn(); return; }
+      if (d.checked === false) { setKb("mut", "gathering…", { pct: lastKsPct, keep: true }); return; }
       // No trained model for THIS identity yet → not "warming", it needs enrollment.
       // (Otherwise the row sat forever at "warming 0/7 · 0%".)
       if (ev.modelAvailable === false) { setKb("mut", ksBuilding ? "building your model…" : "not enrolled — add samples"); cleanRun = 0; return; }
-      if (d.warmup) { setKb("warn", "warming " + wc + "/" + (RECENT_WINDOW_COUNT + 1) + " windows" + (pct != null ? " · <b>" + pct + "%</b>" : "")); cleanRun = 0; }
-      else if (d.isSuspicious) { setKb("bad", "suspicious <b>" + pct + "%</b>"); cleanRun = 0; }
-      else { setKb("ok", "verified <b>" + pct + "%</b>"); onProbation = false; cleanRun = (d.modelConfidence == null || d.modelConfidence >= ADAPT_CONFIDENCE_MIN) ? cleanRun + 1 : 0; }
+      if (d.warmup) { setKb("col", "warming {n}/{m} windows", { vars: { n: wc, m: RECENT_WINDOW_COUNT + 1 }, pct: pct, prog: wc / (RECENT_WINDOW_COUNT + 1) }); cleanRun = 0; }
+      else if (d.isSuspicious) { setKb("bad", "suspicious", { pct: pct, prog: pct != null ? pct / 100 : 1 }); cleanRun = 0; }
+      else { setKb("ok", "verified", { pct: pct, prog: pct != null ? pct / 100 : 1 }); onProbation = false; cleanRun = (d.modelConfidence == null || d.modelConfidence >= ADAPT_CONFIDENCE_MIN) ? cleanRun + 1 : 0; }
       evalAdaptive(); // a clean run may now qualify to contribute a training sample
     } catch (e) { setKb("mut", "offline"); }
     finally {   // catch up on a paste or a window that came mid-check
@@ -1096,16 +1375,16 @@
   function setLearnMode(mode) {
     if (!learnEl || learnMode === mode) return;
     learnMode = mode;
-    var t = learnEl.querySelector(".lt span:last-child"), m = learnEl.querySelector(".lm"), go = learnEl.querySelector(".go"), bar = learnEl.querySelector(".lp > i");
+    var tl = learnEl.querySelector(".lt span:last-child"), m = learnEl.querySelector(".lm"), go = learnEl.querySelector(".go"), bar = learnEl.querySelector(".lp > i");
     if (mode === "retrain") {
-      if (t) t.textContent = "Ready to update your model";
-      if (m) m.textContent = "You added " + ADAPT_RETRAIN_EVERY + " samples. Retrain your model now; your passkey confirms it's you.";
-      if (go) go.textContent = "Retrain with passkey";
+      if (tl) tl.textContent = t("Ready to update your model");
+      if (m) m.textContent = t("You added {n} samples. Retrain your model now; your passkey confirms it's you.", { n: ADAPT_RETRAIN_EVERY });
+      if (go) go.textContent = t("Retrain with passkey");
       if (bar) bar.style.width = "100%";
     } else {
-      if (t) t.textContent = "Your typing looks like you";
-      if (m) m.textContent = "Add this clean sample so your model keeps learning your rhythm (" + adaptPending + " of " + ADAPT_RETRAIN_EVERY + " so far).";
-      if (go) go.textContent = "Contribute sample";
+      if (tl) tl.textContent = t("Your typing looks like you");
+      if (m) m.textContent = t("Add this clean sample so your model keeps learning your rhythm ({k} of {n} so far).", { k: adaptPending, n: ADAPT_RETRAIN_EVERY });
+      if (go) go.textContent = t("Contribute sample");
       if (bar) bar.style.width = Math.min(100, (adaptPending / ADAPT_RETRAIN_EVERY) * 100) + "%";
     }
   }
@@ -1132,7 +1411,7 @@
   function showLearn() {
     if (!learnEl) return;
     if (!learnVisible) {
-      var go = learnEl.querySelector(".go"); if (go) { go.disabled = false; go.textContent = learnMode === "retrain" ? "Retrain with passkey" : "Contribute sample"; }
+      var go = learnEl.querySelector(".go"); if (go) { go.disabled = false; go.textContent = t(learnMode === "retrain" ? "Retrain with passkey" : "Contribute sample"); }
       learnEl.style.display = "block"; learnVisible = true;
     }
     positionLearn();
@@ -1143,7 +1422,7 @@
     if (contributing || !ksTracker) return;
     contributing = true;
     var go = learnEl.querySelector(".go"), msg = learnEl.querySelector(".lm"), bar = learnEl.querySelector(".lp > i");
-    if (go) { go.disabled = true; go.textContent = "Adding…"; }
+    if (go) { go.disabled = true; go.textContent = t("Adding…"); }
     var seg = sampleSegment();
     try {
       // the segment and how many characters it typed; never the field's text
@@ -1153,62 +1432,62 @@
         sampleProbe.forWindows = -1; sampleProbe.eligible = false;
         adaptPending = Number(r.d.pending || adaptPending + 1); adaptReady = !!r.d.ready;
         if (bar) bar.style.width = Math.min(100, (adaptPending / ADAPT_RETRAIN_EVERY) * 100) + "%";
-        if (msg) msg.textContent = adaptReady ? "Added — " + ADAPT_RETRAIN_EVERY + " of " + ADAPT_RETRAIN_EVERY + ". Your model is ready to retrain." : "Added! " + adaptPending + " of " + ADAPT_RETRAIN_EVERY + ".";
+        if (msg) msg.textContent = t(adaptReady ? "Added — {n} of {n}. Your model is ready to retrain." : "Added! {k} of {n}.", { k: adaptPending, n: ADAPT_RETRAIN_EVERY });
         setKb("ok", "learning ✓");
         lastContributeKeys = currentKeys(); cleanRun = 0;
         setTimeout(function () { hideLearn(); if (adaptReady) { learnMode = ""; } }, 2600);
       } else if (r.status === 429 && r.d) {
         var until = Date.parse(r.d.nextContributionAt);
         contribUntil = isFinite(until) ? until : Date.now() + ADAPT_GAP_H * 3600000;
-        if (msg) msg.textContent = r.d.message || "Please add samples again later.";
+        if (msg) msg.textContent = r.d.message || t("Please add samples again later.");
         lastContributeKeys = currentKeys(); cleanRun = 0;
         setTimeout(hideLearn, 4000);
       } else if (r.status === 409 && r.d && r.d.error === "ready_to_retrain") {
         adaptReady = true; adaptPending = Number(r.d.pending || ADAPT_RETRAIN_EVERY); learnMode = ""; setLearnMode("retrain");
       } else if (r.status === 409 && r.d && r.d.error === "adaptive_disabled") {
         ADAPT_ENABLED = false; hideLearn();
-      } else if (msg) { msg.textContent = (r.d && (r.d.message || r.d.error)) || "Couldn't add this sample."; }
-    } catch (e) { if (msg) msg.textContent = "Offline — try again."; }
-    finally { contributing = false; if (go) { go.disabled = false; go.textContent = learnMode === "retrain" ? "Retrain with passkey" : "Contribute sample"; } }
+      } else if (msg) { msg.textContent = (r.d && (r.d.message || r.d.error)) || t("Couldn't add this sample."); }
+    } catch (e) { if (msg) msg.textContent = t("Offline — try again."); }
+    finally { contributing = false; if (go) { go.disabled = false; go.textContent = t(learnMode === "retrain" ? "Retrain with passkey" : "Contribute sample"); } }
   }
   // Retrain with the samples collected: the passkey first, in the same request as the retrain.
   async function retrainWithPasskey() {
     if (contributing) return;
     contributing = true;
     var go = learnEl.querySelector(".go"), msg = learnEl.querySelector(".lm");
-    if (go) { go.disabled = true; go.textContent = "Waiting for passkey…"; }
+    if (go) { go.disabled = true; go.textContent = t("Waiting for passkey…"); }
     try {
       var W = webauthn(), r;
       if (MODE === "gateway") {
-        var opt = await reqJson(EP.pkAuthOpts, "POST", {}); if (!opt.ok) throw new Error(opt.d.error || "Could not start verification");
+        var opt = await reqJson(EP.pkAuthOpts, "POST", {}); if (!opt.ok) throw new Error(opt.d.error || t("Could not start verification"));
         var a = await W.startAuthentication(opt.d);
         r = await reqJson(EP.adaptiveRetrain, "POST", { challengeId: opt.d.challengeId, assertion: a });
       } else {
         var me = await req("/api/auth/me").then(function (x) { return x.json(); });
-        var o2 = await reqJson("/api/webauthn/auth/options", "POST", { userId: me.userId }); if (!o2.ok) throw new Error(o2.d.error || "Could not start verification");
+        var o2 = await reqJson("/api/webauthn/auth/options", "POST", { userId: me.userId }); if (!o2.ok) throw new Error(o2.d.error || t("Could not start verification"));
         var a2 = await W.startAuthentication(o2.d);
         var v = await reqJson("/api/webauthn/auth/complete", "POST", { userId: me.userId, challengeId: o2.d.challengeId, assertion: a2 });
-        if (!v.ok) throw new Error(v.d.error || "Verification failed");
+        if (!v.ok) throw new Error(v.d.error || t("Verification failed"));
         r = await reqJson(EP.adaptiveRetrain, "POST", {});
       }
-      if (!r.ok || (r.d && r.d.ok === false)) throw new Error((r.d && (r.d.message || r.d.error)) || "Retrain failed");
+      if (!r.ok || (r.d && r.d.ok === false)) throw new Error((r.d && (r.d.message || r.d.error)) || t("Retrain failed"));
       adaptPending = 0; adaptReady = false; retrainDismissed = false;
       var until = Date.parse(r.d.nextContributionAt);
       contribUntil = isFinite(until) ? until : Date.now() + ADAPT_GAP_H * 3600000;
-      if (msg) msg.textContent = "Retraining your model now. New samples can be added again in " + ADAPT_GAP_H + " h.";
+      if (msg) msg.textContent = t("Retraining your model now. New samples can be added again in {h} h.", { h: ADAPT_GAP_H });
       setKb("ok", "retraining ✓");
       setTimeout(function () { hideLearn(); learnMode = ""; }, 3500);
     } catch (e) {
       var name = e && e.name;
-      if (msg) msg.textContent = name === "NotAllowedError" ? "The passkey prompt was closed. Try again when you're ready." : ((e && e.message) || "Retrain failed.");
-    } finally { contributing = false; if (go) { go.disabled = false; go.textContent = "Retrain with passkey"; } }
+      if (msg) msg.textContent = name === "NotAllowedError" ? t("The passkey prompt was closed. Try again when you're ready.") : ((e && e.message) || t("Retrain failed."));
+    } finally { contributing = false; if (go) { go.disabled = false; go.textContent = t("Retrain with passkey"); } }
   }
 
 
   // Enable/disable keystroke monitoring at runtime (panel toggle + persisted),
   // mirroring the mouse toggle. When on, a single delegated input listener covers
   // EVERY text field on the page; when off, the listener is removed entirely.
-  function updateKsToggle() { if (ksToggleEl) { ksToggleEl.className = "tgl" + (ksOn ? " on" : ""); ksToggleEl.textContent = ksOn ? "on" : "off"; } }
+  function updateKsToggle() { if (ksToggleEl) { ksToggleEl.className = "tgl" + (ksOn ? " on" : ""); ksToggleEl.textContent = ksOn ? "on" : "off"; ksToggleEl.setAttribute("aria-checked", String(ksOn)); } }
   function setKeystroke(on) {
     ksOn = !!on;
     try { localStorage.setItem(LS_KEYSTROKE, ksOn ? "1" : "0"); } catch (e) {}
@@ -1220,7 +1499,7 @@
     if (!ksTracker) ksTracker = window.continuumKeystrokes.createTracker(document.documentElement, { skip: fieldExcluded });
     if (!ksInputHandler) { ksInputHandler = onKsInput; document.addEventListener("input", ksInputHandler, true); }
     if (!ksPasteHandler) { ksPasteHandler = onKsPaste; document.addEventListener("paste", ksPasteHandler, true); }
-    setKb("mut", ksBuilding ? "building your model…" : "type " + KS_MIN_CHARS + " chars to start");
+    if (ksBuilding) setKb("mut", "building your model…"); else setKb("col", "type {n} characters to start", { vars: { n: KS_MIN_CHARS }, prog: 0 });
   }
   // Typing enrolment trains on the server's queue (about a minute; since 2026-10-06). Meanwhile the user
   // carries on and the typing row says so; a reload picks the state up again from the server
@@ -1234,7 +1513,7 @@
       try { st = (await reqJson(EP.ksStatus)).d; } catch (e) {}
       if (!st || st.training) return;
       clearInterval(ksBuildTimer); ksBuildTimer = null; ksBuilding = false;
-      if (st.trained) { if (obState) obState.keystroke = true; setKb("mut", ksOn ? "ready — type " + KS_MIN_CHARS + " chars to start" : "off"); }
+      if (st.trained) { if (obState) obState.keystroke = true; setKb("mut", ksOn ? "ready — type {n} characters to start" : "off", { vars: { n: KS_MIN_CHARS } }); }
       else setKb("bad", st.trainingError ? "model not built — add one more sample" : "not enrolled — add samples");
     }, 8000);
   }
@@ -1278,15 +1557,18 @@
   }
 
   var mouseTracker = null, mouseOn = false, mouseTimer = null, lastMouseEvents = 0;
-  function updateToggle() { if (toggleEl) { toggleEl.className = "tgl" + (mouseOn ? " on" : ""); toggleEl.textContent = mouseOn ? "on" : "off"; } }
-  function setMouse(on) { mouseOn = !!on; try { localStorage.setItem(LS_MOUSE, mouseOn ? "1" : "0"); } catch (e) {} if (mouseOn) { startMouse(); setMouseRow("mut", "warming up…"); } else { stopMouse(); abortUseSample(); setMouseRow("mut", "off"); } updateToggle(); }
+  function updateToggle() { if (toggleEl) { toggleEl.className = "tgl" + (mouseOn ? " on" : ""); toggleEl.textContent = mouseOn ? "on" : "off"; toggleEl.setAttribute("aria-checked", String(mouseOn)); } }
+  function setMouse(on) { mouseOn = !!on; try { localStorage.setItem(LS_MOUSE, mouseOn ? "1" : "0"); } catch (e) {} if (mouseOn) { startMouse(); setMouseRow("col", "warming up…", { prog: 0 }); } else { stopMouse(); abortUseSample(); setMouseRow("mut", "off"); } updateToggle(); }
   function startMouse() { stopMouse(); if (mouseTracker) mouseTracker.reset(); lastMouseEvents = 0; mouseTimer = setInterval(mouseTick, MOUSE_CHECK_MS); }
   function stopMouse() { if (mouseTimer) clearInterval(mouseTimer); mouseTimer = null; }
   async function mouseTick() {
     if (locked || signedOut || !mouseTracker) return;
     var count = mouseTracker.eventCount(); if (count <= lastMouseEvents) return; lastMouseEvents = count;
     var windows; try { windows = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(mouseTracker.getEvents())); } catch (e) { return; }
-    if (!windows || windows.length < MOUSE_MIN_WINDOWS) { setMouseRow("mut", withLast("warming " + (windows ? windows.length : 0) + "/" + MOUSE_MIN_WINDOWS, lastMousePct)); return; }
+    if (!windows || windows.length < MOUSE_MIN_WINDOWS) {
+      var wn = windows ? windows.length : 0;
+      setMouseRow("col", "warming {n}/{m}", { vars: { n: wn, m: MOUSE_MIN_WINDOWS }, pct: lastMousePct, prog: wn / MOUSE_MIN_WINDOWS }); return;
+    }
     pulse();
     try {
       // Send at least MOUSE_MIN_WINDOWS: the server's sustained vote needs a full buffer, and
@@ -1297,20 +1579,20 @@
       var d = r.d; if (d && d.riskToken) latestRiskToken = d.riskToken;
       if (d && d.bufferMax) MOUSE_MIN_WINDOWS = d.bufferMax;   // the server's vote length is authoritative
       if (d && d.enrolled === false) { setMouseRow("mut", "not enrolled"); stopMouse(); mouseOn = false; updateToggle(); return; }
-      if (maybeChallenge(d, "mouse", onProbation)) { setMouseRow("bad", "<b>mouse mismatch</b>"); return; }
-      if (d.checked === false) { setMouseRow("mut", withLast("move to check", lastMousePct)); return; }
+      if (maybeChallenge(d, "mouse", onProbation)) { setMouseRow("bad", "mouse mismatch"); return; }
+      if (d.checked === false) { setMouseRow("mut", "move to check", { pct: lastMousePct, keep: true }); return; }
       var pct = d.meanScore != null ? Math.round(d.meanScore * 100) : null;
       if (pct != null) lastMousePct = pct;   // shown during transient states, same as keystroke
-      if (d.isSuspicious) setMouseRow("warn", "suspicious " + (d.suspiciousStreak || 1) + "/" + (d.strikesToLock || 1));
-      else if (d.warmup) { setMouseRow("mut", withLast("warming " + (d.windowCount || 0) + "/" + (d.bufferMax || MOUSE_MIN_WINDOWS), lastMousePct)); }
+      if (d.isSuspicious) setMouseRow("warn", "suspicious {n}/{m}", { vars: { n: d.suspiciousStreak || 1, m: d.strikesToLock || 1 }, prog: (d.suspiciousStreak || 1) / (d.strikesToLock || 1) });
+      else if (d.warmup) { setMouseRow("col", "warming {n}/{m}", { vars: { n: d.windowCount || 0, m: d.bufferMax || MOUSE_MIN_WINDOWS }, pct: lastMousePct, prog: (d.windowCount || 0) / (d.bufferMax || MOUSE_MIN_WINDOWS) }); }
       else {
         onProbation = false;
         // Same reading the extension panel shows: how much of the sustained buffer is low,
         // against the count that triggers the step-up. That is the number which actually
         // predicts a challenge; a per-window mean does not.
-        setMouseRow("ok", d.lowWindows != null && d.bufferMax
-          ? "<b>" + d.lowWindows + "/" + d.bufferMax + "</b> low · locks at " + d.lockAt
-          : "watching <b>" + (pct != null ? pct + "%" : "") + "</b>");
+        // The ring: what is left before the lock (full with no low window, empty at the lock).
+        if (d.lowWindows != null && d.bufferMax) setMouseRow("ok", "{low}/{max} low · locks at {lock}", { vars: { low: d.lowWindows, max: d.bufferMax, lock: d.lockAt }, prog: d.lockAt ? 1 - d.lowWindows / d.lockAt : 1 });
+        else setMouseRow("ok", "watching", { pct: pct, prog: pct != null ? pct / 100 : 1 });
       }
     } catch (e) { setMouseRow("mut", "offline"); }
   }
@@ -1334,7 +1616,10 @@
       if (PANEL === "hide" && ONBOARD_MODE === "lazy") ONBOARD_MODE = "eager"; // "enrol when you switch it on" needs the switch
       if (c.adaptiveEnabled != null) ADAPT_ENABLED = !!c.adaptiveEnabled;
       if (c.adaptiveMinGapHours != null && isFinite(Number(c.adaptiveMinGapHours))) ADAPT_GAP_H = Number(c.adaptiveMinGapHours);
+      if (["auto", "en", "ar"].indexOf(c.panelLanguage) >= 0 && wins("panelLanguage")) LANG_PREF = c.panelLanguage;
+      if (["auto", "light", "dark"].indexOf(c.panelTheme) >= 0 && wins("panelTheme")) THEME_PREF = c.panelTheme;
       applyPanel();
+      await relook();
     } catch (e) {}
   }
 
@@ -1415,14 +1700,18 @@
   // Remove the panel and show a visible warning popup so the integrator sees the
   // problem instead of the guard silently doing nothing.
   function guardBlocked(message) {
-    try { var h = document.getElementById("continuum-guard-host"); if (h) h.remove(); } catch (e) {}
+    try { var host = document.getElementById("continuum-guard-host"); if (host) host.remove(); } catch (e) {}
     console.error("[continuum] guard not started — " + message);
     try {
       if (document.getElementById("continuum-guard-warning")) return;
       var w = document.createElement("div");
       w.id = "continuum-guard-warning";
-      w.style.cssText = "position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:340px;background:#7f1d1d;color:#fff;border:1px solid #fca5a5;border-radius:12px;padding:14px 16px;font:600 13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 12px 34px rgba(0,0,0,.45)";
-      w.innerHTML = "<div style=\"display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:5px;font-size:14px\">⚠ Continuum guard not active<span id=\"cgwx\" style=\"cursor:pointer;opacity:.8\">✕</span></div><div style=\"font-weight:400;opacity:.95\">" + message + "</div>";
+      w.dir = LANG === "ar" ? "rtl" : "ltr";
+      w.style.cssText = "position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:340px;background:linear-gradient(135deg,#991b1b,#7f1d1d);color:#fff;border:1px solid #fca5a5;border-radius:16px;padding:14px 16px;font:600 13px/1.5 system-ui,-apple-system,'Segoe UI',Roboto,Tahoma,sans-serif;box-shadow:0 18px 40px -12px rgba(127,29,29,.7)";
+      w.innerHTML = "<div style=\"display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:5px;font-size:14px\"><span></span><span id=\"cgwx\" style=\"cursor:pointer;opacity:.8\">✕</span></div><div style=\"font-weight:400;opacity:.95\"></div>";
+      w.firstChild.firstChild.textContent = "⚠ " + t("Continuum guard not active");
+      w.lastChild.textContent = message;
+      if (w.animate && !reduceMotion) w.animate([{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }], { duration: 400, easing: "ease-out" });
       (document.documentElement || document.body).appendChild(w);
       var x = w.querySelector("#cgwx"); if (x) x.addEventListener("click", function () { w.remove(); });
     } catch (e) {}
@@ -1444,9 +1733,9 @@
     } catch (e) {
       var reason = e && e.message;
       if (reason === "invalid_site_key")
-        return guardBlocked("Invalid site key “" + cfg.siteKey + "” — it isn't registered on this gateway.");
+        return guardBlocked(t("Invalid site key “{key}” — it isn't registered on this gateway.", { key: cfg.siteKey }));
       if (reason === "origin_not_allowed")
-        return guardBlocked("This site key is already in use for another domain — it is not authorized for " + location.origin + ".");
+        return guardBlocked(t("This site key is already in use for another domain — it is not authorized for {origin}.", { origin: location.origin }));
       console.warn("[continuum] bootstrap failed:", reason); setKb("bad", "offline"); return;
     }
     startGuard();

@@ -30,8 +30,9 @@
         --dot-on: #16a34a; --dot-off: #a3adc2;
         --brand-1: #6366f1; --brand-2: #4338ca;
       }
+      /* dark: the device's mode unless the organisation chose (popup.js sets data-theme light | dark) */
       @media (prefers-color-scheme: dark) {
-        :root {
+        :root:not([data-theme="light"]) {
           --bg-1: #0d1424;
           --bg-2: #080d18;
           --surface: #141d31;
@@ -51,6 +52,26 @@
           --dot-on: #22c55e; --dot-off: #55648a;
           --brand-1: #6366f1; --brand-2: #4338ca;
         }
+      }
+      :root[data-theme="dark"] {
+        --bg-1: #0d1424;
+        --bg-2: #080d18;
+        --surface: #141d31;
+        --surface-2: #18223a;
+        --border: #23304d;
+        --border-strong: #2c3a5c;
+        --text: #e8edf7;
+        --muted: #93a1bd;
+        --faint: #64748b;
+        --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 26px -6px rgba(0, 0, 0, .5);
+        --accent: #6366f1;
+        --accent-2: #818cf8;
+        --teal: #14b8a6;
+        --teal-2: #2dd4bf;
+        --ok-bg: rgba(16, 185, 129, .13); --ok-border: rgba(16, 185, 129, .38); --ok-text: #6ee7b7;
+        --warn-bg: rgba(239, 68, 68, .15); --warn-border: rgba(239, 68, 68, .4); --warn-text: #fca5a5;
+        --dot-on: #22c55e; --dot-off: #55648a;
+        --brand-1: #6366f1; --brand-2: #4338ca;
       }
 
       * { box-sizing: border-box; }
@@ -80,8 +101,11 @@
       }
       .title { font-size: 13.5px; font-weight: 800; letter-spacing: .15px; }
       .sub-title { font-size: 10px; color: var(--faint); font-weight: 600; margin-top: 1px; }
+      /* Arabic (popup.js sets lang and dir): sides are written as inline-start/end, so the layout mirrors by itself */
+      html[lang="ar"] body { font-family: "Segoe UI", Tahoma, system-ui, sans-serif; line-height: 1.6; }
+      html[lang="ar"] .title, html[lang="ar"] .sub-title { letter-spacing: 0; }
       .dot {
-        width: 9px; height: 9px; border-radius: 50%; margin-left: auto; flex: none;
+        width: 9px; height: 9px; border-radius: 50%; margin-inline-start: auto; flex: none;
         background: var(--dot-on); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-on) 22%, transparent);
       }
       .dot.off { background: var(--dot-off); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-off) 22%, transparent); }
@@ -118,7 +142,7 @@
          otherwise be silently clipped instead of visible on a second line. min-width: 0
          lets the flex item actually shrink; overflow-wrap breaks even unbroken strings
          (URLs, emails) that have no natural wrap point. */
-      .val { font-weight: 700; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+      .val { font-weight: 700; text-align: end; min-width: 0; overflow-wrap: anywhere; }
 
       #verdict, #acctLine, #noAccount { overflow-wrap: anywhere; }
 
@@ -145,9 +169,10 @@
       .switch { position: relative; display: inline-block; width: 34px; height: 18px; flex: none; }
       .switch input { opacity: 0; width: 0; height: 0; }
       .slider { position: absolute; inset: 0; cursor: pointer; background: var(--dot-off); border-radius: var(--radius-pill); transition: background .18s; }
-      .slider::before { content: ""; position: absolute; width: 14px; height: 14px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: transform .18s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+      .slider::before { content: ""; position: absolute; width: 14px; height: 14px; inset-inline-start: 2px; top: 2px; background: #fff; border-radius: 50%; transition: transform .18s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
       .switch input:checked + .slider { background: var(--dot-on); }
       .switch input:checked + .slider::before { transform: translateX(16px); }
+      html[dir="rtl"] .switch input:checked + .slider::before { transform: translateX(-16px); }
       input[type=range] { accent-color: var(--accent); height: 16px; cursor: pointer; }
       .ctrl { display: flex; align-items: center; gap: 8px; }
       /* Sub-label under a control: spells out what the slider setting actually means in
@@ -168,14 +193,14 @@
       .sect-head {
         display: flex; align-items: center; gap: 8px; width: 100%;
         padding: 9px 12px; background: transparent; border: 0; border-radius: 0;
-        color: var(--text); font: 700 12.5px/1.2 system-ui; text-align: left; cursor: pointer;
+        color: var(--text); font: 700 12.5px/1.2 system-ui; text-align: start; cursor: pointer;
         transition: background .16s ease;
       }
       .sect-head:hover { background: var(--surface-2); filter: none; }
       .sect-head:active { transform: none; }
       .chev { flex: none; font-size: 9px; color: var(--faint); }
       .sect.open .chev { transform: rotate(90deg); }
-      .sect-sum { margin-left: auto; font-weight: 600; font-size: 11px; color: var(--muted); }
+      .sect-sum { margin-inline-start: auto; font-weight: 600; font-size: 11px; color: var(--muted); }
       .sect-body { display: grid; grid-template-rows: 0fr; }
       .sect.open .sect-body { grid-template-rows: 1fr; }
       /* Transitions are enabled by .anim, which popup.js adds only AFTER the remembered
@@ -203,19 +228,19 @@
       <img class="logo" src="../../icons/icon48.png" alt="" />
       <div>
         <div class="title">Continuum Guard</div>
-        <div class="sub-title">continuous authentication</div>
+        <div class="sub-title" data-t="continuous authentication">continuous authentication</div>
       </div>
       <span class="dot off" id="dot"></span>
     </header>
 
     <!-- nobody signed in: nothing is captured -->
     <div id="setupCard" class="card" style="display:none">
-      <div style="padding:12px 0 4px;font-weight:700">Sign in to start</div>
-      <div style="padding-bottom:12px;color:var(--muted);font-size:12px;line-height:1.5">
+      <div style="padding:12px 0 4px;font-weight:700" data-t="Sign in to start">Sign in to start</div>
+      <div style="padding-bottom:12px;color:var(--muted);font-size:12px;line-height:1.5" data-t="Continuum Guard checks your typing and mouse rhythm on every website. Sign in with a personal Continuum account or your organisation's account first.">
         Continuum Guard checks your typing and mouse rhythm on every website. Sign in with a personal
         Continuum account or your organisation&#39;s account first.
       </div>
-      <button id="setupBtn" class="btn-keys" style="margin-bottom:12px">Open settings</button>
+      <button id="setupBtn" class="btn-keys" style="margin-bottom:12px" data-t="Open settings">Open settings</button>
     </div>
 
     <div id="mainPanel" style="display:none">
@@ -223,21 +248,22 @@
       <div id="verdict">…</div>
 
       <div class="card" id="verdictCard">
-        <div class="row" id="rowKeys"><span>⌨️ Typing</span><span class="val" id="keys">…</span></div>
-        <div class="row" id="rowMouse"><span>🖱️ Mouse</span><span class="val" id="mouse">…</span></div>
-        <div class="row" id="rowUse" style="display:none"><span>Real-use sample</span><span class="val" id="useSample">…</span></div>
-        <div class="row"><span>This site</span><span class="val" id="site">…</span></div>
+        <div class="row" id="rowKeys"><span>⌨️ <span data-t="Typing">Typing</span></span><span class="val" id="keys">…</span></div>
+        <div class="row" id="rowMouse"><span>🖱️ <span data-t="Mouse">Mouse</span></span><span class="val" id="mouse">…</span></div>
+        <div class="row" id="rowUse" style="display:none"><span data-t="Real-use sample">Real-use sample</span><span class="val" id="useSample">…</span></div>
+        <div class="row"><span data-t="This site">This site</span><span class="val" id="site">…</span></div>
       </div>
 
-      <button id="enrolBtn" class="btn-keys" style="display:none;margin-bottom:9px">Finish enrolment</button>
+      <button id="enrolBtn" class="btn-keys" style="display:none;margin-bottom:9px" data-t="Finish enrolment">Finish enrolment</button>
       <button id="pauseBtn" style="background:#dc2626">Pause recording</button>
-      <div class="hint" style="padding-top:6px">Pause before you type anything private: nothing is recorded, on any site, until you resume. Shortcut: Alt+Shift+P.</div>
+      <div class="hint" style="padding-top:6px" data-t="Pause before you type anything private: nothing is recorded, on any site, until you resume. Shortcut: Alt+Shift+P.">Pause before you type anything private: nothing is recorded, on any site, until you resume. Shortcut: Alt+Shift+P.</div>
       <div id="errLine" style="display:none;color:var(--warn-text);font-size:11.5px;padding:2px 0 6px"></div>
       <div class="gap"></div>
       <button id="exclude" class="btn-ghost">…</button>
       <div class="gap"></div>
-      <button id="openSettings" class="btn-ghost">Settings</button>
+      <button id="openSettings" class="btn-ghost" data-t="Settings">Settings</button>
     </div>
+    <script src="../lang-ar.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

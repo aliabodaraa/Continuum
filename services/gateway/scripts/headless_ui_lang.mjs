@@ -27,6 +27,8 @@ const ORGS = [
 const STATS = { users: 12, anonymous: 3, passkey: 9, typing: 7, mouse: 5, counted: 12 };
 const SETTINGS = [
   { key: "panel", value: "show", source: "default", envValue: null, builtIn: "show", operatorDefault: "show", choices: ["show", "hide"], range: null, list: false },
+  { key: "panelLanguage", value: "ar", source: "organisation", envValue: null, builtIn: "auto", operatorDefault: "auto", choices: ["auto", "en", "ar"], range: null, list: false },
+  { key: "panelTheme", value: "auto", source: "default", envValue: null, builtIn: "auto", operatorDefault: "auto", choices: ["auto", "light", "dark"], range: null, list: false },
   { key: "keystroke", value: "on", source: "organisation", envValue: null, builtIn: "on", operatorDefault: "on", choices: ["on", "off"], range: null, list: false },
   { key: "keystrokeDecisionWindows", value: 10, source: "operator", envValue: null, builtIn: 20, operatorDefault: 10, choices: [6, 10, 20], range: null, list: false },
   { key: "pasteAllowance", value: "unlimited", source: "env", envValue: "unlimited", builtIn: "unlimited", operatorDefault: "unlimited", choices: ["0", "1", "2", "3", "5", "unlimited"], range: null, list: false },
@@ -122,7 +124,7 @@ const fill = (sel, value) => `(() => { const e = document.querySelector(${JSON.s
 const ALLOWED = new Set(["Continuum", "Guard", "PIN", "IP", "JWKS", "CONTINUUM_SECRET", "CA_SIGNING_SECRET", "GATEWAY_ADMIN_KEY", "webhook", "middleware", "protect",
   "localhost", "https", "http", "chrome", "extensions", "password", "email", "textarea", "contenteditable", "env", "Acme", "Notes", "Beta", "Shop", "Old", "Corp",
   "Personal", "accounts", "dev", "acme", "example", "old", "app", "shop", "beta", "ECONNREFUSED", "keystroke", "defaults", "keystrokeDecisionWindows", "gateway", "ca-service",
-  "company", "com", "you", "gw", "test", "IBM", "data-site-key", "script", "src"]);
+  "company", "com", "you", "gw", "test", "IBM", "data-site-key", "script", "src", "text", "hidden"]);
 const LEFTOVERS = `(() => {
   const skip = (e) => e && e.closest && e.closest('.mono, code, pre, script, style, [dir="ltr"], .lang-btn, option, .avatar, .chip-item');
   const words = (s) => (s.match(/[A-Za-z][A-Za-z'’_-]{1,}/g) || []);

@@ -40,6 +40,12 @@
   // Capture follows the worker: null = nobody signed in (nothing captured), else { kind, paused }.
   // One page visit is one session (the study logs it as such).
   var capture = null;
+  // The lock overlay's language and colours: the organisation's choice (cg:config `look`); "auto" is the browser's
+  // language and the device's mode. The Arabic phrases are in lang-ar.js (CG_AR), loaded before this script.
+  var look = { lang: "auto", theme: "auto" };
+  function lookLang() { if (look.lang === "en" || look.lang === "ar") return look.lang; return String(navigator.language || "").toLowerCase().indexOf("ar") === 0 ? "ar" : "en"; }
+  function lookDark() { return look.theme === "dark" || (look.theme === "auto" && !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches)); }
+  function T(s) { var d = lookLang() === "ar" ? self.CG_AR : null; return (d && d[s]) || s; }
   var sessionId = (function () {
     try { var b = new Uint8Array(8); crypto.getRandomValues(b); return "s" + Array.prototype.map.call(b, function (x) { return (x + 256).toString(16).slice(1); }).join(""); }
     catch (e) { return "s" + Date.now().toString(16) + Math.random().toString(16).slice(2, 10); }
@@ -181,27 +187,36 @@
       dlog("[continuum-guard] lock suppressed on the gateway / a sign-in origin: " + origin);
       return;
     }
+    var dark = lookDark();
     lockEl = document.createElement("div");
+    lockEl.setAttribute("dir", lookLang() === "ar" ? "rtl" : "ltr"); lockEl.setAttribute("lang", lookLang());
     lockEl.setAttribute("style",
-      "position:fixed;inset:0;z-index:2147483647;background:rgba(2,6,23,.88);backdrop-filter:blur(6px);" +
-      "display:flex;align-items:center;justify-content:center;font:15px/1.5 system-ui,sans-serif;color:#e2e8f0;");
+      "position:fixed;inset:0;z-index:2147483647;background:" + (dark ? "rgba(2,6,23,.86)" : "rgba(15,23,42,.45)") + ";backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);" +
+      "display:flex;align-items:center;justify-content:center;padding:16px;font:15px/1.55 system-ui,-apple-system,'Segoe UI',Roboto,Tahoma,sans-serif;color:" + (dark ? "#e5e9f5" : "#0f172a") + ";");
     var box = document.createElement("div");
-    box.setAttribute("style", "max-width:420px;background:#0f172a;border:1px solid #334155;border-radius:16px;padding:28px 30px;text-align:center;");
+    box.setAttribute("style", "max-width:440px;width:100%;background:" + (dark ? "#111a2e" : "#ffffff") + ";border:1px solid " + (dark ? "rgba(255,255,255,.1)" : "rgba(15,23,42,.08)")
+      + ";border-radius:24px;padding:30px 32px;text-align:center;box-shadow:0 40px 90px -28px rgba(0,0,0,.6);");
     box.innerHTML =
-      '<div style="font-size:34px;margin-bottom:10px">🔒</div>' +
-      '<div style="font-weight:800;font-size:18px;margin-bottom:8px">Continuum Guard locked this page</div>' +
-      '<div style="color:#94a3b8;margin-bottom:18px">' + (pasted ? 'Text was pasted into a field more times than allowed.'
-        : 'The recent typing or mouse rhythm does not match your profile.') + ' Verify it&#39;s you to continue.</div>' +
-      '<button id="__cgVerifyBtn" style="background:#4f46e5;color:#fff;border:0;border-radius:10px;padding:12px 22px;font:700 15px system-ui;cursor:pointer">Verify with passkey</button>' +
-      '<div id="__cgErr" style="display:none;margin-top:16px;padding:12px 14px;border-radius:10px;background:#3f1d1d;border:1px solid #7f1d1d;color:#fecaca;font-size:13px;text-align:left"></div>';
+      '<div style="width:72px;height:72px;margin:0 auto 14px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 32% 28%,#fb7185,#dc2626);box-shadow:0 16px 34px -12px #dc2626">' +
+      '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>' +
+      '<div style="font-weight:800;font-size:19px;margin-bottom:8px"></div>' +
+      '<div style="color:' + (dark ? "#94a3b8" : "#64748b") + ';margin-bottom:20px"></div>' +
+      '<button id="__cgVerifyBtn" style="width:100%;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:0;border-radius:13px;padding:13px 22px;font:700 15px system-ui,Tahoma,sans-serif;cursor:pointer;box-shadow:0 12px 26px -12px #6366f1"></button>' +
+      '<div id="__cgErr" style="display:none;margin-top:16px;padding:12px 14px;border-radius:12px;background:' + (dark ? "#3f1d1d" : "#fef2f2") + ';border:1px solid ' + (dark ? "#7f1d1d" : "#fecaca") + ';color:' + (dark ? "#fecaca" : "#b91c1c") + ';font-size:13px;text-align:start"></div>';
+    box.children[1].textContent = T("Continuum Guard locked this page");
+    box.children[2].textContent = T(pasted ? "Text was pasted into a field more times than allowed." : "The recent typing or mouse rhythm does not match your profile.") + " " + T("Verify it's you to continue.");
+    box.querySelector("#__cgVerifyBtn").textContent = T("Verify with passkey");
     lockEl.appendChild(box);
     (document.body || document.documentElement).appendChild(lockEl);
+    if (box.animate && !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+      try { box.animate([{ opacity: 0, transform: "translateY(16px) scale(.96)" }, { opacity: 1, transform: "none" }], { duration: 450, easing: "cubic-bezier(.2,.9,.25,1.15)" }); } catch (e) {}
+    }
     box.querySelector("#__cgVerifyBtn").addEventListener("click", function () {
       var err = lockEl && lockEl.querySelector("#__cgErr");
       if (err) { err.style.display = "none"; }
       var btn = this;
-      btn.textContent = "Opening…";
-      setTimeout(function () { try { btn.textContent = "Verify with passkey"; } catch (e) {} }, 3000);
+      btn.textContent = T("Opening…");
+      setTimeout(function () { try { btn.textContent = T("Verify with passkey"); } catch (e) {} }, 3000);
       safeSend({ type: "cg:open-verify" });
     });
   }
@@ -211,7 +226,7 @@
     if (!lockEl) return;
     var err = lockEl.querySelector("#__cgErr");
     if (!err) return;
-    err.textContent = message + ". Check that the Continuum server is running, or its address in the extension's settings, then press the button again.";
+    err.textContent = message + ". " + T("Check that the Continuum server is running, or its address in the extension's settings, then press the button again.");
     err.style.display = "block";
   }
   function hideLock() { if (lockEl) { try { lockEl.remove(); } catch (e) {} lockEl = null; } }
@@ -237,6 +252,7 @@
     safeSend({ type: "cg:hello", origin: origin }, function (res) {
       if (!res) return;
       if (res.gatewayOrigin) gatewayOrigin = res.gatewayOrigin;
+      if (res.look && res.look.lang) look = res.look;
       if (!res.locked && lockEl) hideLock();
       else if (res.locked && !lockEl) showLock(res.lockPasted);
     });
@@ -255,6 +271,7 @@
       if (Array.isArray(msg.excludeTypes)) excludeTypes = msg.excludeTypes;
       if (typeof msg.gatewayOrigin === "string") gatewayOrigin = msg.gatewayOrigin;
       if (typeof msg.debug !== "undefined") debug = !!msg.debug;
+      if (msg.look && msg.look.lang) look = msg.look;
       setCapture(msg.capture);
     }
     if (msg.type === "cg:lock") { useRec = null; showLock(msg.pasted); }
@@ -270,7 +287,8 @@
       excluded = !!res.excluded;
       if (Array.isArray(res.excludeTypes)) excludeTypes = res.excludeTypes;
       debug = !!res.debug;
-      if (res.gatewayOrigin) gatewayOrigin = res.gatewayOrigin;   // before showLock, so the gateway is never locked
+      if (res.gatewayOrigin) gatewayOrigin = res.gatewayOrigin;
+      if (res.look && res.look.lang) look = res.look;   // before showLock, so the gateway is never locked
       setCapture(res.capture);
       if (res.locked) showLock(res.lockPasted);   // navigated / reopened while locked
       dlog("[continuum-guard] handshake: capture=" + (capturing() ? "ON" : "OFF") + (capture ? "" : " (not signed in)") + (excluded ? " (site excluded)" : ""));

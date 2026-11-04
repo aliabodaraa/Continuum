@@ -19,8 +19,11 @@ sdk/
         data-site-key="pk_live_…"
         data-defer="1"></script>
 <!-- optional: data-panel="show|hide", data-keystroke="on|off", data-mouse="optional|on|off",
-     data-onboarding="eager|lazy". A value the organisation chose in its console (or the operator
-     on the operator page) overrides these; a deployment default does not. -->
+     data-onboarding="eager|lazy", data-lang="auto|en|ar" (the panel's language; auto = the page's
+     <html lang>, else the browser's), data-theme="auto|light|dark" (its colours; auto = the device's
+     mode). A value the organisation chose in its console (or the operator on the operator page)
+     overrides these; a deployment default does not. The Arabic phrases are in js/guard-ar.js, loaded
+     only when Arabic is used; the enrolment passages stay English (the typing model is trained on them). -->
 <script>
   // after your own login, hand the SDK a backend-signed identity token
   Continuum.identify(tokenMintedByYourBackend);
