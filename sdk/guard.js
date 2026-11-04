@@ -373,11 +373,23 @@
       cx.setAttribute("data-tt", k); cx.setAttribute("data-ta", k); cx.title = t(k); cx.setAttribute("aria-label", t(k));
       cx.setAttribute("aria-expanded", String(!collapsed));
     }
-    cx.addEventListener("click", function (e) { e.stopPropagation(); collapsed = !collapsed; try { localStorage.setItem(LS_COLLAPSE, collapsed ? "1" : "0"); } catch (e2) {} applyCollapse(); });
+    cx.addEventListener("click", function (e) { e.stopPropagation(); collapsed = !collapsed; try { localStorage.setItem(LS_COLLAPSE, collapsed ? "1" : "0"); } catch (e2) {} applyCollapse(); setTimeout(clampPos, 450); });
     applyCollapse();
 
     // ---- drag by the header (persisted) ----
-    try { var sp = JSON.parse(localStorage.getItem(LS_POS) || "null"); if (sp && sp.left != null) { host.style.left = sp.left + "px"; host.style.top = sp.top + "px"; host.style.right = "auto"; host.style.bottom = "auto"; } } catch (e) {}
+    // A placed panel stays whole inside the window: a position saved for a narrower panel (or a smaller window)
+    // used to leave its switches past the right edge.
+    function inside(l, tp) {
+      var w = host.offsetWidth || 276, hh = host.offsetHeight || 60;
+      return { left: Math.max(4, Math.min(window.innerWidth - w - 4, l)), top: Math.max(4, Math.min(window.innerHeight - hh - 4, tp)) };
+    }
+    function clampPos() {
+      if (!host.style.left || host.style.left === "auto") return;   // still anchored to the corner
+      var p = inside(parseFloat(host.style.left) || 0, parseFloat(host.style.top) || 0);
+      host.style.left = p.left + "px"; host.style.top = p.top + "px";
+    }
+    try { var sp = JSON.parse(localStorage.getItem(LS_POS) || "null"); if (sp && sp.left != null) { host.style.left = sp.left + "px"; host.style.top = sp.top + "px"; host.style.right = "auto"; host.style.bottom = "auto"; clampPos(); } } catch (e) {}
+    window.addEventListener("resize", clampPos);
     var dragging = false, ox = 0, oy = 0, sx = 0, sy = 0;
     hd.addEventListener("mousedown", function (e) {
       if (cx.contains(e.target)) return;
@@ -387,9 +399,8 @@
     });
     window.addEventListener("mousemove", function (e) {
       if (!dragging) return;
-      var nl = Math.max(4, Math.min(window.innerWidth - 44, ox + (e.clientX - sx)));
-      var nt = Math.max(4, Math.min(window.innerHeight - 24, oy + (e.clientY - sy)));
-      host.style.left = nl + "px"; host.style.top = nt + "px";
+      var p = inside(ox + (e.clientX - sx), oy + (e.clientY - sy));
+      host.style.left = p.left + "px"; host.style.top = p.top + "px";
     });
     window.addEventListener("mouseup", function () {
       if (!dragging) return; dragging = false;

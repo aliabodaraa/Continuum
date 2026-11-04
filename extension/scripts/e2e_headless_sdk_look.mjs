@@ -147,6 +147,13 @@ try {
   ok("auto: the device switches to light, the panel follows at once", (await ev(s, `${SH}.querySelector('.cg').dataset.theme`)) === "light");
   pageLang = "en"; await load();
   ok("auto: an English page gives an English panel", (await ev(s, `${SH}.querySelector('.cg').dir`)) === "ltr");
+  // a position saved for a narrower panel (or a smaller window) is pulled back inside the window
+  await ev(s, "localStorage.setItem('continuumGuardPos', JSON.stringify({ left: 1200, top: 100 })); true");
+  await load();
+  const box = await ev(s, `(() => { const r = document.getElementById('continuum-guard-host').getBoundingClientRect(); return { right: r.right, left: r.left, top: r.top, w: innerWidth }; })()`);
+  ok("placed: a saved position past the right edge is pulled inside, the panel whole", box.right <= box.w - 4 && box.left >= 4 && box.top === 100, JSON.stringify(box));
+  await ev(s, "localStorage.removeItem('continuumGuardPos'); true");
+  await load();
   // collapse animates and is kept
   await ev(s, `${SH}.querySelector('.cx').click(); true`); await sleep(600);
   ok("collapse: the panel folds to its header", await ev(s, `${SH}.querySelector('.panel').classList.contains('collapsed') && ${SH}.querySelector('.pin').getBoundingClientRect().height < 2`));
