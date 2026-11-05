@@ -564,6 +564,7 @@
     });
   }
   var stepUpOnSuccess = null; // optional callback for external step-up requests
+  function chain(a, b) { if (!a) return b || null; if (!b) return a; return function (x) { try { a(x); } catch (e) {} b(x); }; }
   var stepUpOnFail = null;    // optional callback for a failed attempt (requireStepUp's onFail)
   var onProbation = false;    // after a step-up: any suspicious verdict re-challenges (no grace) until a genuine one clears it
   // Show the single passkey step-up modal, with the REASON (which modality flagged it).
@@ -681,6 +682,7 @@
       contribEndIdx = 0;
       lastCheckedWindowCount = 0; checkInFlight = false; ksMissedWindow = false; ksPastePending = false;
       if (mouseTracker) mouseTracker.reset(); lastMouseEvents = 0;
+      lastKsPct = null; lastMousePct = null;   // the verdict that caused the lock is over: no stale score beside the next "analyzing"
       locked = false; onProbation = true; hideModal(); setKb("ok", "verified ✓"); if (mouseOn) setMouseRow("ok", "watching");
       stepUpOnFail = null;
       var verified = ver.d || {};
@@ -1680,7 +1682,7 @@
     stopMouse();
     abortUseSample();
     if (ksTracker) ksTracker.reset(); contribEndIdx = 0; sampleProbe.forWindows = -1; sampleProbe.eligible = false; if (mouseTracker) mouseTracker.reset();
-    checkInFlight = false; locked = false; ready = false;
+    checkInFlight = false; locked = false; ready = false; lastKsPct = null; lastMousePct = null;
   }
 
   // ---------- bootstrap (gateway mode) ----------
@@ -1780,7 +1782,12 @@
       // onSuccess fires after a verified passkey. Keeps all passkey UI inside the SDK.
       // onFail (optional) fires on each failed verification attempt, with the error message; the
       // modal stays open for another try (the user-study page reports these as `failed`).
-      requireStepUp: function (modality, onSuccess, onFail) { if (locked) return; locked = true; stepUpOnSuccess = onSuccess || null; stepUpOnFail = onFail || null; showModal(modality || "keystroke"); },
+      // Already locked (the SDK's own check got there first): the page's callbacks are kept all the same, so its own
+      // state is released by the verification too (the demo's lab page stayed blocked for good without this).
+      requireStepUp: function (modality, onSuccess, onFail) {
+        if (locked) { stepUpOnSuccess = chain(stepUpOnSuccess, onSuccess); stepUpOnFail = chain(stepUpOnFail, onFail); return; }
+        locked = true; stepUpOnSuccess = onSuccess || null; stepUpOnFail = onFail || null; showModal(modality || "keystroke");
+      },
       // No contribute(): adaptive samples come only from the popup the user answers (removed 2026-10-05;
       // it let a page's own Save add samples silently).
     };

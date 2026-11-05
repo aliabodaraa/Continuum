@@ -94,12 +94,17 @@ async function move(s, n) {
 const runs = (windows) => { const r = new Set(); for (const w of windows) for (let i = 0; i + 20 <= w.length; i++) r.add(JSON.stringify(w.slice(i, i + 20))); return r; };
 const shared = (a, b) => { const ra = runs(a), rb = runs(b); let n = 0; for (const x of rb) if (ra.has(x)) n++; return rb.size ? n / rb.size : 0; };
 // Move until the SDK's mouse check locks (the server says so at its first check), then verify with the passkey.
+// While the SDK's own lock is up, a page asks for the step-up too (as the demo's lab page does): its callback must
+// still run at the verification. pageTold counts those calls.
+let pageTold = 0;
 async function lockAndVerify(s) {
   for (let i = 0; i < 12 && !(await ev(s, MODAL_OPEN)); i++) await move(s, 150);
   const locked = await ev(s, MODAL_OPEN);
+  await ev(s, "window.__pageTold = 0; window.Continuum.requireStepUp('keystroke', () => { window.__pageTold++; }); true");
   await ev(s, `(${SH}).querySelector('.ov .card .b').click()`);
   await waitFor(s, `!(${MODAL_OPEN})`, 5000);
   await sleep(300);
+  pageTold = await ev(s, "window.__pageTold");
   return locked;
 }
 
@@ -131,6 +136,7 @@ try {
   const locked = await lockAndVerify(s);
   ok("1. a mouse lock, then the passkey", locked && state.verifies.length === 1, `${state.checks.length} checks, ${state.verifies.length} verifications`);
   ok("…the verification says it answered a mouse lock", (state.verifies[0] || {}).reason === "mouse", JSON.stringify(state.verifies[0] || {}));
+  ok("…a page that asked for the step-up while the SDK was already locked is told of the verification", pageTold === 1, `callback ran ${pageTold} times`);
   const box = await useBox(s);
   ok("…the server offered a sample: the question shows, with its two buttons", !!box && box.visible && box.buttons && /Your profile does not change/.test(box.text), JSON.stringify(box));
   const beforeLock = state.checks[0] || [];
