@@ -40,6 +40,7 @@ const TYPES = { ".js": "application/javascript; charset=utf-8" };
 function file(p) {
   const map = { "/guard.js": "sdk/guard.js", "/js/guard-ar.js": "sdk/js/guard-ar.js", "/js/keystroke-tracker.js": "sdk/js/keystroke-tracker.js",
     "/js/mouse-features.js": "sdk/js/mouse-features.js", "/vendor/simplewebauthn/index.umd.min.js": "sdk/vendor/simplewebauthn/index.umd.min.js" };
+  if (p === "/guard.js" && process.env.GUARD_FILE) return fs.readFileSync(process.env.GUARD_FILE);   // another copy of the SDK under test
   return map[p] ? fs.readFileSync(path.join(ROOT, map[p])) : null;
 }
 const token = "x." + Buffer.from(JSON.stringify({ sub: "look-test-user" })).toString("base64url") + ".y";
@@ -106,6 +107,10 @@ try {
     await load();
     const root = await ev(s, `(() => { const c = ${SH}.querySelector('.cg'); return { dir: c.dir, lang: c.lang, theme: c.dataset.theme, bg: getComputedStyle(c.querySelector('.card')).backgroundColor }; })()`);
     ok(`${tag}: the panel follows the organisation`, root.dir === (lang === "ar" ? "rtl" : "ltr") && root.lang === lang && root.theme === theme, JSON.stringify(root));
+    // the rows never grow past the panel, however long a status is (the switches used to be cut off)
+    const fit = await ev(s, `(() => { const p = ${SH}.querySelector('.panel'), pr = p.getBoundingClientRect(); const st = p.querySelector('.row .st').textContent;
+      return { st, over: p.scrollWidth - p.clientWidth, cut: [...p.querySelectorAll('.tgl')].some((t) => t.getBoundingClientRect().right > pr.right + 0.5) }; })()`);
+    ok(`${tag}: every switch is inside the panel with the long starting status`, fit.over <= 0 && !fit.cut, JSON.stringify(fit));
     await ev(s, "document.getElementById('host').focus()");
     await type(s, 260);
     // the verdict (93%) stays on the row, in its green, while the user keeps typing ("analyzing…" between checks)

@@ -220,8 +220,10 @@
     ".cx svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform .4s cubic-bezier(.2,.8,.2,1)}",
     ".panel.collapsed .cx svg{transform:rotate(180deg)}",
     ".pbody{display:grid;grid-template-rows:1fr;transition:grid-template-rows .4s cubic-bezier(.2,.8,.2,1)}.panel.collapsed .pbody{grid-template-rows:0fr}",
-    ".pin{min-height:0;overflow:hidden}.rows{display:grid;gap:7px;padding:0 10px 10px}",
-    ".row{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:14px;background:var(--row);border:1px solid var(--line);transition:background .35s,border-color .35s}",
+    // minmax(0, 1fr): the column may be narrower than a row's longest status text, which then ends in an ellipsis
+    // (with the default auto track the rows grew to that text and their switches were cut off at the panel's edge)
+    ".pin{min-height:0;overflow:hidden}.rows{display:grid;grid-template-columns:minmax(0,1fr);gap:7px;padding:0 10px 10px}",
+    ".row{display:flex;align-items:center;gap:9px;min-width:0;padding:8px 9px;border-radius:14px;background:var(--row);border:1px solid var(--line);transition:background .35s,border-color .35s}",
     ".row.ok{--c:var(--ok)}.row.col{--c:var(--acc)}.row.warn{--c:var(--warn)}.row.mut{--c:var(--mut)}",
     ".row.bad{--c:var(--bad);background:var(--badw);border-color:color-mix(in srgb,var(--bad) 32%,transparent)}",
     ".ring{position:relative;width:38px;height:38px;flex:none}",
@@ -232,7 +234,8 @@
     ".ring .ic{position:absolute;inset:0;display:grid;place-items:center;color:var(--c,var(--mut));transition:color .35s}",
     ".ring .ic svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}",
     ".info{flex:1;min-width:0}.lbl{display:block;font-weight:700;font-size:12.5px;color:var(--text)}",
-    ".st{position:relative;display:block;margin-top:1px;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .35s}",
+    // a long status wraps to a second line (it used to end in an ellipsis: "type 80 characters to st…")
+    ".st{position:relative;display:block;margin-top:1px;font-size:11.5px;line-height:1.35;color:var(--muted);overflow-wrap:anywhere;transition:color .35s}",
     ".st::first-letter{text-transform:uppercase}.st b{font-weight:800}.st .pct{font-variant-numeric:tabular-nums}",
     ".st.ok{color:var(--ok)}.st.col{color:var(--acc)}.st.warn{color:var(--warn)}.st.bad{color:var(--bad)}",
     ".sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}",
