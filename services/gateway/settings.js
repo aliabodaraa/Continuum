@@ -24,8 +24,8 @@ const APP = {
   panelLanguage: { env: "CONTINUUM_PANEL_LANGUAGE", def: "auto", choices: ["auto", "en", "ar"], claim: "lang" },
   panelTheme: { env: "CONTINUUM_PANEL_THEME", def: "auto", choices: ["auto", "light", "dark"], claim: "theme" },
   keystroke: { env: "CONTINUUM_KEYSTROKE", def: "on", choices: ["on", "off"], claim: "ks" },
-  // windows in the typing decision (ca-service keystrokeSecurity.js): 6, 10 and 20 were measured; 2 and 4 are the
-  // owner's option for sensitive systems (2026-11-05), not measured and not in the paper
+  // windows in the typing decision (ca-service keystrokeSecurity.js). 2 and 4 are the owner's option for sensitive
+  // systems (2026-11-05), measured like the others on the thesis's table (not in the paper)
   keystrokeDecisionWindows: { env: "KEYSTROKE_DECISION_WINDOWS", def: 20, choices: [2, 4, 6, 10, 20], claim: "kw" },
   // pastes a user may make into one field before the passkey is asked for; every paste counts, however short.
   // "unlimited" never asks and is the default (owner, 2026-10-25). ca-service lib/appSettings.js pasteAllowance().

@@ -45,8 +45,8 @@ const ENV = {
   // "any": the newest run of windows that would be accepted, anywhere in it, and the rest ignored.
   adaptiveSampleFrom: process.env.ADAPTIVE_SAMPLE_FROM === "any" ? "any" : "end",
   excludeFieldTypes: (process.env.MONITOR_EXCLUDE_TYPES || "hidden").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
-  // Windows in the typing decision's packet; lib/keystrokeSecurity.js decisionWindows() accepts 2, 4 (not
-  // measured), 6, 10 and 20 and falls back to 20.
+  // Windows in the typing decision's packet; lib/keystrokeSecurity.js decisionWindows() accepts 2, 4, 6, 10 and 20
+  // and falls back to 20.
   keystrokeDecisionWindows: Number(process.env.KEYSTROKE_DECISION_WINDOWS) || 20,
   pasteAllowance: pasteAllowance(process.env.PASTE_ALLOWANCE, Infinity),
 };

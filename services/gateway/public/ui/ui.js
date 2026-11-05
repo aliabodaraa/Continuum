@@ -323,7 +323,7 @@
     panelLanguage: ["Panel language", "The language of the Continuum panel and its windows (the passkey check, enrolment, training) on your pages and in the browser extension. Automatic: the page's own language on your site, the browser's in the extension. The enrolment passages stay English either way: the typing model is trained on them."],
     panelTheme: ["Panel colours", "Light or dark colours for the panel and its windows. Automatic follows the device's light or dark mode."],
     keystroke: ["Typing protection", "Check that the person typing is the account's owner."],
-    keystrokeDecisionWindows: ["Typing windows per decision", "How much typing each verdict looks at; half of these windows must look wrong. Fewer windows give the first verdict sooner (about 18 s of steady typing at 6, 42 s at 20) but flag the real user more often (about 10% of their verdicts at 6, 6% at 10, 3% at 20); impostors are caught about as often (~88%). Measured on 99 users. 2 and 4 are for sensitive systems and were not measured: the first verdict comes sooner still (about 70 or 90 keystrokes), and the real user is flagged more often."],
+    keystrokeDecisionWindows: ["Typing windows per decision", "How much typing each verdict looks at; half of these windows must look wrong. Fewer windows give the first verdict sooner (about 12 s of steady typing at 2, 15 s at 4, 18 s at 6, 25 s at 10, 42 s at 20) but flag the real user more often (about 14% of their verdicts at 2, 12% at 4, 10% at 6, 6% at 10, 3% at 20); impostors are caught about as often (~87%). Measured on 99 users. 2 and 4 suit sensitive systems that accept the extra passkey prompts."],
     pasteAllowance: ["Pastes allowed per field", "How many times a user may paste into the same field before the passkey is asked for. Every paste counts, however short, and the count starts again after each passkey verification. Pasted text is never judged as typing, so each allowed paste lets whoever is at the keyboard enter text without being checked. Unlimited never asks."],
     mouse: ["Mouse protection", "Check that the person moving the mouse is the account's owner."],
     onboarding: ["Enrolment", "Required: users enrol their typing and mouse when they first sign in. On demand: only when they turn a channel on in the panel."],
@@ -338,7 +338,7 @@
   var KEY_CHOICE_TEXT = {
     panelLanguage: { auto: "Automatic (the page's language)", en: "English", ar: "Arabic" },
     panelTheme: { auto: "Automatic (the device's mode)", light: "Light", dark: "Dark" },
-    keystrokeDecisionWindows: { 2: "2 (not measured)", 4: "4 (not measured)", 6: "6 (fastest measured)", 10: "10", 20: "20 (most accurate)" },
+    keystrokeDecisionWindows: { 2: "2 (fastest)", 4: "4", 6: "6", 10: "10", 20: "20 (most accurate)" },
     pasteAllowance: { 0: "0 (ask at the first paste)", 1: "1", 2: "2", 3: "3", 5: "5", unlimited: "Unlimited" },
     adaptiveRetrainEvery: { 1: "1", 2: "2", 3: "3 (measured)" },
     adaptiveSampleFrom: { end: "End (what was typed last)", any: "Anywhere in the typing" },

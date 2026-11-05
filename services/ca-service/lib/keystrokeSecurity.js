@@ -35,9 +35,10 @@ const RECENT_WINDOW_COUNT = 20;
 // decision_paired.json): a shorter packet gives its first verdict sooner (about 18 s of steady
 // typing at 6 against 42 s at 20) but flags the genuine user more often (FRR at 0.50: 23.6% at 6,
 // 18.8% at 10, 14.8% at 20); impostor capture is about the same. 20 stays the default, and every
-// figure in the paper is for it. 2 and 4 (2026-11-05, the owner's product option for sensitive systems) were
-// NOT measured: the same simple-majority vote (1 of 2, 2 of 4) gives the first verdict after 3 or 5 windows
-// (about 70 or 90 keystrokes) and flags the genuine user more often than 6 does; they are not in the paper.
+// figure in the paper is for it. 2 and 4 (2026-11-05, the owner's option for sensitive systems; thesis only, not
+// the paper) were measured the same way on the all-impostors parts (analysis/phase3/packet_length_all_2_4.py):
+// the same simple-majority vote (1 of 2, 2 of 4), first verdict at 71 / 91 keystrokes (about 12 / 15 s), FRR at
+// 0.50 13.9% / 12.3% against 10.1% at 6 and 3.3% at 20, FAR about 13% throughout, per-user AUC 0.934 / 0.941.
 const DECISION_WINDOW_CHOICES = [2, 4, 6, 10, 20];
 function decisionWindows(n) { return DECISION_WINDOW_CHOICES.includes(Number(n)) ? Number(n) : RECENT_WINDOW_COUNT; }
 // The typed-text gate for a packet: CHECK_MIN_TEXT_CHARS, unless the packet's first verdict comes sooner than
