@@ -1,0 +1,62 @@
+[
+  {
+    "K": 2,
+    "votes": 1,
+    "eer": 0.15459715922532968,
+    "auc": 0.9210190860869278,
+    "far050": 0.10355088344062457,
+    "frr050": 0.2753057851239669,
+    "tarAtFar01": 0.21613223140495863,
+    "nGenuinePackets": 15125,
+    "nImpostorPackets": 584080,
+    "firstVerdictKeystrokes": 71
+  },
+  {
+    "K": 4,
+    "votes": 2,
+    "eer": 0.14797373078716064,
+    "auc": 0.926539649411485,
+    "far050": 0.10447556573649863,
+    "frr050": 0.25316540497085815,
+    "tarAtFar01": 0.22362162524284857,
+    "nGenuinePackets": 14927,
+    "nImpostorPackets": 576240,
+    "firstVerdictKeystrokes": 91
+  },
+  {
+    "K": 6,
+    "votes": 3,
+    "eer": 0.1391864440261064,
+    "auc": 0.9327113152403099,
+    "far050": 0.10275334271639691,
+    "frr050": 0.23592911942426506,
+    "tarAtFar01": 0.23538597325005095,
+    "nGenuinePackets": 14729,
+    "nImpostorPackets": 568400,
+    "firstVerdictKeystrokes": 111
+  },
+  {
+    "K": 10,
+    "votes": 5,
+    "eer": 0.12375662336541426,
+    "auc": 0.9438851027718315,
+    "far050": 0.10089014329135915,
+    "frr050": 0.18830670480708853,
+    "tarAtFar01": 0.2527733203097746,
+    "nGenuinePackets": 14333,
+    "nImpostorPackets": 552720,
+    "firstVerdictKeystrokes": 151
+  },
+  {
+    "K": 20,
+    "votes": 10,
+    "eer": 0.11031934802654428,
+    "auc": 0.9524287588715427,
+    "far050": 0.09941190216544638,
+    "frr050": 0.1483924154987634,
+    "tarAtFar01": 0.2857678183317095,
+    "nGenuinePackets": 13343,
+    "nImpostorPackets": 513520,
+    "firstVerdictKeystrokes": 251
+  }
+]

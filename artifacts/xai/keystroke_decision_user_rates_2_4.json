@@ -1,0 +1,97 @@
+[
+  {
+    "K": 2,
+    "votes": 1,
+    "nUsers": 99,
+    "falseLockMedian": 0.22699386503067484,
+    "falseLockMean": 0.2741206728997487,
+    "falseLockCI": [
+      0.1724137931034483,
+      0.2929936305732484
+    ],
+    "usersOver10pct": 78,
+    "usersOver25pct": 43,
+    "impostorCaughtMedian": 0.9127516778523489,
+    "impostorCaughtMean": 0.8963427077521038,
+    "impostorCaughtCI": [
+      0.8965754603338496,
+      0.9247977972810187
+    ]
+  },
+  {
+    "K": 4,
+    "votes": 2,
+    "nUsers": 99,
+    "falseLockMedian": 0.19254658385093168,
+    "falseLockMean": 0.25200853255836836,
+    "falseLockCI": [
+      0.1390728476821192,
+      0.25443786982248523
+    ],
+    "usersOver10pct": 72,
+    "usersOver25pct": 40,
+    "impostorCaughtMedian": 0.9132653061224489,
+    "impostorCaughtMean": 0.8954130085082466,
+    "impostorCaughtCI": [
+      0.8955171812314668,
+      0.9272632129774987
+    ]
+  },
+  {
+    "K": 6,
+    "votes": 3,
+    "nUsers": 99,
+    "falseLockMedian": 0.16030534351145037,
+    "falseLockMean": 0.23501299416967217,
+    "falseLockCI": [
+      0.12030075187969924,
+      0.21794871794871795
+    ],
+    "usersOver10pct": 65,
+    "usersOver25pct": 34,
+    "impostorCaughtMedian": 0.9156498673740051,
+    "impostorCaughtMean": 0.8971312148898356,
+    "impostorCaughtCI": [
+      0.9011494252873563,
+      0.9298275862068965
+    ]
+  },
+  {
+    "K": 10,
+    "votes": 5,
+    "nUsers": 99,
+    "falseLockMedian": 0.0967741935483871,
+    "falseLockMean": 0.18736403346041766,
+    "falseLockCI": [
+      0.05303030303030303,
+      0.13986013986013987
+    ],
+    "usersOver10pct": 48,
+    "usersOver25pct": 28,
+    "impostorCaughtMedian": 0.9168439716312058,
+    "impostorCaughtMean": 0.8989824596207575,
+    "impostorCaughtCI": [
+      0.9005319148936171,
+      0.9308510638297871
+    ]
+  },
+  {
+    "K": 20,
+    "votes": 10,
+    "nUsers": 99,
+    "falseLockMedian": 0.0,
+    "falseLockMean": 0.1481577432329151,
+    "falseLockCI": [
+      0.0,
+      0.05228758169934641
+    ],
+    "usersOver10pct": 35,
+    "usersOver25pct": 21,
+    "impostorCaughtMedian": 0.9164220003914662,
+    "impostorCaughtMean": 0.900449592816005,
+    "impostorCaughtCI": [
+      0.9042865531415151,
+      0.9328635740849481
+    ]
+  }
+]

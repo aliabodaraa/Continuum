@@ -1,0 +1,71 @@
+{
+  "source": "artifacts/phase7/im/parts (KS A200 models, all 98 other participants)",
+  "method": "packet_length_a200.py (blocks of n windows, gap 4, block mean; live rule: at least half the windows below 0.50)",
+  "lengths": {
+    "2": {
+      "users": 99,
+      "decisionsGenuine": 2566,
+      "decisionsImpostor": 242550,
+      "far": 0.13628117913832205,
+      "frr": 0.1391270459859704,
+      "eer": 0.13596179878219739,
+      "auc": 0.9374745876054194,
+      "aucPerUserMean": 0.9336329372480473,
+      "tarAtFar1": 0.2213561964146532,
+      "tarAtFar5": 0.5978176149649259,
+      "firstVerdictKeystrokes": 71
+    },
+    "4": {
+      "users": 99,
+      "decisionsGenuine": 1909,
+      "decisionsImpostor": 184338,
+      "far": 0.13528952250756765,
+      "frr": 0.12310110005238345,
+      "eer": 0.12731425795877127,
+      "auc": 0.9450105833954402,
+      "aucPerUserMean": 0.9406770176350712,
+      "tarAtFar1": 0.2603457307490833,
+      "tarAtFar5": 0.6375065479308539,
+      "firstVerdictKeystrokes": 91
+    },
+    "6": {
+      "users": 99,
+      "decisionsGenuine": 1520,
+      "decisionsImpostor": 145530,
+      "far": 0.13301037586751874,
+      "frr": 0.1013157894736842,
+      "eer": 0.11381712307464187,
+      "auc": 0.9501551384775069,
+      "aucPerUserMean": 0.9472496691886729,
+      "tarAtFar1": 0.27368421052631575,
+      "tarAtFar5": 0.6723684210526315,
+      "firstVerdictKeystrokes": 111
+    },
+    "10": {
+      "users": 99,
+      "decisionsGenuine": 1073,
+      "decisionsImpostor": 106722,
+      "far": 0.13384306890800401,
+      "frr": 0.06244175209692451,
+      "eer": 0.10135344282231876,
+      "auc": 0.9566674810741089,
+      "aucPerUserMean": 0.9543414599888429,
+      "tarAtFar1": 0.28797763280521904,
+      "tarAtFar5": 0.6971109040074557,
+      "firstVerdictKeystrokes": 151
+    },
+    "20": {
+      "users": 99,
+      "decisionsGenuine": 601,
+      "decisionsImpostor": 58212,
+      "far": 0.13024805881948742,
+      "frr": 0.033277870216306155,
+      "eer": 0.0831952900826207,
+      "auc": 0.9655275175836145,
+      "aucPerUserMean": 0.9645485057900023,
+      "tarAtFar1": 0.34109816971713813,
+      "tarAtFar5": 0.7936772046589018,
+      "firstVerdictKeystrokes": 251
+    }
+  }
+}
