@@ -45,11 +45,11 @@ test("precedence: organisation over operator over .env over built-in", async () 
   }
 });
 
-test("only the measured decision packets are accepted (6, 10, 20)", () => {
+test("decision packets: the measured 6, 10, 20 and the unmeasured 2 and 4 for sensitive systems; nothing else", () => {
   const { s } = fresh();
-  assert.equal(s.updateTenant({ settings: {} }, { keystrokeDecisionWindows: "6" }).settings.keystrokeDecisionWindows, 6);
+  for (const n of [2, 4, 6, 10, 20]) assert.equal(s.updateTenant({ settings: {} }, { keystrokeDecisionWindows: String(n) }).settings.keystrokeDecisionWindows, n);
   assert.equal(s.updateTenant({ settings: {} }, { keystrokeDecisionWindows: 10 }).settings.keystrokeDecisionWindows, 10);
-  assert.throws(() => s.updateTenant({ settings: {} }, { keystrokeDecisionWindows: 7 }), { code: "bad_setting" });
+  for (const n of [1, 3, 5, 7, 8]) assert.throws(() => s.updateTenant({ settings: {} }, { keystrokeDecisionWindows: n }), { code: "bad_setting" });
 });
 
 test("adaptive samples: 1, 2 or 3 before a retrain, taken from the end or from anywhere, and ca-service is told", () => {

@@ -35,9 +35,14 @@ const RECENT_WINDOW_COUNT = 20;
 // decision_paired.json): a shorter packet gives its first verdict sooner (about 18 s of steady
 // typing at 6 against 42 s at 20) but flags the genuine user more often (FRR at 0.50: 23.6% at 6,
 // 18.8% at 10, 14.8% at 20); impostor capture is about the same. 20 stays the default, and every
-// figure in the paper is for it.
-const DECISION_WINDOW_CHOICES = [6, 10, 20];
+// figure in the paper is for it. 2 and 4 (2026-11-05, the owner's product option for sensitive systems) were
+// NOT measured: the same simple-majority vote (1 of 2, 2 of 4) gives the first verdict after 3 or 5 windows
+// (about 70 or 90 keystrokes) and flags the genuine user more often than 6 does; they are not in the paper.
+const DECISION_WINDOW_CHOICES = [2, 4, 6, 10, 20];
 function decisionWindows(n) { return DECISION_WINDOW_CHOICES.includes(Number(n)) ? Number(n) : RECENT_WINDOW_COUNT; }
+// The typed-text gate for a packet: CHECK_MIN_TEXT_CHARS, unless the packet's first verdict comes sooner than
+// that (packet + 1 windows = WINDOW_SIZE + WINDOW_STRIDE * packet steps): 70 at 2, 80 from 4 up.
+function minTextChars(packet) { return Math.min(CHECK_MIN_TEXT_CHARS, WINDOW_SIZE + WINDOW_STRIDE * decisionWindows(packet)); }
 // Warm-up fast path (server.js): before the first full packet, a check whose scored windows number
 // k >= WARMUP_FAST_MIN_WINDOWS with at least ceil(WARMUP_FAST_FRACTION * k) below 0.50 challenges at
 // once. It was 4 windows; the OWNER chose 8 on 2026-09-26, before the user study, on exploratory
@@ -1136,6 +1141,7 @@ module.exports = {
   PACKET_VOTE_FRACTION,
   WINDOW_DECISION_THRESHOLD,
   CHECK_MIN_TEXT_CHARS,
+  minTextChars,
   analyzeKeystrokeTiming,
   checkRhythmConsistency,
   NEGATIVES_SOURCE,

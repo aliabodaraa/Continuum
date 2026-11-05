@@ -12,13 +12,20 @@ const assert = require("node:assert/strict");
 const appSettings = require("../lib/appSettings");
 const ks = require("../lib/keystrokeSecurity");
 
-test("decision packet: only 6, 10 and 20 windows; anything else means the default 20", () => {
-  for (const n of [6, 10, 20]) assert.equal(ks.decisionWindows(n), n);
-  for (const n of [7, 0, undefined, "abc", null]) assert.equal(ks.decisionWindows(n), 20);
+test("decision packet: 2, 4 (not measured), 6, 10 and 20 windows; anything else means the default 20", () => {
+  for (const n of [2, 4, 6, 10, 20]) assert.equal(ks.decisionWindows(n), n);
+  for (const n of [3, 7, 0, undefined, "abc", null]) assert.equal(ks.decisionWindows(n), 20);
   assert.equal(ks.decisionWindows("10"), 10);
 });
 
+test("the typed-text gate follows the packet: 70 characters for 2 windows, 80 from 4 up and by default", () => {
+  assert.equal(ks.minTextChars(2), 70);
+  for (const n of [4, 6, 10, 20, undefined, 7]) assert.equal(ks.minTextChars(n), 80);
+});
+
 test("the rule version names the packet and the warm-up minimum", () => {
+  assert.equal(ks.ruleVersion(2), "lu-050-1of2-warm8");
+  assert.equal(ks.ruleVersion(4), "lu-050-2of4-warm8");
   assert.equal(ks.ruleVersion(6), "lu-050-3of6-warm8");
   assert.equal(ks.ruleVersion(10), "lu-050-5of10-warm8");
   assert.equal(ks.RULE_VERSION, "lu-050-10of20-warm8");

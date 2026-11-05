@@ -30,7 +30,7 @@ const SETTINGS = [
   { key: "panelLanguage", value: "ar", source: "organisation", envValue: null, builtIn: "auto", operatorDefault: "auto", choices: ["auto", "en", "ar"], range: null, list: false },
   { key: "panelTheme", value: "auto", source: "default", envValue: null, builtIn: "auto", operatorDefault: "auto", choices: ["auto", "light", "dark"], range: null, list: false },
   { key: "keystroke", value: "on", source: "organisation", envValue: null, builtIn: "on", operatorDefault: "on", choices: ["on", "off"], range: null, list: false },
-  { key: "keystrokeDecisionWindows", value: 10, source: "operator", envValue: null, builtIn: 20, operatorDefault: 10, choices: [6, 10, 20], range: null, list: false },
+  { key: "keystrokeDecisionWindows", value: 10, source: "operator", envValue: null, builtIn: 20, operatorDefault: 10, choices: [2, 4, 6, 10, 20], range: null, list: false },
   { key: "pasteAllowance", value: "unlimited", source: "env", envValue: "unlimited", builtIn: "unlimited", operatorDefault: "unlimited", choices: ["0", "1", "2", "3", "5", "unlimited"], range: null, list: false },
   { key: "mouse", value: "on", source: "default", envValue: null, builtIn: "on", operatorDefault: "on", choices: ["on", "off"], range: null, list: false },
   { key: "onboarding", value: "eager", source: "default", envValue: null, builtIn: "eager", operatorDefault: "eager", choices: ["eager", "lazy"], range: null, list: false },

@@ -267,7 +267,7 @@ app.get("/v1/keystroke/config", async (req, res) => {
   res.json({
     windowSize: ks.WINDOW_SIZE,
     windowStride: ks.WINDOW_STRIDE,
-    // The organisation's packet (6, 10 or 20 windows; 20 by default): the first verdict comes once
+    // The organisation's packet (2, 4, 6, 10 or 20 windows; 20 by default): the first verdict comes once
     // there are more windows than this.
     recentWindowCount: ks.decisionWindows(st.keystrokeDecisionWindows),
     // An adaptive sample is this many windows; the last few must each clear the window floor.
@@ -275,7 +275,7 @@ app.get("/v1/keystroke/config", async (req, res) => {
     sampleFloorWindows: ks.SAMPLE_FLOOR_WINDOWS,
     packetVoteFraction: ks.PACKET_VOTE_FRACTION,
     decisionThreshold: ks.WINDOW_DECISION_THRESHOLD,
-    checkMinTextChars: ks.CHECK_MIN_TEXT_CHARS,
+    checkMinTextChars: ks.minTextChars(st.keystrokeDecisionWindows),   // 70 for the 2-window packet, else 80
     adaptiveConfidenceMin: ADAPTIVE_CONFIDENCE_MIN,
     // Accepted samples before a retrain (1, 2 or 3; the organisation's setting).
     adaptiveRetrainEvery: st.adaptiveRetrainEvery,
@@ -416,7 +416,7 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
     // More pastes into one field than the organisation allows: judged whatever was typed, because the clients
     // send a check at every paste and a paste that no typing follows must still be caught.
     const pasteViolation = ks.pastePolicyViolation(keystrokeEvents, appCfg.pasteAllowance);
-    if (!pasteViolation && (!Number.isFinite(typedLength) || typedLength < ks.CHECK_MIN_TEXT_CHARS)) {
+    if (!pasteViolation && (!Number.isFinite(typedLength) || typedLength < ks.minTextChars(packetWindows))) {
       return res.json({ ok: true, checked: false, message: "More typed text is required before rhythm verification" });
     }
     const checkQuality = ks.typingQuality(textContent, keystrokeEvents, Number.isFinite(typedLength) ? typedLength : 0);
