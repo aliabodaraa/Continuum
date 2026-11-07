@@ -1,0 +1,101 @@
+{
+ "account": "ali = 739935229538144",
+ "model": "final_model-20261024T234408Z-63b414",
+ "participants": 99,
+ "windows": 52234,
+ "segmentWindows": 60,
+ "impostorWindowsAccepted": 3.9,
+ "packets": {
+  "2": {
+   "attempts": 816,
+   "caught": 816,
+   "caughtShare": 100.0,
+   "caughtByKeys": {
+    "100": 98.8,
+    "150": 99.8,
+    "250": 100.0,
+    "400": 100.0,
+    "600": 100.0
+   },
+   "meanKeysToCatch": 72.0,
+   "medianKeysToCatch": 71.0,
+   "medianSecondsToCatch": 11.9,
+   "peopleCaughtInEverySegment": 99,
+   "peopleNeverCaught": 0,
+   "people": 99
+  },
+  "4": {
+   "attempts": 816,
+   "caught": 816,
+   "caughtShare": 100.0,
+   "caughtByKeys": {
+    "100": 97.2,
+    "150": 98.9,
+    "250": 100.0,
+    "400": 100.0,
+    "600": 100.0
+   },
+   "meanKeysToCatch": 92.0,
+   "medianKeysToCatch": 91.0,
+   "medianSecondsToCatch": 15.2,
+   "peopleCaughtInEverySegment": 99,
+   "peopleNeverCaught": 0,
+   "people": 99
+  },
+  "6": {
+   "attempts": 816,
+   "caught": 816,
+   "caughtShare": 100.0,
+   "caughtByKeys": {
+    "100": 0.0,
+    "150": 98.5,
+    "250": 99.6,
+    "400": 100.0,
+    "600": 100.0
+   },
+   "meanKeysToCatch": 113.0,
+   "medianKeysToCatch": 111.0,
+   "medianSecondsToCatch": 18.6,
+   "peopleCaughtInEverySegment": 99,
+   "peopleNeverCaught": 0,
+   "people": 99
+  },
+  "10": {
+   "attempts": 816,
+   "caught": 816,
+   "caughtShare": 100.0,
+   "caughtByKeys": {
+    "100": 0.0,
+    "150": 94.5,
+    "250": 99.4,
+    "400": 100.0,
+    "600": 100.0
+   },
+   "meanKeysToCatch": 124.0,
+   "medianKeysToCatch": 121.0,
+   "medianSecondsToCatch": 20.2,
+   "peopleCaughtInEverySegment": 99,
+   "peopleNeverCaught": 0,
+   "people": 99
+  },
+  "20": {
+   "attempts": 816,
+   "caught": 815,
+   "caughtShare": 99.9,
+   "caughtByKeys": {
+    "100": 0.0,
+    "150": 94.5,
+    "250": 96.8,
+    "400": 99.8,
+    "600": 99.8
+   },
+   "meanKeysToCatch": 128.0,
+   "medianKeysToCatch": 121.0,
+   "medianSecondsToCatch": 20.2,
+   "peopleCaughtInEverySegment": 98,
+   "peopleNeverCaught": 0,
+   "people": 99
+  }
+ },
+ "seconds": 4.7
+}
