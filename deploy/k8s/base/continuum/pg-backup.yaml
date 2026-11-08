@@ -121,6 +121,14 @@ data:
     slot="day-$(date -u +%d)"
     printf '%s %s\n' "$stamp" "$slot" > INFO
     export PGHOST PGPORT PGSSLMODE=prefer
+    # A run that starts while this PC wakes up can find PostgreSQL not yet answering (2026-11-07: "Connection
+    # refused" on the first attempt): wait for it, up to two minutes, as upload.py waits for the object store.
+    for _ in $(seq 1 24); do
+      pg_isready -q && break
+      echo "PostgreSQL is not answering yet; waiting"
+      sleep 5
+    done
+    pg_isready -q || { echo "PostgreSQL did not answer within two minutes"; exit 1; }
     for db in gateway ca passkey; do
       u="${db^^}_USER"; p="${db^^}_PASSWORD"
       export PGUSER="${!u}" PGPASSWORD="${!p}" PGDATABASE="$db"
