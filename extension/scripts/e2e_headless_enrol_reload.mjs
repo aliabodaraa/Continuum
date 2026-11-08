@@ -58,7 +58,9 @@ const waitFor = async (s, expr, ms) => { const t0 = Date.now(); while (Date.now(
 const SH = "document.getElementById('continuum-guard-host') && document.getElementById('continuum-guard-host').shadowRoot";
 const WIZ = `(() => { const r = ${SH}; return r ? [...r.querySelectorAll('.ov')].find((o) => o.style.display === 'flex') || null : null; })()`;
 const wizTitle = `(() => { const o = ${WIZ}; const t = o && o.querySelector('.t'); return t ? t.textContent : ''; })()`;
-const ksRow = `(() => { const r = ${SH}; if (!r) return ''; const e = [...r.querySelectorAll('*')].find((x) => x.children.length === 0 && /^keystroke:/.test(x.textContent || '')); return e ? e.textContent : ''; })()`;
+// The typing row's status. Since the panel redesign (2026-11-04) the status is a .st element whose first child is a
+// screen-reader prefix span ("keystroke: ") followed by the text; the older panel had one leaf "keystroke: ...".
+const ksRow = `(() => { const r = ${SH}; if (!r) return ''; const st = [...r.querySelectorAll('.st')].find((x) => /^keystroke:/.test(x.textContent || '')); if (st) return st.textContent; const e = [...r.querySelectorAll('*')].find((x) => x.children.length === 0 && /^keystroke:/.test(x.textContent || '')); return e ? e.textContent : ''; })()`;
 
 try {
   // ---- a throwaway participant of the study tenant, 4 typing samples already on file ----
@@ -90,7 +92,7 @@ try {
   // passkey step, then the typing step at sample 5 / 5
   ok("the SDK opens its enrolment, passkey first", await waitFor(s, `${wizTitle}.includes('passkey')`, 20000), await ev(s, wizTitle));
   await ev(s, `${WIZ}.querySelector('#cw').click()`);
-  ok("…then typing, continuing at sample 5 of 5", await waitFor(s, `/typing/i.test(${wizTitle}) && /5 \\/ 5/.test((${WIZ} || {}).textContent)`, 20000), await ev(s, wizTitle));
+  ok("…then typing, continuing at sample 5 of 5", await waitFor(s, `/typing/i.test(${wizTitle}) && /5 (\\/|of) 5/.test((${WIZ} || {}).textContent)`, 20000), await ev(s, wizTitle));
 
   // type the passage (about 130 keys) into the wizard's box
   await ev(s, `${WIZ}.querySelector('#cta').focus()`);
