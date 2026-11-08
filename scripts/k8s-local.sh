@@ -7,7 +7,7 @@
 #   scripts/k8s-local.sh platform        once: metrics-server, CloudNativePG, Envoy Gateway (deploy/platform)
 #   scripts/k8s-local.sh secrets         once: this cluster's secrets in deploy/k8s/overlays/local/secrets/
 #                                        (git-ignored; random, except the operator key, taken from .env)
-#   scripts/k8s-local.sh build           the six images, tagged :local
+#   scripts/k8s-local.sh build           the six images from a clean worktree of HEAD, tagged :local and :<commit>
 #   scripts/k8s-local.sh deploy          apply the overlay and wait until everything is ready
 #   scripts/k8s-local.sh up              build, deploy, and restart the pods on the new images
 #   scripts/k8s-local.sh seed-ca <file>  copy a ca-service SQLite file into the cluster's database ca
@@ -80,16 +80,54 @@ EOF
   echo "secrets written to $SECRETS (git-ignored)"
 }
 
+# The images are built from a clean worktree of the current commit (2026-11-08), tagged :local and :<commit>, and
+# labelled with it (org.opencontainers.image.revision): the running code is always a commit, uncommitted edits never
+# reach the cluster by accident, and an older :<commit> tag is an undo (docker tag it :local, restart the deployment).
+# The model image's data files, which git does not hold, are copied in after their pinned SHA-256 is checked
+# (scripts/lib/model-inputs.sh). BUILD_FROM=working builds the working tree as it is instead, labelled
+# <commit>-dirty when files under the build contexts differ from the commit.
 build() {
-  say "building the images (:local)"
-  docker build -q -t continuum/gateway:local --build-context sdk=./sdk services/gateway
-  docker build -q -t continuum/ca-service:local services/ca-service
-  docker build -q -t continuum/passkey-service:local services/passkey-service
-  docker build -q -t continuum/web-demo:local --build-context sdk=./sdk apps/demo
-  docker build -q -t continuum/acme:local apps/acme
-  docker build -q -t continuum/model-api:local -f services/model-api/Dockerfile.model.prod .
+  local here rev dirty src
+  here=$(pwd)
+  source scripts/lib/model-inputs.sh
+  rev=$(git rev-parse --short=12 HEAD)
+  dirty=$(git status --porcelain --untracked-files=no -- services apps sdk artifacts)
+  if [ "${BUILD_FROM:-commit}" = working ]; then
+    src=.
+    if [ -n "$dirty" ]; then
+      rev="$rev-dirty"
+      echo "WARNING: building the working tree: these uncommitted changes go into the images:" >&2
+      echo "$dirty" | sed 's/^/   /' >&2
+    fi
+  else
+    src=$(mktemp -d "${TMPDIR:-/tmp}/continuum-build-XXXXXX")
+    git worktree add -q --detach "$src" HEAD
+    model_inputs_copy . "$src"
+    if [ -n "$dirty" ]; then
+      echo "note: building commit $rev; these uncommitted changes are NOT in the images (BUILD_FROM=working includes them):" >&2
+      echo "$dirty" | sed 's/^/   /' >&2
+    fi
+  fi
+  drop_src() { [ "$src" = . ] || (cd "$here" && git worktree remove --force "$src"); }
+  if ! model_inputs_check "$src"; then
+    echo "build refused: the model image's data files above are missing or changed; restore them with" \
+      "scripts/k8s-restore.sh <backup> --build-inputs" >&2
+    drop_src; exit 1
+  fi
+  say "building the images (:local and :$rev) from $([ "$src" = . ] && echo "the working tree" || echo "commit $rev")"
+  local L="--label org.opencontainers.image.revision=$rev"
+  if ! (cd "$src" &&
+    docker build -q $L -t continuum/gateway:local -t "continuum/gateway:$rev" --build-context sdk=./sdk services/gateway &&
+    docker build -q $L -t continuum/ca-service:local -t "continuum/ca-service:$rev" services/ca-service &&
+    docker build -q $L -t continuum/passkey-service:local -t "continuum/passkey-service:$rev" services/passkey-service &&
+    docker build -q $L -t continuum/web-demo:local -t "continuum/web-demo:$rev" --build-context sdk=./sdk apps/demo &&
+    docker build -q $L -t continuum/acme:local -t "continuum/acme:$rev" apps/acme &&
+    docker build -q $L -t continuum/model-api:local -t "continuum/model-api:$rev" -f services/model-api/Dockerfile.model.prod .); then
+    drop_src; echo "build failed: see above" >&2; exit 1
+  fi
+  drop_src
   # No image may carry secrets, databases or backups (scripts/lib/scan-image.sh).
-  source "$(dirname "${BASH_SOURCE[0]}")/lib/scan-image.sh"
+  source scripts/lib/scan-image.sh
   scan_image continuum/gateway:local continuum/ca-service:local continuum/passkey-service:local \
     continuum/web-demo:local continuum/acme:local continuum/model-api:local || { echo "build refused: see above" >&2; exit 1; }
 }

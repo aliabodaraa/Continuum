@@ -12,9 +12,11 @@ spec:
   primaryUpdateStrategy: unsupervised
   storage:
     size: 5Gi
+  # Requests equal to limits (Guaranteed): under memory pressure the kernel kills PostgreSQL last (2026-11-08). With a
+  # request below its use it was among the first, before the PC's containers outside the cluster, which have no limits.
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits: { memory: 1Gi }
+    requests: { cpu: "1", memory: 1Gi }
+    limits: { cpu: "1", memory: 1Gi }
   postgresql:
     pg_hba:
       - host gateway gateway all scram-sha-256

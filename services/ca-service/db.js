@@ -118,9 +118,12 @@ const INDEXES = [
   // service enqueueing the same work at once still make one job.
   "CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_pending ON training_jobs(user_id, modality) WHERE state IN ('queued', 'running')",
 ];
-// Columns added after their table first existed (SQLite files made before them get them on open).
+// Columns added after their table first existed: a database made before them gets them on open, SQLite and
+// PostgreSQL alike (PostgreSQL only since 2026-11-08: until then the first new column would have passed every test
+// and failed on the live database with a 500). Types are TABLES' tokens, so an older database ends up with the same
+// shape as a new one.
 const ADDED_COLUMNS = [
-  ["keystroke_texts", "text_hash", "TEXT"], ["keystroke_texts", "char_count", "INTEGER"],
+  ["keystroke_texts", "text_hash", "TEXT"], ["keystroke_texts", "char_count", "INT"],
   ["mouse_profiles", "threshold", "REAL"], ["mouse_profiles", "feature_version", "TEXT"],
   ["mouse_profiles", "enrol_percentiles", "TEXT"], ["mouse_profiles", "loso_percentiles", "TEXT"],
   ["mouse_profiles", "decision_version", "TEXT"],
@@ -133,6 +136,7 @@ const SQL_TYPES = {
   postgres: { ID: "bigserial PRIMARY KEY", USERID: "bigint", BIGINTEGER: "bigint", INT: "bigint", REAL: "double precision",
     NOWTEXT: "text DEFAULT to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS')" },
 };
+const columnType = (kind, decl) => SQL_TYPES[kind][decl] || decl;   // INT, REAL... in this backend; TEXT as it is
 function createTableSql(kind, name, cols) {
   const t = SQL_TYPES[kind];
   const body = cols.replace(/--[^\n]*\n/g, "\n").replace(/\b(ID|USERID|BIGINTEGER|INT|REAL|NOWTEXT)\b/g, (m) => t[m]);
@@ -151,7 +155,7 @@ function sqliteBackend(file) {
   // shape as a new one.
   for (const [name, col, decl] of ADDED_COLUMNS) {
     const have = s.prepare(`PRAGMA table_info(${name})`).all().map((c) => c.name);
-    if (have.length && !have.includes(col)) s.exec(`ALTER TABLE ${name} ADD COLUMN ${col} ${decl}`);
+    if (have.length && !have.includes(col)) s.exec(`ALTER TABLE ${name} ADD COLUMN ${col} ${columnType("sqlite", decl)}`);
   }
   for (const ix of INDEXES) {
     try { s.exec(ix); } catch (e) { console.error(`[db] ${ix.split(" ON ")[0]}: ${e.message}`); }
@@ -231,6 +235,17 @@ async function postgresBackend(url) {
     await c.query("BEGIN");
     await c.query("SELECT pg_advisory_xact_lock(4100417)");   // copies starting together create the schema once
     for (const [name, cols] of TABLES) await c.query(createTableSql("postgres", name, cols));
+    // The columns a table made before them lacks. Only those are altered: ALTER TABLE locks the table even when the
+    // column is already there, which would stall the other copy's requests at every start. A missing column that
+    // cannot get its lock within 15 s fails the start (and the next start tries again).
+    const have = new Set((await c.query(
+      "SELECT table_name || '.' || column_name AS k FROM information_schema.columns WHERE table_schema = current_schema()")).rows.map((r) => r.k));
+    const missing = ADDED_COLUMNS.filter(([name, col]) => !have.has(`${name}.${col}`));
+    if (missing.length) await c.query("SET LOCAL lock_timeout = '15s'");
+    for (const [name, col, decl] of missing) {
+      await c.query(`ALTER TABLE ${name} ADD COLUMN IF NOT EXISTS ${col} ${columnType("postgres", decl)}`);
+      console.log(`[db] added column ${name}.${col}`);
+    }
     for (const ix of INDEXES) await c.query(ix);
     await c.query("COMMIT");
   } catch (e) { await c.query("ROLLBACK").catch(() => {}); throw e; } finally { c.release(); }

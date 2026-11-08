@@ -49,3 +49,6 @@ services/model-api/analysis/phase4/*.py -text
 artifacts/phase4/*.json -text
 artifacts/phase4/parts/*.json -text
 artifacts/phase4/smoke/*.json -text
+
+# The pinned SHA-256 of the model image's data files (scripts/lib/model-inputs.sh), read with LF on every platform.
+data/MODEL_IMAGE_INPUTS.sha256 text eol=lf

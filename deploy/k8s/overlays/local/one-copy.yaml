@@ -24,8 +24,10 @@ spec:
     spec:
       containers:
         - name: model
+          # its use with the base models loaded is about 2.1 GB (2026-11-08): a request below that made it the
+          # first pod the node evicts under memory pressure, and it scores every check
           resources:
-            requests: { cpu: 100m, memory: 768Mi }
+            requests: { cpu: 100m, memory: 2Gi }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -58,3 +60,40 @@ kind: Cluster
 metadata: { name: continuum-pg, namespace: continuum }
 spec:
   storage: { size: 2Gi }
+  # One instance: the operator's disruption budget on it allowed no disruption, so `kubectl drain` never finished.
+  enablePDB: false
+---
+# One copy each: "at least one available" allowed no disruption, so `kubectl drain` never finished (2026-11-08). With
+# a second copy (the autoscalers add one under load) one at a time may still go.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: gateway, namespace: continuum }
+spec: { minAvailable: null, maxUnavailable: 1 }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: ca-service, namespace: continuum }
+spec: { minAvailable: null, maxUnavailable: 1 }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: passkey-service, namespace: continuum }
+spec: { minAvailable: null, maxUnavailable: 1 }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: model-inference, namespace: continuum }
+spec: { minAvailable: null, maxUnavailable: 1 }
+---
+# The model store: its use is about 0.7 GB with this PC's models (2026-11-08); a 128 Mi request made it an early
+# eviction under memory pressure.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: seaweedfs, namespace: continuum-storage }
+spec:
+  template:
+    spec:
+      containers:
+        - name: seaweedfs
+          resources:
+            requests: { cpu: 50m, memory: 768Mi }

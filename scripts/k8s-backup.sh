@@ -16,6 +16,8 @@
 #   demo/uploads/             the demo's uploaded files
 #   models/users/...          every per-user model in the object store, each checked against its fingerprint
 #                             on the way out; models/models.json lists them with their fingerprints
+#   build-inputs/data/...     the model image's data files, which git does not hold (pinned in
+#                             data/MODEL_IMAGE_INPUTS.sha256): without them the model image cannot be rebuilt
 #   secrets/                  deploy/k8s/overlays/local/secrets: every secret and both signing keys (lose them
 #                             and every organisation's verification breaks)
 #   .env, paper/              as data-export.sh: the operator key's source, and ../paper (no git repository
@@ -79,6 +81,16 @@ k -n continuum exec deploy/model-trainer -- python model_store.py export-all "/t
 mkdir -p "$STAGE/models"
 k -n continuum exec deploy/model-trainer -- tar -cf - -C "/tmp/backup-models-$TS" . | tar -xf - -C "$STAGE/models"
 k -n continuum exec deploy/model-trainer -- rm -rf "/tmp/backup-models-$TS"
+
+say "the model image's data files (git does not hold them)"
+. scripts/lib/model-inputs.sh
+mkdir -p "$STAGE/build-inputs"
+model_inputs_copy . "$STAGE/build-inputs"
+if model_inputs_check "$STAGE/build-inputs"; then
+  echo "   build-inputs/ ($(model_inputs_files | wc -l) files, $(du -sh "$STAGE/build-inputs" | cut -f1)), each the pinned file"
+else
+  echo "   WARNING: not each of them is here as pinned (above); the backup holds what there is"
+fi
 
 say "secrets, .env, paper sources"
 cp -rp deploy/k8s/overlays/local/secrets "$STAGE/secrets" && echo "   secrets/ ($(ls "$STAGE/secrets" | wc -l) files)"

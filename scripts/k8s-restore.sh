@@ -14,6 +14,9 @@
 #   scripts/k8s-restore.sh <backup> --secrets        a new PC: the backup's secrets into
 #                                                    deploy/k8s/overlays/local/secrets (before k8s-local.sh deploy)
 #   scripts/k8s-restore.sh <backup> --paper-to <dir> the manuscript sources (paper/) into an empty folder
+#   scripts/k8s-restore.sh <backup> --build-inputs   the model image's data files, which git does not hold, into
+#                                                    data/ after their pinned SHA-256 is checked (a file that is
+#                                                    there and differs is set aside), before k8s-local.sh build
 #
 # An encrypted backup needs BACKUP_PASSPHRASE. While the databases are replaced, the services that write
 # them (gateway, ca-service, passkey-service, the demo) are stopped, and started again afterwards with as many
@@ -21,7 +24,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/k8s.sh
-ARCHIVE="${1:?usage: $0 <backup.tgz[.enc]> --verify-only | --restore [--yes] | --secrets | --paper-to <dir>}"
+ARCHIVE="${1:?usage: $0 <backup.tgz[.enc]> --verify-only | --restore [--yes] | --secrets | --paper-to <dir> | --build-inputs}"
 shift
 MODE=""; YES=0; PAPER_TO=""
 while [ $# -gt 0 ]; do
@@ -30,12 +33,13 @@ while [ $# -gt 0 ]; do
     --restore) MODE=restore ;;
     --secrets) MODE=secrets ;;
     --paper-to) MODE=paper; PAPER_TO=${2:?--paper-to needs a folder}; shift ;;
+    --build-inputs) MODE=inputs ;;
     --yes) YES=1 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
 done
-[ -n "$MODE" ] || { echo "say what to do: --verify-only, --restore, --secrets or --paper-to <dir>" >&2; exit 2; }
+[ -n "$MODE" ] || { echo "say what to do: --verify-only, --restore, --secrets, --paper-to <dir> or --build-inputs" >&2; exit 2; }
 [ -f "$ARCHIVE" ] || { echo "ERROR: $ARCHIVE not found" >&2; exit 1; }
 command -v cygpath >/dev/null && ARCHIVE=$(cygpath -u "$ARCHIVE")
 
@@ -74,6 +78,25 @@ if [ "$MODE" = paper ]; then
   [ ! -e "$PAPER_TO" ] || [ -z "$(ls -A "$PAPER_TO")" ] || { echo "ERROR: $PAPER_TO is not empty" >&2; exit 1; }
   mkdir -p "$PAPER_TO" && cp -rp "$WORK/paper/." "$PAPER_TO/" && echo "paper sources restored into $PAPER_TO"
   exit 0
+fi
+. scripts/lib/model-inputs.sh
+if [ "$MODE" = inputs ]; then
+  [ -d "$WORK/build-inputs" ] || { echo "ERROR: this backup has no build-inputs/ (backups made before 2026-11-08 do not)" >&2; exit 1; }
+  model_inputs_check "$WORK/build-inputs" || { echo "ERROR: the backup's copies are not the pinned files (above): nothing restored" >&2; exit 1; }
+  while read -r f; do
+    if [ -f "$f" ] && cmp -s "$f" "$WORK/build-inputs/$f"; then echo "   $f: already the pinned file"; continue; fi
+    if [ -f "$f" ]; then mv "$f" "$f.before-restore-$TS"; echo "   $f: the file that was there is now $f.before-restore-$TS"; fi
+    mkdir -p "$(dirname "$f")" && cp -p "$WORK/build-inputs/$f" "$f" && echo "   $f: restored"
+  done < <(model_inputs_files)
+  model_inputs_check . && echo "the model image's data files are in place; next: scripts/k8s-local.sh build"
+  exit 0
+fi
+# the drill reports on them too; backups made before 2026-11-08 hold none
+if [ -d "$WORK/build-inputs" ]; then
+  if model_inputs_check "$WORK/build-inputs"; then echo "build-inputs: the model image's data files, each the pinned file"
+  else echo "build-inputs: NOT each the pinned file (above): --build-inputs would refuse them"; fi
+else
+  echo "build-inputs: none in this backup (made before 2026-11-08)"
 fi
 
 # ---- the drill: each database into a throwaway PostgreSQL, compared with its checksums

@@ -35,7 +35,21 @@ export CA_SIGNING_SECRET="${CA_SIGNING_SECRET:-build-time-placeholder}"
 export SESSION_SECRET="${SESSION_SECRET:-build-time-placeholder}"
 export GATEWAY_SESSION_SECRET="${GATEWAY_SESSION_SECRET:-build-time-placeholder}"
 
-echo ">> Publishing Continuum images to ${REGISTRY} at tag ${TAG}"
+# What is published is a commit (2026-11-08): nothing is built while files under the build contexts differ from it
+# (ALLOW_DIRTY=1 publishes them anyway), and the model image's data files, which git does not hold, must be the
+# pinned ones (scripts/lib/model-inputs.sh).
+REV=$(git rev-parse --short=12 HEAD)
+DIRTY=$(git status --porcelain --untracked-files=no -- services apps sdk artifacts)
+if [ -n "$DIRTY" ] && [ "${ALLOW_DIRTY:-0}" != 1 ]; then
+  echo "ERROR: these files differ from commit ${REV} and would be published as they are:" >&2
+  echo "$DIRTY" | sed 's/^/   /' >&2
+  echo "  commit or stash them first, or set ALLOW_DIRTY=1 to publish them anyway." >&2
+  exit 1
+fi
+source "$(dirname "$0")/lib/model-inputs.sh"
+model_inputs_check . || { echo "ERROR: the model image's data files above are missing or changed: nothing published." >&2; exit 1; }
+
+echo ">> Publishing Continuum images to ${REGISTRY} at tag ${TAG} (commit ${REV}${DIRTY:+, with uncommitted changes})"
 
 # 1) The product bundle: model-api, ca-service, passkey-service, gateway.
 echo ">> Building bundle images…"
