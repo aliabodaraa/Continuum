@@ -59,10 +59,13 @@ router.post("/use-sample", requireAuth, async (req, res, next) => {
 // runs the ceremony first, but the gate is enforced here because the client cannot be trusted
 // to have done so.
 router.post("/reset", requireAuth, requireFreshPasskey, async (req, res, next) => {
+  // Continuum checks the same thing on its side: the step-up token from that verification, used once.
+  const stepUpToken = req.session.stepUpToken;
+  delete req.session.stepUpToken;
   try {
     // ca-service clears the persisted streak as part of the reset — any in-flight strike
     // history refers to a model that no longer exists (see lib/mouse.js resetMouseProfile).
-    const r = await ca.mouseReset(req.session.userId);
+    const r = await ca.mouseReset(req.session.userId, stepUpToken);
     res.status(r.status).json(r.data);
   } catch (e) { next(e); }
 });

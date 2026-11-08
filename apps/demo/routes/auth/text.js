@@ -68,7 +68,10 @@ router.post("/adaptive-retrain", requireAuth, requireFreshPasskey, async (req, r
 // precisely what an impostor at an unlocked machine would do, since it lets them re-enroll as
 // themselves. requireUnlockedSession alone only checked that a passkey EXISTS.
 router.post("/typing-reset", requireAuth, requireUnlockedSession, requireFreshPasskey, async (req, res, next) => {
-  try { passthrough(res, await ca.keystrokeReset(req.session.userId)); } catch (e) { next(e); }
+  // Continuum checks the same thing on its side: the step-up token from that verification, used once.
+  const stepUpToken = req.session.stepUpToken;
+  delete req.session.stepUpToken;
+  try { passthrough(res, await ca.keystrokeReset(req.session.userId, stepUpToken)); } catch (e) { next(e); }
 });
 
 router.post("/typing-retrain", requireAuth, async (req, res, next) => {

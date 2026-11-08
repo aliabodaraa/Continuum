@@ -1293,8 +1293,34 @@
           setLoading(btn, false, "Register Passkey");
         }
       }
+      // Deleting passkeys needs the current passkey, verified moments ago (the server checks it): verify it first.
+      async function verifyCurrentPasskey() {
+        const { userId } = await fetch("/api/auth/me").then((r) => r.json());
+        const optRes = await fetch("/api/webauthn/auth/options", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId }),
+        });
+        const options = await optRes.json();
+        if (!optRes.ok) throw new Error(options.error || "Could not start verification");
+        const assertion =
+          await getSimpleWebAuthnBrowser().startAuthentication(options);
+        const verRes = await fetch("/api/webauthn/auth/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, challengeId: options.challengeId, assertion }),
+        });
+        const verData = await verRes.json();
+        if (!verRes.ok) throw new Error(verData.error || "Verification failed");
+      }
       async function replacePasskey() {
-        if (!confirm("Replace the stored passkey for this account?")) return;
+        if (!confirm("Replace the stored passkey for this account? You will verify the current one first.")) return;
+        try {
+          await verifyCurrentPasskey();
+        } catch (err) {
+          showPasskeyError("Verification failed: " + formatPasskeyError(err));
+          return;
+        }
         const res = await fetch("/api/webauthn/register/reset", {
           method: "POST",
         });
@@ -1308,13 +1334,14 @@
       async function resetPasskeys() {
         if (
           !confirm(
-            "Delete all passkey registrations? The account will be locked until a new passkey is registered.",
+            "Delete all passkey registrations? You will verify your current passkey first. The account will be locked until a new passkey is registered.",
           )
         )
           return;
         const btn = document.getElementById("resetPasskeyBtn");
         setLoading(btn, true, "Resetting…");
         try {
+          await verifyCurrentPasskey();
           const res = await fetch("/api/webauthn/register/reset", {
             method: "POST",
           });

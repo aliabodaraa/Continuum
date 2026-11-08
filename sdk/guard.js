@@ -618,9 +618,10 @@
 
   // A bare passkey ceremony for authorising a DESTRUCTIVE action (profile reset). Deliberately
   // separate from stepUp(): that one is bound to the lock modal's UI and also resets the
-  // trackers/counters to resume monitoring, none of which applies here. Returns true only on a
-  // verified assertion. The server re-checks freshness independently (middleware/
-  // requireFreshPasskey) — this call exists to PROMPT the user, not to be the authorisation.
+  // trackers/counters to resume monitoring, none of which applies here. Resolves to the verified
+  // answer only on a verified assertion. The server re-checks independently: the demo's backend its
+  // fresh verification (middleware/requireFreshPasskey), the gateway the step-up token this answer
+  // carries (2 minutes, once). This call exists to PROMPT the user, not to be the authorisation.
   async function verifyPasskeyForAction() {
     var W = webauthn(), opt, ver;
     if (MODE === "gateway") {
@@ -636,7 +637,7 @@
       ver = await reqJson("/api/webauthn/auth/complete", "POST", { userId: me.userId, challengeId: opt.d.challengeId, assertion: as2 });
     }
     if (!ver.ok) throw new Error((ver.d && ver.d.error) || t("Verification failed"));
-    return true;
+    return ver.d || {};
   }
 
   // Shared by both training popups. Order matters: confirm, then verify, then delete — the
@@ -647,8 +648,9 @@
     if (!(await confirmBox(ask, "This cannot be undone: you will need to train again from scratch. You will be asked for your passkey to confirm.", "Delete"))) return;
     errEl.style.display = "none";
     try {
-      await verifyPasskeyForAction();
-      var r = await reqJson(kind === "mouse" ? EP.mouseReset : EP.ksReset, "POST", {});
+      var verified = await verifyPasskeyForAction();
+      // Gateway mode: the gateway deletes a profile only with the step-up token of that verification.
+      var r = await reqJson(kind === "mouse" ? EP.mouseReset : EP.ksReset, "POST", MODE === "gateway" ? { stepUpToken: verified.stepUpToken } : {});
       if (!r.ok) throw new Error((r.d && r.d.error) || t("Reset failed"));
       if (onDone) onDone(r.d);
     } catch (err) {

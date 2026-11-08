@@ -496,7 +496,11 @@ Implementation details:
   own assertion and keys (ca-service's operator routes are not reachable). Checks return a signed
   `riskToken` and push risk changes (CAEP); passkey calls are limited to the organisation's own websites;
   adaptive retraining needs a `stepUpToken` from a passkey verified through Continuum within 2 minutes,
-  used once. Policy (locks, gates) stays with the tenant's backend. The demo app is the reference: its
+  used once. Since 2026-11-08 so do a profile reset and a second passkey, here and on the SDK routes: on a
+  session alone an impostor at an open session, even a locked one, could register his own passkey and pass
+  every step-up, or delete the owner's profile and enrol his own behaviour. Removing a user's passkeys
+  (`passkey/reset`) is account recovery and stays with the organisation. Policy (locks, gates) stays with
+  the tenant's backend. The demo app is the reference: its
   backend uses this API only (`apps/demo/services/continuumApi.js`), has no address or key for an
   internal service, and sits on `edge` only; `docker-compose.prod.yml` is now the bundle plus the demo as
   a tenant. Its passkeys, once stored under the demo's own user numbers, move to the Continuum ids with

@@ -369,12 +369,11 @@ try {
 } finally {
   // ---- cleanup: the test participant's study rows and server enrolments; Chrome; temp files ----
   try {
-    if (token) {
-      for (const p of ["/v1/sdk/keystroke/reset", "/v1/sdk/mouse/reset"]) {
-        const r = await gw(p);
-        if (r.status !== 200) check(`cleanup: ${p}`, false, `HTTP ${r.status}`);
-      }
-    }
+    // The participant's profiles, through ca-service's own reset code inside its container: the gateway's reset
+    // routes need a passkey verified moments ago (a step-up token, 2026-11-08), which a cleanup cannot give.
+    if (userId) caNode(`const ks=require('/app/lib/keystrokeSecurity'),mouse=require('/app/lib/mouse');
+      await db.run('UPDATE keystroke_texts SET is_training = 0 WHERE user_id = ?', ${userId});
+      await ks.resetUserTypingProfile(${userId}, db); await mouse.resetMouseProfile(${userId}); console.log('profiles reset')`);
     // a server lock left by an interrupted run would outlive the test user's reset
     if (userId) caNode(`await db.run('DELETE FROM session_locks WHERE user_id=?', ${userId}); console.log('lock cleared')`);
     // the test passkey, cleared from inside the gateway container (its service key stays there)

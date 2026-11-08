@@ -8,6 +8,7 @@ const express = require("express");
 const db = require("../db/init");
 const passkey = require("../services/passkeyClient");
 const ca = require("../services/caClient");
+const { requireFreshPasskey } = require("../middleware/requireFreshPasskey");
 
 const router = express.Router();
 
@@ -20,11 +21,12 @@ router.post("/register/options", async (req, res) => {
   try {
     if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
     const user = getUser(req.session.userId);
+    // Continuum starts a registration only for the account's first passkey (another one needs a step-up token).
     const options = await passkey.registerOptions(user.id, user.username);
     res.json(options);
   } catch (err) {
     console.error("Register options error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(err.status === 403 || err.status === 503 ? err.status : 500).json({ error: err.message });
   }
 });
 
@@ -45,7 +47,10 @@ router.post("/register/complete", async (req, res) => {
   }
 });
 
-router.post("/register/reset", async (req, res) => {
+// Removes every passkey and clears the lock, so it needs a passkey verified moments ago (requireFreshPasskey): on a
+// session alone, an impostor at an open or locked session could delete the owner's passkey, unlock, and register his
+// own. A user who lost the passkey cannot pass this; that recovery is the operator's.
+router.post("/register/reset", requireFreshPasskey, async (req, res) => {
   try {
     if (!req.session.userId) return res.status(401).json({ error: "Not authenticated" });
     await passkey.reset(req.session.userId);

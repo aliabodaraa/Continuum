@@ -229,8 +229,11 @@ Passkeys: `GET passkey/status`, `POST passkey/reset | passkey/register/options |
 passkey/register/complete | passkey/auth/options | passkey/auth/complete` — each passkey call names
 `origin`, which must be one of the organisation's registered websites (the passkey's relying party).
 Checks come back with a signed `riskToken` and push risk changes to the organisation's webhook.
-`keystroke/adaptive/confirm` needs `stepUpToken`, returned by `passkey/auth/complete`: proof of a
-passkey verified through Continuum in the last 2 minutes, valid once. The app's backend never needs an
+`keystroke/adaptive/confirm`, `keystroke/reset`, `mouse/reset`, and `passkey/register/options` for a user
+who already has a passkey, need `stepUpToken`, returned by `passkey/auth/complete`: proof of a passkey
+verified through Continuum in the last 2 minutes, valid once (one verification per action; the SDK's own
+routes ask the same). `passkey/reset` is account recovery and stays with the organisation: call it only
+after your own identity proofing, never on a session alone. The app's backend never needs an
 address or key for an internal service; in the stacks it has none (it sits only on the `edge` network).
 The `aud` is required: the identity tokens an app gives its users' browsers for the SDK
 (`/continuum/identity`) have none, so a browser — or an impostor at an unlocked session — cannot use one

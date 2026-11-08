@@ -1261,6 +1261,46 @@ function auth(req, res, next) {
   req.uid = pl.sub; req.uname = pl.uname; req.tenant = tenant; req.tenantKey = pl.sk; req.esub = extSubject(pl.ext); next();
 }
 
+// ---- changes to what proves the user (2026-11-08) ----
+// Adding a passkey to an account that already has one, and deleting a typing or mouse profile, change the very evidence a
+// step-up rests on. On a session alone, an impostor at an open session, even a locked one, could register a passkey of his
+// own and pass every step-up with it, or delete the owner's profile and enrol his own behaviour. So both need a step-up
+// token: proof of the user's passkey, verified through this gateway in the last 2 minutes, for this user, used once (as
+// adaptive retraining already did). ca-service trusts its caller to have checked this (its reset routes say so); this
+// is that caller. An account's first passkey needs no token: there is nothing to prove yet.
+async function mintStepUp(uid) {
+  const token = crypto.randomBytes(24).toString("base64url");
+  await storage.putCeremony(token, { kind: "stepup", uid, at: Date.now() }, STEPUP_TTL_MS);
+  return token;
+}
+async function takeStepUp(req) {
+  const t = String((req.body || {}).stepUpToken || "");
+  if (!t) return false;
+  try {
+    const c = await storage.takeCeremony(t);
+    return !!c && c.kind === "stepup" && String(c.uid) === String(req.uid);
+  } catch (e) { console.error(`[gateway] step-up token of user ${req.uid} not checked: ${e.message}`); return false; }
+}
+const passkeyRequired = (res, what) => res.status(403).json({ error: "passkey_required",
+  note: `${what} needs the user's passkey, verified through passkey/auth/complete in the last 2 minutes: pass its stepUpToken (used once).` });
+// For a decision that must not fail open: a failed lookup is an error here, never a "no passkey".
+async function passkeyExists(uid) {
+  const r = await fwd(`${PASSKEY_URL}/v1/users/${uid}/passkeys`, "GET");
+  if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
+  return !!JSON.parse(r.text).hasPasskey;
+}
+// May a passkey registration for req.uid start? The account's first passkey, or a later one with a step-up token.
+async function mayRegisterPasskey(req, res) {
+  let has;
+  try { has = await passkeyExists(req.uid); } catch (e) {
+    console.error(`[gateway] passkey lookup for user ${req.uid} failed before a registration: ${e.message}`);
+    res.status(503).json({ error: "passkey_lookup_failed" });
+    return false;
+  }
+  if (has && !(await takeStepUp(req))) { passkeyRequired(res, "Adding a passkey to an account that already has one"); return false; }
+  return true;
+}
+
 app.get("/v1/sdk/onboarding", auth, async (req, res) => res.json(await onboardingFor(req.uid, req.tenantKey)));
 
 // keystroke
@@ -1268,9 +1308,16 @@ app.get("/v1/sdk/keystroke/config", auth, async (req, res) => relay(res, await f
 app.get("/v1/sdk/keystroke/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/status/${req.uid}`, "GET", undefined, caAssert(req))));
 app.post("/v1/sdk/keystroke/enroll", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/enroll`, "POST", { ...req.body, userId: req.uid }, caAssert(req))));
 // Enrolment resets. sdk/guard.js (resetProfile) has called these since the reset button existed, but
-// the gateway never had them, so a reset through the gateway got 404 and changed nothing.
-app.post("/v1/sdk/keystroke/reset", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/reset`, "POST", { userId: req.uid }, caAssert(req))));
-app.post("/v1/sdk/mouse/reset", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/mouse/reset`, "POST", { userId: req.uid }, caAssert(req))));
+// the gateway never had them, so a reset through the gateway got 404 and changed nothing. They need a step-up token
+// (mintStepUp above): the SDK verifies the passkey first and passes the token that verification returns.
+app.post("/v1/sdk/keystroke/reset", auth, async (req, res) => {
+  if (!(await takeStepUp(req))) return passkeyRequired(res, "Deleting the typing profile");
+  relay(res, await fwd(`${CA_URL}/v1/keystroke/reset`, "POST", { userId: req.uid }, caAssert(req)));
+});
+app.post("/v1/sdk/mouse/reset", auth, async (req, res) => {
+  if (!(await takeStepUp(req))) return passkeyRequired(res, "Deleting the mouse profile");
+  relay(res, await fwd(`${CA_URL}/v1/mouse/reset`, "POST", { userId: req.uid }, caAssert(req)));
+});
 // User study (ca-service lib/studyLog.js): bind the session's user to its participant pseudonym.
 app.post("/v1/sdk/study/register", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/study/register`, "POST", { ...req.body, userId: req.uid }, caAssert(req))));
 // User study (ca-service lib/studyLog.js): a passkey prompt event as the study client saw it.
@@ -1332,8 +1379,12 @@ app.post("/v1/sdk/mouse/use-sample", auth, async (req, res) => {
   relay(res, await fwd(`${CA_URL}/v1/mouse/use-sample`, "POST", { userId: req.uid, windows: (req.body || {}).windows, client }, caAssert(req)));
 });
 
-// passkey (origin/rpId bind to the HOST app's origin)
-app.post("/v1/sdk/passkey/register/options", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/register/options`, "POST", { userId: req.uid, username: req.uname, rpId: rpFromOrigin(req), origin: originOf(req) })));
+// passkey (origin/rpId bind to the HOST app's origin). A registration starts only for the account's first passkey or
+// with a step-up token; its completion is bound to the challenge passkey-service stored for these options.
+app.post("/v1/sdk/passkey/register/options", auth, async (req, res) => {
+  if (!(await mayRegisterPasskey(req, res))) return;
+  relay(res, await fwd(`${PASSKEY_URL}/v1/register/options`, "POST", { userId: req.uid, username: req.uname, rpId: rpFromOrigin(req), origin: originOf(req) }));
+});
 app.post("/v1/sdk/passkey/register/complete", auth, async (req, res) => { const r = await fwd(`${PASSKEY_URL}/v1/register/complete`, "POST", { userId: req.uid, credential: req.body.credential, rpId: rpFromOrigin(req), origin: originOf(req) }); passkeyChanged(req.uid); relay(res, r); });
 app.post("/v1/sdk/passkey/auth/options", auth, async (req, res) => relay(res, await fwd(`${PASSKEY_URL}/v1/auth/options`, "POST", { userId: req.uid, rpId: rpFromOrigin(req) })));
 app.post("/v1/sdk/passkey/auth/complete", auth, async (req, res) => {
@@ -1346,6 +1397,8 @@ app.post("/v1/sdk/passkey/auth/complete", auth, async (req, res) => {
   await settleAfterPasskey(req, req.esub || req.uid);
   let d; try { d = JSON.parse(r.text); } catch (e) { return relay(res, r); }
   d.mouseUseSample = await mouseUseAnchor(req);
+  // Proof of this verification for one change to what proves the user, within 2 minutes (a reset, another passkey).
+  try { d.stepUpToken = await mintStepUp(req.uid); } catch (e) { console.error(`[gateway] no step-up token for user ${req.uid}: ${e.message}`); }
   res.status(200).json(d);
 });
 // Learning from real use, stage 1 (ca-service lib/mouseUse.js): this passkey was verified in this very request, so the
@@ -1390,8 +1443,9 @@ app.get("/v1/sdk/passkey/status", auth, async (req, res) => res.json({ hasPasske
 //
 // Policy stays with the tenant's backend, as it would in any app: these routes pass a check's result
 // back and do not lock anyone themselves (the SDK routes above do that for apps without a backend).
-// Two things the gateway keeps regardless of the integration: signed verdicts with risk-change pushes
-// (CAEP), and adaptive retraining only behind a passkey verified through Continuum moments before.
+// Things the gateway keeps regardless of the integration: signed verdicts with risk-change pushes (CAEP), and
+// adaptive retraining, a profile reset or another passkey only behind a passkey verified through Continuum moments
+// before (a step-up token, used once).
 const SERVER_TOKEN_MAX_SEC = 600;
 const SERVER_AUDIENCE = "continuum-server";
 const STEPUP_TTL_MS = 2 * 60000;
@@ -1424,7 +1478,6 @@ const SERVER_CA_ROUTES = [
   ["get", "/keystroke/status", (r) => `/v1/keystroke/status/${r.uid}`],
   ["post", "/keystroke/enroll", () => "/v1/keystroke/enroll"],
   ["post", "/keystroke/contribute", () => "/v1/keystroke/contribute"],
-  ["post", "/keystroke/reset", () => "/v1/keystroke/reset"],
   ["post", "/keystroke/retrain", () => "/v1/keystroke/retrain"],
   ["post", "/keystroke/maybe-retrain-impostors", () => "/v1/keystroke/maybe-retrain-impostors"],
   ["get", "/keystroke/history", (r) => `/v1/keystroke/history/${r.uid}`],
@@ -1434,7 +1487,6 @@ const SERVER_CA_ROUTES = [
   ["get", "/keystroke/decisions-all", () => "/v1/keystroke/decisions-all"],
   ["get", "/keystroke/metrics", () => "/v1/keystroke/metrics"],
   ["post", "/mouse/enroll", () => "/v1/mouse/enroll"],
-  ["post", "/mouse/reset", () => "/v1/mouse/reset"],
   ["post", "/mouse/streak/reset", () => "/v1/mouse/streak/reset"],
   ["get", "/mouse/status", (r) => `/v1/mouse/status/${r.uid}`],
   ["post", "/lock/set", () => "/v1/lock/set"],
@@ -1444,6 +1496,13 @@ const SERVER_CA_ROUTES = [
 for (const [method, p, target] of SERVER_CA_ROUTES) {
   app[method]("/v1/server" + p, serverAuth, serverRoute(async (req, res) => {
     relay(res, await fwd(`${CA_URL}${target(req)}`, method.toUpperCase(), method === "post" ? { ...(req.body || {}), userId: req.uid } : undefined, caAssert(req)));
+  }));
+}
+// Deleting a profile: only with a step-up token from passkey/auth/complete below (takeStepUp), as on the SDK routes.
+for (const [channel, what] of [["keystroke", "Deleting the typing profile"], ["mouse", "Deleting the mouse profile"]]) {
+  app.post(`/v1/server/${channel}/reset`, serverAuth, serverRoute(async (req, res) => {
+    if (!(await takeStepUp(req))) return passkeyRequired(res, what);
+    relay(res, await fwd(`${CA_URL}/v1/${channel}/reset`, "POST", { userId: req.uid }, caAssert(req)));
   }));
 }
 // Checks: the verdict comes back signed (RS256, as on the SDK routes), and a settled change of risk is
@@ -1465,10 +1524,7 @@ for (const modality of ["keystroke", "mouse"]) {
 // passkey verified through /v1/server/passkey/auth/complete in the last 2 minutes, used once (as the SDK
 // route requires the passkey in the same request).
 app.post("/v1/server/keystroke/adaptive/confirm", serverAuth, serverRoute(async (req, res) => {
-  const c = await storage.takeCeremony(String((req.body || {}).stepUpToken || ""));
-  if (!c || c.kind !== "stepup" || String(c.uid) !== String(req.uid)) {
-    return res.status(403).json({ error: "passkey_required", note: "Verify the user's passkey through /v1/server/passkey/auth/* and pass its stepUpToken (2 minutes, once)." });
-  }
+  if (!(await takeStepUp(req))) return passkeyRequired(res, "Adaptive retraining");
   relay(res, await fwd(`${CA_URL}/v1/keystroke/adaptive/confirm`, "POST", {}, caAssert(req)));
 }));
 
@@ -1481,6 +1537,8 @@ function tenantWebsite(req) {
 }
 const notTenantWebsite = (res) => res.status(400).json({ error: "origin_not_allowed", note: "origin must be one of the organisation's registered websites" });
 app.get("/v1/server/passkey/status", serverAuth, serverRoute(async (req, res) => res.json({ hasPasskey: await hasPasskey(req.uid) })));
+// Account recovery: removes every passkey of the user. Left to the organisation on purpose, since a user who lost the
+// passkey cannot prove it: call it only after the organisation's own identity proofing, never on a session alone.
 app.post("/v1/server/passkey/reset", serverAuth, serverRoute(async (req, res) => {
   const r = await fwd(`${PASSKEY_URL}/v1/users/${req.uid}/reset`, "POST");
   passkeyChanged(req.uid);
@@ -1488,6 +1546,7 @@ app.post("/v1/server/passkey/reset", serverAuth, serverRoute(async (req, res) =>
 }));
 app.post("/v1/server/passkey/register/options", serverAuth, serverRoute(async (req, res) => {
   const w = tenantWebsite(req); if (!w) return notTenantWebsite(res);
+  if (!(await mayRegisterPasskey(req, res))) return;
   const username = String((req.body || {}).username || req.uname).slice(0, 64);
   relay(res, await fwd(`${PASSKEY_URL}/v1/register/options`, "POST", { userId: req.uid, username, rpId: w.rpId, origin: w.origin }));
 }));
@@ -1506,8 +1565,7 @@ app.post("/v1/server/passkey/auth/complete", serverAuth, serverRoute(async (req,
   const r = await fwd(`${PASSKEY_URL}/v1/auth/complete`, "POST", { userId: req.uid, challengeId: req.body.challengeId, assertion: req.body.assertion, rpId: w.rpId, origin: w.origin });
   if (r.status !== 200) return relay(res, r);
   let d = {}; try { d = JSON.parse(r.text); } catch (e) {}
-  const stepUpToken = crypto.randomBytes(24).toString("base64url");
-  await storage.putCeremony(stepUpToken, { kind: "stepup", uid: req.uid, at: Date.now() }, STEPUP_TTL_MS);
+  const stepUpToken = await mintStepUp(req.uid);
   await settleAfterPasskey(req, req.esub);
   // Learning from real use, stage 1: this passkey was verified here too, so the anchor is recorded as on the SDK
   // route, and the tenant's backend passes the offer to its page (the demo app: routes/webauthn.js).

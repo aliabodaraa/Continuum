@@ -16,7 +16,8 @@ module.exports = {
   // Pending adaptive samples -> retrain. Continuum asks for proof of a passkey verified moments ago: the
   // stepUpToken that passkeyClient.authComplete returned (2 minutes, once).
   keystrokeAdaptiveConfirm: (userId, stepUpToken) => request("POST", "/keystroke/adaptive/confirm", userId, { stepUpToken }),
-  keystrokeReset: (userId) => request("POST", "/keystroke/reset", userId, {}),
+  // Destructive: Continuum deletes a profile only with the stepUpToken of a passkey verified moments ago (once).
+  keystrokeReset: (userId, stepUpToken) => request("POST", "/keystroke/reset", userId, { stepUpToken }),
   keystrokeRetrain: (userId) => request("POST", "/keystroke/retrain", userId, {}),
   maybeRetrainImpostors: (userId) => request("POST", "/keystroke/maybe-retrain-impostors", userId, {}),
 
@@ -33,8 +34,9 @@ module.exports = {
   mouseStatus: (userId) => request("GET", "/mouse/status", userId),
   // A real-use sample: the movement right after a passkey verification (Continuum keeps it only then, once).
   mouseUseSample: (userId, windows) => request("POST", "/mouse/use-sample", userId, { windows }),
-  // Destructive: the route that calls this must verify a passkey first.
-  mouseReset: (userId) => request("POST", "/mouse/reset", userId, {}),
+  // Destructive: the route that calls this verifies a passkey first, and Continuum asks for that verification's
+  // stepUpToken (2 minutes, once).
+  mouseReset: (userId, stepUpToken) => request("POST", "/mouse/reset", userId, { stepUpToken }),
   // The suspicious-packet count is kept by Continuum; this says "we acted on it".
   mouseStreakReset: (userId) => request("POST", "/mouse/streak/reset", userId, {}),
 

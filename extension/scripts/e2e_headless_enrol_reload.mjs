@@ -6,6 +6,8 @@
 //   3. the wizard moves on at once while ca-service builds the model from its training queue
 //   4. a reload while the model is being built does not ask for typing again, and the typing row says
 //      "building your model"; once the model exists the row changes without a reload
+//   5. a profile reset or a second passkey on the session alone is refused; a verified passkey gives a step-up
+//      token that deletes one profile, once (2026-11-08)
 // The participant's enrolments, passkey and any lock are removed at the end; the tenant is kept (run
 // e2e_headless_study.mjs once first, it creates it).
 //
@@ -20,7 +22,7 @@ const GW = process.env.CONTINUUM_GATEWAY || "http://localhost:8080", PORT = 9360
 const CHROME = path.join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ADMIN_KEY = (fs.readFileSync(path.join(ROOT, ".env"), "utf8").match(/^GATEWAY_ADMIN_KEY=(.*?)\s*$/m) || [])[1] || "";
-let token = null, userId = null, bad = 0;
+let token = null, userId = null, bad = 0, pageSession = null, profilesReset = false;
 const ok = (n, c, d) => { console.log((c ? "  PASS  " : "  FAIL  ") + n + (d ? " — " + d : "")); if (!c) bad++; };
 // The operator area (operator page, /v1/tenants, /v1/admin/*): the gateway itself (Compose), or, behind an edge
 // that never routes it (Kubernetes: Envoy marks every request it forwards), a private port-forward to the
@@ -30,6 +32,15 @@ async function gw(p, body, method = "POST") {
   const r = await fetch((p.startsWith("/v1/tenants") ? OP : GW) + p, { method, headers: { "Content-Type": "application/json", Origin: GW, ...(token ? { Authorization: "Bearer " + token } : {}),
     ...(p.startsWith("/v1/tenants") ? { "X-Admin-Key": ADMIN_KEY } : {}) }, body: method === "GET" ? undefined : JSON.stringify(body || {}) });
   return { status: r.status, d: await r.json().catch(() => ({})) };
+}
+// A step-up token: the participant's passkey (the page's virtual authenticator) verified through the gateway.
+async function stepUpToken(s) {
+  const o = await gw("/v1/sdk/passkey/auth/options");
+  if (o.status !== 200) return null;
+  const assertion = await ev(s, `window.SimpleWebAuthnBrowser.startAuthentication(${JSON.stringify(o.d)})`);
+  if (!assertion) return null;
+  const done = await gw("/v1/sdk/passkey/auth/complete", { challengeId: o.d.challengeId, assertion });
+  return done.status === 200 ? done.d.stepUpToken || null : null;
 }
 // synthetic but plausible typing: letters and spaces, dwell ~70-130 ms, flight ~60-200 ms
 function typing(n, seed) {
@@ -81,6 +92,7 @@ try {
     <script src="/guard.js" data-site-key="${ten.siteKey}" data-session="${token}" data-onboarding="eager" data-keystroke="on" data-mouse="on"></script>`;
   const { targetId } = await send("Target.createTarget", { url: "about:blank" });
   const { sessionId: s } = await send("Target.attachToTarget", { targetId, flatten: true });
+  pageSession = s;
   handlers.push((m) => { if (m.method === "Fetch.requestPaused" && m.sessionId === s) send("Fetch.fulfillRequest", { requestId: m.params.requestId, responseCode: 200,
     responseHeaders: [{ name: "Content-Type", value: "text/html; charset=utf-8" }], body: Buffer.from(html).toString("base64") }, s); });
   await send("Fetch.enable", { patterns: [{ urlPattern: GW + "/__reload_test.html*", requestStage: "Request" }] }, s);
@@ -128,11 +140,30 @@ try {
   while (!st3.trained && Date.now() - t1 < 4 * 60000) { await sleep(4000); st3 = (await gw("/v1/sdk/keystroke/status", null, "GET")).d; if (st3.trainingError) break; }
   ok("the model is built", st3.trained === true, `${((Date.now() - t0) / 1000).toFixed(0)} s after the last sample${st3.trainingError ? ", error " + st3.trainingError : ""}`);
   ok("…and the page's typing row leaves 'building' without a reload", await waitFor(s, `!/building your model/.test(${ksRow})`, 15000), await ev(s, ksRow));
+
+  // ---- what proves the user changes only behind the passkey ----
+  const bare = await gw("/v1/sdk/keystroke/reset"), barePk = await gw("/v1/sdk/passkey/register/options");
+  ok("a profile reset or a second passkey on the session alone is refused", bare.status === 403 && bare.d.error === "passkey_required"
+    && barePk.status === 403 && barePk.d.error === "passkey_required", `reset ${bare.status} ${bare.d.error}, passkey ${barePk.status} ${barePk.d.error}`);
+  const st4 = (await gw("/v1/sdk/keystroke/status", null, "GET")).d;
+  ok("…and the typing profile is still there", st4.trained === true, `trained ${st4.trained}`);
+  const tokA = await stepUpToken(s);
+  ok("a verified passkey returns a step-up token", !!tokA);
+  const resetA = await gw("/v1/sdk/keystroke/reset", { stepUpToken: tokA }), reuse = await gw("/v1/sdk/mouse/reset", { stepUpToken: tokA });
+  ok("the token deletes one profile, then it is spent", resetA.status === 200 && reuse.status === 403 && reuse.d.error === "passkey_required",
+    `reset ${resetA.status}, the same token again ${reuse.status} ${reuse.d.error}`);
+  const resetB = await gw("/v1/sdk/mouse/reset", { stepUpToken: await stepUpToken(s) });
+  ok("a second verification deletes the other profile", resetB.status === 200, String(resetB.status));
+  profilesReset = resetA.status === 200 && resetB.status === 200;
 } catch (e) {
   ok("run completed", false, e.message);
 } finally {
   try {
-    if (token) for (const p of ["/v1/sdk/keystroke/reset", "/v1/sdk/mouse/reset"]) await gw(p);
+    // Each reset needs its own verified passkey; a run that stopped before the passkey existed leaves the samples.
+    if (token && !profilesReset) for (const p of ["/v1/sdk/keystroke/reset", "/v1/sdk/mouse/reset"]) {
+      const r = await gw(p, { stepUpToken: pageSession ? await stepUpToken(pageSession).catch(() => null) : null });
+      if (r.status !== 200) console.log(`  cleanup: ${p} answered ${r.status} ${r.d.error || ""} (no passkey to verify)`);
+    }
     if (userId) inService("gateway", ["node", "-e", `fetch(process.env.PASSKEY_API_URL+'/v1/users/${userId}/reset',{method:'POST',headers:{'X-Api-Key':process.env.PASSKEY_API_KEY||''}}).then(r=>console.log('passkey reset',r.status))`]);
     // through the service's own data layer, so it reaches whichever store the service uses (SQLite or PostgreSQL)
     if (userId) inService("ca-service", ["node", "-e", `const db=require('/app/db');db.run('DELETE FROM session_locks WHERE user_id=?', ${userId}).finally(()=>db.close());`]);

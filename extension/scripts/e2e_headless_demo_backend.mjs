@@ -2,18 +2,19 @@
 // gateway's tenant API (/v1/server/*), with its site key and identity tokens, never an internal service.
 // Real headless Chrome (a throwaway profile, a virtual authenticator) on the demo's own pages:
 //   1. a new demo user registers a passkey through the demo's routes; it is stored under the user's
-//      CONTINUUM id (the gateway maps the demo's own user number), not the demo's number
+//      CONTINUUM id (the gateway maps the demo's own user number), not the demo's number; without a fresh
+//      verification the demo neither deletes it nor starts a second one (2026-11-08)
 //   2. a passkey step-up through the demo's routes; the demo's Continuum reads (typing status, config,
 //      history, decisions, metrics, mouse status) answer through the tenant API
 //   3. the tenant API itself: identity tokens must be signed with the tenant secret and short-lived;
-//      passkeys only for the tenant's own websites; adaptive retraining only with a step-up token from a
-//      passkey verified through Continuum, once
+//      passkeys only for the tenant's own websites; adaptive retraining, a profile reset or a second passkey
+//      only with a step-up token from a passkey verified through Continuum, once
 //   3b. an impostor at the unlocked session: the browser's own identity token (/continuum/identity, for
 //      the SDK) is refused by the tenant API, and so is every call from a browser page; the lock and
 //      the passkey stay as they were
 //   4. the demo container cannot reach ca-service or passkey-service at all; the gateway reaches the demo's
 //      risk-event receiver (CAEP pushes), which refuses an unsigned event
-//   5. a passkey reset through the demo removes the user's credentials
+//   5. after a fresh passkey verification, a passkey reset through the demo removes the user's credentials
 // Everything the test made is removed (the demo user, its passkeys).
 //
 //   node extension/scripts/e2e_headless_demo_backend.mjs
@@ -93,6 +94,13 @@ async function waitFor(sessionId, expression, ms = 30000) { const t0 = Date.now(
 // fetch on the demo's own origin, with its session cookie
 const pageFetch = (sid, p, method = "GET", body) => evaluate(sid, `fetch(${JSON.stringify(p)}, { method: ${JSON.stringify(method)}, headers: { "Content-Type": "application/json" }${body !== undefined ? `, body: ${JSON.stringify(JSON.stringify(body))}` : ""} })
   .then(async (r) => ({ status: r.status, d: await r.json().catch(() => ({})) }))`);
+// A passkey step-up through the demo's own routes (the virtual authenticator answers).
+const verifyOnPage = (sid, demoUser) => evaluate(sid, `(async () => {
+    const o = await fetch("/api/webauthn/auth/options", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: ${Number(demoUser)} }) }).then((r) => r.json());
+    const a = await SimpleWebAuthnBrowser.startAuthentication(o);
+    const r = await fetch("/api/webauthn/auth/complete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: ${Number(demoUser)}, challengeId: o.challengeId, assertion: a }) });
+    return { status: r.status, d: await r.json().catch(() => ({})) };
+  })()`);
 
 let demoUserId = null, continuumId = null;
 try {
@@ -122,6 +130,12 @@ try {
   const underContinuum = credentialsOf(continuumId), underDemoNumber = credentialsOf(demoUserId);
   check("the passkey is stored under the user's Continuum id, not the demo's own number", underContinuum === 1 && underDemoNumber === 0,
     `Continuum ${continuumId}: ${underContinuum}, demo ${demoUserId}: ${underDemoNumber}`);
+  // What proves the user changes only behind the passkey, verified moments ago (no verification has happened yet).
+  const resetEarly = await pageFetch(pg, "/api/webauthn/register/reset", "POST", {});
+  const secondPk = await pageFetch(pg, "/api/webauthn/register/options", "POST", {});
+  check("without a fresh verification the demo neither deletes the passkey nor starts a second one",
+    resetEarly.status === 401 && resetEarly.d.passkeyRequired === true && secondPk.status === 403 && credentialsOf(continuumId) === 1,
+    `delete ${resetEarly.status}, a second passkey ${secondPk.status} ${secondPk.d.error || ""}, credentials ${credentialsOf(continuumId)}`);
 
   console.log("2. step-up and reads through the demo's routes");
   const stepUp = await evaluate(pg, `(async () => {
@@ -164,6 +178,10 @@ try {
   check("a step-up token is accepted once (ca-service answers), then refused", done.status === 200 && !!done.d.stepUpToken
     && first.d.error !== "passkey_required" && again.status === 403 && again.d.error === "passkey_required",
     `verify ${done.status}; first ${first.status} ${first.d.error || ""}; again ${again.status}`);
+  const resetBare = await server("POST", "/keystroke/reset", demoUserId, {});
+  const addBare = await server("POST", "/passkey/register/options", demoUserId, { origin: own });
+  check("a profile reset or a second passkey needs a step-up token too", resetBare.status === 403 && resetBare.d.error === "passkey_required"
+    && addBare.status === 403 && addBare.d.error === "passkey_required", `reset ${resetBare.status} ${resetBare.d.error}, passkey ${addBare.status} ${addBare.d.error}`);
 
   console.log("3b. an impostor at the unlocked session");
   const browserToken = (await pageFetch(pg, "/continuum/identity")).d.token;
@@ -210,8 +228,10 @@ try {
   check("the gateway reaches the demo's risk-event receiver, which refuses a forged event", /^400 .*invalid_set/.test(pushed), pushed);
 
   console.log("5. reset");
+  const fresh = await verifyOnPage(pg, demoUserId);
   const reset = await pageFetch(pg, "/api/webauthn/register/reset", "POST", {});
-  check("a passkey reset through the demo removes the user's credentials", reset.status === 200 && credentialsOf(continuumId) === 0, `${reset.status}, left ${credentialsOf(continuumId)}`);
+  check("after a fresh verification, a passkey reset through the demo removes the user's credentials", fresh.status === 200 && reset.status === 200 && credentialsOf(continuumId) === 0,
+    `verify ${fresh.status}, reset ${reset.status}, left ${credentialsOf(continuumId)}`);
   check("no uncaught exception on the page", exceptions.length === 0, exceptions.slice(0, 2).join(" | "));
 } catch (e) {
   check("run completed", false, e.message);
