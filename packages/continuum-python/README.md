@@ -43,14 +43,26 @@ def transfer():
     ...  # result is the verified claims (result["sub"], result["risk"])
 ```
 
+`require_verified(token, JWKS)` is the same but answers `(False, "verdict_pending")` for a `warmup` verdict (not
+judged yet: keep typing or moving, no passkey needed); use it on actions that must never run before a real verdict.
+Only a verdict passes `verify_token`: an identity assertion or a pushed event is refused (`not_a_verdict`), and so is
+a token without an expiry (`no_expiry`).
+
 ## 3. Receive pushed risk events (CAEP)
 
 ```python
-from continuum import verify_token
+from continuum import verify_event
 
 @app.post("/continuum/events")
 def continuum_events():
-    claims = verify_token(request.get_data(as_text=True), JWKS)  # raises on tamper
+    try:
+        claims = verify_event(request.get_data(as_text=True), JWKS)  # raises on tamper, on a stale event
+    except ValueError as e:
+        return "", 202 if str(e) == "stale" else 400          # 202 stops the gateway's retries
+    if claims["event"] == "test":
+        return "", 202
+    # apply each claims["jti"] once, and ignore an event older (claims["iat"]) than the last one applied for the
+    # same claims["sub"]: deliveries are retried for hours and may arrive out of order
     if claims.get("risk") == "suspicious":
         revoke_sessions(claims["sub"])   # sub is YOUR user id
     return "", 202

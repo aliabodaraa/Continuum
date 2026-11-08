@@ -41,8 +41,9 @@ app.get("/continuum-identity", (req, res) => {
 });
 
 // Acme's OWN sensitive action, protected purely by Continuum's signed verdict —
-// no Continuum session involved. Suspicious => 403 (step-up), tampered/absent => 401.
-app.post("/save-note", guard.requireTrusted, (req, res) => {
+// no Continuum session involved. Suspicious => 403 (step-up), not yet judged (warm-up) => 403 verdict_pending,
+// tampered/absent => 401. requireVerified, not requireTrusted: a sensitive action waits for a real verdict (2026-11-08).
+app.post("/save-note", guard.requireVerified, (req, res) => {
   res.json({
     ok: true,
     saved: true,

@@ -82,10 +82,11 @@ def _rsa_pkcs1_sha256_verify(n: int, e: int, sig: bytes, data: bytes) -> bool:
     return hmac.compare_digest(em, expected)
 
 
-def verify_token(token: str, jwks_uri: str, clock_skew_sec: int = 5) -> dict:
-    """Verify an RS256 Continuum token — a risk verdict (X-Continuum-Risk) or a
-    pushed CAEP SET — against the issuer's JWKS. Returns the claims dict;
-    raises ValueError on any failure."""
+RISKS = ("genuine", "warmup", "suspicious")
+
+
+def _signed_claims(token: str, jwks_uri: str) -> dict:
+    """The claims of an RS256 token whose signature verifies against the issuer's JWKS; raises ValueError."""
     try:
         h64, p64, s64 = token.split(".")
     except ValueError:
@@ -101,9 +102,34 @@ def verify_token(token: str, jwks_uri: str, clock_skew_sec: int = 5) -> dict:
     e = int.from_bytes(_b64url_dec(jwk["e"]), "big")
     if not _rsa_pkcs1_sha256_verify(n, e, _b64url_dec(s64), f"{h64}.{p64}".encode()):
         raise ValueError("bad signature")
-    claims = json.loads(_b64url_dec(p64))
-    if claims.get("exp") and time.time() > claims["exp"] + clock_skew_sec:
+    return json.loads(_b64url_dec(p64))
+
+
+def verify_token(token: str, jwks_uri: str, clock_skew_sec: int = 5) -> dict:
+    """Verify an RS256 Continuum risk verdict (X-Continuum-Risk) against the issuer's JWKS. Returns the claims
+    dict; raises ValueError on any failure. Only a verdict counts (2026-11-08): it carries a risk and an expiry and
+    is not an event. The same key set signs identity assertions (no risk) and risk-change events (no expiry);
+    either used to pass as "genuine", an event for ever. Events are checked with verify_event()."""
+    claims = _signed_claims(token, jwks_uri)
+    if claims.get("risk") not in RISKS or claims.get("event") is not None:
+        raise ValueError("not_a_verdict")
+    if not isinstance(claims.get("exp"), (int, float)):
+        raise ValueError("no_expiry")
+    if time.time() > claims["exp"] + clock_skew_sec:
         raise ValueError("expired")
+    return claims
+
+
+def verify_event(token: str, jwks_uri: str, max_age_sec: int = 86400) -> dict:
+    """Verify a pushed risk-change event (a CAEP SET: event, risk, iat, jti, no exp). Raises ValueError("stale")
+    for one older than max_age_sec. A receiver should also apply each jti once and ignore an event older than the
+    last one it applied for the same subject: the gateway retries deliveries for hours, possibly out of order."""
+    claims = _signed_claims(token, jwks_uri)
+    if claims.get("event") not in ("risk-change", "test") or claims.get("risk") not in RISKS \
+            or not isinstance(claims.get("iat"), (int, float)):
+        raise ValueError("not_an_event")
+    if max_age_sec and time.time() - claims["iat"] > max_age_sec:
+        raise ValueError("stale")
     return claims
 
 
@@ -122,3 +148,12 @@ def require_trusted(token, jwks_uri: str, block_warmup: bool = False):
     if risk == "suspicious" or (block_warmup and risk == "warmup"):
         return False, "step_up_required"
     return True, claims
+
+
+def require_verified(token, jwks_uri: str):
+    """As require_trusted, but a warm-up verdict (not yet judged) is refused with "verdict_pending" (keep typing
+    or moving; no passkey needed): for actions such as moving money or changing the e-mail address (2026-11-08)."""
+    ok, result = require_trusted(token, jwks_uri)
+    if ok and result.get("risk") == "warmup":
+        return False, "verdict_pending"
+    return ok, result

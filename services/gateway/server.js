@@ -376,6 +376,33 @@ async function maybeFireRiskEvent(tenant, tenantKey, keyId, subject, risk, modal
   if (r.queued) return dispatcher.kick();
   fetch(r.event.url, { method: "POST", headers: { "Content-Type": "application/secevent+jwt" }, body: r.event.body }).catch((e) => console.error("[caep] delivery failed:", e.message));
 }
+// Each channel's last settled verdict is kept under "<user>|keystroke" and "<user>|mouse"; the user's own key (the
+// pushed event) and the signed token carry the worse of the two. Until 2026-11-08 there was one state per user, so a
+// genuine mouse verdict a second after a suspicious typing one cleared it at the organisation, and the SDK's token
+// was whichever channel answered last. A storage failure falls back to the verdict alone. Returns the token's risk.
+const { CHANNELS, settled, combine } = require("./riskChannels");
+async function settleChannel(req, modality, risk, subject) {
+  const key = String(req.uid);
+  try {
+    if (settled(risk)) await storage.riskTransition(`${key}|${modality}`, risk, () => null);
+    const stored = {};
+    for (const ch of CHANNELS) if (ch !== modality || !settled(risk)) stored[ch] = await storage.riskGet(`${key}|${ch}`);
+    const { user, token } = combine(modality, risk, stored);
+    if (user) maybeFireRiskEvent(req.tenant, req.tenantKey, key, subject, user, modality).catch((e) => console.error(`[caep] ${e.message}`));
+    return token;
+  } catch (e) {
+    console.error(`[risk] channel state for user ${key} unavailable: ${e.message}`);
+    return risk;
+  }
+}
+// A verified passkey settles both channels as genuine (the organisation hears it if the user was suspicious).
+async function settleAfterPasskey(req, subject) {
+  const key = String(req.uid);
+  try {
+    for (const ch of CHANNELS) await storage.riskTransition(`${key}|${ch}`, "genuine", () => null);
+    await maybeFireRiskEvent(req.tenant, req.tenantKey, key, subject, "genuine", "passkey");
+  } catch (e) { console.error(`[risk] could not settle user ${key} after the passkey: ${e.message}`); }
+}
 
 const app = express();
 
@@ -499,15 +526,24 @@ function passkeyChanged(uid) {
 // enforcing the key (860b4d6), every lookup came back 401, `hasPasskey` read false for every user,
 // and so the gateway path never raised a keystroke or mouse step-up (found 2026-09-26 by the
 // user-study end-to-end test). A failed lookup is logged and not cached as "no passkey".
-async function hasPasskey(uid) {
+// { stepUp: true } is for a check's step-up decision: when the lookup fails it answers with the last value this copy
+// knew, and "yes" when it knew none, so a passkey-service outage locks a suspicious session instead of letting it run
+// on (owner's choice, 2026-11-08; it was "no", which disabled every step-up during the outage). Everything else
+// (status, onboarding) still reads a failure as "no": it must not claim a passkey that may not exist.
+async function hasPasskey(uid, { stepUp = false } = {}) {
   // "Has a passkey" is cached for a minute, "has none" for 5 s only: this cache is per gateway copy, and a
   // passkey just registered through another copy must start counting (for step-ups) almost at once.
   const c = pkCache.get(uid); if (c && Date.now() - c.t < (c.v ? 60000 : 5000)) return c.v;
+  const failed = (why) => {
+    const v = stepUp ? (c ? c.v : true) : false;
+    console.error(`[gateway] passkey lookup for user ${uid} failed: ${why}${stepUp ? `; the step-up decision uses ${v}` : ""}`);
+    return v;
+  };
   try {
     const r = await fwd(`${PASSKEY_URL}/v1/users/${uid}/passkeys`, "GET");
-    if (r.status !== 200) { console.error(`[gateway] passkey lookup for user ${uid} failed: HTTP ${r.status}`); return false; }
+    if (r.status !== 200) return failed(`HTTP ${r.status}`);
     const v = !!JSON.parse(r.text).hasPasskey; pkCache.set(uid, { v, t: Date.now() }); return v;
-  } catch (e) { console.error(`[gateway] passkey lookup for user ${uid} failed: ${e.message}`); return false; }
+  } catch (e) { return failed(e.message); }
 }
 // Through fwd() with an identity assertion: ca-service's route requires both the service key and
 // the gateway's assertion. A bare fetch (as before) got 401, so every user read as not enrolled and
@@ -811,7 +847,8 @@ async function eraseTenantUsers(siteKey) {
         ]);
         if (r.some((x) => x.status !== 200)) { failed.push(key); continue; }
       } catch (e) { failed.push(key); continue; }
-      passkeyChanged(u.userId); storage.deleteRiskState(String(u.userId)).catch(() => {});
+      passkeyChanged(u.userId);
+      for (const k of [String(u.userId), ...CHANNELS.map((ch) => `${u.userId}|${ch}`)]) storage.deleteRiskState(k).catch(() => {});
       delete store.users[key];
       erased.push(key);
     }
@@ -1242,12 +1279,12 @@ app.post("/v1/sdk/study/prompt", auth, async (req, res) => relay(res, await fwd(
 // training set (the CA retrains every N samples, validation-gated).
 app.post("/v1/sdk/keystroke/contribute", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/contribute`, "POST", { ...req.body, userId: req.uid }, caAssert(req))));
 app.post("/v1/sdk/keystroke/check", auth, async (req, res) => {
-  const r = await fwd(`${CA_URL}/v1/keystroke/check`, "POST", { ...req.body, userId: req.uid, hasPasskey: await hasPasskey(req.uid) }, caAssert(req));
+  const r = await fwd(`${CA_URL}/v1/keystroke/check`, "POST", { ...req.body, userId: req.uid, hasPasskey: await hasPasskey(req.uid, { stepUp: true }) }, caAssert(req));
   let d; try { d = JSON.parse(r.text); } catch (e) { return relay(res, r); }
   if (d && d.checked) {
-    const rk = riskLevel(d.warmup, d.isSuspicious);
+    // the worse of the two channels is signed and pushed (settleChannel); a locked account comes back suspicious
+    const rk = await settleChannel(req, "keystroke", riskLevel(d.warmup, d.isSuspicious), req.esub || req.uid);
     d.riskToken = signRiskRS256(req.uid, rk, "keystroke");
-    maybeFireRiskEvent(req.tenant, req.tenantKey, req.uid, req.esub || req.uid, rk, "keystroke").catch((e) => console.error(`[caep] ${e.message}`)); // push on transition
   }
   res.status(r.status).json(d);
 });
@@ -1268,8 +1305,12 @@ app.post("/v1/sdk/mouse/check", auth, async (req, res) => {
   const r = await fwd(`${CA_URL}/v1/mouse/check`, "POST", { ...req.body, userId: req.uid }, caAssert(req));
   let d; try { d = JSON.parse(r.text); } catch (e) { return relay(res, r); }
   if (!d || !d.checked) return res.status(r.status).json(d);
+  if (d.locked) {   // the account is locked (ca-service answered 423 and judged nothing): pass it on, signed suspicious
+    d.riskToken = signRiskRS256(req.uid, await settleChannel(req, "mouse", "suspicious", req.esub || req.uid), "mouse");
+    return res.status(r.status).json(d);
+  }
   const streak = Number(d.suspiciousStreak || 0);
-  const passkeyTriggered = streak >= MOUSE_STRIKES_TO_LOCK && (await hasPasskey(req.uid));
+  const passkeyTriggered = streak >= MOUSE_STRIKES_TO_LOCK && (await hasPasskey(req.uid, { stepUp: true }));
   if (passkeyTriggered) {
     // The assertion was being passed as a second argument to `.catch()` instead of to
     // `fwd()`, so this call reached ca-service with no X-Continuum-Identity header, was
@@ -1279,9 +1320,8 @@ app.post("/v1/sdk/mouse/check", auth, async (req, res) => {
     await fwd(`${CA_URL}/v1/lock/set`, "POST", { userId: req.uid }, caAssert(req)).catch(() => {});
     await fwd(`${CA_URL}/v1/mouse/streak/reset`, "POST", { userId: req.uid }, caAssert(req)).catch(() => {});
   }
-  const mrk = riskLevel(d.warmup, d.isSuspicious);
+  const mrk = await settleChannel(req, "mouse", riskLevel(d.warmup, d.isSuspicious), req.esub || req.uid);
   d.riskToken = signRiskRS256(req.uid, mrk, "mouse");
-  maybeFireRiskEvent(req.tenant, req.tenantKey, req.uid, req.esub || req.uid, mrk, "mouse").catch((e) => console.error(`[caep] ${e.message}`)); // push on transition
   res.status(r.status).json({ ...d, ok: !passkeyTriggered, suspiciousStreak: streak, strikesToLock: MOUSE_STRIKES_TO_LOCK, requiresPasskeyChallenge: passkeyTriggered });
 });
 app.get("/v1/sdk/mouse/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/mouse/status/${req.uid}`, "GET", undefined, caAssert(req))));
@@ -1303,6 +1343,7 @@ app.post("/v1/sdk/passkey/auth/complete", auth, async (req, res) => {
   // user stayed locked out on their next page load.
   if (r.status === 200) await fwd(`${CA_URL}/v1/lock/clear`, "POST", { userId: req.uid }, caAssert(req)).catch(() => {});
   if (r.status !== 200) return relay(res, r);
+  await settleAfterPasskey(req, req.esub || req.uid);
   let d; try { d = JSON.parse(r.text); } catch (e) { return relay(res, r); }
   d.mouseUseSample = await mouseUseAnchor(req);
   res.status(200).json(d);
@@ -1410,13 +1451,12 @@ for (const [method, p, target] of SERVER_CA_ROUTES) {
 for (const modality of ["keystroke", "mouse"]) {
   app.post(`/v1/server/${modality}/check`, serverAuth, serverRoute(async (req, res) => {
     const body = { ...(req.body || {}), userId: req.uid };
-    if (modality === "keystroke") body.hasPasskey = await hasPasskey(req.uid);
+    if (modality === "keystroke") body.hasPasskey = await hasPasskey(req.uid, { stepUp: true });
     const r = await fwd(`${CA_URL}/v1/${modality}/check`, "POST", body, caAssert(req));
     let d; try { d = JSON.parse(r.text); } catch (e) { return relay(res, r); }
     if (d && d.checked) {
-      const rk = riskLevel(d.warmup, d.isSuspicious);
+      const rk = await settleChannel(req, modality, riskLevel(d.warmup, d.isSuspicious), req.esub);
       d.riskToken = signRiskRS256(req.uid, rk, modality);
-      maybeFireRiskEvent(req.tenant, req.tenantKey, req.uid, req.esub, rk, modality).catch((e) => console.error(`[caep] ${e.message}`));
     }
     res.status(r.status).json(d);
   }));
@@ -1468,6 +1508,7 @@ app.post("/v1/server/passkey/auth/complete", serverAuth, serverRoute(async (req,
   let d = {}; try { d = JSON.parse(r.text); } catch (e) {}
   const stepUpToken = crypto.randomBytes(24).toString("base64url");
   await storage.putCeremony(stepUpToken, { kind: "stepup", uid: req.uid, at: Date.now() }, STEPUP_TTL_MS);
+  await settleAfterPasskey(req, req.esub);
   // Learning from real use, stage 1: this passkey was verified here too, so the anchor is recorded as on the SDK
   // route, and the tenant's backend passes the offer to its page (the demo app: routes/webauthn.js).
   res.json({ ...d, stepUpToken, mouseUseSample: await mouseUseAnchor(req) });

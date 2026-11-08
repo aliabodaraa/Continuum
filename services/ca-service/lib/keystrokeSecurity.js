@@ -682,7 +682,7 @@ function isServedProfile(profile) {
 
 // Authenticated + deadline-bounded. See lib/modelClient.js for why the local copy of this
 // function (a bare, credential-less, unbounded fetch) had to go.
-const { postModelApi } = require("./modelClient");
+const { postModelApi, ModelUnavailableError } = require("./modelClient");
 const studyLog = require("./studyLog");
 // The live keystroke decision rule, as the user-study log records it: fixed 0.50 window boundary,
 // packet vote over the last `packet` windows (the organisation's choice, 20 by default), and the
@@ -1064,18 +1064,11 @@ async function evaluateKeystrokes({ events, timings, userId, db, packetWindows }
       cnnLstm: result,
     };
   } catch (err) {
-    return {
-      modelConfidence: 0,
-      isSuspicious: false,
-      reason: `CNN/LSTM model temporarily unavailable — session continues`,
-      modelAvailable: false,
-      modelType: "per-user-cnn-lstm",
-      metrics,
-      baseline: await getUserTypingBaseline(userId, db),
-      profile,
-      windowCount: allWindows.length,
-      modelError: err.message,
-    };
+    // No score, no verdict: the route answers 503 without a risk token (sendError), as the mouse channel does, and
+    // the last known state stands. Until 2026-11-08 this returned isSuspicious:false with the full window count,
+    // which the route read as a settled check and signed "genuine" ("Typing rhythm verified") whenever the model
+    // service was down, slow to load a model, or had lost the user's model version.
+    throw err instanceof ModelUnavailableError ? err : new ModelUnavailableError(`typing model could not score: ${err.message}`, err);
   }
 }
 

@@ -29,9 +29,14 @@ app.post("/money/transfer", guard.requireTrusted, (req, res) => {
 ```
 
 Responses from `requireTrusted`:
-- **401** `continuum_risk_invalid` — missing / bad signature / expired token
+- **401** `continuum_risk_invalid` — missing / bad signature / expired token, or not a verdict at all
+  (`not_a_verdict`: an identity assertion or a pushed event; `no_expiry`: a token without `exp`)
 - **403** `step_up_required` (`requiresStepUp: true`) — verdict was `suspicious`
 - otherwise `next()` with `req.continuum` populated
+
+`requireVerified` does the same but also refuses a `warmup` verdict (the typing or movement has not been judged
+yet) with **403** `verdict_pending` (`requiresStepUp: false`: keep typing or moving, no passkey needed). Use it on
+actions that must never run before a real verdict, such as moving money or changing the e-mail address.
 
 ### Options
 | Option | Default | Meaning |

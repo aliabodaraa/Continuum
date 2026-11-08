@@ -1,3 +1,5 @@
+// @continuum/node — server-side enforcement SDK.
+//
 // A host application's backend uses this to ENFORCE Continuum's behavioral
 // verdict on sensitive actions, without trusting the browser. The CA service
 // signs every verdict as a short-lived HS256 token (the "risk token"); this
@@ -31,6 +33,9 @@ function createGuard(opts) {
   // server-pushed verdict with zero extra app code.
   const pushedRisk = new Map();
   function pushedRiskFor(subject) { return pushedRisk.get(String(subject)) || null; }
+  // events(): jti -> iat of the events applied, and per subject the iat of the last one applied
+  const maxEventAgeSec = opts.maxEventAgeSec != null ? opts.maxEventAgeSec : 86400;
+  const seenEvents = new Map(), lastEventAt = new Map();
 
   // ---- JWKS cache (public keys for asymmetric verdict verification) ----
   let jwks = {}, jwksAt = 0;
@@ -61,24 +66,43 @@ function createGuard(opts) {
     return { parts, header, payload };
   }
   const expired = (p) => p.exp && Math.floor(Date.now() / 1000) > p.exp + clockSkewSec;
+  // Only a verdict counts (2026-11-08): it carries a risk and an expiry and is not an event. The gateway's key set
+  // also signs identity assertions (no risk claim) and risk-change events (no expiry); either used to pass as
+  // "genuine", an event for ever.
+  const RISKS = ["genuine", "warmup", "suspicious"];
+  const notVerdict = (p) => (!RISKS.includes(p.risk) || p.event != null ? "not_a_verdict" : typeof p.exp !== "number" ? "no_expiry" : null);
   const claims = (p) => ({ ok: true, userId: p.sub, risk: p.risk, modality: p.modality, issuedAt: p.iat, expiresAt: p.exp, issuer: p.iss });
 
-  // Preferred: async verify — RS256 via JWKS (public key, no secret), else HMAC.
-  async function verifyToken(token) {
-    const t = parse(token); if (t.err) return { ok: false, error: t.err };
+  // The signature alone (RS256 via JWKS, else HMAC); what the payload must say is up to the caller.
+  async function signedPayload(token) {
+    const t = parse(token); if (t.err) return { error: t.err };
     const { parts, header, payload } = t;
     const data = parts[0] + "." + parts[1];
     if (header.alg === "RS256") {
       const key = await jwksKey(header.kid);
-      if (!key) return { ok: false, error: "unknown_kid" };
+      if (!key) return { error: "unknown_kid" };
       let ok = false; try { ok = crypto.verify("RSA-SHA256", Buffer.from(data), key, Buffer.from(parts[2], "base64url")); } catch (e) {}
-      if (!ok) return { ok: false, error: "bad_signature" };
+      if (!ok) return { error: "bad_signature" };
     } else {
-      if (!secret) return { ok: false, error: "no_secret_for_hmac" };
-      if (!timingEqual(parts[2], crypto.createHmac("sha256", secret).update(data).digest("base64url"))) return { ok: false, error: "bad_signature" };
+      if (!secret) return { error: "no_secret_for_hmac" };
+      if (!timingEqual(parts[2], crypto.createHmac("sha256", secret).update(data).digest("base64url"))) return { error: "bad_signature" };
     }
-    if (expired(payload)) return { ok: false, error: "expired" };
-    return claims(payload);
+    return { payload };
+  }
+  // Preferred: async verify — RS256 via JWKS (public key, no secret), else HMAC.
+  async function verifyToken(token) {
+    const s = await signedPayload(token); if (s.error) return { ok: false, error: s.error };
+    const bad = notVerdict(s.payload); if (bad) return { ok: false, error: bad };
+    if (expired(s.payload)) return { ok: false, error: "expired" };
+    return claims(s.payload);
+  }
+  // A risk-change event (a CAEP SET, pushed to the events receiver): signed like a verdict, it carries event, risk,
+  // iat and jti but no exp; its freshness is checked by events() below.
+  async function verifyEvent(token) {
+    const s = await signedPayload(token); if (s.error) return { ok: false, error: s.error };
+    const p = s.payload;
+    if ((p.event !== "risk-change" && p.event !== "test") || !RISKS.includes(p.risk) || typeof p.iat !== "number") return { ok: false, error: "not_an_event" };
+    return { ok: true, userId: p.sub, risk: p.risk, modality: p.modality, event: p.event, issuedAt: p.iat, jti: p.jti || null };
   }
   // Back-compat: synchronous HMAC-only verify.
   function verify(token) {
@@ -86,6 +110,7 @@ function createGuard(opts) {
     const { parts, payload } = t;
     if (!secret) return { ok: false, error: "no_secret" };
     if (!timingEqual(parts[2], crypto.createHmac("sha256", secret).update(parts[0] + "." + parts[1]).digest("base64url"))) return { ok: false, error: "bad_signature" };
+    const bad = notVerdict(payload); if (bad) return { ok: false, error: bad };
     if (expired(payload)) return { ok: false, error: "expired" };
     return claims(payload);
   }
@@ -97,18 +122,39 @@ function createGuard(opts) {
     return null;
   }
 
-  // Express middleware (async — verifies via JWKS or HMAC).
-  async function requireTrusted(req, res, next) {
-    try {
-      // A server-PUSHED suspicious verdict (CAEP) blocks even before the request's
-      // own token — the app attached it via app.use(continuum). Zero extra code.
-      if (req.continuumRisk === "suspicious") return res.status(403).json({ error: "step_up_required", risk: "suspicious", requiresStepUp: true, pushed: true });
-      const v = await verifyToken(tokenFromReq(req));
-      if (!v.ok) return res.status(401).json({ error: "continuum_risk_invalid", reason: v.error });
-      if (v.risk === "suspicious" || (blockWarmup && v.risk === "warmup")) return res.status(403).json({ error: "step_up_required", risk: v.risk, requiresStepUp: true });
-      req.continuum = v;
-      next();
-    } catch (e) { next(e); }
+  // Express middleware (async — verifies via JWKS or HMAC). requireTrusted lets a warm-up verdict through (unless
+  // blockWarmup); requireVerified never does: use it on actions that must not happen before the typing or movement
+  // has been judged, such as moving money or changing the e-mail address (2026-11-08).
+  // pending: how a refused warm-up is answered. requireVerified says "verdict_pending" (keep typing or moving, no
+  // passkey needed); the older blockWarmup option keeps its step-up answer.
+  function middleware(blockWarm, pending) {
+    return async function (req, res, next) {
+      try {
+        // A server-PUSHED suspicious verdict (CAEP) blocks even before the request's
+        // own token — the app attached it via app.use(continuum). Zero extra code.
+        if (req.continuumRisk === "suspicious") return res.status(403).json({ error: "step_up_required", risk: "suspicious", requiresStepUp: true, pushed: true });
+        const v = await verifyToken(tokenFromReq(req));
+        if (!v.ok) return res.status(401).json({ error: "continuum_risk_invalid", reason: v.error });
+        if (v.risk === "suspicious") return res.status(403).json({ error: "step_up_required", risk: v.risk, requiresStepUp: true });
+        if (blockWarm && v.risk === "warmup") {
+          return res.status(403).json(pending
+            ? { error: "verdict_pending", risk: v.risk, requiresStepUp: false }
+            : { error: "step_up_required", risk: v.risk, requiresStepUp: true });
+        }
+        req.continuum = v;
+        next();
+      } catch (e) { next(e); }
+    };
+  }
+  const requireTrusted = middleware(blockWarmup, false);
+  const requireVerified = middleware(true, true);
+
+  // Standard HS256 JWT (the documented identity contract) — identical to what
+  // any other language's JWT library would produce with the tenant secret.
+  function signIdentity(uid, ttlSec, extra) {
+    const h = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+    const p = Buffer.from(JSON.stringify({ ...(extra || {}), sub: String(uid), exp: Math.floor(Date.now() / 1000) + ttlSec })).toString("base64url");
+    return h + "." + p + "." + crypto.createHmac("sha256", secret).update(h + "." + p).digest("base64url");
   }
 
   // Identity endpoint middleware. The consumer mounts this and only tells it HOW
@@ -126,11 +172,47 @@ function createGuard(opts) {
       let uid = null;
       try { uid = getUserId(req); } catch (e) { uid = null; }
       if (uid == null || uid === "") return res.status(401).json({ error: "not_logged_in" });
-      // Standard HS256 JWT (the documented identity contract) — identical to what
-      // any other language's JWT library would produce with the tenant secret.
-      const h = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
-      const p = Buffer.from(JSON.stringify({ sub: String(uid), exp: Math.floor(Date.now() / 1000) + ttl })).toString("base64url");
-      res.json({ token: h + "." + p + "." + crypto.createHmac("sha256", secret).update(h + "." + p).digest("base64url") });
+      res.json({ token: signIdentity(uid, ttl) });
+    };
+  }
+
+  // Sign-in for the Continuum Guard browser extension: this app's side of the gateway's /v1/link/*
+  // flow (OAuth-style, see the gateway's "EXTENSION SIGN-IN"). Its address is the tenant's
+  // "sign-in page for the extension" in the Continuum console. It serves
+  //   GET /continuum/link?continuum_link=<link id>
+  // A signed-in user is sent straight back to the gateway with an identity token bound to that link
+  // id and valid for 2 minutes, as a form post, so the token never appears in an address. Anyone else
+  // goes to the app's own login page first (loginUrl, with ?next= back here). The extension never
+  // sees the user's password or this app's secret.
+  function link(getUserId, opts) {
+    opts = opts || {};
+    const linkPath = opts.path || "/continuum/link";
+    const gatewayUrl = String(opts.gatewayUrl || process.env.CONTINUUM_GATEWAY_URL || "").replace(/\/+$/, "");
+    const loginUrl = opts.loginUrl || "/login.html";
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    return function (req, res, next) {
+      if ((req.path || req.url).split("?")[0] !== linkPath || req.method !== "GET") return next();
+      let id = "";
+      try { id = new URL(req.originalUrl || req.url, "http://x").searchParams.get("continuum_link") || ""; } catch (e) {}
+      if (!/^[a-f0-9]{32}$/.test(id)) return res.status(400).type("text/plain").send("Missing or malformed continuum_link.");
+      if (!gatewayUrl) return res.status(500).type("text/plain").send("The Continuum gateway address is not configured (CONTINUUM_GATEWAY_URL).");
+      let uid = null;
+      try { uid = getUserId(req); } catch (e) { uid = null; }
+      if (uid == null || uid === "") {
+        const back = linkPath + "?continuum_link=" + id;
+        return res.redirect(302, loginUrl + (loginUrl.includes("?") ? "&" : "?") + "next=" + encodeURIComponent(back));
+      }
+      let name = null;
+      try { name = opts.name ? opts.name(req) : null; } catch (e) { name = null; }
+      const token = signIdentity(uid, 120, name ? { link: id, name: String(name) } : { link: id });
+      res.set("Cache-Control", "no-store");
+      res.set("Referrer-Policy", "no-referrer");
+      res.type("html").send('<!doctype html><meta charset="utf-8"><title>Continuum Guard</title>'
+        + '<body style="font:15px system-ui,sans-serif;max-width:420px;margin:60px auto;padding:0 16px">'
+        + '<form id="f" method="post" action="' + esc(gatewayUrl) + '/v1/link/callback">'
+        + '<input type="hidden" name="link" value="' + esc(id) + '"><input type="hidden" name="identity_token" value="' + esc(token) + '">'
+        + '<p>Signing you in to Continuum Guard…</p><button type="submit">Continue</button></form>'
+        + '<script>document.getElementById("f").submit()</script></body>');
     };
   }
 
@@ -150,8 +232,23 @@ function createGuard(opts) {
       req.on("end", async () => {
         let token = raw.trim();
         if (token.charAt(0) === "{") { try { const j = JSON.parse(token); token = j.set || j.token || ""; } catch (e) {} }
-        const v = await verifyToken(token);
+        const v = await verifyEvent(token);
         if (!v.ok) return res.status(400).json({ error: "invalid_set", reason: v.error });
+        if (v.event === "test") return res.status(202).json({ ok: true, test: true });
+        // A replayed or late event must not undo a newer one (2026-11-08): an event is applied once (jti), not
+        // after maxEventAgeSec, and never when it is older than the last event applied for the same user (the
+        // gateway's outbox retries for hours and may deliver out of order). These are answered 202 so the outbox
+        // stops retrying them.
+        const now = Math.floor(Date.now() / 1000);
+        if (maxEventAgeSec > 0 && now - v.issuedAt > maxEventAgeSec) return res.status(202).json({ ok: true, ignored: "stale" });
+        if (v.jti && seenEvents.has(v.jti)) return res.status(202).json({ ok: true, ignored: "duplicate" });
+        const subject = String(v.userId);
+        if ((lastEventAt.get(subject) || 0) > v.issuedAt) return res.status(202).json({ ok: true, ignored: "older than the last event" });
+        if (v.jti) {
+          seenEvents.set(v.jti, v.issuedAt);
+          if (seenEvents.size > 10000) for (const [j, at] of seenEvents) if (now - at > maxEventAgeSec) seenEvents.delete(j);
+        }
+        lastEventAt.set(subject, v.issuedAt);
         const evt = { userId: v.userId, risk: v.risk, modality: v.modality, event: "risk-change" };
         // Built-in reaction: remember suspicious subjects, clear when they settle.
         if (evt.risk === "suspicious") pushedRisk.set(String(evt.userId), "suspicious");
@@ -163,7 +260,15 @@ function createGuard(opts) {
     };
   }
 
-  return { verify, verifyToken, requireTrusted, identity, events, pushedRiskFor };
+  return { verify, verifyToken, verifyEvent, requireTrusted, requireVerified, identity, link, events, pushedRiskFor };
+}
+
+// The logged-in user's display name, from the same conventions as defaultUser; shown in the
+// extension ("Signed in as …"). Optional: null leaves the user id.
+function defaultName(req) {
+  if (req.user && typeof req.user === "object") return req.user.email || req.user.name || req.user.username || null;
+  if (req.session) return req.session.username || req.session.email || null;
+  return null;
 }
 
 // Zero-config user detection. The one thing only the app knows is WHERE its
@@ -189,7 +294,7 @@ function defaultUser(req) {
 // One-line integration. The returned value is itself the identity middleware
 // (app.use(continuum)) AND carries .protect / .verify:
 //   const continuum = require("@continuum/node")({ secret: process.env.CONTINUUM_SECRET });
-//   app.use(continuum);                    // serves /continuum/identity (user auto-detected)
+//   app.use(continuum);                    // serves /continuum/identity and /continuum/link (user auto-detected)
 //   app.post("/transfer", continuum.protect, handler);   // enforce on sensitive routes
 // Pass `user: req => ...` only if your session shape isn't a common convention.
 function continuum(opts) {
@@ -198,14 +303,18 @@ function continuum(opts) {
   const getUser = opts.user || defaultUser;                   // auto-detect unless overridden
   const idMw = g.identity(getUser);                           // serves /continuum/identity
   const evMw = g.events(opts.onRisk || null);                 // receives /continuum/events (+ optional cb)
+  // serves /continuum/link (the browser extension's sign-in); needs the gateway's public address
+  const linkMw = g.link(getUser, { gatewayUrl: opts.gatewayUrl, loginUrl: opts.loginUrl, name: opts.userName || defaultName });
   const IDENTITY_PATH = "/continuum/identity";
   const EVENTS_PATH = "/continuum/events";
+  const LINK_PATH = "/continuum/link";
   // One middleware does it all: serve identity, receive pushed events, and attach
   // THIS request's pushed risk so protect() reacts to CAEP with no extra app code.
   const mw = function (req, res, next) {
     const p = (req.path || req.url).split("?")[0];
     if (req.method === "POST" && p === EVENTS_PATH) return evMw(req, res, next);
     if (p === IDENTITY_PATH) return idMw(req, res, next);
+    if (p === LINK_PATH) return linkMw(req, res, next);
     try { const s = getUser(req); if (s != null && s !== "") req.continuumRisk = g.pushedRiskFor(s); } catch (e) {}
     next();
   };
@@ -214,6 +323,7 @@ function continuum(opts) {
   mw.verify = g.verify;
   mw.verifyToken = g.verifyToken;
   mw.identity = g.identity;
+  mw.link = g.link;
   mw.events = g.events;
   mw.riskFor = g.pushedRiskFor;
   return mw;

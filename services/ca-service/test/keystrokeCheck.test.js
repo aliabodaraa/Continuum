@@ -31,14 +31,16 @@ function assertion(sub) {
   return `${h}.${p}.${crypto.createSign("RSA-SHA256").update(`${h}.${p}`).sign(privateKey).toString("base64url")}`;
 }
 
-// ---- the model service: the newest `low` windows of each request score 0.1, the others 0.9
-const model = { low: 0 };
+// ---- the model service: the newest `low` windows of each request score 0.1, the others 0.9; `fail` answers that
+// HTTP status instead (503: unavailable, 500 or 404: an error such as a lost model version)
+const model = { low: 0, fail: 0 };
 const stub = http.createServer((req, res) => {
   res.setHeader("content-type", "application/json");
   if (req.method === "GET" && req.url === "/jwks.json") return res.end(JSON.stringify({ keys: [JWK] }));
   if (req.method === "POST" && req.url === "/api/user/predict") {
     let body = "";
     req.on("data", (c) => { body += c; }).on("end", () => {
+      if (model.fail) { res.statusCode = model.fail; return res.end(JSON.stringify({ error: "stub failure" })); }
       const n = JSON.parse(body).windows.length;
       res.end(JSON.stringify({ model_loaded: true, prediction: Array.from({ length: n }, (_, i) => (i >= n - model.low ? [0.9, 0.1] : [0.1, 0.9])) }));
     });
@@ -63,7 +65,7 @@ function typing(keys) {
   return events;
 }
 
-const USERS = [1001, 1002, 1003, 1004, 1005, 1006, 1007];
+const USERS = [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1009, 1010, 1011];   // 1008 has no typing profile
 let server, base, log = "";
 const freePort = () => new Promise((resolve) => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => resolve(p)); }); });
 
@@ -98,14 +100,18 @@ test.after(async () => {
   try { fs.rmSync(DIR, { recursive: true, force: true }); } catch (e) { /* a lock on Windows: the system cleans the temp folder */ }
 });
 
-async function check(sub, { keys = 320, low, hasPasskey = true }) {
+async function check(sub, { keys = 320, low, hasPasskey = true, events = null }) {
   model.low = low;
   const r = await fetch(`${base}/v1/keystroke/check`, {
     method: "POST", headers: { "Content-Type": "application/json", "X-Continuum-Identity": assertion(sub) },
-    body: JSON.stringify({ textLength: keys, keystrokeEvents: typing(keys), hasPasskey }),
+    body: JSON.stringify({ textLength: keys, keystrokeEvents: events || typing(keys), hasPasskey }),
   });
   return { status: r.status, d: await r.json() };
 }
+const tokenRisk = (t) => JSON.parse(Buffer.from(String(t).split(".")[1], "base64url").toString("utf8")).risk;
+const post = (path, sub, body = {}) => fetch(`${base}${path}`, {
+  method: "POST", headers: { "Content-Type": "application/json", "X-Continuum-Identity": assertion(sub) }, body: JSON.stringify(body),
+});
 const locked = async (sub) => (await (await fetch(`${base}/v1/lock/status/${sub}`, { headers: { "X-Continuum-Identity": assertion(sub) } })).json()).locked;
 
 test("typing that matches the user: a full packet, no suspicion, no passkey", async () => {
@@ -154,4 +160,69 @@ test("nothing about the typing checks is carried from one check to the next", as
   await check(1007, { low: 2, hasPasskey: false });
   const ro = new Database(DB_PATH, { readonly: true });
   try { assert.equal(ro.prepare("SELECT COUNT(*) AS n FROM decision_state").get().n, 0); } finally { ro.close(); }
+});
+
+// ---- fail closed (2026-11-08): no score, no verdict; a locked account gets "locked" from every check
+
+test("the model service is unavailable: no verdict and no token, not a 'verified' check", async () => {
+  model.fail = 503;
+  try {
+    const { status, d } = await check(1009, { low: 0 });
+    assert.equal(status, 503);
+    assert.equal(d.checked, false);
+    assert.equal(d.error, "model_unavailable");
+    assert.equal(d.riskToken, undefined, "no token is signed without a score");
+  } finally { model.fail = 0; }
+});
+
+test("the model service answers an error (a lost model version): no verdict either", async () => {
+  model.fail = 404;
+  try {
+    const { status, d } = await check(1009, { low: 0 });
+    assert.equal(status, 503);
+    assert.equal(d.checked, false);
+    assert.equal(d.riskToken, undefined);
+  } finally { model.fail = 0; }
+});
+
+test("a user with no typing profile gets no verdict and no token", async () => {
+  const { status, d } = await check(1008, { low: 0 });
+  assert.equal(status, 200);
+  assert.equal(d.checked, false);
+  assert.equal(d.rhythmEnrollmentRequired, true);
+  assert.equal(d.riskToken, undefined);
+});
+
+test("degenerate typing asks for the passkey and its token says suspicious", async () => {
+  // 60 presses of two keys, 150 ms apart: low key diversity, which the model may well score as genuine
+  const events = [];
+  for (let i = 0, t = 0; i < 60; i++, t += 150) {
+    const keyCode = i % 2 ? 74 : 75;
+    events.push({ keyCode, eventType: "keydown", timestampRelative: t, fieldName: "f1", fieldType: "textarea" });
+    events.push({ keyCode, eventType: "keyup", timestampRelative: t + 80, fieldName: "f1", fieldType: "textarea" });
+  }
+  const { d } = await check(1010, { keys: 90, low: 0, events });
+  assert.equal(d.requiresPasskeyChallenge, true);
+  assert.equal(d.isSuspicious, true);
+  assert.equal(tokenRisk(d.riskToken), "suspicious");
+  await post("/v1/lock/clear", 1010);
+});
+
+test("a locked account: typing and mouse checks answer 423 'locked', signed suspicious, until the lock is cleared", async () => {
+  assert.equal((await post("/v1/lock/set", 1011)).status, 200);
+  const ks = await check(1011, { low: 0 });
+  assert.equal(ks.status, 423);
+  assert.equal(ks.d.locked, true);
+  assert.equal(ks.d.requiresPasskeyChallenge, true);
+  assert.equal(tokenRisk(ks.d.riskToken), "suspicious");
+  const m = await post("/v1/mouse/check", 1011, { windows: [] });
+  assert.equal(m.status, 423);
+  const md = await m.json();
+  assert.equal(md.locked, true);
+  assert.equal(tokenRisk(md.riskToken), "suspicious");
+  assert.equal((await post("/v1/lock/clear", 1011)).status, 200);
+  const after = await check(1011, { low: 0 });
+  assert.equal(after.status, 200);
+  assert.equal(after.d.isSuspicious, false);
+  assert.equal(tokenRisk(after.d.riskToken), "genuine");
 });

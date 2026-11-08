@@ -73,6 +73,7 @@
         var r = await fetch("/save-note", { method: "POST", headers: headers, body: JSON.stringify({ title: title.value, body: body.value }) });
         var d = await r.json();
         if (r.ok) show(true, "✓ " + d.message + " (risk: " + (d.verdict && d.verdict.risk) + ")");
+        else if (r.status === 403 && d.error === "verdict_pending") show(false, "⏳ Not verified yet — keep typing a little so Continuum can judge, then retry.");
         else if (r.status === 403) show(false, "⛔ Blocked — behavior looks suspicious; verify with your passkey, then retry.");
         else if (r.status === 401) show(false, "🔒 No verdict yet — type a few lines so Continuum can evaluate you.");
         else show(false, "Error " + r.status);

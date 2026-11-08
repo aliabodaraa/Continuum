@@ -55,6 +55,18 @@ function signRisk(userId, risk, modality) {
 function riskLevel(isWarmup, isSuspicious) {
   return isWarmup ? "warmup" : isSuspicious ? "suspicious" : "genuine";
 }
+// A locked account (a step-up asked for and not yet passed) gets no new verdict: every check answers 423 "locked",
+// signed suspicious, and asks for the passkey again, whichever tab or client sends it. Until 2026-11-08 the lock was
+// read only at page load (lock/status), so another tab already open kept receiving genuine and warm-up tokens.
+async function lockedAnswer(res, userId, modality) {
+  if (!(await lock.isLocked(userId))) return false;
+  res.status(423).json({
+    ok: false, checked: true, locked: true, warmup: false, isSuspicious: true, requiresPasskeyChallenge: true,
+    riskToken: signRisk(userId, "suspicious", modality),
+    message: "This account is locked until the passkey is verified.",
+  });
+  return true;
+}
 
 // ---- adaptive-learning + paste policy (ported from the old demo route) ----
 const ADAPTIVE_CONFIDENCE_MIN = 0.8;
@@ -406,6 +418,7 @@ app.post("/v1/keystroke/enroll", requireIdentity, channelOn("keystroke"), async 
 app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), excludeFields, async (req, res) => {
   try {
     const userId = uid(req);
+    if (await lockedAnswer(res, userId, "keystroke")) return;
     const { textContent, textLength, keystrokeTimings, keystrokeEvents, hasPasskey } = req.body;
     // The organisation's packet: the vote runs on its last this-many windows, and until there are
     // more windows than this the check is warm-up.
@@ -454,6 +467,12 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
     // carries no windowCount, so without this it would default to warmup.)
     const unverifiable = evaluation.unverifiable === true;
     const isPastePolicy = evaluation.modelType === "paste-policy";
+    // No typing profile yet (or one from an older feature scheme): nothing to judge, so no verdict and no token,
+    // unless the input itself asks for the passkey (pastes beyond the allowance, degenerate typing). It used to be
+    // signed "genuine" once the text was long enough.
+    if (evaluation.modelAvailable === false && !isPastePolicy && !degenerateInput) {
+      return res.json({ ok: true, checked: false, rhythmEnrollmentRequired: true, message: "No typing profile yet: no verdict." });
+    }
     const isWarmup = Number(evaluation.windowCount || 0) <= packetWindows &&
       !overwhelmingImpostor && !unverifiable && !isPastePolicy && !degenerateInput;
     // The decision is the packet vote itself (Lu et al., 2020, here over the organisation's packet, twenty
@@ -461,6 +480,10 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
     // once. Nothing is carried from one check to the next. Degenerate input is unverifiable even when the
     // model scores it genuine, so it forces suspicion.
     const effectiveSuspicious = (!isWarmup && evaluation.isSuspicious) || degenerateInput;
+    // What the answer and its signed token say: the model's packet vote, and degenerate input too (the decision above
+    // asks for the passkey on it, but until 2026-11-08 the token was signed from the vote alone, so "genuine").
+    // Warm-up keeps the vote's own value, which the SDK's post-step-up probation reads.
+    const verdictSuspicious = evaluation.isSuspicious === true || degenerateInput;
     const passkeyTriggered = !!hasPasskey && effectiveSuspicious;
     if (passkeyTriggered) await lock.setLocked(userId);
 
@@ -491,9 +514,9 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
       // a genuine user who is merely rebuilding their first window.
       scoredWindowCount: warmupScores.length,
       packetWindows,
-      modelConfidence: evaluation.modelConfidence, isSuspicious: evaluation.isSuspicious,
+      modelConfidence: evaluation.modelConfidence, isSuspicious: verdictSuspicious,
       typingEvaluation: evaluation,
-      riskToken: signRisk(userId, riskLevel(isWarmup, evaluation.isSuspicious), "keystroke"),
+      riskToken: signRisk(userId, riskLevel(isWarmup, verdictSuspicious), "keystroke"),
       message: passkeyTriggered
         ? (isPastePolicy ? "More pastes into one field than allowed. Passkey verification required."
           : degenerateInput ? "Repeated or erratic keystrokes can't verify identity. Passkey verification required."
@@ -759,6 +782,7 @@ app.post("/v1/mouse/actions/enroll", requireIdentity, channelOn("mouse"), async 
 });
 app.post("/v1/mouse/actions/check", requireIdentity, channelOn("mouse"), async (req, res) => {
   try {
+    if (await lockedAnswer(res, uid(req), "mouse")) return;
     const r = await mouseActions.checkMouseActions(uid(req), req.body.actions);
     if (r.body && r.body.checked) {
       r.body.riskToken = signRisk(uid(req), riskLevel(r.body.warmup, r.body.isSuspicious), "mouse");
@@ -783,6 +807,7 @@ app.post("/v1/mouse/enroll", requireIdentity, channelOn("mouse"), async (req, re
 });
 app.post("/v1/mouse/check", requireIdentity, channelOn("mouse"), async (req, res) => {
   try {
+    if (await lockedAnswer(res, uid(req), "mouse")) return;
     const r = await mouse.checkMouse(uid(req), req.body.windows, req.body.study);
     if (r.body && r.body.checked) {
       r.body.riskToken = signRisk(uid(req), riskLevel(r.body.warmup, r.body.isSuspicious), "mouse");

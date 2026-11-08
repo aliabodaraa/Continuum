@@ -92,6 +92,7 @@ function memoryShortLived() {
       return { prev, changed: true, event: makeEvent(prev) || null };
     },
     async deleteRiskState(key) { risk.delete(key); },
+    async riskGet(key) { return risk.get(key); },
     async sweep() {
       const now = Date.now();
       for (const m of [links, ceremonies]) for (const [id, e] of m) if (e.exp <= now) m.delete(id);
@@ -485,6 +486,10 @@ async function openPostgres(databaseUrl, log) {
       return { prev, changed: true, queued: !!ev };
     }),
     async deleteRiskState(key) { await pool.query("DELETE FROM gw_risk_state WHERE key = $1", [key]); },
+    async riskGet(key) {
+      const r = await pool.query("SELECT risk FROM gw_risk_state WHERE key = $1", [key]);
+      return r.rows[0] ? r.rows[0].risk || undefined : undefined;
+    },
     // Due events, leased for leaseMs (a copy that dies mid-delivery leaves them to the next one). The
     // attempt is counted when claimed.
     async claimWebhooks(limit, leaseMs) {

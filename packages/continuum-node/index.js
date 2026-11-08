@@ -33,6 +33,9 @@ function createGuard(opts) {
   // server-pushed verdict with zero extra app code.
   const pushedRisk = new Map();
   function pushedRiskFor(subject) { return pushedRisk.get(String(subject)) || null; }
+  // events(): jti -> iat of the events applied, and per subject the iat of the last one applied
+  const maxEventAgeSec = opts.maxEventAgeSec != null ? opts.maxEventAgeSec : 86400;
+  const seenEvents = new Map(), lastEventAt = new Map();
 
   // ---- JWKS cache (public keys for asymmetric verdict verification) ----
   let jwks = {}, jwksAt = 0;
@@ -63,24 +66,43 @@ function createGuard(opts) {
     return { parts, header, payload };
   }
   const expired = (p) => p.exp && Math.floor(Date.now() / 1000) > p.exp + clockSkewSec;
+  // Only a verdict counts (2026-11-08): it carries a risk and an expiry and is not an event. The gateway's key set
+  // also signs identity assertions (no risk claim) and risk-change events (no expiry); either used to pass as
+  // "genuine", an event for ever.
+  const RISKS = ["genuine", "warmup", "suspicious"];
+  const notVerdict = (p) => (!RISKS.includes(p.risk) || p.event != null ? "not_a_verdict" : typeof p.exp !== "number" ? "no_expiry" : null);
   const claims = (p) => ({ ok: true, userId: p.sub, risk: p.risk, modality: p.modality, issuedAt: p.iat, expiresAt: p.exp, issuer: p.iss });
 
-  // Preferred: async verify — RS256 via JWKS (public key, no secret), else HMAC.
-  async function verifyToken(token) {
-    const t = parse(token); if (t.err) return { ok: false, error: t.err };
+  // The signature alone (RS256 via JWKS, else HMAC); what the payload must say is up to the caller.
+  async function signedPayload(token) {
+    const t = parse(token); if (t.err) return { error: t.err };
     const { parts, header, payload } = t;
     const data = parts[0] + "." + parts[1];
     if (header.alg === "RS256") {
       const key = await jwksKey(header.kid);
-      if (!key) return { ok: false, error: "unknown_kid" };
+      if (!key) return { error: "unknown_kid" };
       let ok = false; try { ok = crypto.verify("RSA-SHA256", Buffer.from(data), key, Buffer.from(parts[2], "base64url")); } catch (e) {}
-      if (!ok) return { ok: false, error: "bad_signature" };
+      if (!ok) return { error: "bad_signature" };
     } else {
-      if (!secret) return { ok: false, error: "no_secret_for_hmac" };
-      if (!timingEqual(parts[2], crypto.createHmac("sha256", secret).update(data).digest("base64url"))) return { ok: false, error: "bad_signature" };
+      if (!secret) return { error: "no_secret_for_hmac" };
+      if (!timingEqual(parts[2], crypto.createHmac("sha256", secret).update(data).digest("base64url"))) return { error: "bad_signature" };
     }
-    if (expired(payload)) return { ok: false, error: "expired" };
-    return claims(payload);
+    return { payload };
+  }
+  // Preferred: async verify — RS256 via JWKS (public key, no secret), else HMAC.
+  async function verifyToken(token) {
+    const s = await signedPayload(token); if (s.error) return { ok: false, error: s.error };
+    const bad = notVerdict(s.payload); if (bad) return { ok: false, error: bad };
+    if (expired(s.payload)) return { ok: false, error: "expired" };
+    return claims(s.payload);
+  }
+  // A risk-change event (a CAEP SET, pushed to the events receiver): signed like a verdict, it carries event, risk,
+  // iat and jti but no exp; its freshness is checked by events() below.
+  async function verifyEvent(token) {
+    const s = await signedPayload(token); if (s.error) return { ok: false, error: s.error };
+    const p = s.payload;
+    if ((p.event !== "risk-change" && p.event !== "test") || !RISKS.includes(p.risk) || typeof p.iat !== "number") return { ok: false, error: "not_an_event" };
+    return { ok: true, userId: p.sub, risk: p.risk, modality: p.modality, event: p.event, issuedAt: p.iat, jti: p.jti || null };
   }
   // Back-compat: synchronous HMAC-only verify.
   function verify(token) {
@@ -88,6 +110,7 @@ function createGuard(opts) {
     const { parts, payload } = t;
     if (!secret) return { ok: false, error: "no_secret" };
     if (!timingEqual(parts[2], crypto.createHmac("sha256", secret).update(parts[0] + "." + parts[1]).digest("base64url"))) return { ok: false, error: "bad_signature" };
+    const bad = notVerdict(payload); if (bad) return { ok: false, error: bad };
     if (expired(payload)) return { ok: false, error: "expired" };
     return claims(payload);
   }
@@ -99,19 +122,32 @@ function createGuard(opts) {
     return null;
   }
 
-  // Express middleware (async — verifies via JWKS or HMAC).
-  async function requireTrusted(req, res, next) {
-    try {
-      // A server-PUSHED suspicious verdict (CAEP) blocks even before the request's
-      // own token — the app attached it via app.use(continuum). Zero extra code.
-      if (req.continuumRisk === "suspicious") return res.status(403).json({ error: "step_up_required", risk: "suspicious", requiresStepUp: true, pushed: true });
-      const v = await verifyToken(tokenFromReq(req));
-      if (!v.ok) return res.status(401).json({ error: "continuum_risk_invalid", reason: v.error });
-      if (v.risk === "suspicious" || (blockWarmup && v.risk === "warmup")) return res.status(403).json({ error: "step_up_required", risk: v.risk, requiresStepUp: true });
-      req.continuum = v;
-      next();
-    } catch (e) { next(e); }
+  // Express middleware (async — verifies via JWKS or HMAC). requireTrusted lets a warm-up verdict through (unless
+  // blockWarmup); requireVerified never does: use it on actions that must not happen before the typing or movement
+  // has been judged, such as moving money or changing the e-mail address (2026-11-08).
+  // pending: how a refused warm-up is answered. requireVerified says "verdict_pending" (keep typing or moving, no
+  // passkey needed); the older blockWarmup option keeps its step-up answer.
+  function middleware(blockWarm, pending) {
+    return async function (req, res, next) {
+      try {
+        // A server-PUSHED suspicious verdict (CAEP) blocks even before the request's
+        // own token — the app attached it via app.use(continuum). Zero extra code.
+        if (req.continuumRisk === "suspicious") return res.status(403).json({ error: "step_up_required", risk: "suspicious", requiresStepUp: true, pushed: true });
+        const v = await verifyToken(tokenFromReq(req));
+        if (!v.ok) return res.status(401).json({ error: "continuum_risk_invalid", reason: v.error });
+        if (v.risk === "suspicious") return res.status(403).json({ error: "step_up_required", risk: v.risk, requiresStepUp: true });
+        if (blockWarm && v.risk === "warmup") {
+          return res.status(403).json(pending
+            ? { error: "verdict_pending", risk: v.risk, requiresStepUp: false }
+            : { error: "step_up_required", risk: v.risk, requiresStepUp: true });
+        }
+        req.continuum = v;
+        next();
+      } catch (e) { next(e); }
+    };
   }
+  const requireTrusted = middleware(blockWarmup, false);
+  const requireVerified = middleware(true, true);
 
   // Standard HS256 JWT (the documented identity contract) — identical to what
   // any other language's JWT library would produce with the tenant secret.
@@ -196,8 +232,23 @@ function createGuard(opts) {
       req.on("end", async () => {
         let token = raw.trim();
         if (token.charAt(0) === "{") { try { const j = JSON.parse(token); token = j.set || j.token || ""; } catch (e) {} }
-        const v = await verifyToken(token);
+        const v = await verifyEvent(token);
         if (!v.ok) return res.status(400).json({ error: "invalid_set", reason: v.error });
+        if (v.event === "test") return res.status(202).json({ ok: true, test: true });
+        // A replayed or late event must not undo a newer one (2026-11-08): an event is applied once (jti), not
+        // after maxEventAgeSec, and never when it is older than the last event applied for the same user (the
+        // gateway's outbox retries for hours and may deliver out of order). These are answered 202 so the outbox
+        // stops retrying them.
+        const now = Math.floor(Date.now() / 1000);
+        if (maxEventAgeSec > 0 && now - v.issuedAt > maxEventAgeSec) return res.status(202).json({ ok: true, ignored: "stale" });
+        if (v.jti && seenEvents.has(v.jti)) return res.status(202).json({ ok: true, ignored: "duplicate" });
+        const subject = String(v.userId);
+        if ((lastEventAt.get(subject) || 0) > v.issuedAt) return res.status(202).json({ ok: true, ignored: "older than the last event" });
+        if (v.jti) {
+          seenEvents.set(v.jti, v.issuedAt);
+          if (seenEvents.size > 10000) for (const [j, at] of seenEvents) if (now - at > maxEventAgeSec) seenEvents.delete(j);
+        }
+        lastEventAt.set(subject, v.issuedAt);
         const evt = { userId: v.userId, risk: v.risk, modality: v.modality, event: "risk-change" };
         // Built-in reaction: remember suspicious subjects, clear when they settle.
         if (evt.risk === "suspicious") pushedRisk.set(String(evt.userId), "suspicious");
@@ -209,7 +260,7 @@ function createGuard(opts) {
     };
   }
 
-  return { verify, verifyToken, requireTrusted, identity, link, events, pushedRiskFor };
+  return { verify, verifyToken, verifyEvent, requireTrusted, requireVerified, identity, link, events, pushedRiskFor };
 }
 
 // The logged-in user's display name, from the same conventions as defaultUser; shown in the
