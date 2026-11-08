@@ -185,12 +185,15 @@ test("the model service answers an error (a lost model version): no verdict eith
   } finally { model.fail = 0; }
 });
 
-test("a user with no typing profile gets no verdict and no token", async () => {
+test("a user with no typing profile gets no verdict and no token, but the windows are still reported", async () => {
   const { status, d } = await check(1008, { low: 0 });
   assert.equal(status, 200);
   assert.equal(d.checked, false);
   assert.equal(d.rhythmEnrollmentRequired, true);
   assert.equal(d.riskToken, undefined);
+  assert.equal(d.typingEvaluation.windowCount, 27, "320 keys make 27 windows");
+  assert.equal(d.packetWindows, 20);
+  assert.equal(d.warmup, false, "the packet is full, though nothing is judged");
 });
 
 test("degenerate typing asks for the passkey and its token says suspicious", async () => {

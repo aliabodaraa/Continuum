@@ -443,8 +443,12 @@ try {
   const asText6 = await http(GW + "/v1/sdk/keystroke/check", { method: "POST", body: { textLength: 120, keystrokeEvents: typed("text") }, headers: { ...bearerS, Origin: "http://localhost:4399" } });
   check("an organisation can choose a shorter typing decision (6 windows; an unmeasured 7 is refused), and its pages are told", orgKwBad.status === 400 && orgKwBad.d.error === "bad_setting" &&
     orgKw.status === 200 && confKw.d.recentWindowCount === 6 && (confKw.d.managed || []).includes("keystrokeDecisionWindows"), `7 → ${orgKwBad.status} ${orgKwBad.d.error}; 6 → ${orgKw.status}, config ${confKw.d.recentWindowCount}`);
-  check("the server decides on the organisation's packet (the same 7 windows: warm-up at 20, a verdict at 6)", asText.d.warmup === true && asText6.d.warmup === false && asText6.d.packetWindows === 6,
+  // This session has no typing profile, so since 2026-11-08 no verdict and no token is issued (it was signed
+  // "genuine"); the answer still says how the organisation's packet applies to the windows built.
+  check("the server applies the organisation's packet (the same 7 windows: still filling at 20, a full packet at 6)", asText.d.warmup === true && asText6.d.warmup === false && asText6.d.packetWindows === 6,
     `20: warmup ${asText.d.warmup}; 6: warmup ${asText6.d.warmup}, packet ${asText6.d.packetWindows}`);
+  check("…and with no typing profile there is no verdict and no signed token", asText6.d.checked === false && asText6.d.riskToken === undefined && asText.d.riskToken === undefined,
+    `checked ${asText6.d.checked}, token ${asText6.d.riskToken ? "present" : "none"}`);
   // the adaptive cycle: how many accepted samples make a retrain (1, 2 or 3) and where in the typing a sample is taken from
   const orgReBad = await gw(`/v1/console/tenants/${orgKey}/settings`, { method: "POST", body: { adaptiveRetrainEvery: 4 }, headers: bearerA });
   const orgSfBad = await gw(`/v1/console/tenants/${orgKey}/settings`, { method: "POST", body: { adaptiveSampleFrom: "middle" }, headers: bearerA });

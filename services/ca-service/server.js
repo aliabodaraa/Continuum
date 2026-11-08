@@ -471,7 +471,13 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
     // unless the input itself asks for the passkey (pastes beyond the allowance, degenerate typing). It used to be
     // signed "genuine" once the text was long enough.
     if (evaluation.modelAvailable === false && !isPastePolicy && !degenerateInput) {
-      return res.json({ ok: true, checked: false, rhythmEnrollmentRequired: true, message: "No typing profile yet: no verdict." });
+      // What the server did with the typing is still reported (windows built, the organisation's packet, whether it
+      // is full), without a verdict or a token.
+      const windowCount = Number(evaluation.windowCount || 0);
+      return res.json({
+        ok: true, checked: false, rhythmEnrollmentRequired: true, packetWindows, warmup: windowCount <= packetWindows,
+        typingEvaluation: { windowCount, modelAvailable: false }, message: "No typing profile yet: no verdict.",
+      });
     }
     const isWarmup = Number(evaluation.windowCount || 0) <= packetWindows &&
       !overwhelmingImpostor && !unverifiable && !isPastePolicy && !degenerateInput;
