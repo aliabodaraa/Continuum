@@ -59,6 +59,8 @@ self.CG_AR = {
   "Analyzing… type or move the mouse on any website": "جارٍ التحليل… اكتب أو حرّك الفأرة في أي موقع",
   "off (organisation setting)": "متوقف (إعداد المؤسسة)",
   "not checked (server unreachable)": "غير مفحوص (الخادم غير متاح)",
+  "not checked (model unavailable)": "غير مفحوص (النموذج غير متاح)",
+  "⚠ The checks are unavailable right now: nothing is checked": "⚠ الفحص غير متاح الآن: لا يُفحص شيء",
   "building your model…": "جارٍ بناء نموذجك…",
   "recording… keep browsing as usual": "جارٍ التسجيل… تابع التصفح كالمعتاد",
   "saved {when}": "حُفظت {when}",

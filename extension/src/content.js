@@ -304,6 +304,15 @@
   // A field's type, as the organisation's "fields never watched" names it.
   function typeOf(t) { return !t ? "unknown" : (t.tagName === "INPUT" || t.tagName === "TEXTAREA") ? (t.type || t.tagName).toLowerCase() : t.isContentEditable ? "contenteditable" : String(t.tagName || "unknown").toLowerCase(); }
   function excludedField(t) { return excludeTypes.indexOf(typeOf(t)) >= 0; }
+  // Only typing into a field is typing (2026-11-08): keys on the page itself (space to scroll, a web app's
+  // shortcuts, a game's WASD) were recorded too, and the server's degenerate-input rule read them as one key
+  // hammered. Text inputs, text areas and rich-text editors count, as in the SDK's tracker.
+  var TEXT_INPUTS = ["text", "search", "email", "url", "tel", "number", ""];
+  function isEditable(t) {
+    if (!t) return false;
+    if (t.tagName === "TEXTAREA" || t.isContentEditable) return true;
+    return t.tagName === "INPUT" && TEXT_INPUTS.indexOf(String(t.type || "").toLowerCase()) >= 0;
+  }
 
   function rec(type, e) {
     if (dead) return;
@@ -312,6 +321,9 @@
     try {
       var tgt = e.target;
       if (isHidden(tgt) || isPassword(tgt) || excludedField(tgt)) return;   // no event at all from a password or excluded field
+      if (!isEditable(tgt)) return;
+      // a held key's auto-repeat and IME composition (keyCode 229) are not the person's keystrokes, as in the SDK
+      if (e.repeat || e.isComposing || e.keyCode === 229) return;
       events.push({ keyCode: e.keyCode || 0, type: type, t: evtTime(e) - t0, field: fieldOf(tgt), ftype: typeOf(tgt) });
       if (events.length > 2000) {
         // Trimming shrinks the window count, so lastWindowCount must drop with it or no new window
@@ -338,6 +350,15 @@
     keyCheckNow();
   };
   document.addEventListener("paste", onPaste, true); handlers.push(["paste", onPaste]);
+  // Text dropped into a field counts as a paste for the allowance (2026-11-08), as in the SDK.
+  var onDrop = function (e) {
+    if (!capturing() || !channelOn("keystroke") || !isEditable(e.target) || isHidden(e.target) || isPassword(e.target) || excludedField(e.target)) return;
+    var n = 0; try { n = ((e.dataTransfer && e.dataTransfer.getData("text")) || "").length; } catch (x) {}
+    if (!n) return;
+    events.push({ keyCode: 0, type: "paste", t: evtTime(e) - t0, field: fieldOf(e.target), ftype: typeOf(e.target), pastedLength: n });
+    keyCheckNow();
+  };
+  document.addEventListener("drop", onDrop, true); handlers.push(["drop", onDrop]);
 
   // ---- mouse (positions + timing only) ----
   function recMouse(x, y, st, e) {

@@ -429,7 +429,10 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
     // More pastes into one field than the organisation allows: judged whatever was typed, because the clients
     // send a check at every paste and a paste that no typing follows must still be caught.
     const pasteViolation = ks.pastePolicyViolation(keystrokeEvents, appCfg.pasteAllowance);
-    if (!pasteViolation && (!Number.isFinite(typedLength) || typedLength < ks.minTextChars(packetWindows))) {
+    // The minimum counts what was typed, not only what is still in the field (2026-11-08): a chat box emptied at every
+    // send never held 70 characters, so its typing was never checked. The printable keys sent count as well.
+    const gateLength = Math.max(Number.isFinite(typedLength) ? typedLength : 0, ks.printableKeyCount(keystrokeEvents));
+    if (!pasteViolation && gateLength < ks.minTextChars(packetWindows)) {
       return res.json({ ok: true, checked: false, message: "More typed text is required before rhythm verification" });
     }
     const checkQuality = ks.typingQuality(textContent, keystrokeEvents, Number.isFinite(typedLength) ? typedLength : 0);
@@ -465,8 +468,15 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
     // violation are BOTH definite verdicts, not warmup — they must be challenged,
     // otherwise they're a free pass around the whole model. (A paste evaluation
     // carries no windowCount, so without this it would default to warmup.)
-    const unverifiable = evaluation.unverifiable === true;
     const isPastePolicy = evaluation.modelType === "paste-policy";
+    // Typing that never fills a packet (2026-11-08): a pause over a second drops its digraph, so typing about one key a
+    // second keeps every check in warm-up, a free pass. Twice the keys a packet needs with the packet still not full is
+    // unverifiable, as typing that yields no window at all is.
+    const keysSent = Number(((evaluation.metrics || {}).keyCount) || 0);
+    const sparseTyping = !isPastePolicy && evaluation.modelAvailable !== false &&
+      keysSent >= 2 * ks.minTextChars(packetWindows) && keysSent >= 2 * (ks.WINDOW_SIZE + ks.WINDOW_STRIDE * packetWindows) &&
+      Number(evaluation.windowCount || 0) <= packetWindows;
+    const unverifiable = evaluation.unverifiable === true || sparseTyping;
     // No typing profile yet (or one from an older feature scheme): nothing to judge, so no verdict and no token,
     // unless the input itself asks for the passkey (pastes beyond the allowance, degenerate typing). It used to be
     // signed "genuine" once the text was long enough.
@@ -485,11 +495,11 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
     // windows by default): a check whose last windows are at least half below 0.50 asks for the passkey at
     // once. Nothing is carried from one check to the next. Degenerate input is unverifiable even when the
     // model scores it genuine, so it forces suspicion.
-    const effectiveSuspicious = (!isWarmup && evaluation.isSuspicious) || degenerateInput;
+    const effectiveSuspicious = (!isWarmup && evaluation.isSuspicious) || degenerateInput || sparseTyping;
     // What the answer and its signed token say: the model's packet vote, and degenerate input too (the decision above
     // asks for the passkey on it, but until 2026-11-08 the token was signed from the vote alone, so "genuine").
     // Warm-up keeps the vote's own value, which the SDK's post-step-up probation reads.
-    const verdictSuspicious = evaluation.isSuspicious === true || degenerateInput;
+    const verdictSuspicious = evaluation.isSuspicious === true || degenerateInput || sparseTyping;
     const passkeyTriggered = !!hasPasskey && effectiveSuspicious;
     if (passkeyTriggered) await lock.setLocked(userId);
 
@@ -526,6 +536,7 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
       message: passkeyTriggered
         ? (isPastePolicy ? "More pastes into one field than allowed. Passkey verification required."
           : degenerateInput ? "Repeated or erratic keystrokes can't verify identity. Passkey verification required."
+          : sparseTyping ? "Typing this slow never fills a packet and can't verify identity. Passkey verification required."
           : "Typing rhythm does not match. Passkey verification required.")
         : isWarmup ? "Warming up — building the first evaluation packet." : "Typing rhythm verified.",
     });
@@ -658,11 +669,15 @@ app.post("/v1/keystroke/adaptive/confirm", requireIdentity, channelOn("keystroke
   } catch (err) { return sendError(res, "adaptive-confirm", err); }
 });
 
+// The samples first, then the profile (2026-11-08): a training that runs across the reset finds its samples gone and
+// saves nothing, and one that saves between the two statements finds them gone just after and removes what it saved
+// (lib/keystrokeSecurity.js). The owed training is cancelled, the running job included, so a new enrolment queues its own.
 app.post("/v1/keystroke/reset", requireIdentity, aw(async (req, res) => {
   const userId = uid(req);
+  await db.run("UPDATE keystroke_texts SET is_training = 0 WHERE user_id = ?", userId);
   await ks.resetUserTypingProfile(userId, db);
   await adaptive.forget(userId);
-  await db.run("UPDATE keystroke_texts SET is_training = 0 WHERE user_id = ?", userId);
+  await trainingQueue.cancel(userId, "keystroke", "typing profile reset");
   res.json({ ok: true, message: "Typing rhythm enrollment was reset", typingStatus: await ks.getUserTypingStatus(userId, db) });
 }));
 

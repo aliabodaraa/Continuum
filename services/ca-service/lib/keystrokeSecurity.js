@@ -585,8 +585,8 @@ async function getTrainingSampleRows(userId, db) {
 // from, or its train/validation split puts near-duplicates on both sides and
 // every validation figure — including the calibrated threshold — is measured
 // against data the model already saw. So carry the sample id alongside.
-async function getTrainingWindowsGrouped(userId, db) {
-  const rows = await getTrainingSampleRows(userId, db);
+async function getTrainingWindowsGrouped(userId, db, rows) {
+  rows = rows || await getTrainingSampleRows(userId, db);
   const windows = [];
   const groups = [];
   for (const row of rows) {
@@ -704,23 +704,25 @@ async function saveProfile(userId, db, profile) {
     userId, JSON.stringify(profile), profile.sampleCount);
 }
 
-// Held-out genuine windows for the model-update acceptance test: recent
-// ACTIVITY samples (is_training = 0) were typed by the real user but are never
-// part of the training set, so they measure how a model handles the user's
-// NORMAL typing, not just the clean samples it was fitted on.
-async function getHeldOutWindows(userId, db, maxSamples = 12, maxWindows = 120) {
-  const rows = await db.all(
-      `SELECT id FROM keystroke_texts
-       WHERE user_id = ? AND is_training = 0 AND is_suspicious = 0
-         AND sample_purpose = 'activity'
-       ORDER BY id DESC LIMIT ?`,
-      userId, maxSamples);
-  let windows = [];
-  for (const row of rows) {
-    windows = windows.concat(eventsToFeatureWindows(await getSampleEvents(row.id, db)));
-    if (windows.length >= maxWindows) break;
-  }
-  return windows.slice(0, maxWindows);
+// Held-out genuine typing for the model-update acceptance test: typing by the user that NEITHER model was fitted on.
+// It used to be the activity samples (is_training = 0) that /submit stored, but nothing has written those since samples
+// come only from the passkey-confirmed popup (2026-10-05), so the test found no held-out windows and every retrain was
+// accepted (found 2026-11-08). A retrain now holds its NEWEST training sample out of the new fit. In an adaptive retrain
+// that is one of the samples just confirmed, so the model in use never saw it either, and both models are scored on
+// the same unseen typing. The sample is not lost: it stays a training sample and is fitted from the next retrain on.
+// 20 windows = one popup sample, which is exactly 20 windows.
+const GATE_MIN_WINDOWS = 20;
+
+// Whether the samples a fit was made from are still this user's training samples. A reset clears them
+// (POST /v1/keystroke/reset), and a fit that ran across a reset must not be saved: it was, so a reset during training
+// was silently undone by the model built from the samples it had just removed (2026-11-08).
+async function samplesStillTraining(userId, db, ids) {
+  if (!ids.length) return false;
+  const r = await db.get(
+    `SELECT COUNT(*) AS n FROM keystroke_texts
+     WHERE user_id = ? AND is_training = 1 AND is_suspicious = 0 AND id IN (${ids.map(() => "?").join(",")})`,
+    userId, ...ids);
+  return Number(r && r.n) === ids.length;
 }
 
 async function scoreWindowsWithModel(userId, windows, modelPath) {
@@ -734,14 +736,27 @@ async function scoreWindowsWithModel(userId, windows, modelPath) {
 }
 
 async function trainUserTypingProfile(userId, db) {
-  const sampleCount = (await getTrainingSampleRows(userId, db)).length;
-  const positive = await getTrainingWindowsGrouped(userId, db);
+  const rows = await getTrainingSampleRows(userId, db);   // newest first
+  const sampleIds = rows.map((r) => r.id);
+  const previous = await getUserTypingProfile(userId, db);
+  // A retrain holds out its newest sample for the acceptance test (above) when the rest still makes a model; the first
+  // training (enrolment) uses every sample.
+  // The newest is the one stored last (ids grow with each insert; rows sharing a second are ordered by id ASC).
+  // A sample too short to test is not held out: it is fitted like the rest.
+  let held = previous && previous.modelPath && rows.length > MIN_TRAINING_SAMPLES ? rows.reduce((a, r) => (Number(r.id) > Number(a.id) ? r : a)) : null;
+  let heldOut = held ? eventsToFeatureWindows(await getSampleEvents(held.id, db)) : [];
+  if (heldOut.length < GATE_MIN_WINDOWS) { held = null; heldOut = []; }
+  let positive = await getTrainingWindowsGrouped(userId, db, held ? rows.filter((r) => r !== held) : rows);
+  if (held && positive.windows.length < MIN_POSITIVE_WINDOWS) {
+    held = null; heldOut = [];
+    positive = await getTrainingWindowsGrouped(userId, db, rows);
+  }
+  const sampleCount = rows.length - (held ? 1 : 0);   // the samples this fit is made from
   const positiveWindows = positive.windows;
   if (sampleCount < MIN_TRAINING_SAMPLES || positiveWindows.length < MIN_POSITIVE_WINDOWS) {
     return null;
   }
 
-  const previous = await getUserTypingProfile(userId, db);
   const result = await postModelApi("/api/user/train", {
     userId,
     positiveWindows,
@@ -785,6 +800,23 @@ async function trainUserTypingProfile(userId, db) {
     throw new Error(`keystroke training needs the ${NEGATIVES_SOURCE} negatives: ` +
       `${result.datasetNegativeError || `got ${result.negativeSource}`}`);
   }
+  // The evaluated recipe fine-tunes the base model. The model service trains from scratch when the base is missing or
+  // does not fit (a broken image or volume): a different, never evaluated model that still "trains". It was served
+  // until 2026-11-08; now it is a failed training like the one above.
+  if (result && result.trainedFrom === "scratch") {
+    console.error(`[train] NO BASE MODEL user=${userId}: the model service trained from scratch, not from the base`);
+    if (result.versioned || result.previousModelPath) await discardNew();
+    throw new Error("keystroke training needs the base model: the model service trained from scratch");
+  }
+
+  // A reset during the fit (the samples it was made from are no longer training samples): nothing is saved, and the
+  // new model goes. A reset just as the profile is saved is caught after the save (below).
+  const discardMoot = async (when) => {
+    console.warn(`[train] user=${userId}: the typing samples were reset ${when}; the new model is discarded`);
+    await discardNew().catch((e) => console.error(`[train] user=${userId}: discarding the new model failed: ${e.message}`));
+    return null;
+  };
+  if (!(await samplesStillTraining(userId, db, sampleIds))) return discardMoot("during the training");
 
   // ---- Model-update ACCEPTANCE TEST (validation-gated update) ----
   // Retraining is stochastic: on identical data, successive fits scored a
@@ -809,38 +841,40 @@ async function trainUserTypingProfile(userId, db) {
       baseChange && `base ${previous.baseModel || "unrecorded"} -> ${result.baseModel}`,
     ].filter(Boolean).join(", ") + ": recipe change, gate skipped");
   }
-  try {
-    if (previousPath) {
-      const heldOut = await getHeldOutWindows(userId, db);
-      if (heldOut.length >= 30) {
-        const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
-        const lows = (a) => a.filter((v) => v < DEFAULT_CNN_THRESHOLD).length;
-        const newScores = await scoreWindowsWithModel(userId, heldOut, result.modelPath);
-        const prevScores = await scoreWindowsWithModel(userId, heldOut, previousPath);
-        const newMean = mean(newScores);
-        const prevMean = mean(prevScores);
-        const regressed =
-          newScores.length === prevScores.length &&
-          (newMean < prevMean - 0.02 || lows(newScores) > lows(prevScores) + 2);
-        console.log(
-          `[retrain-gate] user=${userId} heldOut=${heldOut.length} prevMean=${prevMean.toFixed(3)} newMean=${newMean.toFixed(3)} prevLows=${lows(prevScores)} newLows=${lows(newScores)} → ${migrating ? "recipe change, kept" : regressed ? "ROLLBACK" : "accept"}`,
-        );
-        if (regressed && !migrating) {
-          await discardNew();
-          // Keep serving the proven model — but CONSUME the retrain trigger by
-          // re-saving the existing profile (bumps trained_at). Otherwise
-          // adaptiveSamplesSinceRetrain stays stuck ≥ RETRAIN_EVERY forever:
-          // the UI shows "retraining now" indefinitely, its poll keeps setting
-          // _retrainInProgress, and the contribute panel never reappears. The
-          // samples themselves stay in the training pool for the next attempt.
-          const existing = await getUserTypingProfile(userId, db);
-          if (existing) await saveProfile(userId, db, existing);
-          return existing;
-        }
+  // The held-out sample (above) is scored by both models. A new fit that cannot score it is a failed training (it would
+  // fail every check too); a model in use that cannot score it (its files gone) leaves the new fit, which can. Until
+  // 2026-11-08 any error here accepted the new model unchecked.
+  if (previousPath && heldOut.length >= GATE_MIN_WINDOWS) {
+    const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
+    const lows = (a) => a.filter((v) => v < DEFAULT_CNN_THRESHOLD).length;
+    let newScores = [];
+    try { newScores = await scoreWindowsWithModel(userId, heldOut, result.modelPath); }
+    catch (e) { console.error(`[retrain-gate] user=${userId} the new fit could not score: ${e.message}`); }
+    if (newScores.length !== heldOut.length) {
+      await discardNew();
+      throw new Error(`the new typing model scored ${newScores.length} of ${heldOut.length} held-out windows`);
+    }
+    let prevScores = null;
+    try { prevScores = await scoreWindowsWithModel(userId, heldOut, previousPath); }
+    catch (e) { console.error(`[retrain-gate] user=${userId} the model in use could not score (${e.message}): the new fit is kept`); }
+    if (prevScores && prevScores.length === newScores.length) {
+      const newMean = mean(newScores);
+      const prevMean = mean(prevScores);
+      const regressed = newMean < prevMean - 0.02 || lows(newScores) > lows(prevScores) + 2;
+      console.log(
+        `[retrain-gate] user=${userId} heldOut=${heldOut.length} (sample ${held.id}) prevMean=${prevMean.toFixed(3)} newMean=${newMean.toFixed(3)} prevLows=${lows(prevScores)} newLows=${lows(newScores)} → ${migrating ? "recipe change, kept" : regressed ? "ROLLBACK" : "accept"}`,
+      );
+      if (regressed && !migrating) {
+        await discardNew();
+        // Keep serving the proven model, and consume the retrain: trained_at moves on, so the samples-since-retrain
+        // count starts again, and the samples stay in the training pool for the next attempt. An UPDATE, not a re-save:
+        // a reset during the fit deleted the profile, and it must stay deleted.
+        await db.run("UPDATE user_typing_profiles SET trained_at = CURRENT_TIMESTAMP WHERE user_id = ?", userId);
+        return getUserTypingProfile(userId, db);
       }
     }
-  } catch (gateErr) {
-    console.error("[retrain-gate] validation gate failed (accepting new model):", gateErr.message);
+  } else if (previousPath) {
+    console.log(`[retrain-gate] user=${userId} no held-out sample (${heldOut.length} windows): not gated`);
   }
 
   const profile = {
@@ -863,6 +897,12 @@ async function trainUserTypingProfile(userId, db) {
   };
 
   await saveProfile(userId, db, profile);
+  // A reset just as it was saved: the reset clears the samples first and the profile second, so either its delete
+  // removed this profile or this check finds the samples gone and removes it.
+  if (!(await samplesStillTraining(userId, db, sampleIds))) {
+    await db.run("DELETE FROM user_typing_profiles WHERE user_id = ? AND model_json = ?", userId, JSON.stringify(profile));
+    return discardMoot("as the new model was saved");
+  }
   // User study: the live cutoff is the fixed 0.50, so the threshold-source scores are the per-user
   // validation (held-out genuine) scores model-api computed for this model.
   await studyLog.recordProfile(userId, {

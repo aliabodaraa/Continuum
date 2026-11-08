@@ -74,4 +74,28 @@ module.exports = function queueCases({ test, assert, db, q }) {
     assert.equal(done.state, "done");
     assert.equal(done.lease_until, null);
   });
+
+  test("a reset cancels the user's owed work, the running job included, so a new enrolment queues its own at once", async () => {
+    const queued = await q.enqueue(8, "keystroke", "adaptive");
+    assert.equal(await q.cancel(8, "keystroke", "typing profile reset"), 1);
+    assert.equal((await state(queued.id)).state, "cancelled");
+    assert.equal((await q.statusFor(8, "keystroke")).pending, null);
+
+    let calls = 0, fresh = null;
+    q.registerHandler("keystroke", async (userId) => {
+      calls += 1;
+      if (calls === 1 && userId === 7) {   // the reset lands while the first job trains, and the user enrols again
+        assert.equal(await q.cancel(7, "keystroke", "typing profile reset"), 1);
+        fresh = await q.enqueue(7, "keystroke", "enrol");
+      }
+    });
+    const first = await q.enqueue(7, "keystroke", "enrol");
+    await q.tick();
+    assert.equal(fresh.deduped, false, "the new enrolment got its own job, not the moot running one");
+    const s = await state(first.id);
+    assert.equal(s.state, "cancelled", "the moot job's late finish is not recorded");
+    assert.equal(s.locked_by, null);
+    assert.equal((await state(fresh.id)).state, "done");
+    assert.equal(calls, 2);
+  });
 };

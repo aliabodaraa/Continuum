@@ -1279,6 +1279,18 @@
   function ksKeyCount(ev) { return window.continuumKeystrokes.analyze(ev).keyCount || 0; }
   function currentKeys() { return ksTracker ? ksKeyCount(ksTracker.getEvents()) : 0; }
   function ksWindowCount(k) { var s = Math.max(k - 1, 0); return s >= WINDOW_SIZE ? Math.floor((s - WINDOW_SIZE) / WINDOW_STRIDE) + 1 : 0; }
+  // What counts toward the minimum before a check: the text still in the fields or the printable keys typed, whichever
+  // is more (2026-11-08). A chat box emptied at every send never held 70 characters, so its typing was never checked.
+  // The same printable keys as the server's printableKeyCount (space, digits, letters, keypad, punctuation).
+  function printableKeys(ev) {
+    var n = 0;
+    for (var i = 0; i < ev.length; i++) {
+      var k = ev[i].keyCode;
+      if (ev[i].eventType === "keydown" && (k === 32 || (k >= 48 && k <= 90) || (k >= 96 && k <= 111) || (k >= 186 && k <= 222))) n++;
+    }
+    return n;
+  }
+  function typedLength(text) { return Math.max(text.length, ksTracker ? printableKeys(ksTracker.getEvents()) : 0); }
 
   // Trigger policy mirrors the opinion.html reference: on any text input, fire a
   // check the moment a NEW sliding window forms (no debounce), gated on a minimum
@@ -1289,8 +1301,8 @@
     if (e && e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") && e.target.type !== "password" && e.target.type !== "hidden") activeField = e.target;
     else if (e && e.target && e.target.isContentEditable) { var ed = e.target; while (ed.parentElement && ed.parentElement.isContentEditable) ed = ed.parentElement; activeField = ed; }
     if (locked || signedOut || !ksOn || !ksTracker) return;
-    var text = currentTypedText();
-    if (text.length < KS_MIN_CHARS) { setKb("col", "type {n}/{m} characters to start", { vars: { n: text.length, m: KS_MIN_CHARS }, prog: text.length / KS_MIN_CHARS }); return; }
+    var typed = typedLength(currentTypedText());
+    if (typed < KS_MIN_CHARS) { setKb("col", "type {n}/{m} characters to start", { vars: { n: typed, m: KS_MIN_CHARS }, prog: typed / KS_MIN_CHARS }); return; }
     // Live feedback while the user keeps writing between verdicts (feels engaged
     // instead of frozen on the last "verified ✓").
     if (!checkInFlight) setKb("mut", "analyzing…", { pct: lastKsPct, keep: true });
@@ -1310,13 +1322,13 @@
   // force: a paste's check, sent without a new window and before the text reaches the minimum length.
   async function runKsCheck(force) {
     if (locked || signedOut || !ksOn || !ksTracker) return;
-    var events = ksTracker.getEvents(), text = currentTypedText();
-    if (!force && text.length < KS_MIN_CHARS) return;
+    var events = ksTracker.getEvents(), typed = typedLength(currentTypedText());
+    if (!force && typed < KS_MIN_CHARS) return;
     checkInFlight = true; ksMissedWindow = false; pulse(); setKb("mut", "checking…", { pct: lastKsPct, keep: true, busy: true });
     try {
       var timings = window.continuumKeystrokes.analyze(events);
       // The text's LENGTH only: what the user typed never leaves the page.
-      var r = await reqJson(EP.ksCheck, "POST", { textLength: text.length, keystrokeEvents: events.slice(-1400), keystrokeTimings: timings, sourcePath: location.pathname });
+      var r = await reqJson(EP.ksCheck, "POST", { textLength: typed, keystrokeEvents: events.slice(-1400), keystrokeTimings: timings, sourcePath: location.pathname });
       if (r.status === 401 && MODE === "demo") { sessionEnded(); return; }
       var d = r.d; if (d && d.riskToken) latestRiskToken = d.riskToken;
       lastCheckedWindowCount = ksWindowCount(ksKeyCount(events));
@@ -1514,7 +1526,7 @@
     if (!window.continuumKeystrokes) return;
     if (!ksTracker) ksTracker = window.continuumKeystrokes.createTracker(document.documentElement, { skip: fieldExcluded });
     if (!ksInputHandler) { ksInputHandler = onKsInput; document.addEventListener("input", ksInputHandler, true); }
-    if (!ksPasteHandler) { ksPasteHandler = onKsPaste; document.addEventListener("paste", ksPasteHandler, true); }
+    if (!ksPasteHandler) { ksPasteHandler = onKsPaste; document.addEventListener("paste", ksPasteHandler, true); document.addEventListener("drop", ksPasteHandler, true); }
     if (ksBuilding) setKb("mut", "building your model…"); else setKb("col", "type {n} characters to start", { vars: { n: KS_MIN_CHARS }, prog: 0 });
   }
   // Typing enrolment trains on the server's queue (about a minute; since 2026-10-06). Meanwhile the user
@@ -1535,7 +1547,7 @@
   }
   function stopKeystroke() {
     if (ksInputHandler) { document.removeEventListener("input", ksInputHandler, true); ksInputHandler = null; }
-    if (ksPasteHandler) { document.removeEventListener("paste", ksPasteHandler, true); ksPasteHandler = null; }
+    if (ksPasteHandler) { document.removeEventListener("paste", ksPasteHandler, true); document.removeEventListener("drop", ksPasteHandler, true); ksPasteHandler = null; }
     checkInFlight = false; ksMissedWindow = false; ksPastePending = false; lastCheckedWindowCount = 0;
     cleanRun = 0; hideLearn();
     setKb("mut", "off");

@@ -100,8 +100,23 @@ async function finish(id, state, lastError = null) {
   const r = await db.run(
     `UPDATE training_jobs SET state = ?, last_error = ?, finished_at = CURRENT_TIMESTAMP, locked_by = NULL, lease_until = NULL
      WHERE id = ? AND locked_by = ?`, state, lastError, id, INSTANCE);
-  if (!r.changes) console.warn(`[training] job ${id}: lease lost before it finished; its outcome (${state}) is not recorded`);
+  if (!r.changes) console.warn(`[training] job ${id}: lease lost or job cancelled before it finished; its outcome (${state}) is not recorded`);
   return r.changes > 0;
+}
+
+/**
+ * A reset makes the owed work moot (2026-11-08). Queued jobs are cancelled. A running one is marked cancelled and
+ * released too, so that a new enrolment can queue its own job at once: enqueue dedupes against queued AND running
+ * jobs, and a moot running job would otherwise swallow it, leaving the user with no model. Its worker cannot be stopped
+ * mid-fit: the handler sees that its samples are gone and saves nothing (lib/keystrokeSecurity.js), and finish() records
+ * nothing for a job this copy no longer holds.
+ */
+async function cancel(userId, modality, why = null) {
+  const r = await db.run(
+    `UPDATE training_jobs SET state = 'cancelled', last_error = ?, finished_at = CURRENT_TIMESTAMP, locked_by = NULL, lease_until = NULL
+     WHERE user_id = ? AND modality = ? AND state IN ('queued', 'running')`, why, userId, modality);
+  if (r.changes) console.log(`[training] cancelled ${r.changes} job(s) user=${userId} modality=${modality}: ${why || "-"}`);
+  return r.changes;
 }
 
 /**
@@ -206,4 +221,4 @@ async function statusFor(userId, modality = null) {
   return { pending, jobs: rows };
 }
 
-module.exports = { registerHandler, enqueue, start, stop, statusFor, recoverOrphans, tick, MAX_ATTEMPTS, INSTANCE, LEASE_MS };
+module.exports = { registerHandler, enqueue, cancel, start, stop, statusFor, recoverOrphans, tick, MAX_ATTEMPTS, INSTANCE, LEASE_MS };

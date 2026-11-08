@@ -65,7 +65,22 @@ function typing(keys) {
   return events;
 }
 
-const USERS = [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1009, 1010, 1011];   // 1008 has no typing profile
+// Typing at about one key a second: of every three gaps between presses, two are over a second, so their digraphs are
+// dropped (the pause rule) and windows build three times slower.
+function sparseTyping(keys) {
+  let t = 0, s = 11;
+  const rnd = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  const events = [];
+  for (let i = 0; i < keys; i++) {
+    const keyCode = 65 + Math.floor(rnd() * 26), dwell = 70 + rnd() * 60;
+    events.push({ keyCode, eventType: "keydown", timestampRelative: Math.round(t), fieldName: "f1", fieldType: "textarea" });
+    events.push({ keyCode, eventType: "keyup", timestampRelative: Math.round(t + dwell), fieldName: "f1", fieldType: "textarea" });
+    t += dwell + (i % 3 === 0 ? 60 + rnd() * 140 : 1100 + rnd() * 300);
+  }
+  return events;
+}
+
+const USERS = [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1009, 1010, 1011, 1012, 1013, 1014];   // 1008 has no typing profile
 let server, base, log = "";
 const freePort = () => new Promise((resolve) => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => resolve(p)); }); });
 
@@ -100,11 +115,11 @@ test.after(async () => {
   try { fs.rmSync(DIR, { recursive: true, force: true }); } catch (e) { /* a lock on Windows: the system cleans the temp folder */ }
 });
 
-async function check(sub, { keys = 320, low, hasPasskey = true, events = null }) {
+async function check(sub, { keys = 320, low, hasPasskey = true, events = null, textLength = null }) {
   model.low = low;
   const r = await fetch(`${base}/v1/keystroke/check`, {
     method: "POST", headers: { "Content-Type": "application/json", "X-Continuum-Identity": assertion(sub) },
-    body: JSON.stringify({ textLength: keys, keystrokeEvents: events || typing(keys), hasPasskey }),
+    body: JSON.stringify({ textLength: textLength ?? keys, keystrokeEvents: events || typing(keys), hasPasskey }),
   });
   return { status: r.status, d: await r.json() };
 }
@@ -160,6 +175,34 @@ test("nothing about the typing checks is carried from one check to the next", as
   await check(1007, { low: 2, hasPasskey: false });
   const ro = new Database(DB_PATH, { readonly: true });
   try { assert.equal(ro.prepare("SELECT COUNT(*) AS n FROM decision_state").get().n, 0); } finally { ro.close(); }
+});
+
+// ---- evasions closed on 2026-11-08: a field kept short, typing at about one key a second
+
+test("the text minimum counts the keys typed, not only what is left in the field (a chat box emptied at each send)", async () => {
+  const { d } = await check(1012, { low: 10, textLength: 5 });   // 320 printable keys typed, 5 characters left in the field
+  assert.equal(d.checked, true, d.message);
+  assert.equal(d.isSuspicious, true);
+  assert.equal(d.requiresPasskeyChallenge, true);
+  await post("/v1/lock/clear", 1012);
+  const short = await check(1012, { keys: 40, low: 0, textLength: 5 });   // too little typed either way
+  assert.equal(short.d.checked, false);
+});
+
+test("typing at about one key a second, which never fills a packet, is unverifiable and asks for the passkey", async () => {
+  const { d } = await check(1013, { keys: 520, low: 0, events: sparseTyping(520) });
+  assert.ok(d.typingEvaluation.windowCount <= 20, `${d.typingEvaluation.windowCount} windows from 520 keys`);
+  assert.equal(d.warmup, false, "not a warm-up that never ends");
+  assert.equal(d.isSuspicious, true);
+  assert.equal(d.requiresPasskeyChallenge, true);
+  assert.equal(tokenRisk(d.riskToken), "suspicious");
+  await post("/v1/lock/clear", 1013);
+});
+
+test("the same slow typing below twice the keys a packet needs is still warm-up", async () => {
+  const { d } = await check(1014, { keys: 300, low: 0, events: sparseTyping(300) });
+  assert.equal(d.warmup, true);
+  assert.equal(d.requiresPasskeyChallenge, false);
 });
 
 // ---- fail closed (2026-11-08): no score, no verdict; a locked account gets "locked" from every check

@@ -40,6 +40,10 @@
     function track(evt) {
       const f = fieldOf(evt.target);
       if (!f || (skip && skip(f))) return;
+      // A held key's auto-repeat and IME composition are not the person's keystrokes (2026-11-08): a held arrow key
+      // fires a keydown every ~30 ms, which the server's degenerate-input rule read as erratic typing, and IMEs
+      // (Android keyboards among them) report keyCode 229 for every key, which it read as one key hammered.
+      if (evt.repeat || evt.isComposing || evt.keyCode === 229) return;
 
       events.push({
         fieldName: f.name || f.id || "field",
@@ -64,10 +68,30 @@
       });
     }
 
+    // Text dropped into a field is recorded as a paste (2026-11-08): it is inserted, not typed, and dragging it in
+    // used to get past the organisation's paste allowance. Autofill, dictation and spelling suggestions
+    // (beforeinput insertReplacementText) are not counted: they insert what the user chose or said, and an allowance
+    // would then lock people who dictate or accept a correction.
+    function trackDrop(evt) {
+      const f = fieldOf(evt.target);
+      if (!f || (skip && skip(f))) return;
+      const text = evt.dataTransfer ? evt.dataTransfer.getData("text") : "";
+      if (!text) return;
+      events.push({
+        fieldName: f.name || f.id || "field",
+        fieldType: typeOf(f),
+        keyCode: 0,
+        eventType: "paste",
+        timestampRelative: relativeTime(evt),
+        pastedLength: text.length,
+      });
+    }
+
     form.addEventListener("focusin", ensureStartTime);
     form.addEventListener("keydown", track);
     form.addEventListener("keyup", track);
     form.addEventListener("paste", trackPaste);
+    form.addEventListener("drop", trackDrop);
 
     return {
       getEvents() {

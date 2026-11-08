@@ -64,6 +64,13 @@ function mouseText(v, bar) {
   var low = v.low != null && v.bufferMax ? T(" · {low}/{max} low", { low: v.low, max: v.bufferMax }) : "";
   return T(v.status === "suspicious" ? "⚠ suspicious" : "✓ genuine") + low;
 }
+// True when every channel the organisation has on gets no verdict because its model cannot score (the worker's
+// state.unavailable): the gateway answers, but nothing is checked.
+function noneChecked(s) {
+  var un = s.unavailable || {}, off = s.disabled || {};
+  var on = ["keystroke", "mouse"].filter(function (c) { return !off[c]; });
+  return on.length > 0 && on.every(function (c) { return !!un[c]; });
+}
 
 function refresh() {
   api.runtime.sendMessage({ type: "cg:status", tabId: curTabId }, function (s) {
@@ -107,6 +114,8 @@ function refresh() {
     }
     else if (incomplete) { txt = T("Finish enrolment to start: {what}", { what: s.notEnrolled ? T("the server has no {ch} profile yet", { ch: T(s.notEnrolled) }) : T("passkey, typing and mouse") }); }
     else if (ksBuilding) { txt = T("⏳ Your typing model is being built (about a minute). Typing protection starts by itself."); }
+    // Every channel that is on has a model that cannot score right now: never "Protected" then either.
+    else if (noneChecked(s)) { txt = T("⚠ The checks are unavailable right now: nothing is checked"); cls = "v-warn"; }
     else if (!s.showVerdict) { txt = T(s.study ? "● Recording" : "✓ Protected"); cls = s.study ? "" : "v-ok"; }
     else {
       var v = s.verdict, mv = s.mouseVerdict;
@@ -123,9 +132,9 @@ function refresh() {
     show("rowKeys", s.showVerdict);
     show("rowMouse", s.showVerdict);
     if (s.showVerdict) {
-      var bars = s.bars || {}, off = s.disabled || {};
-      q("keys").textContent = off.keystroke ? T("off (organisation setting)") : s.offline ? T("not checked (server unreachable)") : ksBuilding ? T("building your model…") : keysText(s.verdict, bars.keystroke);
-      q("mouse").textContent = off.mouse ? T("off (organisation setting)") : s.offline ? T("not checked (server unreachable)") : mouseText(s.mouseVerdict, bars.mouse);
+      var bars = s.bars || {}, off = s.disabled || {}, un = s.unavailable || {};
+      q("keys").textContent = off.keystroke ? T("off (organisation setting)") : s.offline ? T("not checked (server unreachable)") : un.keystroke ? T("not checked (model unavailable)") : ksBuilding ? T("building your model…") : keysText(s.verdict, bars.keystroke);
+      q("mouse").textContent = off.mouse ? T("off (organisation setting)") : s.offline ? T("not checked (server unreachable)") : un.mouse ? T("not checked (model unavailable)") : mouseText(s.mouseVerdict, bars.mouse);
     }
 
     // Learning from real use, stage 1: a sample being recorded after a passkey, or how the last one went.

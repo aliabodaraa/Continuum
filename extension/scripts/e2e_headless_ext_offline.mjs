@@ -10,6 +10,11 @@
 //   3. the worker stopped while offline (Chrome does this after ~30 s idle): it comes back offline, nothing collected
 //   4. the server back: the probe sees it, collecting resumes and checks give verdicts again
 //   5. the organisation turns the mouse off: its bar is empty ("off"), its movement is not collected; back on, it is
+//   6. the mouse model cannot score (ca-service answers 503 model_unavailable, 2026-11-08): the worker stays online,
+//      only the mouse is marked unavailable, its verdict is dropped, the page keeps collecting; the model back, a
+//      verdict again. Before, this 503 took the whole extension offline, typing with it.
+//   7. probation after a step-up survives the worker's idle stop (2026-11-08): a suspicious scored verdict after the
+//      restart still locks at once. Before, the flag lived only in a variable and the first idle stop ended it.
 //
 //   node extension/scripts/e2e_headless_ext_offline.mjs
 import { spawn } from "node:child_process"; import fs from "node:fs"; import os from "node:os"; import path from "node:path";
@@ -23,7 +28,7 @@ let bad = 0;
 const ok = (n, c, d) => { console.log((c ? "  PASS  " : "  FAIL  ") + n + (d ? " — " + d : "")); if (!c) bad++; };
 
 // ---- the simulated gateway
-const state = { down: false, checks: 0, refused: 0, mouseOn: true };
+const state = { down: false, checks: 0, refused: 0, mouseOn: true, mouseModel: true, unavailable: 0, suspicious: false };
 const b64u = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 const TOKEN = "x." + b64u({ sub: 78, sk: "SK_EXT" }) + ".y";
 function api(p) {
@@ -35,7 +40,11 @@ function api(p) {
     checkMinTextChars: 80, adaptiveEnabled: false, panel: "hide", keystroke: "on", mouse: state.mouseOn ? "on" : "off", onboardingMode: "eager", managed: [], excludeFieldTypes: ["hidden"] };
   if (p === "/v1/sdk/keystroke/check") return { ok: true, checked: false };
   if (p === "/v1/sdk/mouse/check") {
+    // what ca-service answers (and the gateway relays) when the model cannot score: no verdict
+    if (!state.mouseModel) { state.unavailable++; return { status: 503, body: { ok: false, error: "model_unavailable", retryable: true } }; }
     state.checks++;
+    if (state.suspicious) return { ok: true, checked: true, warmup: false, isSuspicious: true, requiresPasskeyChallenge: false, windowCount: 60, lowWindows: 40,
+      bufferMax: 60, lockAt: 33, meanScore: 0.2, riskToken: "rt" };
     return { ok: true, checked: true, warmup: false, isSuspicious: false, requiresPasskeyChallenge: false, windowCount: 60, lowWindows: 5,
       bufferMax: 60, lockAt: 33, meanScore: 0.7, riskToken: "rt" };
   }
@@ -71,7 +80,9 @@ ws.addEventListener("message", (e) => {
   if (u.origin === SITE) { reply(m.sessionId, requestId, 200, "text/html; charset=utf-8", SITE_PAGE); return; }
   if (state.down) { state.refused++; send("Fetch.failRequest", { requestId, errorReason: "ConnectionRefused" }, m.sessionId); return; }
   if (request.method === "OPTIONS") { reply(m.sessionId, requestId, 204, "text/plain", ""); return; }
-  reply(m.sessionId, requestId, 200, "application/json", JSON.stringify(api(u.pathname)));
+  const out = api(u.pathname);
+  if (out && out.status && out.body) { reply(m.sessionId, requestId, out.status, "application/json", JSON.stringify(out.body)); return; }
+  reply(m.sessionId, requestId, 200, "application/json", JSON.stringify(out));
 });
 const ev = async (s, expression) => { const r = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, s); return r.result ? r.result.value : undefined; };
 const waitFor = async (s, expr, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await ev(s, expr)) return true; } catch { /* navigating */ } await sleep(200); } return false; };
@@ -202,6 +213,57 @@ try {
   await sleep(1200);
   await move(site, 300);
   ok("…switched back on, the movement is collected again", JSON.parse(await progress(tab)).mouse > 0, await progress(tab));
+
+  // ---- 6. the mouse model cannot score
+  state.mouseModel = false;
+  const u6 = state.unavailable;
+  for (let i = 0; i < 10 && state.unavailable === u6; i++) await move(site, 150);
+  await sleep(900);
+  st = await status(tab);
+  ok("6. the mouse model cannot score: the worker stays online, no probe", state.unavailable > u6 && !st.offline && (await alarm()) === false,
+    `${state.unavailable - u6} answers 503, offline ${JSON.stringify(st.offline)}`);
+  ok("…only the mouse is marked unavailable, and its verdict is dropped", st.unavailable && st.unavailable.mouse === true && st.unavailable.keystroke === false
+    && !st.mouseVerdict, `${JSON.stringify(st.unavailable)}, verdict ${JSON.stringify(st.mouseVerdict)}`);
+  const u6b = state.unavailable;
+  await move(site, 300);
+  ok("…the page keeps collecting and checking", JSON.parse(await progress(tab)).mouse > 0 && state.unavailable > u6b,
+    `progress ${await progress(tab)}, ${state.unavailable - u6b} more checks`);
+  await send("Target.createTarget", { url: `chrome-extension://${extId}/src/popup/popup.html` });
+  const pop6 = await waitSession((t) => t.type === "page" && t.url.includes("/popup/popup.html"));
+  await waitFor(pop6, "document.getElementById('mouse') && document.getElementById('mouse').textContent.length > 0", 8000);
+  const row6 = await ev(pop6, "document.getElementById('mouse').textContent"), banner6 = await ev(pop6, "document.getElementById('verdict').textContent");
+  ok("…the popup's mouse row says it is not checked, and the banner is not \"Can't reach\"", /model unavailable/.test(row6 || "") && !/Can't reach/.test(banner6 || ""),
+    `${row6} · ${banner6}`);
+  await front(pop6);
+  state.mouseModel = true;
+  await W("probeGateway()");   // a no-op when online (an older worker went offline here)
+  await sleep(800);
+  const c6 = state.checks;
+  for (let i = 0; i < 10 && state.checks === c6; i++) await move(site, 150);
+  await sleep(500);
+  st = await status(tab);
+  ok("…the model back: the next check gives a verdict and clears the mark", state.checks > c6 && st.mouseVerdict && st.mouseVerdict.status === "genuine"
+    && (st.unavailable || {}).mouse === false, `${state.checks - c6} new checks, ${JSON.stringify(st.unavailable)}`);
+
+  // ---- 7. probation survives the worker's idle stop (what cg:verified sets after a passed step-up)
+  await W("probation = true; persistProgress(true); true");
+  await sleep(300);
+  const { targetInfos: t7 } = await send("Target.getTargets");
+  const sw7 = t7.find(isSW);
+  const stopped7 = sw7 ? (await send("Target.closeTarget", { targetId: sw7.targetId })).success : false;
+  await sleep(800);
+  await send("Target.createTarget", { url: `chrome-extension://${extId}/src/popup/popup.html` });   // wakes the worker
+  await sleep(2500);
+  const pop7 = findSession((t) => t.type === "page" && t.url.includes("/popup/popup.html"));
+  await front(pop7);
+  ok("7. probation survives the worker's stop", stopped7 && (await W("probation")) === true, `stopped ${stopped7}, probation ${await W("probation")}`);
+  state.suspicious = true;
+  const c7 = state.checks;
+  for (let i = 0; i < 10 && state.checks === c7; i++) await move(site, 150);
+  await sleep(800);
+  st = await status(tab);
+  ok("…a suspicious scored verdict after the restart locks at once, without the server asking", state.checks > c7 && st.locked === true && st.lockReason === "mouse",
+    `${state.checks - c7} checks, locked ${st.locked} (${st.lockReason})`);
   ok("no script error in the extension or the pages", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
   ok("run completed", false, e.stack || e.message);

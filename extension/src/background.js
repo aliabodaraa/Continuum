@@ -50,9 +50,10 @@ var PROBE_ALARM = "cg-gateway-probe";
 // MV3: this worker is stopped after ~30 s idle and restarted from scratch, so everything that gates
 // behaviour is persisted (the lock in cg_progress, the settings, the account) and read back at start.
 var state = { locked: false, lockReason: null, lockPasted: false, verdict: null, mouseVerdict: null, error: null, notEnrolled: null, lastCheckAt: 0,
-  disabled: {} };   // channel -> when the server last said the organisation turned it off
+  disabled: {},      // channel -> when the server last said the organisation turned it off
+  unavailable: {} }; // channel -> when its model last could not score (ca-service 503 model_unavailable): no verdict for it
 var session = null;     // { token, userId, key } from /v1/sdk/session; re-minted on a 401 or a change of user
-var probation = false;  // after a step-up: re-challenge on any scored suspicious verdict (as the SDK)
+var probation = false;  // after a step-up: re-challenge on any scored suspicious verdict (as the SDK); kept in cg_progress
 var openPrompt = null;      // the open step-up: { channel, decisionId, sessionId, tabId } (study logging)
 // Learning from real use, stage 1: after a verified step-up the gateway may offer to record a real-use mouse sample
 // (ca-service lib/mouseUse.js). The verify page asks; on a yes every tab records fresh movement (content.js) and the
@@ -156,7 +157,7 @@ function loadAccount(v) {
 function resetUser() {
   session = null; probation = false; openPrompt = null;
   stopUseRecording();
-  state.verdict = null; state.mouseVerdict = null; state.error = null; state.notEnrolled = null;
+  state.verdict = null; state.mouseVerdict = null; state.error = null; state.notEnrolled = null; state.unavailable = {};
   // Another gateway, or none: whether the old one answered says nothing about it.
   offline = null;
   try { api.storage.local.remove("cg_offline"); } catch (e) {}
@@ -171,9 +172,16 @@ async function gfetch(url, opts) {
   var r;
   try { r = await fetch(url, opts); }
   catch (e) { setOffline((e && e.message) || "unreachable"); throw e; }
-  if (r.status === 502 || r.status === 503 || r.status === 504) setOffline("HTTP " + r.status);   // the edge answers, nothing behind it
+  if ((r.status === 502 || r.status === 503 || r.status === 504) && !(await modelOnly(r))) setOffline("HTTP " + r.status);   // the edge answers, nothing behind it
   else setOnline();
   return r;
+}
+// A 503 whose body says model_unavailable is the gateway answering: that one channel's model cannot score (ca-service
+// issues no verdict), the gateway and the other channel are fine. It used to count as "gateway away" (2026-11-08), so a
+// typing-model outage stopped the mouse channel too and the pages dropped their buffers every 30 s on the probe's return.
+async function modelOnly(r) {
+  if (r.status !== 503) return false;
+  try { var d = await r.clone().json(); return !!d && d.error === "model_unavailable"; } catch (e) { return false; }
 }
 function setOffline(message) {
   var first = !offline;
@@ -282,6 +290,16 @@ function onVerdict(channel, r, sessionId) {
     return;
   }
   if (d.checked && state.disabled[channel]) { delete state.disabled[channel]; broadcastConfig(); }
+  // That channel's model cannot score: no verdict, so its last one is dropped (no stale "it's you"); the other channel
+  // goes on, and the next check of this one tries again.
+  if (r && r.status === 503 && d.error === "model_unavailable") {
+    state.unavailable[channel] = Date.now();
+    if (channel === "keystroke") state.verdict = null; else state.mouseVerdict = null;
+    refreshAllBadges();
+    persistProgress();
+    return;
+  }
+  if (r && r.status < 500) delete state.unavailable[channel];   // its model answered
   if (r && r.status === 423 && !state.locked) { challenge(channel, null, sessionId); return; }   // locked server-side
   if (d.enrolled === false || (d.typingEvaluation && d.typingEvaluation.modelAvailable === false)) {
     state.notEnrolled = channel; state.error = null; refreshAllBadges(); return;
@@ -308,7 +326,7 @@ function onVerdict(channel, r, sessionId) {
   // a paste lock (more pastes into one field than the organisation allows) says so on the page
   var pasted = !!(d.typingEvaluation && d.typingEvaluation.modelType === "paste-policy");
   if (trigger && !state.locked) { challenge(channel, d.studyDecisionId || null, sessionId, pasted); return; }
-  if (!d.warmup && !d.isSuspicious) probation = false;   // a clean verdict ends probation
+  if (!d.warmup && !d.isSuspicious && probation) { probation = false; persistProgress(true); }   // a clean verdict ends probation
   updateBadge();
   persistProgress();
 }
@@ -439,6 +457,7 @@ api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "
     state.locked = !!p.locked;
     state.lockReason = p.lockReason || null;
     state.lockPasted = !!p.lockPasted;
+    if (p.probation === true) probation = true;   // set by a step-up, ended only by a clean verdict
     if (Date.now() - (p.at || 0) < 10 * 60 * 1000) { state.verdict = p.verdict || null; state.mouseVerdict = p.mouseVerdict || null; }
   }
   // The gateway was away when this worker stopped: stay offline (nothing collected) and ask it now.
@@ -471,8 +490,11 @@ api.storage.local.get("cg_last_use_sample", function (d) { if (d && d.cg_last_us
 // Snapshot the lock and the verdicts so they survive a worker restart. Throttled (at most one write per
 // ~1.2 s); immediate for the lock itself.
 var _persistTimer = null;
+// probation too (2026-11-08): it lived only in a variable, so after a step-up the worker's first idle stop (~30 s) ended
+// it, and a suspicious verdict after that no longer re-challenged at once.
 function progressSnapshot() {
-  return { user: connKey(), verdict: state.verdict, mouseVerdict: state.mouseVerdict, locked: state.locked, lockReason: state.lockReason, lockPasted: state.lockPasted, at: Date.now() };
+  return { user: connKey(), verdict: state.verdict, mouseVerdict: state.mouseVerdict, locked: state.locked, lockReason: state.lockReason, lockPasted: state.lockPasted,
+    probation: probation, at: Date.now() };
 }
 function persistProgress(immediate) {
   if (immediate) {
@@ -546,6 +568,7 @@ function statusObj(tabId) {
     locked: state.locked, lockReason: state.lockReason, verdict: state.verdict, mouseVerdict: state.mouseVerdict,
     error: state.error, notEnrolled: state.notEnrolled, lastCheckAt: state.lastCheckAt, exclusions: config.exclusions,
     disabled: { keystroke: !!state.disabled.keystroke, mouse: !!state.disabled.mouse },
+    unavailable: { keystroke: !!state.unavailable.keystroke, mouse: !!state.unavailable.mouse },
     look: look,
     bars: tabId != null ? { keystroke: barState("keystroke", tabId).text, mouse: barState("mouse", tabId).text } : null,
     useSample: { recording: !!(useRec && useRec.until > Date.now()), last: lastUseSample },
