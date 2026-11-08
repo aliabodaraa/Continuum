@@ -91,25 +91,27 @@
   }
 
   // A lightweight capture helper: attach to an element, collect raw events.
+  // Positions are viewport coordinates (clientX/clientY) and times the event's own timestamp, as in the extension.
+  // Until 2026-11-08 they were relative to the tracked element's box: for document.documentElement, which the live
+  // guard tracks, that box moves with scrolling, so a scroll became one large fake step (300 px of wheel, then a
+  // 3 px move, recorded as a 300 px step) that SapiMouse-trained windows never contain. The enrolment pad does not
+  // scroll, so its steps are unchanged.
   function createMouseTracker(el) {
     let events = [];
     let down = false;
-    function push(x, y, state) {
-      events.push({ t: performance.now(), x, y, state });
+    function push(x, y, state, e) {
+      events.push({ t: e && typeof e.timeStamp === "number" && e.timeStamp > 0 ? e.timeStamp : performance.now(), x, y, state });
     }
     function onMove(e) {
-      const r = el.getBoundingClientRect();
-      push(e.clientX - r.left, e.clientY - r.top, down ? "Drag" : "Move");
+      push(e.clientX, e.clientY, down ? "Drag" : "Move", e);
     }
     function onDown(e) {
       down = true;
-      const r = el.getBoundingClientRect();
-      push(e.clientX - r.left, e.clientY - r.top, "Pressed");
+      push(e.clientX, e.clientY, "Pressed", e);
     }
     function onUp(e) {
       down = false;
-      const r = el.getBoundingClientRect();
-      push(e.clientX - r.left, e.clientY - r.top, "Released");
+      push(e.clientX, e.clientY, "Released", e);
     }
     el.addEventListener("mousemove", onMove);
     el.addEventListener("mousedown", onDown);

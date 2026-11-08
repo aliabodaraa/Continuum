@@ -165,25 +165,24 @@
   }
 
   /** Capture helper: attach to an element and collect raw events. */
+  // Viewport coordinates and the event's own timestamp, as mouse-features.js (2026-11-08): relative to a scrolling
+  // element's box, a scroll became a fake movement.
   function createActionTracker(el) {
     let events = [];
     let down = false;
-    function push(x, y, state) {
-      events.push({ t: performance.now(), x, y, state });
+    function push(x, y, state, e) {
+      events.push({ t: e && typeof e.timeStamp === "number" && e.timeStamp > 0 ? e.timeStamp : performance.now(), x, y, state });
     }
     function onMove(e) {
-      const r = el.getBoundingClientRect();
-      push(e.clientX - r.left, e.clientY - r.top, down ? "Drag" : "Move");
+      push(e.clientX, e.clientY, down ? "Drag" : "Move", e);
     }
     function onDown(e) {
       down = true;
-      const r = el.getBoundingClientRect();
-      push(e.clientX - r.left, e.clientY - r.top, "Pressed");
+      push(e.clientX, e.clientY, "Pressed", e);
     }
     function onUp(e) {
       down = false;
-      const r = el.getBoundingClientRect();
-      push(e.clientX - r.left, e.clientY - r.top, "Released");
+      push(e.clientX, e.clientY, "Released", e);
     }
     el.addEventListener("mousemove", onMove);
     el.addEventListener("mousedown", onDown);
