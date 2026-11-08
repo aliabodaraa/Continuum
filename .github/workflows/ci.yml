@@ -131,7 +131,7 @@ jobs:
       - name: Image must not carry secrets or runtime state
         run: |
           leaked=$(docker run --rm --entrypoint sh continuum-ci/${{ matrix.name }}:${{ github.sha }} -c \
-            'find / -xdev \( -name "*.pem" -o -name "*.db" -o -name ".env" -o -name tenants.json -o -name accounts.json -o -name identity.json -o -name audit.jsonl \) \
+            'find / -xdev \( -name "*.pem" -o -name "*.db" -o -name "*.db-*" -o -name "*.bak" -o -name "*.sqlite*" -o -name "*snapshot*.json" -o -name reconstructed.json -o -name ".env" -o -name tenants.json -o -name accounts.json -o -name identity.json -o -name audit.jsonl \) \
                -not -path "*/node_modules/*" -not -path "/usr/*" -not -path "/etc/*" -not -path "/proc/*" 2>/dev/null' || true)
           if [ -n "$leaked" ]; then echo "::error::secret or state files baked into the image:"; echo "$leaked"; exit 1; fi
           echo "no secret or state files in the image"

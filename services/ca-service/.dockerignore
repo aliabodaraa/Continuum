@@ -3,3 +3,16 @@ node_modules/
 npm-debug.log
 *.db-journal
 test/
+
+# Data and state must never be baked into an image (added 2026-11-08: five ca.db.pre-*.bak copies with
+# participants' keystrokes had reached the ca-service image because only *.db was excluded).
+*.db*
+*.bak
+*.sqlite*
+*snapshot*.json
+reconstructed.json
+*.tar
+*.tar.*
+*.tgz
+*.pem
+.env*

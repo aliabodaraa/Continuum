@@ -39,3 +39,10 @@ data/Mouse_WS50.h5
 # are the extracted data/aalto_neg_A200.h5 (kept).
 data/bogazici/
 data/*.zip
+
+# Backups and any database copy stay out of every build context (2026-11-08).
+_backups/
+**/*.bak
+**/*.db
+**/*.db-*
+**/*.sqlite*

@@ -88,6 +88,10 @@ build() {
   docker build -q -t continuum/web-demo:local --build-context sdk=./sdk apps/demo
   docker build -q -t continuum/acme:local apps/acme
   docker build -q -t continuum/model-api:local -f services/model-api/Dockerfile.model.prod .
+  # No image may carry secrets, databases or backups (scripts/lib/scan-image.sh).
+  source "$(dirname "${BASH_SOURCE[0]}")/lib/scan-image.sh"
+  scan_image continuum/gateway:local continuum/ca-service:local continuum/passkey-service:local \
+    continuum/web-demo:local continuum/acme:local continuum/model-api:local || { echo "build refused: see above" >&2; exit 1; }
 }
 
 wait_ready() {

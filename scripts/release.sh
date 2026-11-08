@@ -40,6 +40,10 @@ echo ">> Publishing Continuum images to ${REGISTRY} at tag ${TAG}"
 # 1) The product bundle: model-api, ca-service, passkey-service, gateway.
 echo ">> Building bundle images…"
 docker compose -f docker-compose.bundle.yml build
+# Nothing is pushed while an image carries secrets, databases or backups (scripts/lib/scan-image.sh).
+source "$(dirname "$0")/lib/scan-image.sh"
+scan_image "${REGISTRY}/model-api:${TAG}" "${REGISTRY}/ca-service:${TAG}" "${REGISTRY}/passkey-service:${TAG}" \
+  "${REGISTRY}/gateway:${TAG}" || { echo ">> Refusing to push: see above" >&2; exit 1; }
 echo ">> Pushing bundle images…"
 docker compose -f docker-compose.bundle.yml push
 
@@ -47,6 +51,7 @@ docker compose -f docker-compose.bundle.yml push
 #    is unique to the demo stack).
 echo ">> Building + pushing web-demo…"
 docker compose -f docker-compose.prod.yml build web
+scan_image "${REGISTRY}/web-demo:${TAG}" || { echo ">> Refusing to push web-demo: see above" >&2; exit 1; }
 docker compose -f docker-compose.prod.yml push web
 
 # 3) Also move the floating :latest tag to this build, for convenience pulls.
