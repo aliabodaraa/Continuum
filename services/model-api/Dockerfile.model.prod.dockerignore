@@ -1,0 +1,17 @@
+# The production model image's build context (2026-11-08): exactly the files Dockerfile.model.prod copies, so the
+# image builds from a clean checkout of the repository plus the two data files pinned in data/MODEL_IMAGE_INPUTS.sha256,
+# whatever the root .dockerignore excludes (its "artifacts/*-v2" rule also matched the live keystroke base,
+# artifacts/ws50-gru-v2, so a clean checkout could not build this image). BuildKit reads this file instead of the root
+# .dockerignore for this Dockerfile only. A file the Dockerfile copies must be listed here as well.
+*
+!services/model-api/api.py
+!services/model-api/model.py
+!services/model-api/preprocessing.py
+!services/model-api/loso.py
+!services/model-api/model_store.py
+!services/model-api/wsgi.py
+!services/model-api/gunicorn.conf.py
+!artifacts/ws50-gru-v2/
+!artifacts/mouse-fcn-a5/
+!data/mouse_only/Mouse_A5_W50_base.h5
+!data/aalto_neg_A200.h5
