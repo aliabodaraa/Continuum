@@ -123,12 +123,15 @@ data:
     export PGHOST PGPORT PGSSLMODE=prefer
     # A run that starts while this PC wakes up can find PostgreSQL not yet answering (2026-11-07: "Connection
     # refused" on the first attempt): wait for it, up to two minutes, as upload.py waits for the object store.
+    # pg_isready needs a user name: this pod's uid has no passwd entry, and without one libpq makes no attempt
+    # (exit 3) however healthy the server is. No password is sent; the check does not log in.
+    ready() { PGUSER="$GATEWAY_USER" PGDATABASE=gateway pg_isready -q; }
     for _ in $(seq 1 24); do
-      pg_isready -q && break
-      echo "PostgreSQL is not answering yet; waiting"
+      ready && break
+      echo "PostgreSQL is not answering yet (pg_isready exit $?); waiting"
       sleep 5
     done
-    pg_isready -q || { echo "PostgreSQL did not answer within two minutes"; exit 1; }
+    ready || { echo "PostgreSQL did not answer within two minutes"; exit 1; }
     for db in gateway ca passkey; do
       u="${db^^}_USER"; p="${db^^}_PASSWORD"
       export PGUSER="${!u}" PGPASSWORD="${!p}" PGDATABASE="$db"
