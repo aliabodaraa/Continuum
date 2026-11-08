@@ -30,7 +30,7 @@ import h5py
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 
-from model import build_1d_cnn_2rnn
+from model import build_1d_cnn_2rnn, LEGACY_NETWORK
 from preprocessing import FeatureScaler
 
 
@@ -70,7 +70,7 @@ def main(args):
     scaler.save(os.path.join(args.output_dir, "scaler.json"))
 
     print(f"[4/5] Build + train 1D CNN + 2GRU identifier ({num_users} users, units={args.units})...")
-    model = build_1d_cnn_2rnn(X_train.shape[1:], num_classes=num_users, units=args.units, rnn_type="gru")
+    model = build_1d_cnn_2rnn(X_train.shape[1:], num_classes=num_users, units=args.units, rnn_type="gru", **LEGACY_NETWORK)
     model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
     model.summary()
     ckpt = os.path.join(args.output_dir, "best_model.h5")

@@ -171,14 +171,15 @@ option — a rise in these is either an outage or someone arranging one.
   per new key entered, and no alternate training-time stride is specified anywhere
   in the paper. STRIDE=10 is this project's own engineering choice (decision
   frequency vs. compute/training-volume tradeoff), not a literature-derived value.
-- **Model:** 1D-CNN + 2×GRU base (`artifacts/ws50-gru`), **fine-tuned per user**
+- **Model:** 1D-CNN + max pooling + 2×GRU base (`artifacts/ws50-gru-v2`: Conv1D 32 k2, MaxPooling1D 2, GRU 16
+  returning sequences, GRU 16 last state, Dense 2 softmax; 4,482 weights, the convolution frozen), **fine-tuned per user**
   (transfer learning) with the user's enrollment typing as positives and impostor
   windows as negatives: max(2 × positives, 60) windows of 200 Aalto typists
   (`data/aalto_neg_A200.h5`, KS's A200 arm, adopted 2026-09-25; before that, other app
   users' samples, in practice the 40 seeded KeyRecs accounts). Validation negatives are
   split by typist.
 - **Live decision (Lu et al. packet vote, lengthened):** score the most recent
-  `RECENT_WINDOW_COUNT=20` windows (Lu et al. use 6; 20 was adopted on 2026-09-23 on the
+  `RECENT_WINDOW_COUNT=20` windows (the project used 6 before; 20 was adopted on 2026-09-23 on the
   99-user paired sweep: false lock −8.84 pts, capture +0.40 pts); a window is "low" if its
   genuine probability < `0.50`; the packet is **suspicious** when the low fraction ≥
   `PACKET_VOTE_FRACTION=0.50`, i.e. 10 of 20. Only a full packet gives a verdict (warm-up while
@@ -197,7 +198,7 @@ option — a rise in these is either an outage or someone arranging one.
 - **Leak-free evaluation:** the public HDF windows overlap in shuffled order; a naive
   split leaks near-duplicates. Windows sharing timing subsequences are grouped and
   never cross the train/test boundary (`data_loader.py`). Honest metrics in
-  `artifacts/ws50-gru/results.json`.
+  `artifacts/ws50-gru-v2/results.json`.
 
 ## 5. Mouse dynamics engine
 - **Chosen by a pre-registered study** (`artifacts/repr_arch_study/`, experiments A–I; base
@@ -766,7 +767,7 @@ services/{model-api,ca-service,passkey-service,gateway}   # the product
 sdk/                     # guard.js + capture libs (served by gateway/web)
 packages/{continuum-node,continuum-python}                # host middleware
 apps/{demo,acme}         # reference integrations
-artifacts/{ws50-gru,mouse-fcn-a5}                         # pretrained base models (only these tracked)
+artifacts/{ws50-gru-v2,mouse-fcn-a5}                      # pretrained base models baked into the image
 scripts/                 # release.sh, data-export.sh, data-import.sh
 .github/workflows/{ci,publish}.yml                        # tests on every push; publish after CI on main
 docker-compose{,.prod,.bundle}.yml + .env.example

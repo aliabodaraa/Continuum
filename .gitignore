@@ -51,7 +51,7 @@ artifacts/users/
 services/model-api/artifacts/
 
 # Dead / experimental model variants — keep only the bases: ws50-gru-v2 (keystroke base served since 2026-10-25,
-# the one every typing result was measured with), ws50-gru (the earlier keystroke base) and mouse-fcn-a5 (mouse
+# the one every typing result was measured with) and mouse-fcn-a5 (mouse
 # base); everything else is regenerable experiment output.
 # Per-user evaluation models and exported inputs of the mouse study (regenerable with
 # final_mouse_eval.py / export_g_inputs.py / extension/scripts/eval_ondevice_g.js).
@@ -61,8 +61,7 @@ artifacts/*-v2
 artifacts/*.BROKEN*
 artifacts/*.log
 artifacts/smoke-*
-artifacts/ws20-gru/
-artifacts/ws50/
+artifacts/*-rebuild/
 artifacts/mouse-ws50-gru/
 # Mouse accuracy-experiment outputs (regenerable via the scripts in services/model-api;
 # results are recorded in the commit message and the paper, the weights are not needed).

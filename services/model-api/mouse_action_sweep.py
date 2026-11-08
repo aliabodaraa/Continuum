@@ -122,7 +122,7 @@ def main():
     base_net = scaler = None
     if args.model == "cnnrnn":
         from tensorflow.keras.callbacks import EarlyStopping
-        from model import build_1d_cnn_2rnn
+        from model import build_1d_cnn_2rnn, LEGACY_NETWORK
         from preprocessing import FeatureScaler
 
         bi = np.where(np.isin(subj, base_users))[0]
@@ -137,7 +137,7 @@ def main():
         scaler = FeatureScaler.fit(SEQ[tr])
         Xb, Xv = scaler.transform(SEQ[tr]), scaler.transform(SEQ[va])
         base_net = build_1d_cnn_2rnn(Xb.shape[1:], num_classes=len(base_users),
-                                     units=32, rnn_type="gru")
+                                     units=32, rnn_type="gru", **LEGACY_NETWORK)
         base_net.compile(optimizer="adam", loss="sparse_categorical_crossentropy",
                          metrics=["accuracy"])
         print(f"pre-training CNN+GRU identifier on {len(base_users)} base users "
@@ -173,8 +173,8 @@ def main():
             # fresh binary model, then fine-tune with Conv1D frozen — the same
             # transfer contract the window pipeline uses.
             from tensorflow.keras.callbacks import EarlyStopping
-            from model import build_1d_cnn_2rnn
-            net = build_1d_cnn_2rnn(SEQ.shape[1:], num_classes=2, units=32, rnn_type="gru")
+            from model import build_1d_cnn_2rnn, LEGACY_NETWORK
+            net = build_1d_cnn_2rnn(SEQ.shape[1:], num_classes=2, units=32, rnn_type="gru", **LEGACY_NETWORK)
             for i in range(len(net.layers) - 1):
                 w = base_net.layers[i].get_weights()
                 if w:

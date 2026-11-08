@@ -174,7 +174,7 @@ Prediction: 92% GENUINE ✓
 The `/api/predict` endpoint is currently **broken** because:
 
 1. The model_adapter expects a global TensorFlow.js model
-2. But you're using **per-user Python CNN/LSTM models**
+2. But you're using **per-user Python CNN+GRU models**
 3. The predict route doesn't know how to call the Python API
 
 ### How It Should Work

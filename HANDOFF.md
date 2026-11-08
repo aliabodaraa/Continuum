@@ -130,9 +130,9 @@ Middleware: `packages/continuum-node/` (auto-detects the logged-in user; mints i
 - **Onboarding modes** (`ONBOARDING_MODE`): `eager` (popup enrolls everything at load) vs `lazy`
   (passkey only; each modality enrolls when its panel toggle is turned on). **Lazy is active.**
 - **Keystroke pipeline**: digraph steps `[id1,id2,dwell1,dwell2,dd,ud]`; `WINDOW_SIZE=50`,
-  `STRIDE=10`, `RECENT_WINDOW_COUNT=6`, `ROLLING_WINDOW_COUNT=18`. Live verdict = Lu et al. (2020)
-  packet vote at the fixed 0.50 softmax boundary (`PACKET_VOTE_FRACTION=0.50`). Model is per-user
-  CNN+GRU (1D-CNN + 2×GRU) fine-tuned from a base (`artifacts/ws50-gru`).
+  `STRIDE=10`, `RECENT_WINDOW_COUNT=20` (an organisation may choose 6 or 10). Live verdict = packet vote at
+  the fixed 0.50 softmax boundary (`PACKET_VOTE_FRACTION=0.50`, so 10 of 20). Model is per-user
+  CNN+GRU (1D-CNN, max pooling, 2×GRU of 16) fine-tuned from a base (`artifacts/ws50-gru-v2`).
 - **Keystroke adaptive contribution** (`/v1/keystroke/contribute`): after a sustained clean run,
   the SDK offers to add the sample to the user's training pool; every `ADAPTIVE_RETRAIN_EVERY=3`
   accepted samples queues a retrain (`lib/trainingQueue.js`), which only replaces the live model

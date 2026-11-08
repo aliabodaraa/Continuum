@@ -39,16 +39,19 @@ Train the baseline model:
 docker compose --profile training run --rm trainer
 ```
 
+It trains the served network (max pooling 2, GRU 16) into `artifacts/ws50-gru-v2-rebuild`; the served base
+`artifacts/ws50-gru-v2` is never overwritten.
+
 Run the full web app plus model API:
 
 ```powershell
 docker compose --profile model up
 ```
 
-By default, Docker Compose loads the full trained model from `artifacts/ws50/final_model`. To override the model path for experiments, set `MODEL_PATH` before starting Docker Compose:
+By default, Docker Compose loads the served base `artifacts/ws50-gru-v2/final_model`. To try another base, set `MODEL_PATH` before starting Docker Compose:
 
 ```powershell
-$env:MODEL_PATH="/app/artifacts/smoke-ws50/final_model"
+$env:MODEL_PATH="/app/artifacts/ws50-gru-v2-rebuild/final_model"
 docker compose --profile model up
 ```
 
@@ -76,14 +79,18 @@ py -3.11 -m venv .venv
 ## Train Baseline
 
 ```powershell
-.\.venv\Scripts\python train.py --data-dir data --window-size 50 --epochs 150 --batch-size 64 --output-dir artifacts\ws50
+.\.venv\Scripts\python train.py --data-dir data --window-size 50 --epochs 150 --batch-size 64 --output-dir artifacts\ws50-gru-v2-rebuild
 ```
+
+The defaults build the served network (`--units 16 --pool-size 2`); `--legacy-network --units 32` builds the earlier one
+(no pooling, both GRU layers return sequences, then Flatten).
 
 The training output writes:
 
-- `artifacts/ws50/best_model.h5`
-- `artifacts/ws50/final_model/`
-- `artifacts/ws50/results.json`
+- `artifacts/ws50-gru-v2-rebuild/best_model.h5`
+- `artifacts/ws50-gru-v2-rebuild/final_model/`
+- `artifacts/ws50-gru-v2-rebuild/results.json`
+- `artifacts/ws50-gru-v2-rebuild/scaler.json`
 
 `results.json` includes accuracy, F1, ROC-AUC, FAR, FRR, EER, and the training history.
 

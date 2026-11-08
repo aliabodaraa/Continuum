@@ -9,7 +9,7 @@ score low (impostor).
 
 Run inside Docker:
   docker run --rm -v <continuum>:/app -w /app \
-    -e MODEL_PATH=/app/artifacts/ws50/final_model \
+    -e MODEL_PATH=/app/artifacts/ws50-gru-v2/final_model \
     continuum-model-api python e2e_user_test.py
 """
 import numpy as np

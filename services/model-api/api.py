@@ -27,9 +27,10 @@ except Exception:
     set_random_seed = None
 
 try:
-    from model import build_1d_cnn_2rnn
+    from model import build_1d_cnn_2rnn, LEGACY_NETWORK
 except Exception:
     build_1d_cnn_2rnn = None
+    LEGACY_NETWORK = {}
 
 try:
     from preprocessing import FeatureScaler
@@ -85,7 +86,7 @@ def api_key_ok(supplied):
     return hmac.compare_digest(str(supplied or ""), MODEL_API_KEY)
 
 
-MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(BASE_DIR, "artifacts", "ws50", "final_model"))
+MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(BASE_DIR, "artifacts", "ws50-gru-v2", "final_model"))
 SCALER_PATH = os.getenv("SCALER_PATH", os.path.join(os.path.dirname(MODEL_PATH), "scaler.json"))
 # Storage roots, declared before anything that derives a default from them.
 # DATA_DIR is set by compose (/app/data); deriving the negatives default from
@@ -1051,8 +1052,11 @@ def train_user_payload(payload):
                         # a path-based guess wrongly builds an LSTM and the GRU
                         # weights won't load).
                         base_rnn = "gru" if any(l.__class__.__name__ == "GRU" for l in base.layers) else "lstm"
+                        # Those bases were trained with the earlier network (no pooling, Flatten): the
+                        # layer-by-layer copy below needs the same layers in the same order.
                         fresh = build_1d_cnn_2rnn(
-                            (window_size, num_features), num_classes=2, units=base_units, rnn_type=base_rnn
+                            (window_size, num_features), num_classes=2, units=base_units, rnn_type=base_rnn,
+                            **LEGACY_NETWORK,
                         )
                         copied = 0
                         for i in range(len(fresh.layers) - 1):  # all but the final Dense head

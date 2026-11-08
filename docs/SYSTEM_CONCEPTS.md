@@ -120,7 +120,7 @@ there are always 3–4 real windows.
 
 ## 6. How a Single Window Is Classified (Genuine vs Bad)
 
-The CNN/LSTM model receives the (50×6) window and outputs one number:
+The CNN+GRU model receives the (50×6) window and outputs one number:
 
 ```
 genuine_score ∈ [0.0, 1.0]
@@ -215,7 +215,7 @@ the validation split, EER is not computed and 0.65 default is used instead.
 Triggered automatically after **3 qualifying submissions** (score ≥ 90%).
 
 What changes:
-- Model weights (CNN/LSTM fine-tuned on new samples)
+- Model weights (CNN+GRU fine-tuned on new samples)
 - EER threshold (recomputed with new genuine/impostor data)
 
 What does NOT change:
@@ -266,7 +266,7 @@ learned from 148 users). Only LSTM + Dense adapt to the individual.
 2. Every 25 new keystrokes (after 80 chars): /check fires
 3. Server extracts ALL windows from current events
 4. Takes last 6 (packet)
-5. Sends packet to CNN/LSTM model
+5. Sends packet to CNN+GRU model
 6. Model returns one score per window
 7. Each score compared to user's EER threshold → genuine or bad
 8. bad_count / packet_size compared to 0.34

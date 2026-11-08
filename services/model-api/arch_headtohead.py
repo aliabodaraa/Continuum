@@ -51,7 +51,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from preprocessing import FeatureScaler                                      # noqa: E402
 from preprocess_mouse import events_to_steps, steps_to_windows, _read_events  # noqa: E402
-from model import build_1d_cnn_2rnn                                          # noqa: E402
+from model import build_1d_cnn_2rnn, LEGACY_NETWORK                          # noqa: E402
 from antal2020_sweep import build_mcdcnn                                     # noqa: E402
 
 
@@ -145,7 +145,7 @@ def main():
 
     ARMS = [
         ("lu_cnn_2gru", lambda shp, n: build_1d_cnn_2rnn(shp, num_classes=n, units=32,
-                                                         rnn_type="gru"),
+                                                         rnn_type="gru", **LEGACY_NETWORK),
          "Lu et al. 2020 (keystroke) -- Conv1D(32,k2) + 2x GRU(32)"),
         ("antal_two_tower", lambda shp, n: build_mcdcnn(shp, n),
          "Antal & Fejer 2020 (mouse) -- two-tower 1D CNN, verified vs AFE_Project"),

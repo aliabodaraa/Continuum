@@ -38,7 +38,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau  # noqa: E402
-from model import build_1d_cnn_2rnn  # noqa: E402
+from model import build_1d_cnn_2rnn, LEGACY_NETWORK  # noqa: E402
 from preprocessing import FeatureScaler  # noqa: E402
 from preprocess_mouse import events_to_steps, steps_to_windows, _read_events  # noqa: E402
 
@@ -123,7 +123,7 @@ def main(args):
         perm = rng_aug.permutation(len(Xtr)); Xtr = Xtr[perm]; ytr = ytr[perm]
         print(f"augment x{args.augment}: train {before} -> {len(Xtr)} windows (jitter={args.jitter}, scale=[{args.scale_lo},{args.scale_hi}])")
 
-    model = build_1d_cnn_2rnn(Xtr.shape[1:], num_classes=num_classes, units=args.units, rnn_type="gru")
+    model = build_1d_cnn_2rnn(Xtr.shape[1:], num_classes=num_classes, units=args.units, rnn_type="gru", **LEGACY_NETWORK)
     model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
     model.summary()
     id_ckpt = os.path.join(args.output_dir, "id_model.h5")
@@ -146,7 +146,7 @@ def main(args):
     print(f"IDENTIFICATION  top1={top1:.4f}  top5={top5:.4f}  (chance={1/num_classes:.4f})")
 
     # Binary-head export for the per-user fine-tuning pipeline.
-    export = build_1d_cnn_2rnn(Xtr.shape[1:], num_classes=2, units=args.units, rnn_type="gru")
+    export = build_1d_cnn_2rnn(Xtr.shape[1:], num_classes=2, units=args.units, rnn_type="gru", **LEGACY_NETWORK)
     for i, layer in enumerate(export.layers[:-1]):  # all but the Dense head
         w = model.layers[i].get_weights()
         if w and [a.shape for a in w] == [a.shape for a in layer.get_weights()]:

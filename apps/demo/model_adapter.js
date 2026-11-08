@@ -1,4 +1,4 @@
-// Optional global TFJS adapter. The auth flow uses the Python per-user CNN/LSTM API.
+// Optional global TFJS adapter. The auth flow uses the Python per-user CNN+GRU API.
 const path = require("path");
 
 let tf = null;
@@ -30,14 +30,14 @@ async function predictFromModel(inputArray) {
 module.exports = {
   init: async (opts = {}) => {
     if (process.env.USE_TFJS_MODEL !== "true") {
-      console.log("Using Python per-user CNN/LSTM rhythm models; global TFJS model disabled.");
+      console.log("Using Python per-user CNN+GRU rhythm models; global TFJS model disabled.");
       return;
     }
 
     const modelDir = opts.modelDir || "../artifacts/tfjs_model";
     const ok = await tryLoadTfjsModel(path.resolve(__dirname, modelDir));
     if (!ok) {
-      console.log("TFJS model not available. Python per-user CNN/LSTM rhythm models remain active.");
+      console.log("TFJS model not available. Python per-user CNN+GRU rhythm models remain active.");
     }
   },
   predict: async (inputArray) => {

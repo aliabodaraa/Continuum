@@ -218,7 +218,7 @@ const MIN_HUMAN_DWELL_SECONDS = 0.01;
  * Convert raw key events into Continuum dataset digraph steps:
  *   [id1, id2, dwell1, dwell2, dd, ud]
  * with key codes normalized by 254 and all times in seconds, matching the
- * Rand_WS*.h5 training data format exactly so the pre-trained CNN+LSTM base
+ * Rand_WS*.h5 training data format exactly so the pre-trained CNN+GRU base
  * model can be fine-tuned on and applied to live typing.
  */
 function eventSteps(events) {
@@ -998,7 +998,7 @@ async function evaluateKeystrokes({ events, timings, userId, db, packetWindows }
     return {
       modelConfidence: 0,
       isSuspicious: false,
-      reason: "CNN/LSTM user model is not trained yet",
+      reason: "typing model is not trained yet",
       modelAvailable: false,
       modelType: "per-user-cnn-lstm",
       metrics,
@@ -1021,7 +1021,7 @@ async function evaluateKeystrokes({ events, timings, userId, db, packetWindows }
       unverifiable,
       reason: unverifiable
         ? `${metrics.keyCount} keystrokes produced no scorable window — un-modelable typing`
-        : "not enough keystroke events for CNN/LSTM window",
+        : "not enough keystroke events for a typing window",
       modelAvailable: true,
       modelType: "per-user-cnn-lstm",
       metrics,

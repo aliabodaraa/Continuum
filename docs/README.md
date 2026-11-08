@@ -8,7 +8,7 @@ Based on:
 Overview
 A two-layer security system:
 
-1. **Keystroke Dynamics Model** (1D CNN + 2LSTM): Continuous behavioral monitoring (Continuum reported 99.57% val accuracy; our leak-free re-evaluation reports honest metrics in `artifacts/ws50/results.json`)
+1. **Keystroke Dynamics Model** (1D CNN, max pooling and two GRU layers of 16 units, Lu et al. 2020): continuous behavioural monitoring with a personal copy of the base model for each user (the base and its leak-free test metrics: `artifacts/ws50-gru-v2/`)
 2. **WebAuthn Passkeys**: Second-factor verification when suspicious behavior is detected
 
 Architecture

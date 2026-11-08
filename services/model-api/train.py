@@ -4,7 +4,7 @@ import json
 import numpy as np
 from sklearn.metrics import accuracy_score, roc_auc_score, f1_score, precision_score, recall_score
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
-from model import build_1d_cnn_2rnn
+from model import build_1d_cnn_2rnn, LEGACY_NETWORK
 from data_loader import collect_dataset, make_train_val_test
 from preprocessing import FeatureScaler
 
@@ -92,7 +92,8 @@ def main(args):
     print(f'[3/5] Building 1D CNN + 2{args.rnn_type.upper()} model...')
     input_shape = X_train.shape[1:]
     num_classes = len(np.unique(y))
-    model = build_1d_cnn_2rnn(input_shape, num_classes=num_classes, units=args.units, rnn_type=args.rnn_type)
+    network = LEGACY_NETWORK if args.legacy_network else {"pool_size": args.pool_size}
+    model = build_1d_cnn_2rnn(input_shape, num_classes=num_classes, units=args.units, rnn_type=args.rnn_type, **network)
     
     model.compile(
         optimizer='adam',
@@ -179,7 +180,11 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=64, help='Batch size')
     parser.add_argument('--rnn-type', type=str, default='gru', choices=['lstm', 'gru'],
                         help='Recurrent cell type (default: gru)')
-    parser.add_argument('--units', type=int, default=32,
-                        help='RNN units per layer (default: 32)')
+    parser.add_argument('--units', type=int, default=16,
+                        help='RNN units per layer (default: 16, the deployed base ws50-gru-v2)')
+    parser.add_argument('--pool-size', type=int, default=2,
+                        help='Max pooling after the convolution (default: 2; 0 = none)')
+    parser.add_argument('--legacy-network', action='store_true',
+                        help='The earlier network: no pooling, both RNN layers return sequences, then Flatten')
     args = parser.parse_args()
     main(args)
