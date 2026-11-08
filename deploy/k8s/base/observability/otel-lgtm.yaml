@@ -32,10 +32,15 @@ spec:
             - { name: otlp-http, containerPort: 4318 }
             - { name: grafana, containerPort: 3000 }
           env:
+            # A sign-in for everyone (2026-11-08). Any pod can reach this port where NetworkPolicies are not enforced
+            # (Docker Desktop), and the traces carry addresses and queries: no anonymous visitors (the image lets them
+            # in, as Admin, unless told otherwise) and an admin password of the deployment's own (Secret grafana-admin,
+            # made by the overlay, as the other secrets; scripts/k8s-local.sh grafana says where it is).
             - { name: GF_SECURITY_ADMIN_USER, value: admin }
-            - { name: GF_SECURITY_ADMIN_PASSWORD, value: admin }     # reachable only through the port-forward
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: grafana-admin, key: GF_SECURITY_ADMIN_PASSWORD } }
+            - { name: GF_AUTH_ANONYMOUS_ENABLED, value: "false" }
             - { name: GF_USERS_DEFAULT_THEME, value: light }
-            - { name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer }    # the image's default is Admin for everyone who reaches the port
             - { name: ENABLE_LOGS_ALL, value: "false" }
           startupProbe:
             httpGet: { path: /api/health, port: grafana }

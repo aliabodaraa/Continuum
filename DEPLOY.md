@@ -295,7 +295,7 @@ scripts/k8s-local.sh secrets      # once: random secrets in deploy/k8s/overlays/
                                   # the operator key is taken from .env)
 scripts/k8s-local.sh up           # build the images (:local), deploy, wait until ready
 scripts/k8s-local.sh status
-scripts/k8s-local.sh grafana      # traces and metrics (grafana/otel-lgtm): http://localhost:3001, admin / admin
+scripts/k8s-local.sh grafana      # traces and metrics (grafana/otel-lgtm): http://localhost:3001, user admin, password in overlays/local/secrets/grafana.env
 scripts/k8s-local.sh e2e          # the end-to-end suites against this cluster (connect, enrol_reload, demo_backend)
 ```
 

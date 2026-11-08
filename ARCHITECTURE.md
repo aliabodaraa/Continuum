@@ -687,8 +687,10 @@ Implementation details:
   typed text, key timings or tokens. The dashboard "Continuum services" is provisioned from a ConfigMap
   (request rate, 5xx, latency p95 by service and by gateway route, calls between services, database query time,
   model requests by route, Node event loop; `base/observability/dashboards`); the image's own RED dashboards show
-  no data for these services (they expect other metric names). Anonymous visitors are Viewers (the image makes
-  them Admins), `admin` / `admin` to change anything; Tempo needs a volume of its own at `/var/tempo` because the
+  no data for these services (they expect other metric names). Everyone signs in (since 2026-11-08: no anonymous
+  visitors, whom the image would make Admins; user `admin` with a random password from Secret `grafana-admin`, kept
+  in `overlays/local/secrets/grafana.env`), because any pod reaches the port where NetworkPolicies are not enforced
+  and the traces carry addresses and queries; Tempo needs a volume of its own at `/var/tempo` because the
   pod is not root. Alerts are still to be made.
 - **Two "wrong request" cases that were answered 500, fixed in passkey-service.** Found with the new dashboard:
   its 5xx chart showed one on the passkey service and one on the gateway's adaptive-retrain route (which relays

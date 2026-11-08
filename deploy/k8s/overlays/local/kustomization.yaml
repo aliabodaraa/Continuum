@@ -48,6 +48,9 @@ secretGenerator:
   - name: demo-secrets
     namespace: continuum-demo
     envs: [secrets/demo.env]
+  - name: grafana-admin
+    namespace: continuum-observability
+    envs: [secrets/grafana.env]
 
 patches:
   - path: local-urls.yaml

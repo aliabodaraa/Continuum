@@ -16,7 +16,8 @@
 #                                        private port-forward to the gateway on http://localhost:28081
 #                                        (open /operator.html there; e2e: CONTINUUM_OPERATOR=that URL)
 #   scripts/k8s-local.sh grafana         traces and metrics (Grafana, grafana/otel-lgtm in continuum-observability): a
-#                                        private port-forward on http://localhost:3001 (admin / admin)
+#                                        private port-forward on http://localhost:3001 (user admin, password in
+#                                        deploy/k8s/overlays/local/secrets/grafana.env)
 #   scripts/k8s-local.sh e2e [suite...]  the end-to-end suites against this cluster (connect, enrol_reload,
 #                                        demo_backend by default; study adds a test participant to the study log,
 #                                        so it is run only when named): each makes its own operator port-forward
@@ -44,7 +45,17 @@ export MSYS_NO_PATHCONV=1
 
 platform() { kubectl config use-context "$CTX" >/dev/null && bash deploy/platform/install.sh; }
 
+# Grafana's admin password (2026-11-08): random, kept beside the other secrets. Made when missing, so a secrets folder
+# from before it gains this one file and nothing else changes.
+grafana_secret() {
+  [ -f "$SECRETS/grafana.env" ] && return 0
+  mkdir -p "$SECRETS"
+  (umask 077; printf 'GF_SECURITY_ADMIN_PASSWORD=%s\n' "$(openssl rand -hex 16)" > "$SECRETS/grafana.env")
+  echo "Grafana's admin password written to $SECRETS/grafana.env (git-ignored)"
+}
+
 secrets() {
+  grafana_secret
   if [ -f "$SECRETS/continuum.env" ]; then echo "$SECRETS already exists; delete it to make new secrets"; return 0; fi
   mkdir -p "$SECRETS"
   umask 077
@@ -149,6 +160,7 @@ wait_ready() {
 
 deploy() {
   [ -f "$SECRETS/continuum.env" ] || { echo "no secrets yet: run $0 secrets first"; exit 1; }
+  grafana_secret
   say "applying $OVERLAY"
   k apply -k "$OVERLAY"
   wait_ready
@@ -158,6 +170,7 @@ deploy() {
 up() {
   build
   [ -f "$SECRETS/continuum.env" ] || secrets
+  grafana_secret
   k apply -k "$OVERLAY"
   # same tag, new image: restart the pods so they run it
   for ns in "${NAMESPACES[@]}"; do
@@ -256,7 +269,8 @@ operator() {
 }
 
 grafana() {
-  echo "Grafana: http://localhost:3001  (admin / admin; Ctrl-C ends it). Explore > Tempo for traces, Prometheus for metrics."
+  echo "Grafana: http://localhost:3001  (user admin, password: the value in $SECRETS/grafana.env; Ctrl-C ends it)."
+  echo "Explore > Tempo for traces, Prometheus for metrics."
   k -n continuum-observability port-forward deploy/otel-lgtm 3001:3000 --address 127.0.0.1
 }
 

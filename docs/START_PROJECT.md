@@ -9,7 +9,7 @@ scripts/k8s-local.sh status                 # is it up? (pods, services, the edg
 K8S_OVERLAY=live scripts/k8s-local.sh up    # after a code change: build the images, deploy, restart, wait
 scripts/k8s-local.sh logs gateway           # a service's log (ca-service, passkey-service, model-inference, ...)
 scripts/k8s-local.sh operator               # the operator page: http://localhost:28081/operator.html
-scripts/k8s-local.sh grafana                # traces and metrics: http://localhost:3001 (admin / admin)
+scripts/k8s-local.sh grafana                # traces and metrics: http://localhost:3001 (user admin, password in deploy/k8s/overlays/local/secrets/grafana.env)
 scripts/k8s-local.sh e2e                    # the end-to-end suites against the cluster
 scripts/k8s-backup.sh                       # a backup (before any change; keep copies off the PC encrypted)
 ```
