@@ -803,6 +803,6 @@ Branch: `experiment/recovery-plan`
 - New identities: ServiceAccount `pg-backup`; `db-migrate` for the one-off database pods (scripts/k8s-local.sh, scripts/lib/k8s.sh).
 - `CONTINUUM_NETPOL_UNENFORCED` now defaults to off: the demo suite's "cannot reach the internal services" is a real check on Docker Desktop too.
 - Measured, live, strict: connect, enrol_reload and demo_backend 132 passed, 0 failed, before and after a real Docker Desktop restart; the demo pod refused by ca-service, passkey-service, the model, PostgreSQL and the store. A daily-copy run through its own identity.
-- The real restart left the CNPG operator outside the mesh (its IP reached the API after the agent's one scan). Re-added without a restart; the wait in the agent was added. **That wait has not yet been through a real restart.**
+- The real restart left the CNPG operator outside the mesh (its IP reached the API after the agent's one scan). Re-added without a restart; the wait in the agent was added. A second real restart the same day (13:09 UTC) left every pod in the mesh and the three suites passed again (132, 0 failed); the wait ran and had nothing to wait for, so a late IP has not recurred since it was added.
 - For any new service or path: add a rule to `mesh-policies.yaml`, or it is refused (`kubectl -n istio-system logs ds/ztunnel | grep "policy rejection"`). Mouse or keystroke work that adds a new internal call needs this too.
 - Docs: ARCHITECTURE.md 13h, DEPLOY.md, docs/cloud-native-architecture.md.

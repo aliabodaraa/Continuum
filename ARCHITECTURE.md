@@ -779,7 +779,9 @@ between the pods, with nothing added to them and no code change, so the "restric
   database operator came back outside the mesh and strict mode refused it. At start the agent lists the mesh's pods once
   and takes a pod only if the API already shows its IP (`cni/pkg/nodeagent/podcgroupns_linux.go`); that pod's IP arrived
   ten seconds later, the "enrolled" annotation left from before the restart hid it, and nothing retries. Hence the wait.
-  The three suites then passed again (132 checks). If a pod is ever found outside the mesh, this re-adds it without
+  The three suites then passed again (132 checks). A second real restart the same day left every pod in the mesh and
+  the suites passed again; the wait had nothing to wait for that time, so a late IP has not recurred since it was added.
+  If a pod is ever found outside the mesh, this re-adds it without
   restarting it: `kubectl -n <ns> annotate pod <pod> ambient.istio.io/redirection-`.
 - **What it adds:** ztunnel, the CNI agent and istiod are new dependencies. A pod in the mesh does not start while the
   agent is down, and traffic in the mesh stops while ztunnel is down. Restarting the agent can cost a pod one failed
