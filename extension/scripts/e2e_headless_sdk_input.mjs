@@ -23,7 +23,7 @@ const ok = (n, c, d) => { console.log((c ? "  PASS  " : "  FAIL  ") + n + (d ? "
 const checks = [];
 function api(p, method, body) {
   if (p === "/v1/sdk/onboarding") return { passkey: true, keystroke: true, mouse: true, keystrokeTraining: false };
-  if (p.startsWith("/v1/sdk/lock/status/")) return { locked: false };
+  if (p === "/v1/sdk/lock/status") return { locked: false };
   if (p === "/v1/sdk/keystroke/config") return { windowSize: 50, windowStride: 10, recentWindowCount: 20, sampleWindowCount: 20, sampleFloorWindows: 3, checkMinTextChars: 80,
     adaptiveConfidenceMin: 0.8, adaptiveRetrainEvery: 3, adaptiveEnabled: false, adaptiveMinGapHours: 3, panel: "show", keystroke: "on", mouse: "off",
     onboardingMode: "eager", managed: ["mouse"], excludeFieldTypes: ["hidden"] };

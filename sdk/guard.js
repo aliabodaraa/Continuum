@@ -578,7 +578,8 @@
     var pasted = !!(verdict && verdict.typingEvaluation && verdict.typingEvaluation.modelType === "paste-policy");
     modalText("Identity check required", pasted ? "Text was pasted into this field more times than allowed. Verify with your passkey to continue."
       : modality === "mouse" ? "Your mouse movement no longer matches your profile. Verify with your passkey to continue."
-      : "Your typing rhythm no longer matches your profile. Verify with your passkey to continue.", "Verify with passkey", "finger");
+      : modality ? "Your typing rhythm no longer matches your profile. Verify with your passkey to continue."
+      : "Your recent activity no longer matches your profile. Verify with your passkey to continue.", "Verify with passkey", "finger");
     modalEl.style.display = "flex";
     updateSummary();
   }
@@ -1748,14 +1749,17 @@
   }
 
   async function gatewayFlow() {
+    var lockedAtLoad = false;
     try {
       var ob = await bootstrapGateway();
       // A pending step-up survives page loads only on the server (this lock is
       // in-memory and just reset above) — a host app has no gate of its own to
       // enforce this like apps/demo does, so the SDK is the only place any page,
-      // in any app, can catch a reload/navigation during a locked session.
-      var ls = await reqJson(EP.lockStatus + "/" + userId);
-      if (ls.ok && ls.d && ls.d.locked) { doLogout(); return; }
+      // in any app, can catch a reload/navigation during a locked session. It puts the passkey prompt back. Signing
+      // the user out would not help: the lock outlives the sign-in, so they would return here locked, again and again,
+      // with no way to reach the passkey. If this cannot be read, the server still answers 423 to every check.
+      var ls = await reqJson(EP.lockStatus);
+      lockedAtLoad = !!(ls.ok && ls.d && ls.d.locked);
       await loadConfig(); // now authed
       obState = ob;
       if (ob && ob.keystrokeTraining && !ob.keystroke) watchKsBuild();
@@ -1769,6 +1773,7 @@
       console.warn("[continuum] bootstrap failed:", reason); setKb("bad", "offline"); return;
     }
     startGuard();
+    if (lockedAtLoad && !locked) { locked = true; setKb("bad", "locked — verify"); showModal(); }
   }
 
   // Public: the host app vouches for its logged-in user with a backend-signed token.

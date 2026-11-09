@@ -21,7 +21,7 @@ let look = { lang: "en", theme: "light" }, onboarding = { passkey: true, keystro
 const win = (keys) => { const s = Math.max(keys - 1, 0); return s >= 50 ? Math.floor((s - 50) / 10) + 1 : 0; };
 function api(p, body) {
   if (p === "/v1/sdk/onboarding") return { ...onboarding, keystrokeTraining: false };
-  if (p.startsWith("/v1/sdk/lock/status/")) return { locked: false };
+  if (p === "/v1/sdk/lock/status") return { locked: false };
   if (p === "/v1/sdk/keystroke/config") return { windowSize: 50, windowStride: 10, recentWindowCount: 20, sampleWindowCount: 20, checkMinTextChars: 80,
     adaptiveConfidenceMin: 0.8, adaptiveRetrainEvery: 3, adaptiveEnabled: true, adaptiveMinGapHours: 3, panel: "show", keystroke: "on", mouse: "on",
     onboardingMode: "eager", excludeFieldTypes: ["hidden"], panelLanguage: look.lang, panelTheme: look.theme,

@@ -35,7 +35,7 @@ function api(p) {
   if (p === "/health") return { ok: true };
   if (p === "/v1/sdk/session") return { token: TOKEN, userId: 78, onboarding: { passkey: true, keystroke: true, mouse: true } };
   if (p === "/v1/sdk/onboarding") return { passkey: true, keystroke: true, mouse: true, keystrokeTraining: false };
-  if (p.startsWith("/v1/sdk/lock/status")) return { locked: false };
+  if (p === "/v1/sdk/lock/status") return { locked: false };
   if (p === "/v1/sdk/keystroke/config") return { windowSize: 50, windowStride: 10, recentWindowCount: 20, sampleWindowCount: 20, sampleFloorWindows: 3,
     checkMinTextChars: 80, adaptiveEnabled: false, panel: "hide", keystroke: "on", mouse: state.mouseOn ? "on" : "off", onboardingMode: "eager", managed: [], excludeFieldTypes: ["hidden"] };
   if (p === "/v1/sdk/keystroke/check") return { ok: true, checked: false };
@@ -246,6 +246,9 @@ try {
     && (st.unavailable || {}).mouse === false, `${state.checks - c6} new checks, ${JSON.stringify(st.unavailable)}`);
 
   // ---- 7. probation survives the worker's idle stop (what cg:verified sets after a passed step-up)
+  // First let the last step's checks finish: a clean verdict ends probation by design, so one arriving just after the
+  // line below made this step fail now and then on a busy machine.
+  for (let last = -1; last !== state.checks;) { last = state.checks; await sleep(2500); }
   await W("probation = true; persistProgress(true); true");
   await sleep(300);
   const { targetInfos: t7 } = await send("Target.getTargets");

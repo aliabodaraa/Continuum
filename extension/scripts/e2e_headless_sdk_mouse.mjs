@@ -30,7 +30,7 @@ let state;
 const fresh = (over) => ({ enrolled: false, training: false, onFile: 0, statusPolls: 0, trainingPollsLeft: 0, enrolls: [], enrollAnswer: null, ...over });
 function api(p, method, body) {
   if (p === "/v1/sdk/onboarding") return { passkey: true, keystroke: true, mouse: state.enrolled, keystrokeTraining: false };
-  if (p.startsWith("/v1/sdk/lock/status")) return { locked: false };
+  if (p === "/v1/sdk/lock/status") return { locked: false };
   if (p === "/v1/sdk/keystroke/config") return { windowSize: 50, windowStride: 10, recentWindowCount: 20, sampleWindowCount: 20, sampleFloorWindows: 3,
     checkMinTextChars: 80, adaptiveEnabled: false, panel: "show", keystroke: "off", mouse: "on", onboardingMode: "lazy", managed: [], excludeFieldTypes: ["hidden"] };
   if (p === "/v1/sdk/keystroke/status") return { trained: true, adaptiveEnabled: false };

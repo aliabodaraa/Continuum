@@ -51,7 +51,7 @@ function api(p, body) {
   }
   // Gateway mode (step 5): the SDK's own session.
   if (p === "/v1/sdk/onboarding") return [200, { passkey: true, keystroke: true, mouse: true, keystrokeTraining: false }];
-  if (p.startsWith("/v1/sdk/lock/status")) return [200, { locked: false }];
+  if (p === "/v1/sdk/lock/status") return [200, { locked: false }];
   if (p === "/v1/sdk/keystroke/config") return [200, { ...CONFIG, keystroke: "off" }];
   if (p === "/v1/sdk/keystroke/status") return [200, { trained: true, adaptiveEnabled: false }];
   if (p === "/v1/sdk/mouse/status") return [200, { enrolled: true, training: false, samplesOnFile: 8, samplesRequired: 8, sampleWindows: 55, voteN: 60, voteK: 33 }];

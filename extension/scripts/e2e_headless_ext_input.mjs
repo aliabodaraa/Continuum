@@ -25,7 +25,7 @@ const TOKEN = "x." + b64u({ sub: 78, sk: "SK_EXT" }) + ".y";
 function api(p, method, body) {
   if (p === "/v1/sdk/session") return { token: TOKEN, userId: 78, onboarding: { passkey: true, keystroke: true, mouse: true } };
   if (p === "/v1/sdk/onboarding") return { passkey: true, keystroke: true, mouse: true, keystrokeTraining: false };
-  if (p.startsWith("/v1/sdk/lock/status")) return { locked: false };
+  if (p === "/v1/sdk/lock/status") return { locked: false };
   if (p === "/v1/sdk/keystroke/config") return { windowSize: 50, windowStride: 10, recentWindowCount: 20, sampleWindowCount: 20, sampleFloorWindows: 3,
     checkMinTextChars: 80, adaptiveEnabled: false, panel: "hide", keystroke: "on", mouse: "on", onboardingMode: "eager", managed: [], excludeFieldTypes: ["hidden"] };
   if (p === "/v1/sdk/keystroke/status") return { trained: true, adaptiveEnabled: false };

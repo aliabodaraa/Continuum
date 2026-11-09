@@ -36,7 +36,7 @@ function api(p, method, body) {
   if (p === "/api/mouse/use-sample") { state.useSamples.push(body.windows || []); state.demoSamples = (state.demoSamples || 0) + 1; return { ok: true, stored: true }; }
   if (DEMO[p]) p = DEMO[p];
   if (p === "/v1/sdk/onboarding") return { passkey: true, keystroke: true, mouse: true, keystrokeTraining: false };
-  if (p.startsWith("/v1/sdk/lock/status")) return { locked: false };
+  if (p === "/v1/sdk/lock/status") return { locked: false };
   if (p === "/v1/sdk/keystroke/config") return { windowSize: 50, windowStride: 10, recentWindowCount: 20, sampleWindowCount: 20, sampleFloorWindows: 3,
     checkMinTextChars: 80, adaptiveEnabled: false, panel: "show", keystroke: "off", mouse: "on", onboardingMode: "lazy", managed: [], excludeFieldTypes: ["hidden"] };
   if (p === "/v1/sdk/keystroke/status") return { trained: true, adaptiveEnabled: false };
