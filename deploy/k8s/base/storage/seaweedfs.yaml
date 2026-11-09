@@ -89,3 +89,4 @@ spec:
             matchLabels: { app.kubernetes.io/name: pg-backup }     # the daily database copy (pg-backup.yaml)
       ports:
         - { port: 8333, protocol: TCP }
+        - { port: 15008, protocol: TCP }

@@ -121,6 +121,7 @@ spec:
       ports:
         - { port: 3000, protocol: TCP }      # the demo
         - { port: 4200, protocol: TCP }      # Acme (acme.yaml)
+        - { port: 15008, protocol: TCP }    # the mesh's tunnel
     - from:                                  # the gateway pushes risk changes to the demo (CAEP, DEMO_WEBHOOK_URL)
         - namespaceSelector:
             matchLabels: { kubernetes.io/metadata.name: continuum }
@@ -128,3 +129,4 @@ spec:
             matchLabels: { app.kubernetes.io/name: gateway }
       ports:
         - { port: 3000, protocol: TCP }
+        - { port: 15008, protocol: TCP }

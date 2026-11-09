@@ -16,4 +16,5 @@ resources:
   - model.yaml
   - pg-backup.yaml
   - network-policies.yaml
+  - mesh-policies.yaml
   - edge.yaml

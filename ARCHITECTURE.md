@@ -639,10 +639,10 @@ Implementation details:
   (`origin_not_allowed`); the gateway now adds the site of `DEMO_SIGNIN_URL` (its sign-in page is on it). Kustomize's
   `images:` cannot be used next to CloudNativePG's `Database` (its text field `template`), so the overlay tags the
   images with explicit transformers.
-- **NetworkPolicies are not enforced by Docker Desktop's Kubernetes** (measured: the demo pod reaches ca-service and
-  passkey-service). Every internal route still needs its service key (measured from the demo pod: 401 from
-  ca-service, passkey-service and the model). The demo suite reports the reach as a note when
-  `CONTINUUM_NETPOL_UNENFORCED=1` and checks the refusal everywhere; the policies are proven on an enforcing cluster.
+- **NetworkPolicies are not enforced by Docker Desktop's Kubernetes** (measured: the demo pod reached ca-service and
+  passkey-service). Since 2026-11-09 the service mesh enforces the same paths by identity (13h), and every internal
+  route still needs its service key. The demo suite checks the refusal; `CONTINUUM_NETPOL_UNENFORCED=1` makes it a note
+  on a cluster with neither a mesh nor enforced policies. The NetworkPolicies themselves need an enforcing cluster to be proven.
 - **A slow, unstable connection** (5 to 140 KB/s that night): images were fetched with a resumable downloader, loaded
   with `docker load`, and the registry digest recorded with a `docker pull` by digest that fetched only the index.
 
@@ -741,6 +741,51 @@ Implementation details:
   `docker-desktop`, the operator area through a port-forward each suite makes for itself, the tenant secret
   from the overlay's secrets file, the NetworkPolicy note on Docker Desktop; `scripts/k8s-local.sh e2e`
   runs them. Compose remains a choice (`CONTINUUM_CONTAINER_PREFIX=continuum`).
+
+## 13h. Mutual TLS and identity rules between the services (Istio ambient, since 2026-11-09)
+
+Before this, each internal call carried a shared key over plain HTTP, and on Docker Desktop nothing stopped a pod
+from connecting to any other. Istio's ambient mode (1.31.4, `deploy/platform/istio`) puts a per-node proxy, ztunnel,
+between the pods, with nothing added to them and no code change, so the "restricted" pod rule still holds.
+
+- **In the mesh:** `continuum`, `continuum-storage`, `continuum-demo` and `continuum-observability` (a label in each
+  `namespace.yaml`), and `envoy-gateway-system` and `cnpg-system` (`deploy/platform/install.sh`), because the strict
+  namespaces accept nothing from outside it.
+- **The rules:** `mesh-policies.yaml` in each namespace. STRICT accepts only mutual TLS. The AuthorizationPolicies allow
+  exactly the paths of the NetworkPolicies, by ServiceAccount, or by namespace for the edge and the demo tenants.
+  `continuum` is default-deny. The daily database copy and the one-off database tools have identities of their own
+  (`pg-backup`, `db-migrate`). The kubelet's probes and `kubectl port-forward` do not pass through these rules. A new
+  service or path needs a rule, or it is refused: `kubectl -n istio-system logs ds/ztunnel | grep "policy rejection"`.
+- **The service keys stay** as a second layer. Inside the mesh they now travel in the encrypted tunnel, and the Compose
+  bundle, which has no mesh, depends on them.
+- **On a cluster that enforces NetworkPolicies,** a mesh pod receives traffic on the tunnel's port 15008 and its health
+  probes from 169.254.7.127 (Istio, "Ambient and Kubernetes NetworkPolicy"). Both are in the manifests. The model pods'
+  egress rule lists 15008 too, inferred from how the tunnel works (that page covers ingress). None of this can be
+  exercised here.
+- **Docker Desktop is not a platform Istio lists as supported.** `deploy/platform/istio/docker-desktop` holds what it
+  needs, applied only on that context: the CNI and network-namespace paths; native nftables, because the WSL2 kernel has
+  no iptables CONNMARK; an init container that makes `/run` shared in dockerd's mount namespace, because the agent cannot
+  start otherwise and, with the agent down, every pod on the node fails its CNI step (the plugin's kubeconfig lives on
+  `/run`, a tmpfs, and only the agent's pod is let through without it); a second init container that makes the agent wait
+  until every pod on the node shows an IP (see below); and certificates of 90 days instead of 24 hours,
+  because ztunnel schedules renewal on a clock that stops while the PC sleeps and keeps using an expired certificate, so
+  with 24 hours the mesh would fail after about a day of this PC's normal use.
+- **Measured on the live cluster, 2026-11-09, strict mode:** the three suites (connect, enrol_reload, demo_backend)
+  132 checks passed and none failed; the demo pod refused by ca-service, passkey-service, the model, PostgreSQL and the
+  store, and reaching the gateway; no refusal of a legitimate path in ztunnel's log; a daily-copy run through its own
+  identity, each file read back; the kubelet's probes passing (seen arriving from 169.254.7.127 on a test pod); no pod
+  restarted by joining the mesh. Certificates issued for 90 days, read from ztunnel's `/config_dump`.
+- **A real restart of Docker Desktop in strict mode** brought everything back unattended and found one defect: the
+  database operator came back outside the mesh and strict mode refused it. At start the agent lists the mesh's pods once
+  and takes a pod only if the API already shows its IP (`cni/pkg/nodeagent/podcgroupns_linux.go`); that pod's IP arrived
+  ten seconds later, the "enrolled" annotation left from before the restart hid it, and nothing retries. Hence the wait.
+  The three suites then passed again (132 checks). If a pod is ever found outside the mesh, this re-adds it without
+  restarting it: `kubectl -n <ns> annotate pod <pod> ambient.istio.io/redirection-`.
+- **What it adds:** ztunnel, the CNI agent and istiod are new dependencies. A pod in the mesh does not start while the
+  agent is down, and traffic in the mesh stops while ztunnel is down. Restarting the agent can cost a pod one failed
+  health probe while it refreshes its rules (seen once, no restart followed).
+- **Undo, one namespace:** `kubectl -n <ns> delete peerauthentication,authorizationpolicy --all`, then
+  `kubectl label ns <ns> istio.io/dataplane-mode-`. Traffic returns to plain at once.
 
 ## 14. Security model (summary)
 | Threat | Mitigation |

@@ -189,11 +189,18 @@ seed_ca() {
   k -n continuum delete pod ca-seed --ignore-not-found --wait=true >/dev/null
   k -n continuum apply -f - <<'EOF'
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: db-migrate
+automountServiceAccountToken: false
+---
+apiVersion: v1
 kind: Pod
 metadata:
   name: ca-seed
   labels: { app.kubernetes.io/name: db-migrate }
 spec:
+  serviceAccountName: db-migrate      # the identity the mesh lets reach the database (base/continuum/mesh-policies.yaml)
   restartPolicy: Never
   automountServiceAccountToken: false
   enableServiceLinks: false

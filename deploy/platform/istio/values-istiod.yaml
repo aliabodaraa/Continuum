@@ -1,0 +1,5 @@
+# The chart's defaults reserve 500m CPU and 2 GiB, far above what istiod uses for a handful of workloads.
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi

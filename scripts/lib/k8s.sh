@@ -26,11 +26,18 @@ oneoff() {  # ns name image [pg-secret db]
   k -n "$ns" delete pod "$name" --ignore-not-found --wait=true >/dev/null
   k -n "$ns" apply -f - >/dev/null <<EOF
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: db-migrate
+automountServiceAccountToken: false
+---
+apiVersion: v1
 kind: Pod
 metadata:
   name: $name
   labels: { app.kubernetes.io/name: db-migrate }
 spec:
+  serviceAccountName: db-migrate      # the identity the mesh lets reach the database
   restartPolicy: Never
   automountServiceAccountToken: false
   enableServiceLinks: false

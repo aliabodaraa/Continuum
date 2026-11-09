@@ -1,0 +1,31 @@
+# The service mesh's rules for this namespace (see base/continuum/mesh-policies.yaml): mutual TLS only, and the collector
+# takes traces and metrics from our two application namespaces. Grafana is reached through kubectl port-forward.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+spec:
+  mtls: { mode: STRICT }
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: otel-lgtm
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source: { namespaces: [continuum, continuum-demo] }
+      to:
+        - operation: { ports: ["4317", "4318"] }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-health-probes
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: { cidr: 169.254.7.127/32 }

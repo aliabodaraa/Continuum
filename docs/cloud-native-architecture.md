@@ -494,9 +494,11 @@ sequenceDiagram
 - **Now:** a gateway-minted **identity assertion** (RS256, `aud` per service, 5 min) names *whose*
   request it is. A per-service API key names *who is calling*. NetworkPolicies limit who can connect
   at all. Each service's database role and bucket credentials grant only its own data.
-- **Before real users in a shared cloud cluster: mTLS with Istio ambient mode.** It is sidecar-free
-  (no per-pod proxy), CNCF graduated and needs no code changes. Its workload identities then replace
-  the API keys. It is not used locally (no value there, real cost). Linkerd was the lighter
+- **mTLS with Istio ambient mode (live since 2026-11-09).** It is sidecar-free (no per-pod proxy, so the
+  "restricted" pod rule still holds), CNCF graduated and needs no code changes. Every connection between
+  pods is mutual TLS, and `mesh-policies.yaml` in each namespace allows each path by workload identity, on
+  every cluster, Docker Desktop included (ARCHITECTURE.md 13h). The per-service API keys stay as a second
+  layer, and the Compose bundle, which has no mesh, depends on them. Linkerd was the lighter
   alternative, but since 2024 its stable releases come only from its vendor (the open-source project
   publishes edge releases).
 
@@ -671,7 +673,7 @@ continuum/
 | Configuration | env vars from ConfigMaps (Kustomize overlays) | 12-factor; same image | Helm values for our app (templating) |
 | Secrets | git-ignored generator locally; **External Secrets Operator** + provider secret manager | provider-neutral shape, rotation, audit | SOPS in git, secrets in CI variables |
 | Observability | OpenTelemetry + JSON logs; grafana/otel-lgtm locally; Loki/Tempo/Prometheus later | vendor-neutral; one pod locally | ELK, standalone Jaeger |
-| mTLS | Istio ambient (production stage) | sidecar-free, open, no code changes | Linkerd (stable builds vendor-only since 2024), app-managed TLS |
+| mTLS | Istio ambient (live since 2026-11-09) | sidecar-free, open, no code changes | Linkerd (stable builds vendor-only since 2024), app-managed TLS |
 | CI/CD | GitHub Actions + `ci-local.sh` | in place | Jenkins (to host) |
 | Delivery | push-based `kubectl apply -k` by digest | simplest repeatable | Argo CD (later trigger), Spinnaker |
 | IaC | Kustomize + Helm (third-party) + OpenTofu (cloud) | one tool per layer | Pulumi (code for infra here adds little), Terraform (licence) |
@@ -703,7 +705,8 @@ continuum/
 | TensorFlow image (1.9 GB) and ~90 s start make scale-out slow | min 2 replicas, startupProbe, pre-pulled images; ONNX Runtime as the lever |
 | A script instead of a live-update tool (Tilt) | a code change is rebuild + restart (about a minute), not a file sync; manifests stay tool-agnostic |
 | Envoy Gateway policies are implementation-specific | kept in overlays; routes are standard Gateway API |
-| No mTLS until production; **NetworkPolicies are not enforced on Docker Desktop** (measured at step 7: the demo pod reaches ca-service and passkey-service) | every internal route needs its service key (measured: 401 from ca-service, passkey-service and the model to the demo pod); mTLS (Istio ambient) before real users; policies tested in staging |
+| **NetworkPolicies are not enforced on Docker Desktop** (measured at step 7: the demo pod reached ca-service and passkey-service) | since 2026-11-09 the mesh enforces the same paths by identity (measured: the demo pod is refused by ca-service, passkey-service, the model, PostgreSQL and the store, and reaches the gateway); every internal route also needs its service key; the model pods' egress limit needs an enforcing cluster; policies tested in staging |
+| Istio does not list Docker Desktop as a supported platform | five settings of its own in `deploy/platform/istio/docker-desktop`, each with its reason (ARCHITECTURE.md 13h); a Docker Desktop update could change what they rely on |
 | Tenant secrets in clear in the database | envelope encryption in the hardening step |
 | Passkeys are bound to the domain | fix the production domain before real enrolment; WebAuthn related origins if it must change |
 | GitHub Actions blocked by billing | `ci-local.sh`; self-hosted runner as an option |
@@ -726,7 +729,7 @@ continuum/
 | 7 | Kubernetes locally on Docker Desktop: Kustomize base/overlays (`deploy/k8s`), `deploy/platform` (metrics-server, CloudNativePG, Envoy Gateway), SeaweedFS, NetworkPolicies, Pod Security `restricted`, HPA/PDB; `scripts/k8s-local.sh` instead of Tilt (OWNER); namespaces `continuum`, `continuum-storage`, `continuum-demo` | connect 93/93, study 28/28 (replay 344/344), enrol-reload 10/10, demo-backend 18/18 (and the network note) through Envoy on `localhost:28080`/`:23000`; e2e_mouse_a5 inside the cluster; the CA data copy migrated in, 23 tables / 916,334 rows identical; the model scorer autoscaled 1 → 2; the operator area only through a port-forward; NetworkPolicies measured as not enforced by Docker Desktop (service keys still refuse) | **done** |
 | 8 | Observability: OTel in all services, grafana/otel-lgtm, dashboards and alerts | a traced check end to end | **done 2026-10-19** for traces and metrics (ARCHITECTURE.md 13g): OpenTelemetry in the four services, on only where an overlay sets the endpoint; `grafana/otel-lgtm` in `continuum-observability`; trace ids in the JSON logs; a first dashboard (`Continuum services`); A request was followed through the system in Tempo: gateway to ca-service to PostgreSQL (a real request of the test suite), ca-service to the model trainer to the object store (a real training), and ca-service to a scoring copy (one base-model prediction made through the real client hop; its server span has the client span as parent). Alerts: still to do |
 | 9 | Cutover on this PC: final backup → migrate → run the cluster → full e2e + replay → switch; Compose stack stopped, not deleted, for a rollback window (14 days, OWNER) | the same proofs on the real data | **done 2026-10-10** (live on Kubernetes; Compose kept until 2026-10-24): the real import identical part by part (881,620 ca rows, 344 user ids, 27 passkeys, 154 models by fingerprint), replay of every logged verdict, study export identical; connect 93/93, enrol-reload 10/10, demo-backend 19/19 on the live addresses; first backup restorable. Before it, rehearsed on a copy: random secrets in place of the development defaults (the demo tenant follows CA_SIGNING_SECRET); `scripts/k8s-import.sh` (each part verified, then its own proof: replay 243/243, study export identical); `overlays/live` (8080 / 3000 / 4200); Acme in the cluster; the demo's risk events (CAEP) reach it inside the cluster; `scripts/k8s-backup.sh` / `k8s-restore.sh` (pg_dump with same-snapshot checksums; drill into a throwaway PostgreSQL, then a restore into the cluster: every table identical, 192 models); connect 93/93, study 28/28, enrol-reload 10/10, demo-backend 19/19 (and the network note) after the import and again after the restore. Runbook: `docs/cutover-runbook.md`. The way back was removed on 2026-10-19 (OWNER), after the suites passed again on the cluster (connect 93/93, enrol-reload 10/10 and demo-backend 19/19, after the redeploy and again after the last change) and a fresh backup passed its restore drill; the proof stacks of steps 1-6 went with it (ARCHITECTURE.md 13g) |
-| 10 | Cloud readiness, when a budget exists: choose a provider; OpenTofu; External Secrets; cert-manager; staging; CI deploy; production; then Istio ambient mTLS, tenant-secret encryption, key rotation **before real users** | staging smoke + e2e | later |
+| 10 | Cloud readiness, when a budget exists: choose a provider; OpenTofu; External Secrets; cert-manager; staging; CI deploy; production; then tenant-secret encryption, key rotation **before real users** | staging smoke + e2e | later |
 
 Work on mouse-specific code in steps 5–6 is coordinated with the mouse session through
 `COORDINATION.md`.

@@ -12,3 +12,4 @@ resources:
   - namespace.yaml
   - web.yaml
   - acme.yaml
+  - mesh-policies.yaml

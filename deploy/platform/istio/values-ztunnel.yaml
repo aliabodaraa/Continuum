@@ -1,0 +1,5 @@
+# The chart's defaults (200m, 512Mi) are sized for very large clusters.
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi

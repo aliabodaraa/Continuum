@@ -5,6 +5,7 @@
 #   CloudNativePG    the PostgreSQL operator (namespace cnpg-system)
 #   Envoy Gateway    the Gateway API implementation at the edge (namespace envoy-gateway-system),
 #                    and the GatewayClass "envoy" every Gateway uses
+#   Istio            mutual TLS between the services, ambient mode (namespace istio-system; istio/install.sh)
 # Everything is applied first and waited for at the end, so a slow image download cannot leave a step out
 # (the pods start whenever their images arrive).
 #
@@ -34,9 +35,16 @@ say "Envoy Gateway $ENVOY_GATEWAY_VERSION (with the Gateway API resources) and t
 kubectl apply --server-side -f "https://github.com/envoyproxy/gateway/releases/download/$ENVOY_GATEWAY_VERSION/install.yaml"
 kubectl apply -f "$(dirname "$0")/gatewayclass.yaml"
 
+say "Istio (ambient), and the edge and the database operator in the mesh: strict namespaces accept nothing from outside it"
+bash "$(dirname "$0")/istio/install.sh"
+kubectl label namespace envoy-gateway-system cnpg-system istio.io/dataplane-mode=ambient --overwrite
+
 say "waiting for the operators (their images may take a while on a slow connection)"
 ok=1
 kubectl -n kube-system rollout status deploy/metrics-server --timeout=600s || ok=0
 kubectl -n cnpg-system rollout status deploy/cnpg-controller-manager --timeout=600s || ok=0
 kubectl -n envoy-gateway-system rollout status deploy/envoy-gateway --timeout=600s || ok=0
+kubectl -n istio-system rollout status deploy/istiod --timeout=600s || ok=0
+kubectl -n istio-system rollout status ds/istio-cni-node --timeout=600s || ok=0
+kubectl -n istio-system rollout status ds/ztunnel --timeout=600s || ok=0
 if [ "$ok" = 1 ]; then say "platform ready"; else say "applied; some pods are not ready yet (kubectl get pods -A): they start when their images arrive"; fi

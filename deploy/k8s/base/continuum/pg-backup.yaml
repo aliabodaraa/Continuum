@@ -14,6 +14,12 @@
 # Restore one database: pg_restore --no-owner --no-privileges --dbname=<db> <db>.dump as that database's role, then
 # psql -f checksums.sql prints the lines of <db>.checksums when the restore is whole (DEPLOY.md, "Kubernetes on
 # this PC"). Run one now: kubectl -n continuum create job --from=cronjob/pg-backup pg-backup-now
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pg-backup      # its own identity: mesh-policies.yaml lets it reach the database and the store
+automountServiceAccountToken: false
+---
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -38,6 +44,7 @@ spec:
             app.kubernetes.io/component: backup
         spec:
           restartPolicy: Never
+          serviceAccountName: pg-backup
           automountServiceAccountToken: false
           securityContext:
             runAsNonRoot: true

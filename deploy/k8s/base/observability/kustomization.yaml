@@ -13,6 +13,7 @@ labels:
 resources:
   - namespace.yaml
   - otel-lgtm.yaml
+  - mesh-policies.yaml
 
 # The dashboard "Continuum services" and the file that tells Grafana to load it (a content change rolls the pod).
 configMapGenerator:

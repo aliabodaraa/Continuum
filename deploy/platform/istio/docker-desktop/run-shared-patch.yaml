@@ -1,0 +1,92 @@
+# Docker Desktop: before install-cni starts, make /run rshared in dockerd's mount namespace, which its VM resets to
+# private at every restart. Without it the agent cannot start, and with the agent down every other pod on the node
+# fails its CNI step, because the plugin's kubeconfig lives in /run (tmpfs) and only the agent writes it back.
+# The agent pod itself is let through without that kubeconfig (plugin.go, isCNIPod), so this runs first after a restart.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: istio-cni-node
+  namespace: istio-system
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: run-shared
+          image: busybox:1.37.0
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              # Docker Desktop only: its VM mounts /run private, so Docker refuses the agent's HostToContainer mount of
+              # /var/run/docker/netns, and /run (tmpfs) loses the plugin's kubeconfig at every restart. Make /run rshared in
+              # dockerd's mount namespace before install-cni starts; on any other node no dockerd is found and nothing is done.
+              found=0
+              for p in /host/proc/[0-9]*; do
+                c=$(tr '\0' ' ' 2>/dev/null < "$p/cmdline") || continue
+                case "$c" in
+                  dockerd\ *|*/dockerd\ *)
+                    if nsenter --mount="$p/ns/mnt" -- mount --make-rshared /run; then
+                      echo "run-shared: /run is rshared in the mount namespace of dockerd (pid ${p#/host/proc/})"; found=1
+                    else
+                      echo "run-shared: could not make /run rshared for dockerd (pid ${p#/host/proc/})"; exit 1
+                    fi ;;
+                esac
+              done
+              [ "$found" = 1 ] || echo "run-shared: no dockerd on this node, nothing to do"
+          securityContext:
+            privileged: false
+            runAsUser: 0
+            runAsGroup: 0
+            runAsNonRoot: false
+            appArmorProfile: { type: Unconfined }
+            capabilities:
+              drop: ["ALL"]
+              # SYS_PTRACE to open another process's namespace, SYS_ADMIN and SYS_CHROOT to enter a mount namespace
+              # and change a mount's propagation.
+              add: ["SYS_ADMIN", "SYS_CHROOT", "SYS_PTRACE"]
+          volumeMounts:
+            - { name: cni-host-procfs, mountPath: /host/proc, readOnly: true }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 32Mi }
+        # After a restart the agent lists the mesh's pods once, and takes a pod only if the API already shows that pod's
+        # IP (it checks the pod's network namespace against it: cni/pkg/nodeagent/podcgroupns_linux.go). A pod whose status
+        # arrives later stays outside the mesh, the "enrolled" annotation left from before the restart hides it, and nothing
+        # retries: on 9 Nov 2026 the database operator came back that way and strict mode refused it. So the agent starts
+        # once every pod on this node shows an IP, and after a minute at most. Read only, with the agent's own permissions.
+        - name: wait-pod-ips
+          image: curlimages/curl:8.11.1
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              sa=/var/run/secrets/kubernetes.io/serviceaccount
+              url="https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT/api/v1/pods?fieldSelector=spec.nodeName%3D$NODE_NAME,status.phase!%3DSucceeded,status.phase!%3DFailed&includeObject=None"
+              i=0
+              waiting="the API"
+              while [ "$i" -lt 30 ]; do
+                rows=$(curl -sS --max-time 5 --cacert "$sa/ca.crt" -H "Authorization: Bearer $(cat "$sa/token")" \
+                  -H 'Accept: application/json;as=Table;g=meta.k8s.io;v=v1' "$url" 2>/dev/null |
+                  tr -d '\n ' | grep -o '"cells":\[[^]]*\]' | sed 's/"cells":\[//')
+                if [ -n "$rows" ]; then
+                  waiting=$(echo "$rows" | awk -F, '$6 !~ /[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/ {print $1}' | grep -v istio-cni-node-)
+                  if [ -z "$waiting" ]; then
+                    echo "wait-pod-ips: every pod on this node shows an IP (after $((i * 2)) s)"
+                    exit 0
+                  fi
+                fi
+                i=$((i + 1))
+                sleep 2
+              done
+              echo "wait-pod-ips: starting anyway after a minute, still waiting for: $waiting"
+          env:
+            - name: NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 100
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 32Mi }

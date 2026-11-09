@@ -1,0 +1,116 @@
+# Who may talk to whom, enforced by the service mesh (Istio ambient, deploy/platform/istio): the paths of
+# network-policies.yaml, by each workload's identity (its ServiceAccount, proven by its certificate) instead of its
+# address, and enforced on every cluster, Docker Desktop included. Only mutual TLS is accepted, and nothing reaches a
+# pod here unless a rule below allows it. The services' keys stay as a second layer.
+# The kubelet's health probes and kubectl port-forward do not pass through these rules.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+spec:
+  mtls: { mode: STRICT }
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+spec: {}
+---
+# The edge, the demo tenants (their tenant API and the gateway's public keys) and ca-service (the public keys).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: gateway
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: gateway }
+  action: ALLOW
+  rules:
+    - from:
+        - source: { namespaces: [envoy-gateway-system, continuum-demo] }
+        - source: { principals: ["cluster.local/ns/continuum/sa/ca-service"] }
+      to:
+        - operation: { ports: ["8080"] }
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: ca-service
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: ca-service }
+  action: ALLOW
+  rules:
+    - from:
+        - source: { principals: ["cluster.local/ns/continuum/sa/gateway"] }
+      to:
+        - operation: { ports: ["4100"] }
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: passkey-service
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: passkey-service }
+  action: ALLOW
+  rules:
+    - from:
+        - source: { principals: ["cluster.local/ns/continuum/sa/gateway"] }
+      to:
+        - operation: { ports: ["4000"] }
+---
+# The biometric oracle answers ca-service only.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: model
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/component: model }
+  action: ALLOW
+  rules:
+    - from:
+        - source: { principals: ["cluster.local/ns/continuum/sa/ca-service"] }
+      to:
+        - operation: { ports: ["5000"] }
+---
+# Each service, the daily copy, one-off database tools, replication between instances, and the operator (which also
+# reads the instance manager's status).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: postgres
+spec:
+  selector:
+    matchLabels: { cnpg.io/cluster: continuum-pg }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/continuum/sa/gateway
+              - cluster.local/ns/continuum/sa/ca-service
+              - cluster.local/ns/continuum/sa/passkey-service
+              - cluster.local/ns/continuum/sa/pg-backup
+              - cluster.local/ns/continuum/sa/db-migrate
+              - cluster.local/ns/continuum/sa/continuum-pg
+      to:
+        - operation: { ports: ["5432"] }
+    - from:
+        - source: { principals: ["cluster.local/ns/cnpg-system/sa/cnpg-manager"] }
+      to:
+        - operation: { ports: ["5432", "8000"] }
+---
+# Where the cluster enforces NetworkPolicies: a mesh pod's health probes arrive from this address (Istio's "Ambient and
+# Kubernetes NetworkPolicy"), and network-policies.yaml's default-deny would refuse them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-health-probes
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: { cidr: 169.254.7.127/32 }

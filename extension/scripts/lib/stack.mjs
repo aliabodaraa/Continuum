@@ -17,7 +17,7 @@ export const K8S = process.env.CONTINUUM_K8S_CONTEXT || (PREFIX ? "" : "docker-d
 const COMPOSE_PREFIX = PREFIX || "continuum";
 // Docker Desktop's built-in Kubernetes does not enforce NetworkPolicies (measured at step 7): the suites turn
 // the reachability check into a labelled note there. Another cluster: set it as measured.
-export const NETPOL_UNENFORCED = (process.env.CONTINUUM_NETPOL_UNENFORCED ?? (K8S === "docker-desktop" ? "1" : "0")) === "1";
+export const NETPOL_UNENFORCED = (process.env.CONTINUUM_NETPOL_UNENFORCED ?? "0") === "1";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const NAMESPACE = { web: "continuum-demo", acme: "continuum-demo" };   // every other service is in namespace continuum
 const env = { ...process.env, MSYS_NO_PATHCONV: "1" };  // Git Bash: no path rewriting of container paths

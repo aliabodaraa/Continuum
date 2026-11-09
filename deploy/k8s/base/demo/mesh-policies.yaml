@@ -1,0 +1,35 @@
+# The service mesh's rules for this namespace (see base/continuum/mesh-policies.yaml): mutual TLS only; the edge reaches
+# the demo and Acme, and the gateway pushes risk changes to the demo (CAEP).
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+spec:
+  mtls: { mode: STRICT }
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: demo
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source: { namespaces: [envoy-gateway-system] }
+      to:
+        - operation: { ports: ["3000", "4200"] }
+    - from:
+        - source: { principals: ["cluster.local/ns/continuum/sa/gateway"] }
+      to:
+        - operation: { ports: ["3000"] }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-health-probes
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: { cidr: 169.254.7.127/32 }

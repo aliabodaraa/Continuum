@@ -202,13 +202,13 @@ try {
   const reach = inService("web", ["node", "-e",
     `Promise.all(${JSON.stringify(urls)}.map(u=>fetch(u,{signal:AbortSignal.timeout(4000)}).then(r=>r.status,e=>(e.cause&&e.cause.code)||e.name||e.message))).then(r=>console.log(JSON.stringify(r)))`]).trim();
   const [toCa, toPk, toGw] = JSON.parse(reach);
-  // A cluster whose network plugin ignores NetworkPolicies (Docker Desktop's built-in Kubernetes) cannot keep the
-  // demo off the internal network; there CONTINUUM_NETPOL_UNENFORCED=1 turns this check into a labelled note.
-  // Everywhere else (Compose networks, an enforcing cluster) it stays a check.
+  // The service mesh's identity rules keep the demo off the internal network on every cluster, Docker Desktop's
+  // included. A cluster with neither a mesh nor enforced NetworkPolicies cannot: there CONTINUUM_NETPOL_UNENFORCED=1
+  // turns this check into a labelled note.
   const netpolUnenforced = NETPOL_UNENFORCED;
   const blocked = toCa !== 200 && toPk !== 200 && toGw === 200;
   if (netpolUnenforced && !blocked) {
-    console.log(`  NOTE  this cluster does not enforce NetworkPolicies: the demo reaches ca ${toCa}, passkey ${toPk} (gateway ${toGw})`);
+    console.log(`  NOTE  this cluster enforces neither a mesh nor NetworkPolicies: the demo reaches ca ${toCa}, passkey ${toPk} (gateway ${toGw})`);
   } else {
     check("the demo cannot reach ca-service or passkey-service; it reaches the gateway", blocked, `ca ${toCa}, passkey ${toPk}, gateway ${toGw}`);
   }

@@ -1,0 +1,8 @@
+# Docker Desktop's Kubernetes: cri-dockerd --cni-bin-dir and --cni-conf-dir, and where Docker keeps pod network
+# namespaces. With the chart's defaults Istio's plugin would land where nothing reads it. Native nftables: see
+# values-istiod.yaml.
+global:
+  nativeNftables: true
+cniBinDir: /var/lib/cni-plugins/bin
+cniConfDir: /etc/cni/net.d
+cniNetnsDir: /var/run/docker/netns

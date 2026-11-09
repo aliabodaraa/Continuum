@@ -1,0 +1,8 @@
+# A PC sleeps, a server does not. ztunnel schedules certificate renewal at half the certificate's life on a clock that
+# stops during sleep (src/identity/manager.rs: SystemTime converted to Instant once, at process start), and it keeps
+# serving the cached certificate after it expires. Renewal therefore comes late once the time slept since ztunnel
+# started exceeds half the certificate's life: with the default 24 hours, every connection in the mesh would fail after
+# a day of normal use of this PC. 90 days is the most istiod issues (MAX_WORKLOAD_CERT_TTL); restarting Docker Desktop
+# starts the count again. A cluster on servers keeps the default.
+env:
+  SECRET_TTL: 2160h

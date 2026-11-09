@@ -290,7 +290,7 @@ installed on the PC beyond Docker Desktop (whose `kubectl` includes Kustomize). 
 Compose into it: [docs/cutover-runbook.md](docs/cutover-runbook.md).
 
 ```bash
-scripts/k8s-local.sh platform     # once: metrics-server, CloudNativePG (PostgreSQL), Envoy Gateway
+scripts/k8s-local.sh platform     # once: metrics-server, CloudNativePG (PostgreSQL), Envoy Gateway, Istio (mutual TLS)
 scripts/k8s-local.sh secrets      # once: random secrets in deploy/k8s/overlays/local/secrets (git-ignored;
                                   # the operator key is taken from .env)
 scripts/k8s-local.sh up           # build the images (:local), deploy, wait until ready
@@ -350,9 +350,18 @@ The end-to-end suites target this cluster by default (`scripts/k8s-local.sh e2e`
 addresses): each makes its own port-forward for the operator area and reads the tenant secret from the
 secrets file. A Compose stack instead: `CONTINUUM_CONTAINER_PREFIX=continuum`.
 
-Docker Desktop's Kubernetes does not enforce NetworkPolicies, so on this PC the internal services are
-kept apart by their service keys alone (every internal route refuses a caller without its key); the
-policies take effect on a cluster whose network plugin enforces them.
+Docker Desktop's Kubernetes does not enforce NetworkPolicies, so on this PC the service mesh keeps the internal
+services apart (Istio ambient, `deploy/platform/istio`, ARCHITECTURE.md 13h): connections between pods are mutual TLS
+only and each path is allowed by workload identity (`mesh-policies.yaml` in each namespace). Every internal route
+also still refuses a caller without its key. The policies take effect on a cluster whose network plugin enforces
+them. A new service or path needs a rule in `mesh-policies.yaml`, or it is refused:
+
+```bash
+kubectl -n istio-system logs ds/ztunnel --since=10m | grep "policy rejection"      # what was refused
+kubectl -n <ns> delete peerauthentication,authorizationpolicy --all                 # undo for one namespace,
+kubectl label ns <ns> istio.io/dataplane-mode-                                      # then out of the mesh
+kubectl -n <ns> annotate pod <pod> ambient.istio.io/redirection-                    # a pod left outside the mesh: re-adds it
+```
 
 ## Portability smoke test (proving "runs anywhere")
 On a second machine with only the compose file + `.env`:

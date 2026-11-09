@@ -5,7 +5,9 @@
 #   each service -> PostgreSQL;  the operator -> PostgreSQL
 # and the model pods, the biometric oracle, may reach nothing but DNS, the model store and the telemetry collector.
 # Enforced only where the cluster's network plugin supports it (managed clouds, Calico, Cilium); a cluster that
-# does not enforce them ignores them (Docker Desktop's may not: checked with a deny-all test).
+# does not enforce them ignores them (Docker Desktop's may not: checked with a deny-all test; there the service mesh
+# enforces the same paths, mesh-policies.yaml). Port 15008 is the mesh's tunnel: traffic between mesh pods arrives there
+# (Istio, "Ambient and Kubernetes NetworkPolicy"), so every path that allows a port allows it too.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -32,6 +34,7 @@ spec:
             matchLabels: { app.kubernetes.io/name: ca-service }
       ports:
         - { port: 8080, protocol: TCP }
+        - { port: 15008, protocol: TCP }
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -47,6 +50,7 @@ spec:
             matchLabels: { app.kubernetes.io/name: gateway }
       ports:
         - { port: 4100, protocol: TCP }
+        - { port: 15008, protocol: TCP }
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -62,6 +66,7 @@ spec:
             matchLabels: { app.kubernetes.io/name: gateway }
       ports:
         - { port: 4000, protocol: TCP }
+        - { port: 15008, protocol: TCP }
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -77,6 +82,7 @@ spec:
             matchLabels: { app.kubernetes.io/name: ca-service }
       ports:
         - { port: 5000, protocol: TCP }
+        - { port: 15008, protocol: TCP }
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -100,6 +106,7 @@ spec:
             matchLabels: { app.kubernetes.io/name: seaweedfs }
       ports:
         - { port: 8333, protocol: TCP }
+        - { port: 15008, protocol: TCP }
     - to:                                   # its traces and metrics (base/observability, where an overlay runs it)
         - namespaceSelector:
             matchLabels: { kubernetes.io/metadata.name: continuum-observability }
@@ -107,6 +114,7 @@ spec:
             matchLabels: { app.kubernetes.io/name: otel-lgtm }
       ports:
         - { port: 4318, protocol: TCP }
+        - { port: 15008, protocol: TCP }
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -127,8 +135,10 @@ spec:
             matchLabels: { kubernetes.io/metadata.name: cnpg-system } # the operator
       ports:
         - { port: 5432, protocol: TCP }
+        - { port: 15008, protocol: TCP }
     - from:
         - namespaceSelector:
             matchLabels: { kubernetes.io/metadata.name: cnpg-system }
       ports:
         - { port: 8000, protocol: TCP }                              # the instance manager's status endpoint
+        - { port: 15008, protocol: TCP }

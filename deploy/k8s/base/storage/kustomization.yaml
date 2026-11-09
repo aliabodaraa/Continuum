@@ -11,3 +11,4 @@ labels:
 resources:
   - namespace.yaml
   - seaweedfs.yaml
+  - mesh-policies.yaml
