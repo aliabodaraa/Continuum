@@ -1797,6 +1797,10 @@
       startGuard();
     };
     showModal();
+    // The page may wait for onReady to ask for this step-up with callbacks of its own (connect.html and study.html,
+    // the extension's verify pages): it gets onReady now, so one verification serves both. Held back until after the
+    // passkey, those pages asked for a second one and the extension never heard of the first (2026-11-10).
+    ready = true; var cbs = readyCbs; readyCbs = []; cbs.forEach(function (cb) { try { cb(); } catch (e) {} });
   }
 
   // Public: the host app vouches for its logged-in user with a backend-signed token.

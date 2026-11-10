@@ -12,10 +12,13 @@
 //   4. the lock status cannot be read: no prompt and no sign-out (the server still answers 423 to every check)
 //   5. a locked account with an enrolment missing: the passkey prompt comes first, no enrolment window and nothing
 //      enrolled (2026-11-10: the enrolment used to run first, so the person the lock was about could enrol for the owner)
+//   6. a page that waits for onReady and then asks for the step-up with its own callbacks (the extension's verify pages,
+//      connect.html and study.html): one passkey verification (a virtual authenticator) clears the lock and reaches the
+//      page's callback; no second prompt
 //
 //   node extension/scripts/e2e_headless_sdk_lock_load.mjs
 import { spawn } from "node:child_process"; import fs from "node:fs"; import os from "node:os"; import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath } from "node:url"; import crypto from "node:crypto";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const GW = process.env.CONTINUUM_GATEWAY || "http://localhost:8080", PORT = 9411;
 const CHROME = path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe");
@@ -24,7 +27,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let bad = 0;
 const ok = (n, c, d) => { console.log((c ? "  PASS  " : "  FAIL  ") + n + (d ? " — " + d : "")); if (!c) bad++; };
 
-const state = { locked: true, status: 200, asked: [], logout: 0, login: 0, enrolled: true, enrolCalls: [] };
+const state = { locked: true, status: 200, asked: [], logout: 0, login: 0, enrolled: true, enrolCalls: [], verifyPage: false, authCompletes: 0 };
+// A passkey for the virtual authenticator of step 6 (P-256, as a platform authenticator makes).
+const KEY = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({ format: "der", type: "pkcs8" }).toString("base64");
+const CRED = crypto.randomBytes(16);
 function api(p) {
   if (/enroll|contribute|use-sample|use-anchor/.test(p)) state.enrolCalls.push(p);
   if (p === "/v1/sdk/onboarding") return state.enrolled ? { passkey: true, keystroke: true, mouse: true, keystrokeTraining: false } : { passkey: true, keystroke: false, mouse: false, keystrokeTraining: false };
@@ -32,6 +38,9 @@ function api(p) {
     adaptiveConfidenceMin: 0.8, adaptiveRetrainEvery: 3, adaptiveEnabled: false, adaptiveMinGapHours: 3, panel: "show", keystroke: "on", mouse: "off",
     onboardingMode: "eager", managed: ["mouse"], excludeFieldTypes: ["hidden"] };
   if (p === "/v1/sdk/keystroke/status") return { trained: true, adaptiveEnabled: false, adaptivePending: 0, adaptiveReady: false };
+  if (p === "/v1/sdk/passkey/auth/options") return { challenge: crypto.randomBytes(32).toString("base64url"), rpId: "localhost", timeout: 30000,
+    userVerification: "preferred", allowCredentials: [{ id: CRED.toString("base64url"), type: "public-key" }], challengeId: "c-1" };
+  if (p === "/v1/sdk/passkey/auth/complete") { state.authCompletes++; state.locked = false; return { verified: true, ok: true }; }
   return {};
 }
 
@@ -48,7 +57,11 @@ const SH = "document.getElementById('continuum-guard-host') && document.getEleme
 const MODAL = `(() => { const r = ${SH}; const m = r && r.querySelector('.ov'); const d = m && m.querySelector('.d'); const b = m && m.querySelector('.b'); return m ? { shown: m.style.display === 'flex', text: d ? d.textContent : '', button: b ? b.textContent : '' } : null; })()`;
 
 const token = "x." + Buffer.from(JSON.stringify({ sub: "lock-test-user" })).toString("base64url") + ".y";
-const html = `<!doctype html><meta charset="utf-8"><title>lock test</title><p>An organisation's page.</p>
+// The verify page's pattern (connect.html, study.html): wait for onReady, then ask for the step-up with its own callbacks.
+const VERIFY = `<script>window.__ready = false; window.__verified = 0; (function w() { if (window.Continuum && window.Continuum.onReady)
+  return window.Continuum.onReady(function () { window.__ready = true; window.Continuum.requireStepUp("keystroke", function () { window.__verified++; }); });
+  setTimeout(w, 50); })();</script>`;
+const html = () => `<!doctype html><meta charset="utf-8"><title>lock test</title><p>An organisation's page.</p>${state.verifyPage ? VERIFY : ""}
   <script src="/guard.js" data-site-key="SK_LOCK_TEST" data-session="${token}" data-onboarding="eager" data-keystroke="on" data-mouse="off" data-logout-url="/__logout" data-login-url="/__login.html"></script>`;
 const PAGE = GW + "/__lock_test.html";
 
@@ -60,7 +73,7 @@ try {
     const { requestId, request } = m.params, url = new URL(request.url);
     const reply = (code, type, text) => send("Fetch.fulfillRequest", { requestId, responseCode: code, responseHeaders: [{ name: "Content-Type", value: type }], body: Buffer.from(text).toString("base64") }, s);
     const json = (code, o) => reply(code, "application/json", JSON.stringify(o));
-    if (url.pathname === "/__lock_test.html") return reply(200, "text/html; charset=utf-8", html);
+    if (url.pathname === "/__lock_test.html") return reply(200, "text/html; charset=utf-8", html());
     if (url.pathname === "/guard.js") return reply(200, "application/javascript", GUARD);
     if (url.pathname === "/__logout") { state.logout++; return json(200, {}); }
     if (url.pathname === "/__login.html") { state.login++; return reply(200, "text/html; charset=utf-8", "<title>sign in</title>"); }
@@ -101,6 +114,18 @@ try {
   const wiz5 = await ev(s, `(() => { const o = (${SH}).querySelectorAll('.ov')[1]; return !!o && o.style.display === 'flex'; })()`);
   ok("5. locked, with an enrolment missing: the passkey prompt comes first, with no enrolment window", !!(m5 && m5.shown) && wiz5 === false, `prompt ${JSON.stringify(m5 && m5.shown)}, enrolment window ${wiz5}`);
   ok("…and nothing is enrolled while the account is locked", state.enrolCalls.length === 0, JSON.stringify(state.enrolCalls));
+
+  await send("WebAuthn.enable", {}, s);
+  const { authenticatorId } = await send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true } }, s);
+  await send("WebAuthn.addCredential", { authenticatorId, credential: { credentialId: CRED.toString("base64"), isResidentCredential: false, rpId: "localhost", privateKey: KEY, signCount: 1 } }, s);
+  Object.assign(state, { locked: true, enrolled: true, verifyPage: true, authCompletes: 0 });
+  await open();
+  ok("6. a verify page that waits for onReady gets it while the account is locked", (await ev(s, "window.__ready")) === true, String(await ev(s, "window.__ready")));
+  await ev(s, `(() => { const b = (${SH}).querySelector('.ov .b'); b.click(); return true; })()`);
+  await waitFor(s, "window.__verified > 0", 15000); await sleep(1500);
+  const m6 = await ev(s, MODAL);
+  ok("…and one passkey verification clears the lock and reaches the page's own callback, with no second prompt",
+    state.authCompletes === 1 && (await ev(s, "window.__verified")) === 1 && !(m6 && m6.shown), `verifications ${state.authCompletes}, page callback ${await ev(s, "window.__verified")}, prompt ${JSON.stringify(m6 && m6.shown)}`);
 } catch (e) {
   bad++; console.log("  FAIL  " + (e && e.stack || e));
 } finally {
