@@ -10,6 +10,8 @@
 //   2. nobody is signed out, on this load or on the next one (no loop)
 //   3. an account that is not locked: no prompt
 //   4. the lock status cannot be read: no prompt and no sign-out (the server still answers 423 to every check)
+//   5. a locked account with an enrolment missing: the passkey prompt comes first, no enrolment window and nothing
+//      enrolled (2026-11-10: the enrolment used to run first, so the person the lock was about could enrol for the owner)
 //
 //   node extension/scripts/e2e_headless_sdk_lock_load.mjs
 import { spawn } from "node:child_process"; import fs from "node:fs"; import os from "node:os"; import path from "node:path";
@@ -22,9 +24,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let bad = 0;
 const ok = (n, c, d) => { console.log((c ? "  PASS  " : "  FAIL  ") + n + (d ? " — " + d : "")); if (!c) bad++; };
 
-const state = { locked: true, status: 200, asked: [], logout: 0, login: 0 };
+const state = { locked: true, status: 200, asked: [], logout: 0, login: 0, enrolled: true, enrolCalls: [] };
 function api(p) {
-  if (p === "/v1/sdk/onboarding") return { passkey: true, keystroke: true, mouse: true, keystrokeTraining: false };
+  if (/enroll|contribute|use-sample|use-anchor/.test(p)) state.enrolCalls.push(p);
+  if (p === "/v1/sdk/onboarding") return state.enrolled ? { passkey: true, keystroke: true, mouse: true, keystrokeTraining: false } : { passkey: true, keystroke: false, mouse: false, keystrokeTraining: false };
   if (p === "/v1/sdk/keystroke/config") return { windowSize: 50, windowStride: 10, recentWindowCount: 20, sampleWindowCount: 20, sampleFloorWindows: 3,
     adaptiveConfidenceMin: 0.8, adaptiveRetrainEvery: 3, adaptiveEnabled: false, adaptiveMinGapHours: 3, panel: "show", keystroke: "on", mouse: "off",
     onboardingMode: "eager", managed: ["mouse"], excludeFieldTypes: ["hidden"] };
@@ -91,6 +94,13 @@ try {
   await open();
   const m4 = await ev(s, MODAL);
   ok("4. the lock status cannot be read: no prompt and no sign-out", !(m4 && m4.shown) && state.logout === 0 && state.login === 0, JSON.stringify(m4));
+
+  Object.assign(state, { status: 200, locked: true, enrolled: false, enrolCalls: [] });
+  await open();
+  const m5 = await ev(s, MODAL);
+  const wiz5 = await ev(s, `(() => { const o = (${SH}).querySelectorAll('.ov')[1]; return !!o && o.style.display === 'flex'; })()`);
+  ok("5. locked, with an enrolment missing: the passkey prompt comes first, with no enrolment window", !!(m5 && m5.shown) && wiz5 === false, `prompt ${JSON.stringify(m5 && m5.shown)}, enrolment window ${wiz5}`);
+  ok("…and nothing is enrolled while the account is locked", state.enrolCalls.length === 0, JSON.stringify(state.enrolCalls));
 } catch (e) {
   bad++; console.log("  FAIL  " + (e && e.stack || e));
 } finally {

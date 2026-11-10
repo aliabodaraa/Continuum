@@ -58,6 +58,15 @@ function riskLevel(isWarmup, isSuspicious) {
 // A locked account (a step-up asked for and not yet passed) gets no new verdict: every check answers 423 "locked",
 // signed suspicious, and asks for the passkey again, whichever tab or client sends it. Until 2026-11-08 the lock was
 // read only at page load (lock/status), so another tab already open kept receiving genuine and warm-up tokens.
+// A locked account adds nothing to its profile until the passkey is verified (2026-11-10): no enrolment, no sample, no
+// real-use sample. Otherwise the person the lock is about could enrol their own typing or mouse into a channel the owner
+// had not enrolled yet, and be accepted on it afterwards while the owner was refused.
+async function refuseIfLocked(res, userId) {
+  if (!(await lock.isLocked(userId))) return false;
+  res.status(423).json({ ok: false, locked: true, error: "account_locked", requiresPasskeyChallenge: true,
+    message: "This account is locked until the passkey is verified." });
+  return true;
+}
 async function lockedAnswer(res, userId, modality) {
   if (!(await lock.isLocked(userId))) return false;
   res.status(423).json({
@@ -371,6 +380,7 @@ app.get("/v1/users/:userId/onboarding", requireIdentity, aw(async (req, res) => 
 app.post("/v1/keystroke/enroll", requireIdentity, channelOn("keystroke"), async (req, res) => {
   try {
     const userId = uid(req);
+    if (await refuseIfLocked(res, userId)) return;
     // Once the typing model exists it learns more ONLY through the adaptive popup, whose retrain needs
     // the passkey. Until 2026-10-05 this route took more samples at any time and retrained at once with
     // no passkey, so anyone at an unlocked session could train the model on their own typing. Enrolling
@@ -557,6 +567,7 @@ app.post("/v1/keystroke/check", requireIdentity, channelOn("keystroke"), exclude
 app.post("/v1/keystroke/contribute", requireIdentity, channelOn("keystroke"), excludeFields, async (req, res) => {
   try {
     const userId = uid(req);
+    if (await refuseIfLocked(res, userId)) return;
     const dryRun = req.body.dryRun === true;
     const refuse = (status, body) => (dryRun
       ? res.json({ ok: true, dryRun: true, eligible: false, ...body })
@@ -798,7 +809,7 @@ app.get("/v1/keystroke/metrics", requireIdentity, aw(async (req, res) => {
 // Action-based mouse — the published path (Antal & Egyed-Zsigmond 2019).
 // The window endpoints below are retained as the comparison arm.
 app.post("/v1/mouse/actions/enroll", requireIdentity, channelOn("mouse"), async (req, res) => {
-  try { const r = await mouseActions.enrollMouseActions(uid(req), req.body.actions); res.status(r.status).json(r.body); }
+  try { if (await refuseIfLocked(res, uid(req))) return; const r = await mouseActions.enrollMouseActions(uid(req), req.body.actions); res.status(r.status).json(r.body); }
   catch (err) { return sendError(res, "mouse-action-enroll", err); }
 });
 app.post("/v1/mouse/actions/check", requireIdentity, channelOn("mouse"), async (req, res) => {
@@ -821,6 +832,7 @@ app.post("/v1/mouse/actions/reset", requireIdentity, aw(async (req, res) => {
 
 app.post("/v1/mouse/enroll", requireIdentity, channelOn("mouse"), async (req, res) => {
   try {
+    if (await refuseIfLocked(res, uid(req))) return;
     await studyLog.register(uid(req), studyLog.parseContext(req.body.study));   // so its training is logged
     const r = await mouse.enrollMouse(uid(req), req.body.windows); res.status(r.status).json(r.body);
   }
@@ -841,10 +853,11 @@ app.get("/v1/mouse/status/:userId", requireIdentity, aw(async (req, res) => res.
 // passkey in the same request (/v1/sdk/passkey/auth/complete); the tenant API has no route to it. A sample of the
 // movement after that passkey is stored for the evaluation and trains nothing.
 app.post("/v1/mouse/use-anchor", requireIdentity, channelOn("mouse"), aw(async (req, res) => {
+  if (await refuseIfLocked(res, uid(req))) return;
   res.json(await mouseUse.recordUseAnchor(uid(req), { reason: req.body.reason }));
 }));
 app.post("/v1/mouse/use-sample", requireIdentity, channelOn("mouse"), async (req, res) => {
-  try { const r = await mouseUse.addUseSample(uid(req), req.body.windows, { client: req.body.client }); res.status(r.status).json(r.body); }
+  try { if (await refuseIfLocked(res, uid(req))) return; const r = await mouseUse.addUseSample(uid(req), req.body.windows, { client: req.body.client }); res.status(r.status).json(r.body); }
   catch (err) { return sendError(res, "mouse-use-sample", err); }
 });
 // Destructive: drops the trained mouse profile and every stored session. The CALLER is

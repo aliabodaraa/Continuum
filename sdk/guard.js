@@ -1773,6 +1773,9 @@
       await loadConfig(); // now authed
       obState = ob;
       if (ob && ob.keystrokeTraining && !ob.keystroke) watchKsBuild();
+      // Locked: the passkey before anything else, then any missing enrolment (the server refuses enrolment on a
+      // locked account too). Otherwise the person the lock is about could enrol their own typing or mouse for the owner.
+      if (lockedAtLoad) { promptLockedAtLoad(ob); return; }
       if (needOnboarding(ob)) await runOnboarding(ob);
     } catch (e) {
       var reason = e && e.message;
@@ -1783,7 +1786,17 @@
       console.warn("[continuum] bootstrap failed:", reason); setKb("bad", "offline"); return;
     }
     startGuard();
-    if (lockedAtLoad && !locked) { locked = true; setKb("bad", "locked — verify"); showModal(); }
+  }
+
+  // A page opened on a locked account: the passkey prompt first; once it is verified, the missing enrolment and the
+  // guard, as on any other load.
+  function promptLockedAtLoad(ob) {
+    locked = true; setKb("bad", "locked — verify");
+    stepUpOnSuccess = async function () {
+      try { if (needOnboarding(ob)) await runOnboarding(ob); } catch (e) { console.warn("[continuum] onboarding:", e && e.message); }
+      startGuard();
+    };
+    showModal();
   }
 
   // Public: the host app vouches for its logged-in user with a backend-signed token.

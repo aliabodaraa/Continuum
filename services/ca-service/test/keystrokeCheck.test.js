@@ -272,3 +272,17 @@ test("a locked account: typing and mouse checks answer 423 'locked', signed susp
   assert.equal(after.d.isSuspicious, false);
   assert.equal(tokenRisk(after.d.riskToken), "genuine");
 });
+
+test("a locked account adds nothing to its profile: enrolment, samples and real-use samples answer 423 until the lock is cleared", async () => {
+  const routes = ["/v1/keystroke/enroll", "/v1/keystroke/contribute", "/v1/mouse/enroll", "/v1/mouse/actions/enroll", "/v1/mouse/use-anchor", "/v1/mouse/use-sample"];
+  assert.equal((await post("/v1/lock/set", 1012)).status, 200);
+  for (const p of routes) {
+    const r = await post(p, 1012, {});
+    assert.equal(r.status, 423, p);
+    const d = await r.json();
+    assert.equal(d.error, "account_locked", p);
+    assert.equal(d.requiresPasskeyChallenge, true, p);
+  }
+  assert.equal((await post("/v1/lock/clear", 1012)).status, 200);
+  for (const p of routes) assert.notEqual((await post(p, 1012, {})).status, 423, p);
+});
