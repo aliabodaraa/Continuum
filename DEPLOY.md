@@ -200,6 +200,9 @@ its own identities. **The tenancy boundary is the secret, not the origin.**
         data-site-key="YOUR_TENANT_KEY"
         data-keystroke="on" data-mouse="optional"></script>
 ```
+To offer an `×` on the mandatory windows (onboarding, the passkey prompt), name your sign-in page with
+`data-login-url="/your-sign-in-page"`, and `data-logout-url` if signing out needs a call. With none named there is no `×`.
+
 For a sensitive action, attach the signed risk token: `Continuum.riskHeader()`.
 
 **Server** — verify the verdict before honoring a protected request. Node:

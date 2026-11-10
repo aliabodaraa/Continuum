@@ -239,15 +239,16 @@ impostor mid-challenge could just refresh the page and keep going.
     starts.
 - **Framework-agnostic by construction**: the SDK talks to the gateway over
   HTTP/JSON, and the gateway is the only thing that talks to ca-service/passkey-
-  service — none of this depends on the consumer's backend language. The one
-  requirement on any integrating app is a real login/logout endpoint (or pointing
-  `data-logout-url` / `data-login-url` at one) — Continuum has no session of its
-  own to destroy in gateway mode, only the host app's.
-- **One logout path, everywhere**: cancelling the mandatory step-up modal's `×`,
-  a mandatory onboarding wizard step's `×`, and this reload/lock check all call
-  the exact same `doLogout()` in `guard.js` (POST `cfg.logoutUrl`, then redirect
-  to `cfg.loginUrl` regardless of the response) — there is one implementation,
-  not three that happen to agree.
+  service — none of this depends on the consumer's backend language. An
+  integrating app that wants an `×` on the mandatory windows names its own sign-in
+  page with `data-login-url` (and `data-logout-url` if signing out needs a call);
+  with none named there is no `×`, and the passkey is the way out. Continuum has no
+  session of its own to destroy in gateway mode, only the host app's.
+- **One logout path**: cancelling the mandatory step-up modal's `×` and a mandatory
+  onboarding wizard step's `×` call the same `doLogout()` in `guard.js` (POST
+  `cfg.logoutUrl` if the page names one, then redirect to `cfg.loginUrl` regardless
+  of the response). A page that opens on a locked account shows the passkey prompt
+  and does not sign the user out: the lock outlives the sign-in.
 
 Mouse Enrollment: Server-Side Click Enforcement
 

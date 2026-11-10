@@ -39,12 +39,16 @@
     panel: (script && script.getAttribute("data-panel")) || "",   // "show" | "hide"
     lang: (script && script.getAttribute("data-lang")) || "",     // "auto" | "en" | "ar"
     theme: (script && script.getAttribute("data-theme")) || "",   // "auto" | "light" | "dark"
-    // The × in mandatory popups signs the user out via these (same-origin; a
-    // consumer overrides with data-logout-url / data-login-url).
-    logoutUrl: (script && script.getAttribute("data-logout-url")) || "/api/auth/logout",
-    loginUrl: (script && script.getAttribute("data-login-url")) || "/login.html",
+    // The × in mandatory popups signs the user out through the organisation's own pages, so it is shown only when the
+    // page names its sign-in page (data-login-url). data-logout-url is optional: the address to call first, if any.
+    logoutUrl: (script && script.getAttribute("data-logout-url")) || "",
+    loginUrl: (script && script.getAttribute("data-login-url")) || "",
   };
   var MODE = cfg.siteKey ? "gateway" : "demo";
+  if (MODE === "demo") {   // our demo app's own pages (no site key) have these two
+    cfg.logoutUrl = cfg.logoutUrl || "/api/auth/logout";
+    cfg.loginUrl = cfg.loginUrl || "/login.html";
+  }
   // Which of the managed settings this page chose itself. The organisation's console and the
   // operator page override a page's choice; a deployment default does not (see loadConfig).
   var PAGE_SET = { keystroke: !!(script && script.hasAttribute("data-keystroke")), mouse: !!(script && script.hasAttribute("data-mouse")),
@@ -416,7 +420,9 @@
       + '<div class="brand"><span class="b2">' + svg("logo") + '</span>CONTINUUM</div><div class="hero"><div class="orb"></div></div>'
       + '<div class="t"></div><div class="d"></div><button class="b" type="button"></button><div class="e"></div></div>';
     modalBtnEl = modalEl.querySelector(".b"); modalErrEl = modalEl.querySelector(".e");
-    modalEl.querySelector(".wizx").addEventListener("click", doLogout);
+    var modalX = modalEl.querySelector(".wizx");
+    modalX.addEventListener("click", doLogout);
+    if (!cfg.loginUrl) modalX.style.display = "none";   // nowhere to send the user: the passkey is the way out
     modalBtnEl.addEventListener("click", stepUp); rootEl.appendChild(modalEl);
     modalText("Identity check required", "Your recent activity no longer matches your profile. Verify with your passkey to continue.", "Verify with passkey", "finger");
 
@@ -817,20 +823,24 @@
   // Sign the user out (the × on mandatory popups). Same-origin so the app's session
   // cookie is cleared; a consumer overrides the endpoints via data-logout-url/login-url.
   function doLogout() {
-    try { fetch(cfg.logoutUrl, { method: "POST", credentials: "include" }).finally(function () { location.href = cfg.loginUrl; }); }
-    catch (e) { location.href = cfg.loginUrl; }
+    var toSignIn = function () { location.href = cfg.loginUrl; };
+    if (!cfg.logoutUrl) { toSignIn(); return; }
+    try { fetch(cfg.logoutUrl, { method: "POST", credentials: "include" }).finally(toSignIn); }
+    catch (e) { toSignIn(); }
   }
   // onClose defaults to logout (onboarding/step-up can only be escaped by signing
-  // out); optional popups (reinforcement) pass closeWiz to just dismiss.
+  // out, so there is no × when the page names no sign-in page); optional popups (reinforcement) pass closeWiz to just dismiss.
   // cls: optional extra class on the card. "wide" is used by the mouse steps — the click
   // target spawns inside the pad, so a narrow pad confines every hop to a small area and
   // teaches the model one cramped amplitude. A wide pad lets the target land far apart, which
   // is what produces the range of movement the guard actually sees on a full page.
   function openWiz(html, onClose, cls) {
+    var canClose = (onClose && onClose !== doLogout) || !!cfg.loginUrl;
     var x = esc(t(!onClose || onClose === doLogout ? "Sign out" : "Close"));
-    wizEl.innerHTML = '<div class="card' + (cls ? " " + cls : "") + '" role="dialog" aria-modal="true"><button class="wizx" type="button" title="' + x + '" aria-label="' + x + '">' + svg("x")
-      + '</button><div class="brand"><span class="b2">' + svg("logo") + "</span>CONTINUUM · " + h("secure onboarding") + "</div>" + html + "</div>";
-    wizEl.querySelector(".wizx").addEventListener("click", onClose || doLogout);
+    wizEl.innerHTML = '<div class="card' + (cls ? " " + cls : "") + '" role="dialog" aria-modal="true">'
+      + (canClose ? '<button class="wizx" type="button" title="' + x + '" aria-label="' + x + '">' + svg("x") + "</button>" : "")
+      + '<div class="brand"><span class="b2">' + svg("logo") + "</span>CONTINUUM · " + h("secure onboarding") + "</div>" + html + "</div>";
+    if (canClose) wizEl.querySelector(".wizx").addEventListener("click", onClose || doLogout);
     wizEl.style.display = "flex";
   }
   function closeWiz() { wizEl.style.display = "none"; wizEl.innerHTML = ""; }

@@ -223,6 +223,7 @@ window.CUI_AR = {
   "It starts working as soon as the operator approves it. Meanwhile, set up your site with the keys below.": "تبدأ العمل فور موافقة المشغّل عليها. في هذه الأثناء، أعدّ موقعك بالمفاتيح أدناه.",
   "It is active. Set up your site with the keys below.": "إنها فعّالة. أعدّ موقعك بالمفاتيح أدناه.",
   "Site key (public)": "مفتاح الموقع (عامّ)",
+  "Optional: add data-login-url=\"/your-sign-in-page\" (and data-logout-url if signing out needs a call). Continuum's mandatory windows then show an × that signs the user out and returns them there. Without it they show no ×.": "اختياري: أضف ‎data-login-url=\"/your-sign-in-page\"‎ (و ‎data-logout-url‎ إن كان الخروج يحتاج طلباً). عندها تعرض نوافذ Continuum الإلزامية زر × يُخرج المستخدم ويعيده إلى تلك الصفحة. وبدونه لا يظهر الزر.",
   "Goes in your pages: <script data-site-key>.": "يوضع في صفحاتك: ‎<script data-site-key>‎.",
   "Secret (private)": "المفتاح السري (خاص)",
   "Goes on your server as CONTINUUM_SECRET. Never put it in a page.": "يوضع في خادمك باسم CONTINUUM_SECRET. لا تضعه في صفحة أبداً.",
