@@ -19,7 +19,7 @@ const COMPOSE_PREFIX = PREFIX || "continuum";
 // the reachability check into a labelled note there. Another cluster: set it as measured.
 export const NETPOL_UNENFORCED = (process.env.CONTINUUM_NETPOL_UNENFORCED ?? "0") === "1";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const NAMESPACE = { web: "continuum-demo", acme: "continuum-demo" };   // every other service is in namespace continuum
+const NAMESPACE = { web: "continuum-demo", acme: "continuum-demo", "otel-lgtm": "continuum-observability" };   // every other service is in namespace continuum
 const env = { ...process.env, MSYS_NO_PATHCONV: "1" };  // Git Bash: no path rewriting of container paths
 
 const kubectl = (args, opts) => execFileSync("kubectl", ["--context", K8S, ...args], { encoding: "utf8", env, ...opts });

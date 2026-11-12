@@ -1,0 +1,127 @@
+# What Kubernetes knows about Continuum's pods, as metrics (2026-11-12): every minute, each pod's restart count and
+# whether it is ready, read from the API and sent to the collector over OTLP (the alert "Service restarting" in
+# alerting/continuum-alerts.yaml). The services' own counters cannot tell a restart apart from a second copy that the
+# autoscaler added, or from a copy that stopped: the API can.
+# Read only: the account may list pods in the application namespaces and nothing else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pod-reporter
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: continuum-pod-reporter
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: continuum-pod-reporter
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: continuum-pod-reporter }
+subjects:
+  - kind: ServiceAccount
+    name: pod-reporter
+    namespace: continuum-observability
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pod-reporter
+  labels:
+    app.kubernetes.io/name: pod-reporter
+    app.kubernetes.io/component: observability
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 120
+      activeDeadlineSeconds: 50
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: pod-reporter
+            app.kubernetes.io/component: observability
+        spec:
+          restartPolicy: Never
+          serviceAccountName: pod-reporter
+          automountServiceAccountToken: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: report
+              image: python:3.11-slim
+              command: ["python", "-I", "/scripts/report.py"]
+              env:
+                - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-lgtm.continuum-observability:4318" }
+                - { name: NAMESPACES, value: "continuum continuum-demo continuum-storage continuum-observability" }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              resources:
+                requests: { cpu: 10m, memory: 16Mi }
+                limits: { cpu: 100m, memory: 64Mi }
+              volumeMounts:
+                - { name: scripts, mountPath: /scripts, readOnly: true }
+          volumes:
+            - name: scripts
+              configMap: { name: pod-reporter-scripts }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pod-reporter-scripts
+data:
+  report.py: |
+    """Each pod of the application namespaces that a Deployment or a database owns: continuum_pod_restarts (the sum of
+    its containers' restart counts) and continuum_pod_ready (1 or 0), labelled namespace, pod and app
+    (app.kubernetes.io/name), as one OTLP/JSON metrics message to the collector. One-off jobs are left out."""
+    import json
+    import os
+    import ssl
+    import sys
+    import time
+    import urllib.request
+
+    SA = "/var/run/secrets/kubernetes.io/serviceaccount"
+    api = f"https://{os.environ['KUBERNETES_SERVICE_HOST']}:{os.environ['KUBERNETES_SERVICE_PORT']}"
+    token = open(f"{SA}/token", encoding="utf-8").read().strip()
+    ctx = ssl.create_default_context(cafile=f"{SA}/ca.crt")
+    now = str(int(time.time() * 1e9))
+    restarts, ready = [], []
+    for ns in os.environ.get("NAMESPACES", "continuum").split():
+        req = urllib.request.Request(f"{api}/api/v1/namespaces/{ns}/pods?labelSelector=app.kubernetes.io/name",
+                                     headers={"Authorization": f"Bearer {token}"})
+        pods = json.load(urllib.request.urlopen(req, timeout=10, context=ctx))["items"]
+        for pod in pods:
+            meta, status = pod["metadata"], pod.get("status", {})
+            if not any(o.get("kind") in ("ReplicaSet", "Cluster") for o in meta.get("ownerReferences", [])):
+                continue
+            attrs = [{"key": "namespace", "value": {"stringValue": ns}}, {"key": "pod", "value": {"stringValue": meta["name"]}},
+                     {"key": "app", "value": {"stringValue": meta.get("labels", {}).get("app.kubernetes.io/name", "")}}]
+            n = sum(int(c.get("restartCount", 0)) for c in status.get("containerStatuses", []))
+            ok = any(c.get("type") == "Ready" and c.get("status") == "True" for c in status.get("conditions", []))
+            restarts.append({"asInt": str(n), "timeUnixNano": now, "attributes": attrs})
+            ready.append({"asInt": "1" if ok else "0", "timeUnixNano": now, "attributes": attrs})
+    if not restarts:
+        sys.exit("no pods found")
+    body = {"resourceMetrics": [{"resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "pod-reporter"}}]},
+            "scopeMetrics": [{"scope": {"name": "pod-reporter"}, "metrics": [
+                {"name": "continuum_pod_restarts", "gauge": {"dataPoints": restarts}},
+                {"name": "continuum_pod_ready", "gauge": {"dataPoints": ready}}]}]}]}
+    req = urllib.request.Request(os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"].rstrip("/") + "/v1/metrics", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    urllib.request.urlopen(req, timeout=10).read()
+    print(f"reported {len(restarts)} pods")

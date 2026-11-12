@@ -84,3 +84,17 @@ spec:
           env:
             - { name: OTEL_SERVICE_NAME, value: model-trainer }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-lgtm.continuum-observability:4318" }
+---
+# The daily database copy reports each success (the alert "Daily database copy missing").
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: pg-backup, namespace: continuum }
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: upload
+              env:
+                - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-lgtm.continuum-observability:4318" }

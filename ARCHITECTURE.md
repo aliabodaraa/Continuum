@@ -691,7 +691,18 @@ Implementation details:
   visitors, whom the image would make Admins; user `admin` with a random password from Secret `grafana-admin`, kept
   in `overlays/local/secrets/grafana.env`), because any pod reaches the port where NetworkPolicies are not enforced
   and the traces carry addresses and queries; Tempo needs a volume of its own at `/var/tempo` because the
-  pod is not root. Alerts are still to be made.
+  pod is not root.
+- **Alerts (2026-11-12).** Grafana evaluates four rules every minute (`base/observability/alerting/continuum-alerts.yaml`):
+  a service silent for 5 minutes (no `target_info`, which every service sends about once a minute, traffic or not); a
+  pod restarted more than twice in 30 minutes; any 5xx answer in 10 minutes (the "no verdict" 503 included; a counter
+  that first appears inside the window counts whole, since `increase` sees nothing to grow from); the daily database
+  copy older than 26 hours (the CronJob reports each success as a gauge over OTLP). The restart count comes from
+  Kubernetes itself: a CronJob `pod-reporter` (python, read-only RBAC on pods) publishes `continuum_pod_restarts` and
+  `continuum_pod_ready` every minute, because the services' own counters cannot tell a restart from a second copy the
+  autoscaler added or a copy that stopped (both report under the same labels and look like a reset: measured). Alerts
+  go to a webhook at `host.docker.internal:39871`, the PC itself, where `scripts/alert-notifier.ps1` (a sign-in task)
+  checks a token from the overlay's secrets and shows a Windows notification; nothing leaves the machine. Proven end to
+  end with a real alert; `extension/scripts/e2e_alert_fire.mjs` fires "Server errors" on purpose with real 503s.
 - **Two "wrong request" cases that were answered 500, fixed in passkey-service.** Found with the new dashboard:
   its 5xx chart showed one on the passkey service and one on the gateway's adaptive-retrain route (which relays
   it) during the test suites, and the service's log line for the 500, which now carries its trace id, named the

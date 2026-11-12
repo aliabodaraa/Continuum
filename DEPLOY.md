@@ -299,6 +299,7 @@ scripts/k8s-local.sh secrets      # once: random secrets in deploy/k8s/overlays/
 scripts/k8s-local.sh up           # build the images (:local), deploy, wait until ready
 scripts/k8s-local.sh status
 scripts/k8s-local.sh grafana      # traces and metrics (grafana/otel-lgtm): http://localhost:3001, user admin, password in overlays/local/secrets/grafana.env
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\alert-notifier.ps1 -Register   # once: Grafana's alerts as Windows notifications
 scripts/k8s-local.sh e2e          # the end-to-end suites against this cluster (connect, enrol_reload, demo_backend)
 ```
 

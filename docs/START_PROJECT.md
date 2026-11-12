@@ -11,6 +11,7 @@ scripts/k8s-local.sh logs gateway           # a service's log (ca-service, passk
 scripts/k8s-local.sh operator               # the operator page: http://localhost:28081/operator.html
 scripts/k8s-local.sh grafana                # traces and metrics: http://localhost:3001 (user admin, password in deploy/k8s/overlays/local/secrets/grafana.env)
 scripts/k8s-local.sh e2e                    # the end-to-end suites against the cluster
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\alert-notifier.ps1 -Test   # alerts reach this PC as Windows notifications (ARCHITECTURE.md 13g)
 scripts/k8s-backup.sh                       # a backup (before any change; keep copies off the PC encrypted)
 ```
 

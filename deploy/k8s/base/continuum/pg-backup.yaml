@@ -207,6 +207,24 @@ data:
         print(f"{prefix}{name}: {len(data)} bytes, read back equal")
     client.put_object(Bucket=bucket, Key="postgres/LATEST", Body=f"{prefix} {stamp}\n".encode())
     print(f"upload done: {len(names)} files, {total} bytes, s3://{bucket}/{prefix} ({stamp})")
+    # Report the success to the monitoring (the alert "Daily database copy missing", base/observability): an
+    # OpenTelemetry gauge over OTLP/HTTP, only where an overlay sets the collector (overlays/local/telemetry.yaml).
+    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if endpoint:
+        import json
+        import urllib.request
+        now = time.time()
+        metric = {"name": "continuum_backup_last_success_unixtime",
+                  "gauge": {"dataPoints": [{"asDouble": now, "timeUnixNano": str(int(now * 1e9))}]}}
+        body = {"resourceMetrics": [{"resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "pg-backup"}}]},
+                                       "scopeMetrics": [{"scope": {"name": "pg-backup"}, "metrics": [metric]}]}]}
+        try:
+            req = urllib.request.Request(endpoint.rstrip("/") + "/v1/metrics", data=json.dumps(body).encode(),
+                                         headers={"Content-Type": "application/json"}, method="POST")
+            urllib.request.urlopen(req, timeout=10).read()
+            print("success reported to the monitoring")
+        except Exception as e:   # the copy is made: a monitoring outage must not fail it
+            print(f"could not report the success to the monitoring: {e}")
   checksums.sql: |
     -- What a PostgreSQL database holds, in a few lines: per table of schema public its row count and a hash of
     -- its content (every row's text form hashed, the hashes sorted and hashed again), per sequence its value. Two

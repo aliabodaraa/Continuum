@@ -1,0 +1,165 @@
+# Alerts (2026-11-12). Grafana evaluates these rules every minute on the services' own telemetry and sends each alert
+# that fires or ends to scripts/alert-notifier.ps1 on this PC, which shows a Windows notification: host.docker.internal
+# is the PC itself (Docker Desktop delivers it to 127.0.0.1 there), so nothing leaves the machine. The token in the
+# address's header comes from overlays/local/secrets/grafana.env (CONTINUUM_ALERT_TOKEN), which the program reads too.
+# The rules need no history: Prometheus here keeps its data in temporary storage, wiped when its pod restarts.
+# In this file "$$" is a literal "$" (Grafana expands environment variables in provisioning files).
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: continuum-desktop
+    receivers:
+      - uid: continuum-desktop
+        type: webhook
+        disableResolveMessage: false
+        settings:
+          url: http://host.docker.internal:39871/alert
+          httpMethod: POST
+          authorization_scheme: Bearer
+          authorization_credentials: ${CONTINUUM_ALERT_TOKEN}
+
+policies:
+  - orgId: 1
+    receiver: continuum-desktop
+    group_by: [alertname, job, pod]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+
+groups:
+  - orgId: 1
+    name: continuum
+    folder: Continuum
+    interval: 1m
+    rules:
+      # Every service sends target_info with its metrics about once a minute, traffic or not. Silence means the service
+      # is down, or cannot reach the collector (outside the service mesh, its strict rules refuse it).
+      - uid: continuum-service-silent
+        title: Service silent
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "الخدمة {{ $$labels.job }} صامتة"
+          description: "لم ترسل أي إشارة منذ أكثر من 10 دقائق. قد تكون متوقفة، أو خارج الشبكة المشفّرة. للفحص: kubectl get pods -A"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                (label_replace(vector(1), "job", "gateway", "", "")
+                or label_replace(vector(1), "job", "ca-service", "", "")
+                or label_replace(vector(1), "job", "passkey-service", "", "")
+                or label_replace(vector(1), "job", "model-inference", "", "")
+                or label_replace(vector(1), "job", "model-trainer", "", ""))
+                unless on (job) group by (job) (last_over_time(target_info[5m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      # Kubernetes' own restart counts (pod-reporter.yaml, every minute): a pod restarted more than twice in 30 minutes is
+      # crash-looping. The services' request counters cannot tell this: a second copy from the autoscaler, or one that
+      # stopped, reports under the same labels and looks like a reset.
+      - uid: continuum-service-restarting
+        title: Service restarting
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "الخدمة {{ $$labels.app }} تُعاد تشغيلها مراراً"
+          description: "الحاوية {{ $$labels.pod }} أُعيد تشغيلها أكثر من مرتين خلال 30 دقيقة. للفحص: kubectl -n {{ $$labels.namespace }} logs {{ $$labels.pod }} --previous"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                max by (namespace, pod, app) (continuum_pod_restarts) - min by (namespace, pod, app) (min_over_time(continuum_pod_restarts[30m]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [2] }
+
+      # Any answer 5xx in ten minutes, the "no verdict" 503 included. A counter that first appeared inside the window (the
+      # first 5xx a route ever answered) has nothing to increase from, so its whole value counts then.
+      - uid: continuum-server-errors
+        title: Server errors
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "أخطاء خادم في {{ $$labels.job }}"
+          description: "ردّت على طلبات بخطأ 5xx خلال آخر 10 دقائق. التفاصيل في لوحة Continuum services في Grafana (scripts/k8s-local.sh grafana)"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                sum by (job) (
+                  increase(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[10m])
+                  or increase(http_server_duration_milliseconds_count{http_status_code=~"5.."}[10m]))
+                + sum by (job) (
+                  (http_server_request_duration_seconds_count{http_response_status_code=~"5.."} unless http_server_request_duration_seconds_count{http_response_status_code=~"5.."} offset 10m)
+                  or (http_server_duration_milliseconds_count{http_status_code=~"5.."} unless http_server_duration_milliseconds_count{http_status_code=~"5.."} offset 10m)
+                  or vector(0))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.5] }
+
+      # The daily copy (base/continuum/pg-backup.yaml) reports each success. Right after Prometheus loses its data (a
+      # restart) there is nothing to compare until the next copy, so then this stays quiet.
+      - uid: continuum-backup-stale
+        title: Daily database copy missing
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "النسخة الاحتياطية اليومية لم تنجح"
+          description: "آخر نسخة ناجحة لقواعد البيانات أقدم من 26 ساعة. للفحص: kubectl -n continuum get jobs"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: time() - max(last_over_time(continuum_backup_last_success_unixtime[3d]))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [93600] }

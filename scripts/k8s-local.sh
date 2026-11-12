@@ -48,10 +48,16 @@ platform() { kubectl config use-context "$CTX" >/dev/null && bash deploy/platfor
 # Grafana's admin password (2026-11-08): random, kept beside the other secrets. Made when missing, so a secrets folder
 # from before it gains this one file and nothing else changes.
 grafana_secret() {
-  [ -f "$SECRETS/grafana.env" ] && return 0
   mkdir -p "$SECRETS"
-  (umask 077; printf 'GF_SECURITY_ADMIN_PASSWORD=%s\n' "$(openssl rand -hex 16)" > "$SECRETS/grafana.env")
-  echo "Grafana's admin password written to $SECRETS/grafana.env (git-ignored)"
+  if [ ! -f "$SECRETS/grafana.env" ]; then
+    (umask 077; printf 'GF_SECURITY_ADMIN_PASSWORD=%s\n' "$(openssl rand -hex 16)" > "$SECRETS/grafana.env")
+    echo "Grafana's admin password written to $SECRETS/grafana.env (git-ignored)"
+  fi
+  # The token Grafana's alerts carry to scripts/alert-notifier.ps1 on this PC (2026-11-12).
+  if ! grep -q '^CONTINUUM_ALERT_TOKEN=' "$SECRETS/grafana.env"; then
+    printf 'CONTINUUM_ALERT_TOKEN=%s\n' "$(openssl rand -hex 24)" >> "$SECRETS/grafana.env"
+    echo "the alerts' token added to $SECRETS/grafana.env (git-ignored)"
+  fi
 }
 
 secrets() {

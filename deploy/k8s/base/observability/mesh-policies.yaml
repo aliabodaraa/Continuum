@@ -1,5 +1,6 @@
 # The service mesh's rules for this namespace (see base/continuum/mesh-policies.yaml): mutual TLS only, and the collector
-# takes traces and metrics from our two application namespaces. Grafana is reached through kubectl port-forward.
+# takes traces and metrics from our two application namespaces and from the pod reporter (pod-reporter.yaml). Grafana is
+# reached through kubectl port-forward.
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication
 metadata:
@@ -16,6 +17,7 @@ spec:
   rules:
     - from:
         - source: { namespaces: [continuum, continuum-demo] }
+        - source: { principals: ["cluster.local/ns/continuum-observability/sa/pod-reporter"] }
       to:
         - operation: { ports: ["4317", "4318"] }
 ---

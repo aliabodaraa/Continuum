@@ -14,6 +14,7 @@ resources:
   - namespace.yaml
   - otel-lgtm.yaml
   - mesh-policies.yaml
+  - pod-reporter.yaml
 
 # The dashboard "Continuum services" and the file that tells Grafana to load it (a content change rolls the pod).
 configMapGenerator:
@@ -21,3 +22,7 @@ configMapGenerator:
     files:
       - continuum-services.json=dashboards/continuum-services.json
       - continuum.yaml=dashboards/provider.yaml
+  # The alerts, their notification route to this PC and the rules (alerting/continuum-alerts.yaml).
+  - name: grafana-continuum-alerting
+    files:
+      - continuum-alerts.yaml=alerting/continuum-alerts.yaml
