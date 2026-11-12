@@ -509,7 +509,7 @@
       append(body, [el("div.row", [el("span.label", { style: "margin:0" }, "Organisation"), pick, el("span.spacer"), C.badge(t.status)]),
         step(1, "Add the script to your pages", "It watches typing and mouse rhythm and shows the passkey step-up when needed.", [
           C.codeBlock('<script src="' + P + '/guard.js"\n        data-site-key="' + t.siteKey + '"\n        data-api-base="' + P + '"\n        data-identity-url="/continuum/identity"></script>'),
-          el("p.hint", "Optional: add data-login-url=\"/your-sign-in-page\" (and data-logout-url if signing out needs a call). Continuum's mandatory windows then show an × that signs the user out and returns them there. Without it they show no ×.")]),
+          el("p.hint", C.t("Optional: add {login} (and {logout} if signing out needs a call). Continuum's mandatory windows then show an × that signs the user out and returns them there. Without it they show no ×.", { login: el("span.mono", 'data-login-url="/your-sign-in-page"'), logout: el("span.mono", "data-logout-url") }))]),
         step(2, "Add the middleware to your server", "One line serves your users' identity, the extension sign-in and the alerts; protect() guards sensitive routes.", [
           C.codeBlock("# .env on your server\nCONTINUUM_SECRET=<your secret>\nCONTINUUM_GATEWAY_URL=" + P + "\nCONTINUUM_JWKS_URI=" + P + "/.well-known/jwks.json"),
           C.codeBlock('const continuum = require("@continuum/node")({ secret: process.env.CONTINUUM_SECRET });\napp.use(continuum);   // /continuum/identity, /continuum/link, /continuum/events\n\n// block a sensitive action while the user looks suspicious\napp.post("/transfer", continuum.protect, handler);')]),

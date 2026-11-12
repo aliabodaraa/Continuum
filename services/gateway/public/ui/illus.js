@@ -85,21 +85,12 @@
       });
       return '<svg viewBox="0 0 280 ' + (lazy ? 74 : 60) + '">' + s + "</svg>";
     },
-    // adaptive retraining: samples, the passkey, then a pause
-    adaptive: function (v, every, gap) {
-      var on = v !== "off", n = Number(every) || 3, s = "";
-      for (var i = 0; i < n; i++) s += '<circle class="' + (on ? "il-fill" : "") + '" style="animation-delay:' + (i * 0.45) + 's" cx="' + (22 + i * 32) + '" cy="30" r="11" fill="var(--border-strong)"/>';
-      s += '<path d="M' + (22 + n * 32 - 2) + ' 30h22" stroke="var(--border-strong)" stroke-width="2"/>';
-      var kx = 22 + n * 32 + 36;
-      s += '<g class="' + (on ? "il-pop" : "") + '" style="animation-delay:' + (n * 0.45 + 0.4) + 's;transform-origin:' + kx + 'px 30px;' + (on ? "" : "opacity:.35") + '"><circle cx="' + kx + '" cy="30" r="16" fill="var(--accent)"/>' + g("key", kx - 10, 20, 20, "", ' stroke="#fff" stroke-width="2.2"') + "</g>";
-      s += '<path d="M' + (kx + 20) + ' 30h22" stroke="var(--border-strong)" stroke-width="2"/>';
-      var cx = kx + 60;
-      s += '<circle cx="' + cx + '" cy="30" r="16" fill="var(--surface)" stroke="var(--border-strong)" stroke-width="2"/><line class="' + (on ? "il-sweep" : "") + '" style="transform-origin:' + cx + 'px 30px" x1="' + cx + '" y1="30" x2="' + cx + '" y2="19" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/>'
-        + '<text x="' + (cx + 22) + '" y="35" font-size="13" font-weight="700" fill="var(--muted)">' + (Number(gap) || 3) + " h</text>";
-      return '<svg viewBox="0 0 280 60">' + s + "</svg>";
-    },
-    adaptiveRetrainEvery: function (v, ctx) { return SCENES.adaptive("on", v, ctx && ctx.adaptiveGapHours); },
-    adaptiveGapHours: function (v, ctx) { return SCENES.adaptive("on", ctx && ctx.adaptiveRetrainEvery, v); },
+    // adaptive retraining: the cycle (the samples, the passkey, then the pause) drawn from the real settings. The
+    // setting's own figure lights the part it decides and dims the rest; the feature's figure shows the whole cycle.
+    // Until 2026-11-12 the feature's figure took the context object for a count and drew "3" and "3 h" whatever was set.
+    adaptive: function (v, ctx) { return cycle(v !== "off", ctx && ctx.adaptiveRetrainEvery, ctx && ctx.adaptiveGapHours, ""); },
+    adaptiveRetrainEvery: function (v, ctx) { return cycle(true, v, ctx && ctx.adaptiveGapHours, "samples"); },
+    adaptiveGapHours: function (v, ctx) { return cycle(true, ctx && ctx.adaptiveRetrainEvery, v, "pause"); },
     // where the sample is taken from the recent typing: its last windows, or the newest clean run anywhere
     adaptiveSampleFrom: function (v) {
       var s = "", any = v === "any";
@@ -114,12 +105,31 @@
       fields.forEach(function (f, i) {
         var off = list.indexOf(f) >= 0, y = 6 + i * 20;
         s += '<rect x="4" y="' + y + '" width="200" height="16" rx="5" fill="' + (off ? "var(--surface-3)" : "var(--surface)") + '" stroke="var(--border-strong)"/>'
-          + '<text x="12" y="' + (y + 11.5) + '" font-size="9" font-weight="600" fill="' + (off ? "var(--faint)" : "var(--text)") + '">' + f.replace(/[<>&]/g, "") + "</text>"
+          + '<text x="12" y="' + (y + 11.5) + '" direction="ltr" font-size="9" font-weight="600" fill="' + (off ? "var(--faint)" : "var(--text)") + '">' + f.replace(/[<>&]/g, "") + "</text>"
           + (off ? g("eyeOff", 182, y + 2, 12, "", ' stroke="var(--faint)"') : '<rect x="60" y="' + (y + 4) + '" width="' + (70 - i * 15) + '" height="8" rx="3" fill="var(--accent-weak)"/>');
       });
       return '<svg viewBox="0 0 210 ' + (6 + fields.length * 20) + '">' + s + "</svg>";
     },
   };
+  // The adaptive cycle: `every` samples (circles that fill one by one), the passkey, then a pause of `gap` hours.
+  // focus "samples" or "pause" lights that part and dims the other two; "" lights everything.
+  function cycle(on, every, gap, focus) {
+    var n = Number(every), h = Number(gap), s = "";
+    if (!(n >= 1 && n <= 3)) n = 3;
+    if (!isFinite(h) || h < 0) h = 3;
+    var dim = function (part) { return focus && focus !== part ? ' opacity=".3"' : ""; };
+    s += "<g" + dim("samples") + ">";
+    for (var i = 0; i < n; i++) s += '<circle class="' + (on ? "il-fill" : "") + '" style="animation-delay:' + (i * 0.45) + 's" cx="' + (22 + i * 32) + '" cy="30" r="11" fill="var(--border-strong)"/>';
+    s += "</g>";
+    s += '<path d="M' + (22 + n * 32 - 2) + ' 30h22" stroke="var(--border-strong)" stroke-width="2"/>';
+    var kx = 22 + n * 32 + 36;
+    s += "<g" + dim("passkey") + '><g class="' + (on ? "il-pop" : "") + '" style="animation-delay:' + (n * 0.45 + 0.4) + 's;transform-origin:' + kx + 'px 30px;' + (on ? "" : "opacity:.35") + '"><circle cx="' + kx + '" cy="30" r="16" fill="var(--accent)"/>' + g("key", kx - 10, 20, 20, "", ' stroke="#fff" stroke-width="2.2"') + "</g></g>";
+    s += '<path d="M' + (kx + 20) + ' 30h22" stroke="var(--border-strong)" stroke-width="2"/>';
+    var cx = kx + 60;
+    s += "<g" + dim("pause") + '><circle cx="' + cx + '" cy="30" r="16" fill="var(--surface)" stroke="var(--border-strong)" stroke-width="2"/><line class="' + (on ? "il-sweep" : "") + '" style="transform-origin:' + cx + 'px 30px" x1="' + cx + '" y1="30" x2="' + cx + '" y2="19" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/>'
+      + '<text x="' + (cx + 22) + '" y="35" direction="ltr" font-size="13" font-weight="700" fill="var(--muted)">' + h + " h</text></g>";
+    return '<svg viewBox="0 0 280 60">' + s + "</svg>";
+  }
   // the figure under a setting's text; ctx() gives the other settings' current values (the adaptive cycle needs two)
   function figure(key, value, ctx) {
     var draw = SCENES[key];

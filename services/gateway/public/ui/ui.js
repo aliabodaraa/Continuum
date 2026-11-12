@@ -343,7 +343,10 @@
     adaptiveRetrainEvery: { 1: "1", 2: "2", 3: "3 (measured)" },
     adaptiveSampleFrom: { end: "End (what was typed last)", any: "Anywhere in the typing" },
   };
-  var SUB_OF = { panelLanguage: "panel", panelTheme: "panel", keystrokeDecisionWindows: "keystroke", pasteAllowance: "keystroke", adaptiveRetrainEvery: "adaptive", adaptiveSampleFrom: "adaptive", adaptiveGapHours: "adaptive" };
+  // Which setting each one belongs under: it is placed in that setting's section and hidden while it is off.
+  // Adaptive retraining retrains the typing model, so it is a section inside typing protection (2026-11-12).
+  var SUB_OF = { panelLanguage: "panel", panelTheme: "panel", keystrokeDecisionWindows: "keystroke", pasteAllowance: "keystroke", adaptive: "keystroke",
+    adaptiveRetrainEvery: "adaptive", adaptiveSampleFrom: "adaptive", adaptiveGapHours: "adaptive" };
   function choiceText(key, v) { var k = KEY_CHOICE_TEXT[key]; return (k && k[v]) || CHOICE_TEXT[v] || String(v); }
   var SOURCE_TEXT = { organisation: "Your setting", operator: "Operator default", env: "Server default (.env)", "default": "Built-in default" };
   function showValue(v, key) { return Array.isArray(v) ? (v.join(", ") || "none") : v === true ? "on" : v === false ? "off" : choiceText(key, v); }
@@ -408,15 +411,20 @@
       Object.keys(figs).forEach(function (k) { figs[k].update(v[k]); });
     }
     if (pv) node.appendChild(pv.node);
-    // A setting and the one that means nothing while it is off form one section (typing protection and
-    // its windows; adaptive retraining and its pause); the second hides while the first is off.
-    Object.keys(nodes).forEach(function (k) {
-      if (SUB_OF[k] && nodes[SUB_OF[k]]) return;   // placed with its parent
+    // A setting and the ones that mean nothing while it is off form one section: typing protection with its windows,
+    // its pastes and adaptive retraining; adaptive retraining with its three settings; the panel with its language and
+    // colours. A section may hold a section. Each hides while its setting, or any setting above it, is off.
+    var groups = {};
+    function section(k) {
       var subs = Object.keys(SUB_OF).filter(function (s) { return SUB_OF[s] === k && nodes[s]; });
-      node.appendChild(subs.length ? el("div.setting-group", [nodes[k]].concat(subs.map(function (s) { return nodes[s]; }))) : nodes[k]);
-    });
+      if (!subs.length) return nodes[k];
+      groups[k] = el("div.setting-group", [nodes[k]].concat(subs.map(section)));
+      return groups[k];
+    }
+    Object.keys(nodes).forEach(function (k) { if (!(SUB_OF[k] && nodes[SUB_OF[k]])) node.appendChild(section(k)); });
+    function offAbove(k) { for (var p = SUB_OF[k]; p; p = SUB_OF[p]) if (rows[p] && rows[p].effective() === "off") return true; return false; }
     function syncGroup() {
-      Object.keys(SUB_OF).forEach(function (s) { if (rows[SUB_OF[s]] && nodes[s]) nodes[s].style.display = rows[SUB_OF[s]].effective() === "off" ? "none" : ""; });
+      Object.keys(SUB_OF).forEach(function (s) { if (nodes[s]) (groups[s] || nodes[s]).style.display = offAbove(s) ? "none" : ""; });
     }
     node.addEventListener("change", function () { setTimeout(function () { syncGroup(); redraw(); }, 0); });
     // "On demand" enrolment needs the panel: keep the form from offering an impossible pair.

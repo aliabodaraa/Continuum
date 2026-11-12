@@ -321,6 +321,7 @@ textarea.input { height: auto; min-height: 84px; padding: 10px 12px; resize: ver
 .setting-group { margin: 8px 0 4px; padding: 0 18px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2); }
 .setting-group > .setting-row + .setting-row { border-top: 1px dashed var(--border); }
 .setting-row.sub { padding-inline-start: 22px; }
+.setting-group .setting-group { margin: 4px 0 14px; background: var(--surface); }   /* adaptive retraining inside typing protection */
 
 /* ---- the panel preview and the figures beside the settings (ui/illus.js) ---- */
 .preview { display: flex; gap: 18px; align-items: stretch; flex-wrap: wrap; padding: 16px 18px; margin: 0 0 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2); }

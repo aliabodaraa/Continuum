@@ -35,9 +35,9 @@ const SETTINGS = [
   { key: "mouse", value: "on", source: "default", envValue: null, builtIn: "on", operatorDefault: "on", choices: ["on", "off"], range: null, list: false },
   { key: "onboarding", value: "eager", source: "default", envValue: null, builtIn: "eager", operatorDefault: "eager", choices: ["eager", "lazy"], range: null, list: false },
   { key: "adaptive", value: "on", source: "default", envValue: null, builtIn: "on", operatorDefault: "on", choices: ["on", "off"], range: null, list: false },
-  { key: "adaptiveRetrainEvery", value: 3, source: "default", envValue: null, builtIn: 3, operatorDefault: 3, choices: [1, 2, 3], range: null, list: false },
+  { key: "adaptiveRetrainEvery", value: 2, source: "operator", envValue: null, builtIn: 3, operatorDefault: 2, choices: [1, 2, 3], range: null, list: false },
   { key: "adaptiveSampleFrom", value: "end", source: "default", envValue: null, builtIn: "end", operatorDefault: "end", choices: ["end", "any"], range: null, list: false },
-  { key: "adaptiveGapHours", value: 3, source: "default", envValue: null, builtIn: 3, operatorDefault: 3, choices: null, range: [0, 168], list: false },
+  { key: "adaptiveGapHours", value: 2.5, source: "operator", envValue: null, builtIn: 3, operatorDefault: 2.5, choices: null, range: [0, 168], list: false },
   { key: "excludeFieldTypes", value: ["hidden"], source: "default", envValue: null, builtIn: ["hidden"], operatorDefault: ["hidden"], choices: null, range: null, list: true },
 ];
 const acct = { type: "account", email: "dev@acme.example" }, op = { type: "operator" }, sys = { type: "system" };
@@ -195,9 +195,19 @@ try {
     if (tab === "keys") ok("keys: the rotation time is Arabic", await ev(con, "document.body.innerText.includes('آخر تغيير قبل ساعة.')"));
     if (tab === "protection") {
       ok("protection: a source badge and the switch knob sit right-to-left", await ev(con, "document.querySelector('.setting-row .badge').textContent === 'الافتراضي المدمج' && getComputedStyle(document.querySelector('.switch input:checked + span'), '::before').transform.includes('-18')"));
+      // adaptive retraining sits inside typing protection, and every one of its figures shows the real cycle (2026-11-12)
+      ok("protection: adaptive retraining is a section inside typing protection", await ev(con, "document.getElementById('set-adaptive').closest('.setting-group').parentElement.closest('.setting-group') === document.getElementById('set-keystroke').closest('.setting-group')"));
+      ok("protection: the three adaptive figures show the chosen 2 samples and 2.5 h", await ev(con, "['adaptive','adaptiveRetrainEvery','adaptiveGapHours'].every((k) => { const f = document.getElementById('set-' + k).closest('.setting-row').querySelector('.illus'); return f.querySelectorAll('circle.il-fill').length === 2 && /2\\.5 h/.test(f.textContent); })"),
+        await ev(con, "['adaptive','adaptiveRetrainEvery','adaptiveGapHours'].map((k) => { const f = document.getElementById('set-' + k).closest('.setting-row').querySelector('.illus'); return f.querySelectorAll('circle.il-fill').length + ' ' + f.textContent.trim(); }).join(' | ')"));
+      await ev(con, "document.getElementById('set-keystroke').click(); true"); await sleep(150);
+      ok("protection: typing off hides adaptive retraining with its settings", await ev(con, "['adaptive','adaptiveRetrainEvery','adaptiveSampleFrom','adaptiveGapHours'].every((k) => document.getElementById('set-' + k).closest('.setting-row').offsetParent === null)"));
+      await ev(con, "document.getElementById('set-keystroke').click(); true"); await sleep(150);
+      ok("…and typing on shows them again", await ev(con, "['adaptive','adaptiveGapHours'].every((k) => document.getElementById('set-' + k).closest('.setting-row').offsetParent !== null)"));
       await ev(con, click("#protectionSave"));
       ok("protection: the 'nothing changed' toast is Arabic", await waitFor(con, "!!document.querySelector('.toast') && document.querySelector('.toast').textContent === 'لم يتغيّر شيء.'", 3000), await ev(con, "(document.querySelector('.toast') || {}).textContent"));
       console.log("  shot", await shot(con, "06-console-protection-ar"));
+      await ev(con, "document.getElementById('set-keystroke').closest('.setting-group').scrollIntoView(); true"); await sleep(300);
+      console.log("  shot", await shot(con, "06b-console-typing-section-ar"));
     }
     if (tab === "activity") ok("activity: the timeline reads Arabic", await ev(con, "document.querySelector('.timeline .when').textContent === 'بواسطة dev@acme.example · قبل دقيقتين' && document.body.innerText.includes('توقّف بعد 5 محاولات (ECONNREFUSED)')"), await ev(con, "document.querySelector('.timeline .when').textContent"));
     if (tab === "settings") {
