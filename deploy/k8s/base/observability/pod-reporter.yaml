@@ -37,6 +37,9 @@ metadata:
     app.kubernetes.io/component: observability
 spec:
   schedule: "* * * * *"
+  # A run that could not start within two minutes is skipped; without this, after a long sleep of the PC the
+  # controller counts more than a hundred missed runs and stops scheduling the job for good (seen 2026-11-13).
+  startingDeadlineSeconds: 120
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 2

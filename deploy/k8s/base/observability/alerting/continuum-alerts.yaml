@@ -100,7 +100,9 @@ groups:
                 - evaluator: { type: gt, params: [2] }
 
       # Any answer 5xx in ten minutes, the "no verdict" 503 included. A counter that first appeared inside the window (the
-      # first 5xx a route ever answered) has nothing to increase from, so its whole value counts then.
+      # first 5xx a route ever answered) has nothing to increase from, so its whole value counts then, but only if the
+      # store was collecting ten minutes ago (`up` is scraped every second): after a gap, a sleeping PC or this pod
+      # restarting, every service re-sends its lifetime counters and old 5xx would look new (it did on 2026-11-13).
       - uid: continuum-server-errors
         title: Server errors
         condition: C
@@ -126,6 +128,7 @@ groups:
                   (http_server_request_duration_seconds_count{http_response_status_code=~"5.."} unless http_server_request_duration_seconds_count{http_response_status_code=~"5.."} offset 10m)
                   or (http_server_duration_milliseconds_count{http_status_code=~"5.."} unless http_server_duration_milliseconds_count{http_status_code=~"5.."} offset 10m)
                   or vector(0))
+                * on () group_left () (clamp_max(count(up offset 10m), 1) or vector(0))
           - refId: C
             datasourceUid: __expr__
             model:
