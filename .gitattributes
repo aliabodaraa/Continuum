@@ -52,3 +52,6 @@ artifacts/phase4/smoke/*.json -text
 
 # The pinned SHA-256 of the model image's data files (scripts/lib/model-inputs.sh), read with LF on every platform.
 data/MODEL_IMAGE_INPUTS.sha256 text eol=lf
+
+# The frozen RU2 pre-registration: stored and checked out byte for byte, so its recorded SHA-256 verifies anywhere.
+artifacts/phase7/PREREGISTRATION_RU2.md -text
