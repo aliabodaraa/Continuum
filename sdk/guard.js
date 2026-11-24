@@ -95,16 +95,17 @@
   // the value is taken from the server's own replies (bufferMax) whenever it reports one.
   var MOUSE_CHECK_MS = 1600, MOUSE_MIN_WINDOWS = 60;
   // Enrolment for the adopted pipeline (continuum/artifacts/repr_arch_study, S1), in SAMPLES: one
-  // sample = MOUSE_SAMPLE_WINDOWS windows (~16 s of movement), MOUSE_SAMPLES_REQUIRED of them
+  // sample = MOUSE_SAMPLE_WINDOWS windows (a few of the pad's tasks), MOUSE_SAMPLES_REQUIRED of them
   // (8 x 55 = 440 windows). /status reports both; these are the defaults.
   var MOUSE_SAMPLE_WINDOWS = 55, MOUSE_SAMPLES_REQUIRED = 8;
   // The model is built by the server's training queue (F2: about 6 s; S1 took 2-3 min), not inside the request
   // that saves the last sample; the wizard polls /status this often until it exists, says so when
   // it takes unusually long, and stops waiting (the job itself carries on) after the last bound.
   var MOUSE_TRAIN_POLL_MS = 3000, MOUSE_TRAIN_SLOW_MS = 5 * 60000, MOUSE_TRAIN_GIVE_UP_MS = 15 * 60000;
-  // Targets to move between: they elicit varied distances and directions, which is what the
-  // model reads. Hitting them is encouraged but not counted, and the dot never runs out.
-  var MOUSE_TARGETS = Infinity;
+  // What the pad asks for (mouseTasks). A sample is saved once it holds MOUSE_SAMPLE_WINDOWS windows and this many
+  // finished tasks, so moving about without doing them saves nothing. A task still open after MOUSE_TASK_SKIP_MS can be
+  // skipped, and then does not count.
+  var MOUSE_TASKS_PER_SAMPLE = 4, MOUSE_TASK_SKIP_MS = 18000;
   // Adaptive learning: after this many consecutive clean (genuine, high-confidence)
   // checks — the SDK analogue of the demo's "3 clean packets" — offer to add the run
   // to the user's training set. The CA retrains every N contributions (val-gated).
@@ -187,6 +188,13 @@
     trash: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
     alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
     x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    // the mouse enrolment tasks
+    target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>',
+    text: '<path d="M5 7V4h14v3M12 4v16M9 20h6"/>',
+    slider: '<path d="M3 12h4M13 12h8"/><circle cx="10" cy="12" r="3"/>',
+    menu: '<path d="M4 6h16M4 12h16M4 18h10"/>',
+    move: '<path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>',
+    pointer: '<path d="M5 3l14 9-7 1.5L8.5 20z"/>',
   };
   function svg(name, cls) { return '<svg viewBox="0 0 24 24" aria-hidden="true"' + (cls ? ' class="' + cls + '"' : "") + ">" + ICON[name] + "</svg>"; }
   // Light by default, dark under data-theme="dark" (applyLook); right-to-left under dir="rtl". Sides are written as
@@ -255,7 +263,9 @@
     ".card{position:relative;width:100%;max-width:480px;max-height:calc(100vh - 32px);overflow:auto;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:24px;padding:28px 30px;font:500 14px/1.6 var(--font);box-shadow:var(--pop);animation:cg-pop .5s cubic-bezier(.2,.9,.25,1.15) both}",
     // Mouse enrolment gets a much larger card. The click target spawns inside the pad, so its size sets how far apart
     // consecutive hops can be, and a 480px card taught the model one cramped amplitude that never matched full-page movement.
-    ".card.wide{max-width:min(1100px,94vw)}.card.wide .pad{height:min(60vh,520px)}",
+    // Since the tasks (2026-11-24) the pad is a little lower, so the whole card fits a laptop screen without scrolling:
+    // a task sets its own distances.
+    ".card.wide{max-width:min(1100px,94vw)}.card.wide .pad{height:min(50vh,480px)}",
     ".card.center .t,.card.center .d{text-align:center}",
     ".wizx{position:absolute;top:12px;inset-inline-end:12px;width:32px;height:32px;border:0;border-radius:10px;background:transparent;color:var(--faint);display:grid;place-items:center;cursor:pointer;padding:0;transition:background .2s,color .2s,transform .3s}",
     ".wizx:hover{background:var(--card2);color:var(--text);transform:rotate(90deg)}",
@@ -304,10 +314,41 @@
     ".diag{font-size:11.5px;color:var(--faint);margin:6px 0 10px;font-variant-numeric:tabular-nums}",
     ".samplecount{font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:8px}.samplecount b{color:var(--acc)}",
     ".pad{position:relative;overflow:hidden;height:260px;margin-bottom:12px;border-radius:16px;border:2px dashed color-mix(in srgb,var(--acc) 40%,transparent);background:radial-gradient(120% 120% at 50% 0%,var(--accw),transparent 70%),var(--card2);display:flex;align-items:center;justify-content:center;text-align:center;color:var(--acc);font-weight:700}",
-    ".padlabel{opacity:.7}",
     // the target jumps (no glide): how the user moves to it is what the mouse model learns
     ".pt{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--acc2),var(--acc));box-shadow:0 0 0 6px var(--accw),0 8px 18px -6px var(--acc);cursor:pointer;animation:cg-pt 1.2s ease-in-out infinite}",
     ".pt::after{content:'';position:absolute;inset:-6px;border-radius:50%;border:2px solid var(--acc);animation:cg-ring 1.6s ease-out infinite}",
+    ".pt.sm{width:16px;height:16px;margin:-8px 0 0 -8px;box-shadow:0 0 0 5px var(--accw),0 6px 14px -6px var(--acc)}",
+    // ---- the enrolment tasks (mouseTasks): a line that says what to do, and a stage the task is drawn on ----
+    ".pad.tasks{display:block;text-align:start;color:var(--text);font-weight:500;-webkit-user-select:none;user-select:none}",
+    ".tk-top{position:absolute;top:0;inset-inline:0;z-index:3;display:flex;align-items:center;gap:10px;padding:10px 14px;pointer-events:none}",
+    ".tk-ic{width:32px;height:32px;flex:none;border-radius:10px;display:grid;place-items:center;background:var(--accw);color:var(--acc)}",
+    ".tk-ic svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}",
+    ".tk-say{flex:1;min-width:0;font-size:16px;font-weight:800;line-height:1.35;color:var(--text)}",
+    ".tk-n{flex:none;display:flex;gap:5px}.tk-n i{width:10px;height:10px;border-radius:50%;background:var(--track);transition:background .3s,transform .3s}.tk-n i.on{background:var(--ok);transform:scale(1.15)}",
+    ".tk-stage{position:absolute;inset:54px 0 0 0}",
+    ".tk-skip{position:absolute;bottom:6px;inset-inline-end:10px;z-index:3;display:none;border:0;background:none;padding:4px 6px;font:600 12px var(--font);color:var(--muted);text-decoration:underline;cursor:pointer}.tk-skip:hover{color:var(--text)}",
+    ".tk-ok{position:absolute;z-index:4;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;display:grid;place-items:center;background:var(--ok);pointer-events:none;animation:cg-popin .35s cubic-bezier(.3,1.6,.5,1)}",
+    ".tk-ok svg{width:18px;height:18px;fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}",
+    ".tk-chip{position:absolute;width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;display:grid;place-items:center;font:800 12.5px var(--font);font-variant-numeric:tabular-nums;background:var(--card);color:var(--muted);border:2px solid var(--line2);cursor:pointer;transition:background .25s,border-color .25s,color .25s,box-shadow .25s}",
+    ".tk-chip.next{border-color:var(--acc);color:var(--acc);box-shadow:0 0 0 5px var(--accw)}.tk-chip.done{background:var(--ok);border-color:var(--ok);color:#fff}",
+    ".tk-text{position:absolute;font-size:17px;line-height:2.05;font-weight:500;color:var(--text);cursor:text}",
+    ".tk-w{display:inline-block;padding:0 4px;border-radius:6px;transition:background .15s,color .15s,box-shadow .15s}",
+    ".tk-w.mark{background:var(--accw);box-shadow:inset 0 -2px 0 var(--acc)}.tk-w.sel{background:var(--acc);color:#fff;box-shadow:none}",
+    ".tk-w.lit{background:var(--okw);color:var(--ok)}.tk-w.cur{box-shadow:inset 0 -3px 0 var(--acc)}",
+    ".tk-track{position:absolute;height:6px;border-radius:999px;background:var(--track)}.tk-track.v{width:6px}",
+    ".tk-track::before{content:'';position:absolute;inset:-9px 0}.tk-track.v::before{inset:0 -9px}",
+    ".tk-mark{position:absolute;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:7px;background:var(--accw);border:2px dashed var(--acc);pointer-events:none}.tk-track.v .tk-mark{left:50%}",
+    ".tk-knob{position:absolute;top:50%;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:50%;background:var(--card);border:3px solid var(--acc);box-shadow:0 4px 10px -3px var(--acc);cursor:grab;transition:transform .15s,background .25s,border-color .25s}.tk-track.v .tk-knob{left:50%}",
+    ".tk-knob.drag{cursor:grabbing;transform:scale(1.12)}.tk-knob.ok{background:var(--ok);border-color:var(--ok)}.tk-track.seek{cursor:pointer}.tk-track.seek .tk-knob{width:14px;height:14px;margin:-7px 0 0 -7px;cursor:pointer}",
+    ".tk-btn{position:absolute;display:inline-flex;align-items:center;gap:6px;padding:8px 13px;border-radius:10px;border:1px solid var(--line2);background:var(--card);color:var(--text);font:700 13px var(--font);cursor:pointer;box-shadow:0 2px 6px rgba(15,23,42,.1)}",
+    ".tk-btn svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}",
+    ".tk-menu{position:absolute;z-index:2;display:none;min-width:176px;padding:6px;border-radius:12px;border:1px solid var(--line2);background:var(--card);box-shadow:var(--shadow)}.tk-menu.open{display:block;animation:cg-up .2s ease-out both}",
+    ".tk-mi{height:34px;display:flex;align-items:center;padding:0 10px;border-radius:8px;font:600 13px var(--font);color:var(--text2);cursor:pointer}.tk-mi:hover{background:var(--row)}",
+    ".tk-mi.want{color:var(--acc);font-weight:800}.tk-mi.want::before{content:'';width:7px;height:7px;margin-inline-end:8px;border-radius:50%;background:var(--acc)}",
+    ".tk-zone{position:absolute;width:120px;height:86px;margin:-43px 0 0 -60px;border-radius:14px;border:2px dashed var(--acc);background:var(--accw);display:grid;place-items:center;font:700 12px var(--font);color:var(--acc);transition:background .2s}.tk-zone.over{background:color-mix(in srgb,var(--acc) 30%,transparent)}",
+    ".tk-card{position:absolute;z-index:2;width:74px;height:50px;margin:-25px 0 0 -37px;border-radius:12px;display:grid;place-items:center;font:800 12px var(--font);color:#fff;background:linear-gradient(135deg,var(--acc),var(--acc2));box-shadow:0 10px 20px -8px var(--acc);cursor:grab;transition:left .25s,top .25s}.tk-card.drag{cursor:grabbing;transition:none}",
+    ".tk-ghost{position:absolute;left:0;top:0;z-index:5;width:22px;height:22px;margin:-3px 0 0 -4px;pointer-events:none;opacity:0}.tk-ghost svg{width:22px;height:22px;fill:var(--text);stroke:var(--card);stroke-width:1.6;stroke-linejoin:round}",
+    ".tk-tap{position:absolute;z-index:5;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;border:3px solid var(--acc);pointer-events:none;opacity:0;animation:cg-dbl 1.3s ease-out .3s 2}",
     ".msamp{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 12px}.msamp .mhead{font-size:15px;font-weight:800;color:var(--text)}",
     ".msamp .mpips{display:flex;gap:6px}.msamp .mpip{width:14px;height:14px;border-radius:50%;border:2px solid var(--acc);background:transparent;transition:background .3s}",
     ".msamp .mpip.on{background:var(--acc);animation:cg-popin .45s cubic-bezier(.3,1.6,.5,1)}.msamp .msub{font-size:12px;color:var(--muted)}",
@@ -331,6 +372,7 @@
     "@keyframes cg-shine{to{left:130%}}@keyframes cg-shim{from{transform:translateX(-100%)}to{transform:translateX(100%)}}",
     "@keyframes cg-grow{to{transform:scaleX(.55)}}@keyframes cg-pt{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}",
     "@keyframes cg-popin{0%{transform:scale(.4)}100%{transform:scale(1)}}",
+    "@keyframes cg-dbl{0%{opacity:.85;transform:scale(.45)}22%{opacity:0;transform:scale(1.2)}30%{opacity:.85;transform:scale(.45)}52%{opacity:0;transform:scale(1.2)}100%{opacity:0;transform:scale(1.2)}}",
     "@media (prefers-reduced-motion:reduce){.cg *,.cg *::before,.cg *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}",
   ].join("");
 
@@ -845,27 +887,280 @@
   }
   function closeWiz() { wizEl.style.display = "none"; wizEl.innerHTML = ""; }
 
-  // Places a single clickable target at a random spot inside `pad`, moving it to a
-  // new random spot on each hit (instead of counting a click anywhere in the box) —
-  // forces genuinely separate, deliberate clicks across the area. `onHit(n)` fires
-  // with the running total; the target is removed once `total` hits are reached.
-  // Doesn't stop propagation, so the mouse tracker's own listener on `pad` still
-  // captures the click as real feature data.
-  function spawnClickTarget(pad, total, onHit) {
-    var hits = 0, ptEl = el("div", "pt");
-    function place() {
-      var size = 26, w = pad.clientWidth, h = pad.clientHeight;
-      var x = size / 2 + Math.random() * Math.max(1, w - size);
-      var y = size / 2 + Math.random() * Math.max(1, h - size);
-      ptEl.style.left = x + "px"; ptEl.style.top = y + "px";
+  // ---- Mouse enrolment tasks (2026-11-24) ----
+  // Until now the pad showed one dot to chase. That teaches long, fast hops, and ordinary use is smaller and slower: in
+  // the owner's browsing of 22-24 Nov the median step was 5.4 px against 10.6 px in his dot samples, a window covered
+  // half the path, and his own profile turned 31% of those windows down (2% once they were rescaled to the size of his
+  // enrolment). So the pad now asks for the small things people do on a page: click a dot near or far, click numbers
+  // in a row, double-click a word, select words by dragging, drag a handle, click a thin bar, follow a line of text,
+  // pick from a menu, drag a card. Tasks come in shuffled rounds of every kind, so a sample holds several kinds and no
+  // kind is left to one sample (the threshold is leave-one-sample-out). Recording is unchanged: the same tracker on the
+  // whole page and the same windows. Only what the user is asked to do is new.
+  // Each task marks its start with data-tk-a and its end with data-tk-b (the headless test reads them).
+  var TASK_TEXTS = [
+    "The quiet river carries small boats past the old stone bridge every morning before the market opens.",
+    "A good map shows the high mountains, the long roads and the small villages that lie between them.",
+    "She opened the window and listened to the soft rain falling on the garden below.",
+    "Fresh bread and warm tea make a simple breakfast for the whole family on cold days.",
+    "The library keeps thousands of old and new books on wooden shelves under a soft yellow light.",
+    "Children fly bright kites over the green hill when the afternoon wind is strong.",
+  ];
+  var TASK_MENU = ["Open", "Rename", "Share", "Download", "Move", "Archive"];
+  var SHAKE = [{ transform: "translateX(0)" }, { transform: "translateX(-5px)" }, { transform: "translateX(5px)" }, { transform: "translateX(-3px)" }, { transform: "translateX(0)" }];
+  function mouseTasks(pad) {
+    var KINDS = ["dots", "chips", "word", "phrase", "slider", "seek", "line", "menu", "drop"], TASKS = {};
+    var bag = [], kind = "", seq = 0, done = 0, stopped = false, offs = [], timers = [], shown = {}, flip = Math.random() < 0.5;
+    var px = null, py = null;   // the pointer inside the stage: the next target is put a chosen distance from it
+    pad.classList.add("tasks");
+    pad.innerHTML = '<div class="tk-top"><span class="tk-ic"></span><span class="tk-say" aria-live="polite"></span><span class="tk-n"></span></div>'
+      + '<div class="tk-stage"></div><button type="button" class="tk-skip">' + h("Skip this task") + "</button>";
+    var icEl = pad.querySelector(".tk-ic"), sayEl = pad.querySelector(".tk-say"), nEl = pad.querySelector(".tk-n"),
+      stage = pad.querySelector(".tk-stage"), skipEl = pad.querySelector(".tk-skip");
+    function rnd(a, b) { return a + Math.random() * (b - a); }
+    function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+    function on(node, type, fn) { node.addEventListener(type, fn); offs.push(function () { node.removeEventListener(type, fn); }); }
+    function later(fn, ms) { timers.push(setTimeout(function () { if (!stopped) fn(); }, ms)); }
+    function clear() { for (var i = 0; i < offs.length; i++) { try { offs[i](); } catch (e) {} } offs = []; timers.forEach(clearTimeout); timers = []; skipEl.style.display = "none"; }
+    function size() { return { w: stage.clientWidth, h: stage.clientHeight }; }
+    function at(node, x, y) { node.style.left = Math.round(x) + "px"; node.style.top = Math.round(y) + "px"; return node; }
+    function add(cls, text) { var n = el("div", cls, text); stage.appendChild(n); return n; }
+    function local(e) { var r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+    function mid(node) { var r = node.getBoundingClientRect(), s = stage.getBoundingClientRect(); return { x: r.left + r.width / 2 - s.left, y: r.top + r.height / 2 - s.top }; }
+    function pips() { var s = ""; for (var i = 0; i < MOUSE_TASKS_PER_SAMPLE; i++) s += "<i" + (i < done ? ' class="on"' : "") + "></i>"; nEl.innerHTML = s; }
+    function say(key, icon, vars) {
+      sayEl.textContent = t(key, vars); icEl.innerHTML = svg(icon);
+      play(sayEl, [{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }], { duration: 260, easing: "ease-out" });
     }
-    ptEl.addEventListener("mousedown", function () {
-      hits += 1; onHit(hits);
-      if (hits >= total) { ptEl.remove(); return; }
+    // The task is done: a tick where it ended, then the next one.
+    function finish(x, y) {
+      clear();
+      done += 1; pips();
+      var s = size(), k = add("tk-ok"); k.innerHTML = svg("check");
+      at(k, Math.max(20, Math.min(s.w - 20, x)), Math.max(20, Math.min(s.h - 20, y)));
+      later(next, 430);
+    }
+    function next() {
+      if (stopped) return;
+      clear(); stage.innerHTML = "";
+      if (!bag.length) {   // a new round: every kind once, in a new order, and never the same kind twice in a row
+        bag = KINDS.slice();
+        for (var i = bag.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), x = bag[i]; bag[i] = bag[j]; bag[j] = x; }
+        if (bag[bag.length - 1] === kind) bag.unshift(bag.pop());
+      }
+      kind = bag.pop();
+      shown[kind] = (shown[kind] || 0) + 1;
+      stage.setAttribute("data-kind", kind); stage.setAttribute("data-seq", String(++seq));
+      TASKS[kind]();
+      later(function () { skipEl.style.display = "block"; }, MOUSE_TASK_SKIP_MS);
+    }
+    // A spot some way from the pointer, in a random direction, inside the stage (m px from its edges). Short, medium
+    // and long hops in fixed shares: a spot drawn uniformly in a wide pad is 400 px away on average, and every hop
+    // then looks like the last one.
+    function hop(m) {
+      var s = size(), cx = px == null ? s.w / 2 : px, cy = py == null ? s.h / 2 : py;
+      for (var i = 0; i < 24; i++) {
+        var r = Math.random(), d = r < 0.45 ? rnd(60, 150) : r < 0.8 ? rnd(150, 330) : rnd(330, Math.max(340, s.w * 0.8));
+        var a = rnd(0, 2 * Math.PI), x = cx + d * Math.cos(a), y = cy + d * Math.sin(a);
+        if (x >= m && x <= s.w - m && y >= m && y <= s.h - m) return { x: x, y: y };
+      }
+      return { x: rnd(Math.min(m, s.w / 2), Math.max(s.w - m, s.w / 2)), y: rnd(Math.min(m, s.h / 2), Math.max(s.h - m, s.h / 2)) };
+    }
+    // A short text, one <span> a word, somewhere on the stage.
+    function passage() {
+      var s = size(), words = t(pick(TASK_TEXTS)).split(/\s+/), box = add("tk-text"), width = Math.min(620, Math.max(180, s.w - 40));
+      box.style.width = width + "px";
+      var spans = words.map(function (w) { var sp = el("span", "tk-w", w); box.appendChild(sp); box.appendChild(document.createTextNode(" ")); return sp; });
+      at(box, rnd(16, Math.max(16, s.w - width - 16)), rnd(8, Math.max(8, s.h - box.offsetHeight - 30)));
+      return { box: box, spans: spans };
+    }
+    // The word under a point of the page, else the nearest one within `reach` px (a line apart counts four times).
+    function wordAt(spans, x, y, reach) {
+      var best = -1, bd = reach || 0;
+      for (var i = 0; i < spans.length; i++) {
+        var r = spans[i].getBoundingClientRect();
+        var dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0, dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+        if (!dx && !dy) return i;
+        if (dx + dy * 4 <= bd) { bd = dx + dy * 4; best = i; }
+      }
+      return best;
+    }
+    // Shown the first two times a kind comes up: a pointer that makes the drag, or a double ring for a double click.
+    function hintDrag(aEl, bEl) {
+      if (reduceMotion || shown[kind] > 2) return;
+      var a = mid(aEl), b = mid(bEl), g = add("tk-ghost"); g.innerHTML = svg("pointer");
+      var A = "translate(" + Math.round(a.x) + "px," + Math.round(a.y) + "px)", B = "translate(" + Math.round(b.x) + "px," + Math.round(b.y) + "px)";
+      try {
+        g.animate([{ opacity: 0, transform: A + " scale(1.2)" }, { opacity: 0.9, transform: A + " scale(.92)", offset: 0.2 }, { opacity: 0.9, transform: B + " scale(.92)", offset: 0.8 },
+          { opacity: 0, transform: B + " scale(1.2)" }], { duration: 1500, delay: 350, iterations: 2, easing: "ease-in-out" }).onfinish = function () { g.remove(); };
+      } catch (e) { g.remove(); }
+    }
+    function hintTap(aEl) {
+      if (reduceMotion || shown[kind] > 2) return;
+      var a = mid(aEl), g = add("tk-tap"); at(g, a.x, a.y);
+      later(function () { g.remove(); }, 3200);
+    }
+
+    // 1. Three dots, each a chosen distance from the pointer; some of them small.
+    TASKS.dots = function () {
+      say("Click the dot", "target");
+      var hits = 0, dot = add("pt");
+      function place() { dot.className = "pt" + (Math.random() < 0.4 ? " sm" : ""); var p = hop(24); at(dot, p.x, p.y); }
+      on(dot, "mousedown", function (e) { hits += 1; var q = local(e); if (hits >= 3) { dot.remove(); finish(q.x, q.y); } else place(); });
       place();
-    });
-    pad.appendChild(ptEl);
-    place();
+    };
+    // 2. Four numbered chips close together, clicked in order: short, exact hops.
+    TASKS.chips = function () {
+      say("Click the numbers in order", "target");
+      var c = hop(140), pts = [], chips = [], want = 0;
+      for (var i = 0; i < 4; i++) {
+        var p = null;
+        for (var k = 0; k < 40 && !p; k++) {
+          var a = rnd(0, 2 * Math.PI), d = rnd(20, 118), q = { x: c.x + d * Math.cos(a), y: c.y + d * Math.sin(a) };
+          if (pts.every(function (o) { return Math.hypot(o.x - q.x, o.y - q.y) >= 48; })) p = q;
+        }
+        pts.push(p || { x: c.x + (i - 1.5) * 52, y: c.y });
+      }
+      pts.forEach(function (p, i) {
+        var chip = add("tk-chip" + (i === 0 ? " next" : ""), String(i + 1)); at(chip, p.x, p.y); chips.push(chip);
+        on(chip, "mousedown", function (e) {
+          if (i !== want) { if (i > want) play(chip, SHAKE, { duration: 300 }); return; }
+          chip.className = "tk-chip done"; want += 1;
+          if (want >= chips.length) { var m = local(e); finish(m.x, m.y - 30); } else chips[want].classList.add("next");
+        });
+      });
+    };
+    // 3. Double-click one word of a text.
+    TASKS.word = function () {
+      say("Double-click the highlighted word", "text");
+      var p = passage(), cands = [];
+      p.spans.forEach(function (sp, i) { if (sp.textContent.length >= 4) cands.push(i); });
+      var want = pick(cands.length ? cands : [0]), target = p.spans[want];
+      target.classList.add("mark"); target.setAttribute("data-tk-a", "");
+      on(stage, "dblclick", function (e) {
+        var i = wordAt(p.spans, e.clientX, e.clientY, 0);
+        if (i === want) { target.className = "tk-w sel"; var q = mid(target); finish(q.x, q.y - 30); }
+        else if (i >= 0) play(p.spans[i], SHAKE, { duration: 300 });
+      });
+      hintTap(target);
+    };
+    // 4. Select three to five words by dragging over them, as a text selection is made (drawn here, so it looks and
+    // behaves the same in every browser and inside the shadow root).
+    TASKS.phrase = function () {
+      say("Select the highlighted words by dragging over them", "text");
+      var p = passage(), n = p.spans.length, len = Math.min(n, 3 + Math.floor(Math.random() * 3)), from = Math.floor(Math.random() * (n - len + 1)), to = from + len - 1;
+      for (var i = from; i <= to; i++) p.spans[i].classList.add("mark");
+      p.spans[from].setAttribute("data-tk-a", ""); p.spans[to].setAttribute("data-tk-b", "");
+      var anchor = -1, focus = -1;
+      function paint() {
+        var lo = Math.min(anchor, focus), hi = Math.max(anchor, focus);
+        p.spans.forEach(function (sp, k) { sp.classList.toggle("sel", anchor >= 0 && k >= lo && k <= hi); });
+      }
+      on(stage, "mousedown", function (e) { var k = wordAt(p.spans, e.clientX, e.clientY, 30); if (k < 0) return; anchor = focus = k; paint(); e.preventDefault(); });
+      on(window, "mousemove", function (e) { if (anchor < 0) return; var k = wordAt(p.spans, e.clientX, e.clientY, 1e9); if (k >= 0 && k !== focus) { focus = k; paint(); } });
+      on(window, "mouseup", function () {
+        if (anchor < 0) return;
+        var lo = Math.min(anchor, focus), hi = Math.max(anchor, focus), dragged = lo !== hi;
+        // the words asked for, and at most one more at either end
+        if (lo >= from - 1 && lo <= from && hi >= to && hi <= to + 1) { var q = mid(p.spans[to]); finish(q.x, q.y - 30); return; }
+        anchor = focus = -1; paint();
+        if (dragged) play(p.box, SHAKE, { duration: 320 });
+      });
+      hintDrag(p.spans[from], p.spans[to]);
+    };
+    // 5 and 6. A bar with a mark: drag its handle to the mark (across or down), or click the thin bar at the mark
+    // (the seek bar of a recording).
+    function bar(seek) {
+      say(seek ? "Click the bar exactly at the mark" : "Drag the handle to the mark", "slider");
+      flip = !flip;
+      var s = size(), vert = !seek && flip && s.h >= 300, len = vert ? Math.min(300, s.h - 90) : Math.min(520, Math.max(200, s.w * 0.5));
+      var track = add("tk-track" + (vert ? " v" : "") + (seek ? " seek" : ""));
+      at(track, vert ? rnd(60, Math.max(60, s.w - 60)) : rnd(30, Math.max(30, s.w - len - 30)), vert ? rnd(30, Math.max(30, s.h - len - 40)) : rnd(50, Math.max(50, s.h - 50)));
+      track.style[vert ? "height" : "width"] = len + "px";
+      var a = rnd(0.04, 0.96), b = rnd(0.04, 0.96);
+      for (var i = 0; i < 40 && Math.abs(b - a) * len < Math.min(110, len * 0.4); i++) b = rnd(0.04, 0.96);
+      var mark = el("div", "tk-mark"), knob = el("div", "tk-knob"), pos = a;
+      track.appendChild(mark); track.appendChild(knob);
+      function put(node, f) { node.style[vert ? "top" : "left"] = Math.round(f * len) + "px"; }
+      put(mark, b); put(knob, a);
+      knob.setAttribute("data-tk-a", ""); mark.setAttribute("data-tk-b", "");
+      function frac(e) { var r = track.getBoundingClientRect(); return (vert ? e.clientY - r.top : e.clientX - r.left) / len; }
+      function check() { if (Math.abs(pos - b) * len > 11) return false; knob.classList.add("ok"); var q = mid(knob); finish(q.x + (vert ? 36 : 0), q.y - (vert ? 0 : 32)); return true; }
+      if (seek) {
+        on(track, "mousedown", function (e) { pos = Math.max(0, Math.min(1, frac(e))); put(knob, pos); if (!check()) play(knob, SHAKE, { duration: 300 }); e.preventDefault(); });
+        return;
+      }
+      var drag = false, off = 0;
+      on(knob, "mousedown", function (e) { drag = true; off = frac(e) - pos; knob.classList.add("drag"); e.preventDefault(); });
+      on(window, "mousemove", function (e) { if (!drag) return; pos = Math.max(0, Math.min(1, frac(e) - off)); put(knob, pos); });
+      on(window, "mouseup", function () { if (!drag) return; drag = false; knob.classList.remove("drag"); check(); });
+      hintDrag(knob, mark);
+    }
+    TASKS.slider = function () { bar(false); };
+    TASKS.seek = function () { bar(true); };
+    // 7. Follow a text with the pointer, word by word, as some people do while they read.
+    TASKS.line = function () {
+      say("Move the pointer along the text, word by word", "text");
+      var p = passage(), reached = 0;
+      p.spans[0].setAttribute("data-tk-a", ""); p.spans[p.spans.length - 1].setAttribute("data-tk-b", "");
+      function cur() { p.spans.forEach(function (sp, k) { sp.classList.toggle("cur", k === reached); }); }
+      on(stage, "mousemove", function (e) {
+        var k = wordAt(p.spans, e.clientX, e.clientY, 36);
+        if (k < reached || k > reached + 2) return;   // in order; a short word may be passed over
+        for (var j = reached; j <= k; j++) p.spans[j].classList.add("lit");
+        reached = k + 1;
+        if (reached >= p.spans.length) { var q = mid(p.spans[k]); finish(q.x, q.y - 30); } else cur();
+      });
+      cur();
+      hintDrag(p.spans[0], p.spans[Math.min(3, p.spans.length - 1)]);
+    };
+    // 8. Open a menu and choose one item: a short way down a list.
+    TASKS.menu = function () {
+      var s = size(), labels = TASK_MENU.slice(0, s.h < 300 ? 4 : 6).map(function (k) { return t(k); }), want = Math.floor(Math.random() * labels.length);
+      say("Open the menu and choose “{item}”", "menu", { item: labels[want] });
+      var mh = labels.length * 34 + 14, roomBelow = s.h - mh - 52, up = roomBelow < 10 || (Math.random() < 0.35 && s.h - 46 > mh + 12);
+      var bx = rnd(16, Math.max(16, s.w - 200)), by = up ? rnd(Math.min(mh + 12, s.h - 46), s.h - 46) : rnd(8, Math.max(8, roomBelow));
+      var btn = add("tk-btn"); btn.innerHTML = esc(t("Options")) + svg("chevron"); at(btn, bx, by); btn.setAttribute("data-tk-a", "");
+      var menu = add("tk-menu"); at(menu, bx, up ? by - mh - 6 : by + 42);
+      labels.forEach(function (label, i) {
+        var it = el("div", "tk-mi" + (i === want ? " want" : ""), label); menu.appendChild(it);
+        if (i === want) it.setAttribute("data-tk-b", "");
+        on(it, "click", function (e) { if (i === want) { var q = local(e); finish(q.x, q.y); } else play(it, SHAKE, { duration: 300 }); });
+      });
+      on(btn, "click", function () { menu.classList.toggle("open"); });
+    };
+    // 9. Drag a card into a box some way off, in any direction.
+    TASKS.drop = function () {
+      say("Drag the card into the box", "move");
+      var s = size(), a, b, far = Math.min(240, s.w * 0.4);
+      for (var i = 0; i < 60; i++) {
+        a = { x: rnd(48, Math.max(48, s.w - 48)), y: rnd(34, Math.max(34, s.h - 34)) }; b = { x: rnd(70, Math.max(70, s.w - 70)), y: rnd(52, Math.max(52, s.h - 52)) };
+        if (Math.hypot(a.x - b.x, a.y - b.y) >= far) break;
+      }
+      var zone = add("tk-zone", t("Drop here")); at(zone, b.x, b.y); zone.setAttribute("data-tk-b", "");
+      var card = add("tk-card", t("File")); at(card, a.x, a.y); card.setAttribute("data-tk-a", "");
+      var drag = false, ox = 0, oy = 0;
+      function inZone(x, y) { return Math.abs(x - b.x) <= 60 && Math.abs(y - b.y) <= 43; }
+      on(card, "mousedown", function (e) { var q = local(e); drag = true; ox = q.x - a.x; oy = q.y - a.y; card.classList.add("drag"); e.preventDefault(); });
+      on(window, "mousemove", function (e) { if (!drag) return; var q = local(e); at(card, q.x - ox, q.y - oy); zone.classList.toggle("over", inZone(q.x - ox, q.y - oy)); });
+      on(window, "mouseup", function (e) {
+        if (!drag) return;
+        drag = false; card.classList.remove("drag");
+        var q = local(e);
+        if (inZone(q.x - ox, q.y - oy)) { at(card, b.x, b.y); finish(b.x, b.y - 58); } else { at(card, a.x, a.y); zone.classList.remove("over"); }
+      });
+      hintDrag(card, zone);
+    };
+
+    function track(e) { var q = local(e); px = q.x; py = q.y; }
+    pad.addEventListener("mousemove", track);
+    skipEl.addEventListener("click", function () { if (!stopped) next(); });   // a skipped task is not counted
+    pips(); next();
+    return {
+      need: MOUSE_TASKS_PER_SAMPLE,
+      done: function () { return done; },                 // tasks finished since the last saved sample
+      saved: function () { done = 0; pips(); },           // a sample was sent: count again for the next one
+      stop: function () { stopped = true; clear(); pad.removeEventListener("mousemove", track); },
+    };
   }
 
   // Step 1 — passkey registration
@@ -936,7 +1231,7 @@
   }
 
   // ---- Mouse enrolment, in SAMPLES (the unit the typing channel also shows as "sample 2 / 5") ----
-  // One sample = MOUSE_SAMPLE_WINDOWS windows, about 16 s of moving to the dots; a profile is built
+  // One sample = MOUSE_SAMPLE_WINDOWS windows holding MOUSE_TASKS_PER_SAMPLE finished tasks (mouseTasks); a profile is built
   // once MOUSE_SAMPLES_REQUIRED samples are on file (8 x 55 = 440 windows).
   // Each sample saves itself the moment it is complete, so the user only ever sees a counter.
   // The server enforces the same numbers (ca-service lib/mouse.js) and reports them in /status.
@@ -952,10 +1247,11 @@
     // opts: { title, intro, stepBar, onClose, dismissLabel, allowReset, onEnrolled, resolveOnTrained(result), onAlreadyEnrolled }
     if (endSampleFlow) endSampleFlow();
     var st = { onFile: 0, required: MOUSE_SAMPLES_REQUIRED, perSample: MOUSE_SAMPLE_WINDOWS, enrolled: false };
-    var tracker = null, iv = null, saving = false, addedNow = 0, building = false, pollT = null, note = "", ended = false;
+    var tracker = null, tasks = null, iv = null, saving = false, addedNow = 0, building = false, pollT = null, note = "", ended = false;
     function end() {
       ended = true; stop(); clearTimeout(pollT);
       if (tracker) { tracker.stop(); tracker = null; }
+      if (tasks) { tasks.stop(); tasks = null; }
       if (endSampleFlow === end) endSampleFlow = null;
     }
     endSampleFlow = end;
@@ -976,15 +1272,15 @@
       if (building) return t("Training on your samples, usually under a minute. You can leave this open.");
       if (note) return note;
       if (st.onFile >= st.required) return st.enrolled ? t("All {n} samples on file.", { n: st.required }) : "";
-      return t("{n} more to go · about {s} s of movement", { n: st.required - st.onFile, s: (st.required - st.onFile) * 16 });
+      return t("{n} more to go · about {m} min", { n: st.required - st.onFile, m: Math.max(1, Math.round((st.required - st.onFile) * 0.5)) });
     }
     function render() {
       openWiz((opts.stepBar || "") + '<div class="wizload" id="mwl"><span class="wizspin"></span><span id="mwlt">' + h("Saving sample…") + "</span></div>"
         + '<div class="t">' + opts.title + '</div><div class="d">' + opts.intro + "</div>"
         + '<div class="msamp"><div class="mhead" id="mhead">' + esc(headline()) + '</div><div class="mpips">' + pips() + "</div>"
         + '<div class="msub" id="msub">' + esc(subline()) + "</div></div>"
-        + '<div class="pad" id="cpad"><span class="padlabel">' + h("move to the dot") + '</span></div><div class="bar"><i id="mbar"></i></div>'
-        + '<div class="diag" id="mdiag">' + h("this sample: {s} s of 16 s", { s: 0 }) + "</div>"
+        + '<div class="pad" id="cpad"></div><div class="bar"><i id="mbar"></i></div>'
+        + '<div class="diag" id="mdiag"></div>'
         + (opts.dismissLabel ? '<div class="row2"><button class="b sec" id="mdone">' + opts.dismissLabel + "</button></div>" : "")
         + (opts.allowReset ? '<div class="foot"><a href="#" id="mreset" class="danger">' + svg("trash") + h("Reset my mouse profile") + "</a></div>" : "")
         + '<div class="e"></div>', close, "wide");
@@ -1007,16 +1303,18 @@
       // so the sample must be the same kind of movement. The pad is only a visual target.
       if (tracker) tracker.stop();
       tracker = window.mouseFeatures.createMouseTracker(document.documentElement);
-      spawnClickTarget(pad, MOUSE_TARGETS, function () {});
+      if (tasks) tasks.stop();
+      tasks = mouseTasks(pad);
       function tick() {
         if (ended || saving) return;
         if (!pad.isConnected) { end(); return; }   // closed, or replaced by another popup: stop recording
         var w = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(tracker.getEvents()));
-        var n = w ? w.length : 0;
-        var secs = Math.min(16, Math.floor((n * 16) / st.perSample));
-        bar.style.width = Math.min(100, Math.round((n / st.perSample) * 100)) + "%";
-        diag.textContent = t("this sample: {s} s of 16 s ({n} / {m} windows)", { s: secs, n: Math.min(n, st.perSample), m: st.perSample });
-        if (n >= st.perSample) save(w.slice(0, st.perSample));
+        var n = w ? w.length : 0, k = tasks ? tasks.done() : 0, need = tasks ? tasks.need : 0;
+        // Both are needed, enough movement and the tasks done; the bar follows whichever is behind.
+        bar.style.width = Math.round(Math.min(1, n / st.perSample, need ? k / need : 1) * 100) + "%";
+        diag.textContent = t("this sample: tasks {k} / {j} · movement {n} / {m} windows", { k: Math.min(k, need), j: need, n: Math.min(n, st.perSample), m: st.perSample });
+        // Its last windows: the sample ends with the tasks just done, and movement made before them falls away.
+        if (n >= st.perSample && k >= need) save(w.slice(-st.perSample));
       }
       async function save(windows) {
         saving = true; e.style.display = "none";
@@ -1027,6 +1325,7 @@
         if (ended) return;
         load.classList.remove("on");
         tracker.reset();
+        if (tasks) tasks.saved();
         saving = false;
         if (r.status === 409 && r.d && r.d.error === "already_enrolled") {
           // The profile exists (built meanwhile, or from another page) and takes no more enrolment samples.
@@ -1119,7 +1418,7 @@
     return new Promise(function (resolve) {
       mouseSampleFlow({
         title: h("Teach your mouse motion"),
-        intro: h("Move to each dot at your natural speed, as you would when using the site. Each <b>sample</b> is about 16 seconds of movement and saves itself; your mouse model is built after the last one. Until then the mouse channel does not judge you."),
+        intro: h("Do each small task at your natural speed, as you would when using the site: click, select text, drag. Each <b>sample</b> saves itself after a few tasks; your mouse model is built after the last one. Until then the mouse channel does not judge you."),
         stepBar: optional ? "" : wizStepBar(2, 3, 2),
         onClose: optional ? function () { closeWiz(); resolve(false); } : doLogout,
         dismissLabel: optional ? h("Continue later") : null,
@@ -1253,7 +1552,7 @@
   function mouseSamples() {
     mouseSampleFlow({
       title: h("Mouse samples"),
-      intro: h("Move to each dot at your natural speed. Each <b>sample</b> is about 16 seconds of movement and saves itself. Your mouse model is built after the last required sample."),
+      intro: h("Do each small task at your natural speed: click, select text, drag. Each <b>sample</b> saves itself after a few tasks. Your mouse model is built after the last required sample."),
       onClose: closeWiz,
       dismissLabel: h("Done"),
       allowReset: true,

@@ -91,9 +91,19 @@ representation, its Table I; Experiment A found no richer representation measura
 
 ## Enrolment
 
-- Server: 8 samples × 55 windows = 440 (~2 min). A sample saves itself when complete; the SDK and
+- Server: 8 samples × 55 windows = 440 (about 4 min of the pad's tasks). A sample saves itself when complete; the SDK and
   demo show "Sample k of 8" (pips and time left), and samples can be spread over visits. Each
   sample must show a step-size interquartile range ≥ 5 px. (The extension keeps its own 6 × 55.)
+- The pad (`sdk/guard.js` `mouseTasks`, 2026-11-24) asks for short tasks in place of one dot to chase, in shuffled
+  rounds of nine kinds: click a dot near or far, click numbers in a row, double-click a word, select words by
+  dragging, drag a handle along a bar (across or down), click a thin bar at a mark, follow a text with the pointer,
+  pick from a menu, drag a card into a box. A sample is saved once it holds 55 windows and four finished tasks, as
+  its last 55 windows, so movement without the tasks saves nothing; a task still open after 18 s can be skipped and
+  then does not count. Why: the dot taught long, fast hops only. In the owner's browsing of 22-24 Nov the median
+  step was 5.4 px against 10.6 px in his dot samples, a window covered half the path, and his own profile turned
+  31% of those windows down (2% once rescaled to his enrolment's size). Recording, windows and the server's checks
+  are unchanged. Test: `extension/scripts/e2e_headless_sdk_mouse.mjs`, where a robot does every kind of task with
+  real mouse input, in English and Arabic.
 - ca-service stores samples; once the total reaches 440 it queues training in its durable training
   queue (`training_jobs`, one job at a time) instead of training inside the request, and every
   extra sample queues a rebuild. The model is always trained on the user's latest 440 windows, in

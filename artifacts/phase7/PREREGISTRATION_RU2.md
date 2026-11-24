@@ -109,3 +109,25 @@ impostor windows go to both arms.
   intervals) is written after this file is frozen and before any test-period data is read. Its hash is reported with
   the result.
 - Not in the paper or the thesis: this is the owner's own profile, as RU was.
+
+## Dated notes
+
+**24 Nov 2026, written before any check of the test period was read.**
+
+- **Episodes.** U1 = the check of 22 Nov 08:18:39 UTC, U2 = 23 Nov 17:22:20, U3 = 24 Nov 07:31:24, U4 = 24 Nov
+  17:33:01. Each is the first 55 windows of the first stored non-warm-up check after a lock, at least 3 hours after the
+  previous one, and passes the sample checks (step spread 8.3, 6.1, 12.4 and 5.8 px, no repeated movement). The test
+  period would have started on 24 Nov at 18:33:01 UTC.
+- **One episode skipped, for a reason this text did not foresee.** The first stored check after the lock of 24 Nov
+  07:27:49 (the check of 07:30:07) carried 59 of the 60 windows of the check that had set the lock, and asked again. So
+  it was not movement after the passkey, which the definition of an episode assumes ("both clients empty their buffers
+  at that moment"): a tab of the extension that hides its lock when it becomes visible again keeps its buffer. The same
+  happened on 22 Nov at 08:19:23 (58 of 60 windows), an episode not chosen in any case. An episode whose first check
+  carries a window already sent before the lock is skipped and the next one is taken: here the lock of 07:30:07 and the
+  check of 07:31:24, whose 60 windows were all new.
+- **The experiment ends without a verdict if the owner enrols again.** On 24 Nov he chose another remedy: an enrolment
+  pad that asks for tasks (sdk/guard.js `mouseTasks`) and a fresh enrolment of his mouse profile. A reset replaces arm
+  A and deletes the stored check windows (`resetMouseProfile`), so from that moment no arm can be compared: U1 to U4
+  are added to nothing, no test-period check is read, and the capture stays on only to watch the new profile in his
+  use. His own samples and the checks of the collection period were first exported to his computer, outside the
+  repository, so that the old profile can be rebuilt and the same movement replayed on the new one.
