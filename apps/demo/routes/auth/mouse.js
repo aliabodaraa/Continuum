@@ -90,6 +90,10 @@ router.post("/check", requireAuth, async (req, res, next) => {
   try {
     const r = await ca.mouseCheck(req.session.userId, req.body.windows);
     const d = r.data || {};
+    // Continuum says the account is locked (a step-up asked for in another tab or by another client, not passed yet):
+    // its answer goes to the page as it is and this session locks with it, as the typing route does (2026-11-25). It
+    // was read as a scored packet with no strike and answered 200, so that page asked for no passkey.
+    if (d.locked) { req.session.continuousAuthLocked = true; return res.status(r.status).json(d); }
     // Non-scored responses (warm-up, no movement, not enrolled) pass straight
     // through — mouse-ca.js keys off `checked` / `enrolled`.
     if (!d.checked) return res.status(r.status).json(d);

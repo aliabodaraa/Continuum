@@ -33,10 +33,17 @@ async function hasPasskey(userId) {
 // Populate/read the session cache so hot paths (middleware, per-check routes)
 // stay synchronous. Mutations (register/reset) update req.session.hasPasskey
 // directly, keeping this fresh without a round-trip per request.
+// "Has none" is asked again after NO_PASSKEY_TTL_MS, as the gateway keeps its own "has none" for 5 s only (2026-11-25).
+// A "no" from a failed lookup (Continuum's status also answers "no" when its own lookup fails), or from before a passkey
+// was added elsewhere, used to last the whole session: the app offered "Register Passkey" and Continuum refused it 403,
+// since the account had one.
+const NO_PASSKEY_TTL_MS = 5000;
 async function ensureHasPasskey(req) {
-  if (typeof req.session.hasPasskey === "boolean") return req.session.hasPasskey;
+  if (req.session.hasPasskey === true) return true;
+  if (req.session.hasPasskey === false && Date.now() - Number(req.session.hasPasskeyAt || 0) < NO_PASSKEY_TTL_MS) return false;
   const v = await hasPasskey(req.session.userId);
   req.session.hasPasskey = v;
+  req.session.hasPasskeyAt = Date.now();
   return v;
 }
 

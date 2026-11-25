@@ -54,6 +54,9 @@ router.post("/register", async (req, res) => {
     req.session.userId = result.lastInsertRowid;
     req.session.username = username;
     req.session.passkeySetupRequired = true;
+    // A new account has no passkey. An account created in a signed-in browser kept the previous user's "has a passkey"
+    // (2026-11-25): no passkey set-up was offered, and the passkey checks were refused ("No passkeys registered").
+    req.session.hasPasskey = false;
 
     return res.json({
       ok: true,

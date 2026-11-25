@@ -573,7 +573,7 @@
         <span id="bannerRhythmText"
           >Enroll your typing rhythm to enable continuous authentication.</span
         >
-        <br /><button class="banner-btn" onclick="window.location.reload()">
+        <br /><button class="banner-btn" id="bannerRhythmBtn" onclick="window.location.reload()">
           Start enrollment
         </button>
       </div>
@@ -1083,8 +1083,11 @@
               passkeySetupRequired,
           );
         if (typingStatus && !typingStatus.trained) {
-          document.getElementById("bannerRhythmText").textContent =
-            `${typingStatus.remainingSamples} more sample(s) and ${typingStatus.remainingPositiveWindows || 0} more window(s) needed before rhythm model is active.`;
+          // While the model is being built there is nothing to enrol, and "Start enrollment" reloaded to nothing new (2026-11-25).
+          document.getElementById("bannerRhythmText").textContent = typingStatus.training
+            ? "Your typing model is being built (about a minute). Typing checks start by themselves once it is ready."
+            : `${typingStatus.remainingSamples} more sample(s) and ${typingStatus.remainingPositiveWindows || 0} more window(s) needed before rhythm model is active.`;
+          document.getElementById("bannerRhythmBtn").style.display = typingStatus.training ? "none" : "";
         }
         const locked =
           passkeySetupRequired ||
@@ -1289,6 +1292,9 @@
           showPasskeyError(
             "Passkey registration failed: " + formatPasskeyError(err),
           );
+          // Show what the account has now (2026-11-25): after Replace, none (Replace and Reset stayed, and were refused);
+          // after a 403, one added elsewhere (Register stayed).
+          checkPasskeyStatus();
         } finally {
           setLoading(btn, false, "Register Passkey");
         }
@@ -1511,6 +1517,16 @@
 
       init();
       loadMetrics();
+      // The SDK's onboarding window (passkey, typing, mouse) ends after this page has read its state, so read it again
+      // once the SDK is ready (2026-11-25): "Register Passkey" stayed for an account that had one by then, and was
+      // refused 403. On a locked account the SDK is ready with its passkey prompt open: read it again after that passkey.
+      (function whenGuardReady(n) {
+        if (!(window.Continuum && window.Continuum.onReady)) return n < 150 && setTimeout(() => whenGuardReady(n + 1), 200);
+        window.Continuum.onReady(() => {
+          if (window.Continuum.isLocked()) window.Continuum.requireStepUp("keystroke", init);
+          else init();
+        });
+      })(0);
     </script>
 
     <script>

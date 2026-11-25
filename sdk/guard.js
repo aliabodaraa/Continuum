@@ -141,7 +141,15 @@
     if (MODE === "gateway" && sessionToken) headers["Authorization"] = "Bearer " + sessionToken;
     return fetch(url(path), { method: method || "GET", headers: headers, body: body ? JSON.stringify(body) : undefined });
   }
-  async function reqJson(path, method, body) { var r = await req(path, method, body); var d = await r.json().catch(function () { return {}; }); return { status: r.status, ok: r.ok, d: d }; }
+  async function reqJson(path, method, body) {
+    var r = await req(path, method, body); var d = await r.json().catch(function () { return {}; });
+    // A 423 that says the ACCOUNT is locked (the demo app's gate: continuousAuthLocked; Continuum: locked) brings up the
+    // passkey prompt, whichever request got it (2026-11-25). The lock may come from another tab: this one showed nothing,
+    // and its buttons were refused, until a check of its own asked for the passkey. Its own channel did not lock it, so
+    // the prompt names none.
+    if (r.status === 423 && d && (d.continuousAuthLocked || d.locked) && !locked && !signedOut) { locked = true; showModal(); }
+    return { status: r.status, ok: r.ok, d: d };
+  }
 
   // endpoint map per mode
   var EP = MODE === "gateway" ? {
@@ -631,6 +639,8 @@
   function showModal(modality, verdict) {
     // A lock: no movement from here on is the user's until the passkey says so.
     abortUseSample();
+    // The adaptive prompt sits above every window of the panel, and its sample would be refused while locked (2026-11-25).
+    hideLearn();
     stepUpReason = modality === "mouse" ? "mouse" : "keystroke";
     if (!modalEl) return;
     if (signedOut) { modalEl.style.display = "flex"; updateSummary(); return; }   // a passkey cannot help until the user signs in again
@@ -1410,6 +1420,9 @@
           if (opts.onAlreadyEnrolled) opts.onAlreadyEnrolled(); else if (opts.resolveOnTrained) opts.resolveOnTrained(null);
           return;
         }
+        // The account was locked meanwhile (the other channel, another tab): the passkey prompt is up (reqJson), under this
+        // window. A top-up gives way to it; what it had added waits a while on the server.
+        if (opts.topUp && r.status === 423) { close(); return; }
         if (!r.ok) {
           // e.g. the step-size gate: a mechanical or jittering movement is not stored. Redo it.
           e.textContent = t("{why} — this sample starts again.", { why: (r.d && r.d.error) || t("This sample was not accepted") });
@@ -1515,7 +1528,7 @@
   // status routes (same identity the SDK monitors on, via req.caUid).
   async function fetchOnboardingDemo() {
     var ob = { passkey: false, keystroke: false, mouse: false };
-    try { var me = await req("/api/auth/me").then(function (r) { return r.ok ? r.json() : {}; }); ob.passkey = !!me.passkeysRegistered && !me.passkeySetupRequired; } catch (e) {}
+    try { var me = await req("/api/auth/me").then(function (r) { return r.ok ? r.json() : {}; }); ob.passkey = !!me.passkeysRegistered && !me.passkeySetupRequired; ob.locked = ob.passkey && !!me.continuousAuthLocked; } catch (e) {}
     try { var ts = await reqJson(EP.ksStatus); ob.keystroke = !!(ts.d && ts.d.trained); ob.keystrokeTraining = !!(ts.d && ts.d.training); } catch (e) {}
     try { var ms = await reqJson(EP.mouseStatus); ob.mouse = !!(ms.d && ms.d.enrolled); } catch (e) {}
     return ob;
@@ -1610,6 +1623,8 @@
         if (topUp) {
           // The server took it for a plain enrolment sample: the grant has run out. What was added waits for a while.
           if (r.status === 409 && r.d && r.d.error === "already_enrolled") { topUp = null; renderTrained(t(TOPUP_NOTE)); return; }
+          // Locked meanwhile: the passkey prompt is up (reqJson) under this window, which gives way to it.
+          if (r.status === 423) { topUp = null; closeWiz(); return; }
           if (!r.ok) { e.textContent = "(" + r.status + ") " + ((r.d && r.d.error) || t("rejected")); e.style.display = "block"; return; }
           topUpAdded = Number(r.d && r.d.topUp && r.d.topUp.added) || (topUpAdded + 1);
           if (r.d && r.d.training) { topUp = null; topUpAdded = 0; renderRebuilding(); return; }
@@ -2057,6 +2072,8 @@
       if (r.status === 401 && MODE === "demo") { sessionEnded(); return; }
       var d = r.d; if (d && d.riskToken) latestRiskToken = d.riskToken;
       if (d && d.bufferMax) MOUSE_MIN_WINDOWS = d.bufferMax;   // the server's vote length is authoritative
+      // Locked while this check was on its way (its own 423 says the account is locked): no verdict to show (2026-11-25).
+      if (locked) { setMouseRow("bad", "locked — verify"); return; }
       if (d && d.enrolled === false) { setMouseRow("mut", "not enrolled"); stopMouse(); mouseOn = false; updateToggle(); return; }
       if (maybeChallenge(d, "mouse", onProbation)) { setMouseRow("bad", "mouse mismatch"); return; }
       if (d.checked === false) { setMouseRow("mut", "move to check", { pct: lastMousePct, keep: true }); return; }
@@ -2297,6 +2314,9 @@
       var ob = await fetchOnboardingDemo();
       obState = ob;
       if (ob.keystrokeTraining && !ob.keystroke) watchKsBuild();
+      // Locked (the app's session says so): the passkey first, as in gateway mode (2026-11-25). Without it the page opened
+      // with no prompt, and its links led to the app's gate, which signed the locked session out.
+      if (ob.locked) { promptLockedAtLoad(ob); return; }
       if (needOnboarding(ob)) await runOnboarding(ob);
     } catch (e) { console.warn("[continuum] onboarding:", e.message); }
     startGuard();

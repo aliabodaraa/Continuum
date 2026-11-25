@@ -339,9 +339,12 @@ try {
   // the mouse switch of the panel (the second of the two switches): the loads above, with no profile, left it off, and
   // the SDK remembers the choice
   const MSW = `[...(${SH}).querySelectorAll('.tgl')].pop()`;
-  if ((await ev(s, `(${MSW}).getAttribute('aria-checked')`)) !== "true") await ev(s, `(${MSW}).click(), true`);
-  await move(s, 1300);
-  await sleep(1800);
+  // (on a slow machine the guard may not have started when the switch is first read: until a check is seen)
+  for (let i = 0; i < 4 && state.checks === 0; i++) {
+    if ((await ev(s, `(${MSW}).getAttribute('aria-checked')`)) !== "true") await ev(s, `(${MSW}).click(), true`);
+    await move(s, 1300);
+    await sleep(1800);
+  }
   const judged = state.checks;   // the live guard checks this movement (the profile exists)
   const t6 = await openTopUp();
   ok("6. a trained profile offers \"Add samples\" beside the reset", t6.label === "Add samples", String(t6.label));

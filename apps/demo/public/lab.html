@@ -1582,8 +1582,9 @@
         applyUserBadge(data.username);
         // Note: a reload while continuousAuthLocked never actually reaches this
         // script — apps/demo/app.js's passkeySetupGate intercepts the page
-        // request itself and logs the user out server-side before any HTML is
-        // served. See that gate for the real enforcement point.
+        // request itself and sends it to the dashboard, where the SDK asks for
+        // the passkey, before any HTML is served. See that gate for the real
+        // enforcement point.
         if (data.passkeySetupRequired) {
           window.location.href = "/dashboard.html";
           return;

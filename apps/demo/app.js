@@ -62,7 +62,8 @@ async function passkeySetupGate(req, res, next) {
   }
 
   // Session-cached (populated here on first hit, updated on register/reset) so
-  // this per-request gate stays fast and never hits the passkey service inline.
+  // this per-request gate stays fast: "has a passkey" for the session, "has none"
+  // for a few seconds (services/passkeyClient.js).
   const hasPasskey = await passkey.ensureHasPasskey(req);
   if (hasPasskey) {
     delete req.session.passkeySetupRequired;
@@ -101,24 +102,30 @@ async function passkeySetupGate(req, res, next) {
 
   if (hasPasskey && req.session.continuousAuthLocked) {
     if (req.path.startsWith("/api/")) {
-      if (allowedApiPaths.has(req.path)) {
+      // Not the mouse check, which the list lets through for onboarding: its route turned Continuum's own "locked"
+      // answer into a plain verdict, so a tab still open when another one locked the account never offered the passkey.
+      // Every refusal asks for the passkey, as a check's own lock does (2026-11-25).
+      if (allowedApiPaths.has(req.path) && req.path !== "/api/mouse/check") {
         return next();
       }
       return res.status(423).json({
         error: "Passkey verification required before continuing",
         continuousAuthLocked: true,
+        requiresPasskeyChallenge: true,
       });
     }
 
     // Reloading (or navigating to) any other page while a step-up challenge is
     // pending must not silently resume the session with no popup — the
     // in-memory client-side lock (guard.js `locked`, lab.html `passkeyRequired`)
-    // resets on every page load, so only the server can enforce this. Log out
-    // rather than bounce to the dashboard, so a dismissed challenge can't be
-    // waited out by reloading. Dashboard keeps its own in-place resolve UI
-    // (banner + "Verify with Passkey" button) and is exempted above.
+    // resets on every page load, so only the server can enforce this. Every page
+    // goes to the dashboard, where the SDK opens its passkey prompt at load (it
+    // reads the lock from /api/auth/me), so the challenge cannot be waited out by
+    // reloading. Until 2026-11-25 this signed the user out instead: a click on any
+    // link of a locked page did, and signing in again started a session without
+    // the lock.
     if (req.path.endsWith(".html") && req.path !== "/dashboard.html") {
-      return req.session.destroy(() => res.redirect("/login.html"));
+      return res.redirect("/dashboard.html");
     }
 
     return next();

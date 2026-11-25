@@ -802,6 +802,9 @@
         passkeysRegistered = false;
         renderProfile();
         await registerPasskey();
+        // The new passkey was not made (cancelled, or refused): the account has none, so this page's actions are refused
+        // until it has. The dashboard is where a passkey is set up, as after "Reset All" (2026-11-25).
+        if (!passkeysRegistered) setTimeout(() => (window.location.href = "/dashboard.html"), 1200);
       }
       async function resetPasskeys() {
         if (
