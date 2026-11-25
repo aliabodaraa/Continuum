@@ -1274,6 +1274,8 @@
       if (st.onFile >= st.required) return st.enrolled ? t("All {n} samples on file.", { n: st.required }) : "";
       return t("{n} more to go · about {m} min", { n: st.required - st.onFile, m: Math.max(1, Math.round((st.required - st.onFile) * 0.5)) });
     }
+    // The reset deletes the samples on file and the model: with neither, the link has nothing to do and is not shown.
+    function canReset() { return st.onFile > 0 || st.enrolled || building; }
     function render() {
       openWiz((opts.stepBar || "") + '<div class="wizload" id="mwl"><span class="wizspin"></span><span id="mwlt">' + h("Saving sample…") + "</span></div>"
         + '<div class="t">' + opts.title + '</div><div class="d">' + opts.intro + "</div>"
@@ -1282,7 +1284,7 @@
         + '<div class="pad" id="cpad"></div><div class="bar"><i id="mbar"></i></div>'
         + '<div class="diag" id="mdiag"></div>'
         + (opts.dismissLabel ? '<div class="row2"><button class="b sec" id="mdone">' + opts.dismissLabel + "</button></div>" : "")
-        + (opts.allowReset ? '<div class="foot"><a href="#" id="mreset" class="danger">' + svg("trash") + h("Reset my mouse profile") + "</a></div>" : "")
+        + (opts.allowReset ? '<div class="foot" id="mresetrow"' + (canReset() ? "" : ' style="display:none"') + '><a href="#" id="mreset" class="danger">' + svg("trash") + h("Reset my mouse profile") + "</a></div>" : "")
         + '<div class="e"></div>', close, "wide");
       var pad = wizEl.querySelector("#cpad"), bar = wizEl.querySelector("#mbar"), diag = wizEl.querySelector("#mdiag"),
         e = wizEl.querySelector(".e"), load = wizEl.querySelector("#mwl"), loadT = wizEl.querySelector("#mwlt");
@@ -1352,6 +1354,8 @@
         wizEl.querySelector("#msub").textContent = subline();
         var p = wizEl.querySelectorAll(".mpip");
         for (var i = 0; i < p.length; i++) p[i].className = "mpip" + (i < st.onFile ? " on" : "");
+        var rr = wizEl.querySelector("#mresetrow");
+        if (rr) rr.style.display = canReset() ? "" : "none";
       }
       // The server is building (or rebuilding) the model: stop collecting and poll /status until
       // the job is finished, then either finish enrolment or explain what went wrong.
@@ -1485,7 +1489,7 @@
         + h("Samples on file: {n} · added now: {m}", { n: total == null ? "…" : total, m: added }) + '</div><div class="passage" id="cpass" lang="en"></div><textarea class="ta" id="cta" lang="en" placeholder="'
         + esc(t("Type it here…")) + '"></textarea><div class="bar"><i id="cbar"></i></div><div class="diag" id="cdiag">' + h("typed {chars} · captured {keys} keystrokes", { chars: 0, keys: 0 })
         + '</div><div class="row2"><button class="b" id="cs" disabled>' + h("Save sample") + '</button><button class="b sec" id="cdone" style="flex:0 0 96px">' + h("Done")
-        + '</button></div><div class="foot"><a href="#" id="creset" class="danger">' + svg("trash") + h("Reset my typing profile") + '</a></div><div class="e"></div>', closeWiz);
+        + '</button></div><div class="foot"' + (total > 0 ? "" : ' style="display:none"') + '><a href="#" id="creset" class="danger">' + svg("trash") + h("Reset my typing profile") + '</a></div><div class="e"></div>', closeWiz);
       var ta = wizEl.querySelector("#cta"), bar = wizEl.querySelector("#cbar"), btn = wizEl.querySelector("#cs"), done = wizEl.querySelector("#cdone"), e = wizEl.querySelector(".e"), diag = wizEl.querySelector("#cdiag"), pass = wizEl.querySelector("#cpass"), newBtn = wizEl.querySelector("#cnew"), load = wizEl.querySelector("#cwl");
       var tracker = window.continuumKeystrokes.createTracker(ta);
       var NEED_KEYS = 100, NEED_CHARS = 120;

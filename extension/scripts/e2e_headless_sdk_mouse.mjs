@@ -10,7 +10,7 @@
 // The SDK on a page served at the gateway's own origin, with its working copy (sdk/guard.js, sdk/js/*) in place of
 // the deployed one, and every /v1/sdk/ call answered by this script, so nothing about a real user is needed.
 //   0. the tasks: moving about without doing them saves nothing; four finished tasks and 55 windows save a sample; every
-//      kind of task can be done; in Arabic the pad shows no English
+//      kind of task can be done; in Arabic the pad shows no English; the reset is offered only once a sample is on file
 //   1. "+ train" pressed twice: one recorder, one sample at a time, and two samples never share movement
 //   2. closed with ×: nothing more is recorded or sent; the same with "Done", and when another popup covers it
 //   3. the last sample: the SDK waits for the model (polls the status) and then shows the trained profile
@@ -82,6 +82,7 @@ const TASK = `(() => { const sh = ${SH}; const pad = sh && sh.querySelector('#cp
   return { kind: st.getAttribute('data-kind'), seq: st.getAttribute('data-seq'), a: c(st.querySelector('[data-tk-a]')), b: c(st.querySelector('[data-tk-b]')),
     words: all('.tk-w'), chips: all('.tk-chip'), dot: c(st.querySelector('.pt')), say: pad.querySelector('.tk-say').textContent,
     pips: pad.querySelectorAll('.tk-n i.on').length, text: pad.textContent + ' ' + (sh.querySelector('#mdiag') || {}).textContent + ' ' + (sh.querySelector('.msamp') || {}).textContent }; })()`;
+const RESET_SHOWN = `(() => { const r = (${SH}).querySelector('#mresetrow'); return !!r && getComputedStyle(r).display !== 'none'; })()`;
 async function shot(s, name) {
   const r = await ev(s, `(() => { const ov = ${OPEN}; const c = ov && ov.querySelector('.card'); if (!c) return null; const b = c.getBoundingClientRect(); return { x: b.left, y: b.top, width: b.width, height: b.height }; })()`);
   const p = await send("Page.captureScreenshot", r ? { format: "png", clip: { ...r, scale: 1 } } : { format: "png" }, s);
@@ -181,6 +182,7 @@ try {
   await load();
   ok("0. the pad opens on a task", await openPad(), JSON.stringify(await ev(s, TASK)).slice(0, 120));
   await shot(s, "en-light-0-start");
+  ok("…with nothing on file the reset is not offered (it would have nothing to delete)", (await ev(s, RESET_SHOWN)) === false);
   await move(s, 1300);   // more than two samples' worth of movement, and no task done
   ok("…moving about without doing the tasks saves nothing", state.enrolls.length === 0, `${state.enrolls.length} saved`);
   const seen = new Set(), failed = [];
@@ -193,6 +195,7 @@ try {
   }
   ok("…the fourth finished task saves the sample (its windows were there already)", atFirstSave === 4, `saved after ${atFirstSave} tasks`);
   ok("…every kind of task can be done with real input", seen.size === KINDS.length && !failed.length, `done: ${[...seen].join(", ")}${failed.length ? "; not finished: " + failed.join(", ") : ""}`);
+  ok("…and the reset is offered once a sample is on file", (await ev(s, RESET_SHOWN)) === true);
   ok("…each saved sample is 55 windows", state.enrolls.length >= 1 && state.enrolls.every((e) => e.windows.length === 55), state.enrolls.map((e) => e.windows.length).join(", "));
   await shot(s, "en-light-9-after");
   look = { lang: "ar", theme: "dark" };

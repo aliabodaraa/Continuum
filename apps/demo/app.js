@@ -87,7 +87,10 @@ async function passkeySetupGate(req, res, next) {
     "/api/text/decisions/export",
     "/api/text/history",
     "/api/text/metrics",
-    // Mouse onboarding must work while the user is still gated on it.
+    // Mouse onboarding must work while the user is still gated on it. So must its reset, as the typing one above:
+    // samples on file before the model exists can only be discarded that way, and the panel offers it. Left out
+    // until 2026-11-25, the reset was refused here after the user had confirmed it with the passkey.
+    "/api/mouse/reset",
     "/api/mouse/enroll",
     "/api/mouse/status",
     "/api/mouse/check",
