@@ -10,6 +10,7 @@
 //   5. a read that never answers does not hold the messages for ever
 //   6. a lock starts a new epoch, so nothing a page collected before it can be checked after it
 //   7. the lock button pressed before the read opens the verify page (it used to do nothing: nobody was signed in yet)
+//   8. the pause shortcut pressed before the read pauses (it used to do nothing, for the same reason)
 //
 //   node extension/scripts/unit_worker_restore.mjs
 import fs from "node:fs"; import path from "node:path"; import vm from "node:vm";
@@ -124,6 +125,18 @@ function start(store) {
   w.read(); for (let i = 0; i < 8; i++) await tick();
   ok("7. the lock button pressed before the saved state is read opens the verify page", w.opened.length === 1 && w.opened[0].startsWith(GW + "/connect.html?mode=verify"),
     w.opened.length ? w.opened[0].split("#")[0] : "nothing opened");
+}
+// ---- 8. the pause shortcut before the read
+{
+  const w = start(saved());
+  w.listeners.command[0]("toggle-pause");
+  w.read(); await tick();
+  ok("8. the pause shortcut pressed before the saved state is read pauses the recording", w.store.cg_paused === true, `saved pause: ${w.store.cg_paused}`);
+  const store = saved(); store.cg_paused = true;
+  const w2 = start(store);
+  w2.listeners.command[0]("toggle-pause");
+  w2.read(); await tick();
+  ok("…and pressed while paused, it resumes", w2.store.cg_paused === false, `saved pause: ${w2.store.cg_paused}`);
 }
 console.log(bad ? `\n${bad} check(s) FAILED` : "\nall checks passed");
 process.exit(bad ? 1 : 0);

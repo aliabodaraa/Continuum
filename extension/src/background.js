@@ -554,7 +554,12 @@ if (api.runtime.onStartup) api.runtime.onStartup.addListener(injectAll);
 // The pause shortcut (manifest "commands"): quicker than opening the popup before typing something private.
 function setPaused(v) { try { api.storage.local.set({ cg_paused: !!v }); } catch (e) {} }
 if (api.commands && api.commands.onCommand) {
-  api.commands.onCommand.addListener(function (cmd) { if (cmd === "toggle-pause" && conn()) setPaused(!paused); });
+  // After the saved state is read, as the messages are: pressed while this worker slept, the shortcut found nobody
+  // signed in and did nothing, so recording went on although the user had asked for the pause.
+  api.commands.onCommand.addListener(function (cmd) {
+    if (cmd !== "toggle-pause") return;
+    restored.then(function () { if (conn()) setPaused(!paused); });
+  });
 }
 
 // Settings changed on the options page or the popup: follow them without a reload.
