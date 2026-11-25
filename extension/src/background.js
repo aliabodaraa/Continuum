@@ -52,8 +52,8 @@ var PROBE_ALARM = "cg-gateway-probe";
 var state = { locked: false, lockReason: null, lockPasted: false, verdict: null, mouseVerdict: null, error: null, notEnrolled: null, lastCheckAt: 0,
   disabled: {},      // channel -> when the server last said the organisation turned it off
   unavailable: {} }; // channel -> when its model last could not score (ca-service 503 model_unavailable): no verdict for it
-// The buffer epoch (2026-11-25): a new value at every unlock and every change of user, kept in storage.local so a
-// restarted worker keeps it. A page's buffers belong to the epoch they were collected in, and a check from another
+// The buffer epoch (2026-11-25): a new value at every lock, every unlock and every change of user, kept in storage.local
+// so a restarted worker keeps it. A page's buffers belong to the epoch they were collected in, and a check from another
 // epoch is refused and the page told to start again. Before this, a page that did not hear the unlock (kept in the
 // back/forward cache, frozen, or hidden) kept the movement that had locked the account and sent it again after the
 // passkey: the owner was asked twice in a row on 22 and 24 Nov (58 and 59 of 60 windows the same).
@@ -453,7 +453,8 @@ function revoke(acc) {
 api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "cg_account", "cg_paused", "cg_show_verdict", "cg_study_paused", "cg_exclude_types", "cg_ks_packet", "cg_offline", "cg_look", "cg_buffer_epoch"], function (d) {
   try {
   d = d || {};
-  if (typeof d.cg_buffer_epoch === "string" && d.cg_buffer_epoch) bufferEpoch = d.cg_buffer_epoch; else newBufferEpoch();
+  // An epoch issued before this read (a change of user that woke the worker) stays: the read is older than it.
+  if (!bufferEpoch) { if (typeof d.cg_buffer_epoch === "string" && d.cg_buffer_epoch) bufferEpoch = d.cg_buffer_epoch; else newBufferEpoch(); }
   if (Array.isArray(d.cg_exclude_types)) excludeTypes = d.cg_exclude_types;
   if (Number(d.cg_ks_packet) > 0) RECENT = Number(d.cg_ks_packet);
   if (d.cg_look && d.cg_look.lang) look = { lang: d.cg_look.lang, theme: d.cg_look.theme || "auto" };
@@ -744,7 +745,8 @@ function engageLock(reason, pasted) {
   state.locked = true;
   state.lockReason = reason || "keystroke";
   state.lockPasted = !!pasted;
-  broadcastAll({ type: "cg:lock", pasted: state.lockPasted });
+  newBufferEpoch();   // nothing collected before this lock is checked after it, however the lock comes to an end
+  broadcastAll({ type: "cg:lock", pasted: state.lockPasted, bufferEpoch: bufferEpoch });
   refreshAllBadges();
   persistProgress(true);
 }
@@ -776,7 +778,9 @@ function broadcastConfig() {
 api.runtime.onMessage.addListener(function (msg, sender, reply) {
   if (!msg) return;
   if (restoreDone) return onMessage(msg, sender, reply);
-  restored.then(function () { onMessage(msg, sender, reply); });
+  // Held until the saved state is read, so the channel must stay open for the answer. A message that gets none is
+  // answered empty here: left open, its channel would wait (and keep this worker awake) until the reply was collected.
+  restored.then(function () { if (onMessage(msg, sender, reply) !== true) { try { reply(); } catch (e) {} } });
   return true;
 });
 function onMessage(msg, sender, reply) {
@@ -785,9 +789,13 @@ function onMessage(msg, sender, reply) {
       reply({ capture: captureInfo(), excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, lockPasted: state.lockPasted, gatewayOrigin: gatewayOrigin(), debug: debugLog, excludeTypes: excludeTypes, look: look, bufferEpoch: bufferEpoch });
       return true;
     case "cg:check": {
-      // From a content script: { channel, sessionId, clientTs, body, windowKeys }.
+      // From a content script: { channel, sessionId, clientTs, bufferEpoch, body, windowKeys }.
       var c = conn();
-      if (!c || paused || state.locked || !msg.body) { reply({ ok: false, paused: paused }); return true; }
+      if (!msg.body) { reply({ ok: false }); return true; }
+      // Nobody signed in, the pause, or a lock: a page that still sends a check did not hear of it (it was not
+      // listening when the others were told). It is told to ask for the state again (content.js recheck), so it stops
+      // collecting, or shows the lock, in place of staying as it was until it is next hidden and shown.
+      if (!c || paused || state.locked) { reply({ ok: false, paused: paused, resync: true }); return true; }
       // Collected before the last unlock, or for another user: refused, and the page starts again.
       if (bufferEpoch && msg.bufferEpoch !== bufferEpoch) { reply({ ok: false, stale: true, bufferEpoch: bufferEpoch }); return true; }
       var ch = msg.channel === "mouse" ? "mouse" : "keystroke";
@@ -803,8 +811,12 @@ function onMessage(msg, sender, reply) {
       return true;
     }
     case "cg:open-verify":
+      // The button of a lock that was already lifted (its page did not hear the unlock): there is nothing to verify.
+      // The page is told and drops its overlay, in place of a passkey request nobody needs.
+      if (!state.locked) { reply({ locked: false, bufferEpoch: bufferEpoch }); return true; }
       openVerify();
-      return;
+      reply({ locked: true });
+      return true;
     case "cg:verified":
       // The step-up passed on the gateway's page; the gateway already cleared the server lock.
       if (fromGatewayPage(sender, "/study.html") || fromGatewayPage(sender, "/connect.html")) {

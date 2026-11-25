@@ -60,11 +60,12 @@
   var useRec = null;   // { epoch, until, events }
   var USE_SAMPLE_WINDOWS = 55;
   // The worker's buffer epoch (background.js): what this page collects belongs to it. Another one means a lock was
-  // lifted, or the user changed, while this page was not listening: what it holds is dropped.
+  // lifted, or the user changed, while this page was not listening: what it holds is dropped. The epoch never changes
+  // without the buffers being emptied, so a check that carries the worker's epoch holds nothing from before it.
   var bufferEpoch = null;
   function adoptEpoch(e) {
     if (!e || e === bufferEpoch) return;
-    if (bufferEpoch) clearCapture();
+    clearCapture();
     bufferEpoch = e;
   }
   // capture.offline: the worker cannot reach the gateway, so nothing would be checked: nothing is collected either.
@@ -129,7 +130,8 @@
       }) } }, function (res) {
       ksInFlight = false;
       dlog("[continuum-guard] keystroke check", res);
-      if (res && res.stale) { clearCapture(); bufferEpoch = res.bufferEpoch || bufferEpoch; return; }
+      if (res && res.stale) { adoptEpoch(res.bufferEpoch); return; }
+      if (res && res.resync) { recheck(); return; }
       if (ksPasteMissed) { ksPasteMissed = false; keyCheckNow(); return; }
       if (ksMissed) { ksMissed = false; var F = globalThis.ContinuumFeatures; if (F) keyCheckMaybe(F.stepsToWindows(F.eventSteps(events)).length); }
     });
@@ -145,7 +147,8 @@
       bufferEpoch: bufferEpoch, body: { windows: mouseWindows.map(function (x) { return x.w; }) }, windowKeys: mouseWindows.map(function (x) { return x.k; }) },
       function (res) {
         mouseInFlight = false; dlog("[continuum-guard] mouse check", res);
-        if (res && res.stale) { clearCapture(); bufferEpoch = res.bufferEpoch || bufferEpoch; }
+        if (res && res.stale) adoptEpoch(res.bufferEpoch);
+        else if (res && res.resync) recheck();
       });
   }
 
@@ -230,7 +233,10 @@
       var btn = this;
       btn.textContent = T("Opening…");
       setTimeout(function () { try { btn.textContent = T("Verify with passkey"); } catch (e) {} }, 3000);
-      safeSend({ type: "cg:open-verify" });
+      safeSend({ type: "cg:open-verify" }, function (res) {
+        // The lock was lifted and this page did not hear it: there is nothing to verify, so the overlay goes.
+        if (res && res.locked === false) { adoptEpoch(res.bufferEpoch); hideLock(); clearCapture(); }
+      });
     });
   }
   // The worker could not reach the gateway, so no step-up window opened. Say so in the overlay: without
@@ -258,23 +264,41 @@
     else if (d.type === "continuum-ext-enrolled") safeSend({ type: "cg:enrolled" });
   });
 
-  // Self-heal: a page can miss the worker's lock and unlock messages (a background tab while the passkey is verified
-  // elsewhere, a page kept in the back/forward cache, a frozen tab). Shown again, it asks the worker: it shows or drops
-  // the overlay, and drops what it collected before an unlock it missed (the epoch, or a lock it was showing). Until
-  // 2026-11-25 the overlay went and the movement stayed, so the first check after the passkey locked again.
+  // The worker's answer to a hello is everything a page follows: whether it collects at all (nobody signed in, the
+  // pause, the gateway away), this site excluded, the field types never watched, the overlay's look, the buffer epoch.
+  function applyHello(res) {
+    excluded = !!res.excluded;
+    if (Array.isArray(res.excludeTypes)) excludeTypes = res.excludeTypes;
+    debug = !!res.debug;
+    if (res.gatewayOrigin) gatewayOrigin = res.gatewayOrigin;
+    if (res.look && res.look.lang) look = res.look;   // before showLock, so the gateway is never locked
+    adoptEpoch(res.bufferEpoch);
+    setCapture(res.capture);
+  }
+  // Self-heal: a page can miss the worker's messages (a background tab while the passkey is verified elsewhere, a page
+  // kept in the back/forward cache, a frozen tab). Shown again, or told by the worker that its check was refused, it
+  // asks for the whole state again: it shows or drops the overlay, drops what it collected before an unlock it missed
+  // (the epoch, or a lock it was showing), and stops collecting if the user paused, signed out or excluded this site
+  // meanwhile. Until 2026-11-25 only the overlay was followed: the movement from before the passkey stayed and locked
+  // again, and a page that came back during a pause went on recording.
   function recheck() {
     if (document.visibilityState !== "visible" || dead) return;
     safeSend({ type: "cg:hello", origin: origin }, function (res) {
       if (!res) return;
-      if (res.gatewayOrigin) gatewayOrigin = res.gatewayOrigin;
-      if (res.look && res.look.lang) look = res.look;
-      adoptEpoch(res.bufferEpoch);
+      applyHello(res);
       if (!res.locked && lockEl) { hideLock(); clearCapture(); }
       else if (res.locked && !lockEl) showLock(res.lockPasted);
     });
   }
   document.addEventListener("visibilitychange", recheck);
-  window.addEventListener("pageshow", function (e) { if (e.persisted) recheck(); });
+  window.addEventListener("pageshow", function (e) {
+    if (!e.persisted) return;
+    // Back from the back/forward cache. An answer this page was waiting for when it left does not reach it (measured
+    // 2026-11-25), and the two flags that wait for it would hold back every later check: the page would collect and
+    // never be checked again until it was reloaded.
+    ksInFlight = false; mouseInFlight = false;
+    recheck();
+  });
 
   // Identity-provider sign-in origins a passkey ceremony may hand off to ("Sign in again to use passkeys
   // saved in your Google Account"). Never locked, or the unlock itself would deadlock. Kept narrow.
@@ -293,7 +317,7 @@
       setCapture(msg.capture);
       adoptEpoch(msg.bufferEpoch);
     }
-    if (msg.type === "cg:lock") { useRec = null; showLock(msg.pasted); }
+    if (msg.type === "cg:lock") { useRec = null; adoptEpoch(msg.bufferEpoch); showLock(msg.pasted); }
     if (msg.type === "cg:unlock") { hideLock(); adoptEpoch(msg.bufferEpoch); }
     if (msg.type === "cg:use-sample-start" && msg.epoch) useRec = { epoch: msg.epoch, until: Number(msg.until) || 0, events: [] };
     if (msg.type === "cg:use-sample-stop") useRec = null;
@@ -303,13 +327,7 @@
 
   safeSend({ type: "cg:hello", origin: origin }, function (res) {
     if (res) {
-      excluded = !!res.excluded;
-      if (Array.isArray(res.excludeTypes)) excludeTypes = res.excludeTypes;
-      debug = !!res.debug;
-      if (res.gatewayOrigin) gatewayOrigin = res.gatewayOrigin;
-      if (res.look && res.look.lang) look = res.look;   // before showLock, so the gateway is never locked
-      adoptEpoch(res.bufferEpoch);
-      setCapture(res.capture);
+      applyHello(res);
       if (res.locked) showLock(res.lockPasted);   // navigated / reopened while locked
       dlog("[continuum-guard] handshake: capture=" + (capturing() ? "ON" : "OFF") + (capture ? "" : " (not signed in)") + (excluded ? " (site excluded)" : ""));
     } else {
