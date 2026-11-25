@@ -1301,12 +1301,54 @@ async function mayRegisterPasskey(req, res) {
   return true;
 }
 
+// ---- more samples for a trained profile (2026-11-25) ----
+// A trained typing or mouse profile takes no enrolment sample: anyone at an open session could otherwise teach it their
+// own behaviour (ca-service closed typing on 5 Oct and the mouse on 24 Oct). Its user may add samples after proving the
+// passkey (the owner's decision of 25 Nov: the first enrolment stays in one session, and a profile can be widened later).
+// The proof is a step-up token, as for a reset. It buys a top-up grant for one channel, good for a quarter of an hour
+// and a few samples, because samples take longer to make than a step-up token lives. An enrolment request that carries
+// the grant reaches ca-service with topUp set, and nothing else can set it: the caller's own body never does.
+const TOPUP_TTL_MS = 15 * 60000, TOPUP_MAX_SAMPLES = 8;
+async function startTopUp(req, res, channel) {
+  if (!(await takeStepUp(req))) return passkeyRequired(res, "Adding samples to a trained profile");
+  const token = crypto.randomBytes(24).toString("base64url");
+  await storage.putCeremony(token, { kind: "topup", uid: req.uid, channel, left: TOPUP_MAX_SAMPLES, until: Date.now() + TOPUP_TTL_MS }, TOPUP_TTL_MS);
+  res.json({ ok: true, topUpToken: token, expiresInMs: TOPUP_TTL_MS, maxSamples: TOPUP_MAX_SAMPLES });
+}
+// An enrolment sample on its way to ca-service, for the SDK routes and the tenant API alike.
+async function enrol(req, res, channel) {
+  const body = { ...(req.body || {}), userId: req.uid };
+  const token = String(body.topUpToken || "");
+  delete body.topUp; delete body.topUpToken;
+  let grant = null;
+  if (token) {
+    try {
+      const c = await storage.takeCeremony(token);
+      if (c && c.kind === "topup" && String(c.uid) === String(req.uid) && c.channel === channel && c.left > 0 && c.until > Date.now()) grant = c;
+    } catch (e) { console.error(`[gateway] top-up grant of user ${req.uid} not checked: ${e.message}`); }
+  }
+  if (grant) body.topUp = true;
+  let r, stored = false;
+  try {
+    r = await fwd(`${CA_URL}/v1/${channel}/enroll`, "POST", body, caAssert(req));
+    stored = r.status >= 200 && r.status < 300;
+  } finally {
+    // The grant was taken out to be checked. It goes back for the samples it still covers; a refused sample uses none.
+    const left = grant ? grant.left - (stored ? 1 : 0) : 0, ttl = grant ? grant.until - Date.now() : 0;
+    if (left > 0 && ttl > 0) {
+      try { await storage.putCeremony(token, { ...grant, left }, ttl); } catch (e) { console.error(`[gateway] top-up grant of user ${req.uid} not kept: ${e.message}`); }
+    }
+  }
+  relay(res, r);
+}
+
 app.get("/v1/sdk/onboarding", auth, async (req, res) => res.json(await onboardingFor(req.uid, req.tenantKey)));
 
 // keystroke
 app.get("/v1/sdk/keystroke/config", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/config`, "GET", undefined, caAssert(req))));
 app.get("/v1/sdk/keystroke/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/status/${req.uid}`, "GET", undefined, caAssert(req))));
-app.post("/v1/sdk/keystroke/enroll", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/enroll`, "POST", { ...req.body, userId: req.uid }, caAssert(req))));
+app.post("/v1/sdk/keystroke/enroll", auth, (req, res) => enrol(req, res, "keystroke"));
+app.post("/v1/sdk/keystroke/topup", auth, (req, res) => startTopUp(req, res, "keystroke"));
 // Enrolment resets. sdk/guard.js (resetProfile) has called these since the reset button existed, but
 // the gateway never had them, so a reset through the gateway got 404 and changed nothing. They need a step-up token
 // (mintStepUp above): the SDK verifies the passkey first and passes the token that verification returns.
@@ -1337,7 +1379,8 @@ app.post("/v1/sdk/keystroke/check", auth, async (req, res) => {
 });
 
 // mouse
-app.post("/v1/sdk/mouse/enroll", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/mouse/enroll`, "POST", { ...req.body, userId: req.uid }, caAssert(req))));
+app.post("/v1/sdk/mouse/enroll", auth, (req, res) => enrol(req, res, "mouse"));
+app.post("/v1/sdk/mouse/topup", auth, (req, res) => startTopUp(req, res, "mouse"));
 // THRESHOLD, not state. The count is persisted by ca-service (lib/decisionState.js) and
 // comes back as `suspiciousStreak`. It used to be a `Map` here, with two consequences: a
 // gateway restart amnestied an impostor mid-escalation, and a second gateway replica was
@@ -1476,7 +1519,6 @@ const SERVER_CA_ROUTES = [
   ["get", "/keystroke/config", () => "/v1/keystroke/config"],
   ["get", "/onboarding", (r) => `/v1/users/${r.uid}/onboarding`],
   ["get", "/keystroke/status", (r) => `/v1/keystroke/status/${r.uid}`],
-  ["post", "/keystroke/enroll", () => "/v1/keystroke/enroll"],
   ["post", "/keystroke/contribute", () => "/v1/keystroke/contribute"],
   ["post", "/keystroke/retrain", () => "/v1/keystroke/retrain"],
   ["post", "/keystroke/maybe-retrain-impostors", () => "/v1/keystroke/maybe-retrain-impostors"],
@@ -1486,7 +1528,6 @@ const SERVER_CA_ROUTES = [
   // tenant-wide reads: ca-service scopes them to the caller's tenant (from the assertion)
   ["get", "/keystroke/decisions-all", () => "/v1/keystroke/decisions-all"],
   ["get", "/keystroke/metrics", () => "/v1/keystroke/metrics"],
-  ["post", "/mouse/enroll", () => "/v1/mouse/enroll"],
   ["post", "/mouse/streak/reset", () => "/v1/mouse/streak/reset"],
   ["get", "/mouse/status", (r) => `/v1/mouse/status/${r.uid}`],
   ["post", "/lock/set", () => "/v1/lock/set"],
@@ -1497,6 +1538,13 @@ for (const [method, p, target] of SERVER_CA_ROUTES) {
   app[method]("/v1/server" + p, serverAuth, serverRoute(async (req, res) => {
     relay(res, await fwd(`${CA_URL}${target(req)}`, method.toUpperCase(), method === "post" ? { ...(req.body || {}), userId: req.uid } : undefined, caAssert(req)));
   }));
+}
+// Enrolment samples, and more samples for a trained profile (startTopUp and enrol above): the tenant's backend passes
+// the step-up token of a passkey verified through /v1/server/passkey/auth/complete, as for a reset, and then the grant
+// with each sample. These two are not in the table above because its bodies go to ca-service as the caller wrote them.
+for (const channel of ["keystroke", "mouse"]) {
+  app.post(`/v1/server/${channel}/enroll`, serverAuth, serverRoute((req, res) => enrol(req, res, channel)));
+  app.post(`/v1/server/${channel}/topup`, serverAuth, serverRoute((req, res) => startTopUp(req, res, channel)));
 }
 // Deleting a profile: only with a step-up token from passkey/auth/complete below (takeStepUp), as on the SDK routes.
 for (const [channel, what] of [["keystroke", "Deleting the typing profile"], ["mouse", "Deleting the mouse profile"]]) {

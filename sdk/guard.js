@@ -147,7 +147,7 @@
   var EP = MODE === "gateway" ? {
     config: "/v1/sdk/keystroke/config", ksStatus: "/v1/sdk/keystroke/status", ksEnroll: "/v1/sdk/keystroke/enroll", ksCheck: "/v1/sdk/keystroke/check", ksContribute: "/v1/sdk/keystroke/contribute",
     mouseEnroll: "/v1/sdk/mouse/enroll", mouseCheck: "/v1/sdk/mouse/check", mouseStatus: "/v1/sdk/mouse/status", onboarding: "/v1/sdk/onboarding",
-    ksReset: "/v1/sdk/keystroke/reset", mouseReset: "/v1/sdk/mouse/reset",
+    ksReset: "/v1/sdk/keystroke/reset", mouseReset: "/v1/sdk/mouse/reset", ksTopUp: "/v1/sdk/keystroke/topup", mouseTopUp: "/v1/sdk/mouse/topup",
     pkRegOpts: "/v1/sdk/passkey/register/options", pkRegDone: "/v1/sdk/passkey/register/complete",
     pkAuthOpts: "/v1/sdk/passkey/auth/options", pkAuthDone: "/v1/sdk/passkey/auth/complete",
     lockStatus: "/v1/sdk/lock/status", adaptiveRetrain: "/v1/sdk/keystroke/adaptive/retrain",
@@ -156,6 +156,7 @@
     config: "/api/text/config", ksStatus: "/api/text/typing-status", ksEnroll: "/api/text/enroll", ksCheck: "/api/text/check", ksContribute: "/api/text/contribute",
     mouseEnroll: "/api/mouse/enroll", mouseCheck: "/api/mouse/check", mouseStatus: "/api/mouse/status",
     ksReset: "/api/text/typing-reset", mouseReset: "/api/mouse/reset", adaptiveRetrain: "/api/text/adaptive-retrain",
+    ksTopUp: "/api/text/topup", mouseTopUp: "/api/mouse/topup",
     mouseUseSample: "/api/mouse/use-sample",
   };
 
@@ -716,6 +717,44 @@
       errEl.textContent = (err && err.message) || t("Reset failed");
       errEl.style.display = "block";
     }
+  }
+
+  // ---- more samples for a trained profile (2026-11-25) ----
+  // A trained profile takes no enrolment sample, or anyone at an open session could teach it their own behaviour. Its
+  // user may add samples after the passkey ("Add samples" on the trained screens): the first enrolment stays in one
+  // session, and a profile made in one sitting can be widened on another day. The passkey buys a grant from the
+  // server, good for a quarter of an hour: the gateway returns it and it goes with each sample; the demo app's
+  // backend keeps it in the session. Resolves to { token } (no token in demo mode), or null when the user cancelled
+  // or the server refused, with the reason shown in errEl.
+  var TOPUP_NOTE = "The passkey confirmation ran out before the samples were finished. Press “Add samples” to go on.";
+  var topUpUntil = {}, topUpWas = {};
+  async function startTopUp(kind, errEl) {
+    errEl.style.display = "none";
+    try {
+      var verified = await verifyPasskeyForAction();
+      var r = await reqJson(kind === "mouse" ? EP.mouseTopUp : EP.ksTopUp, "POST", MODE === "gateway" ? { stepUpToken: verified.stepUpToken } : {});
+      if (!r.ok) throw new Error((r.d && (r.d.note || r.d.error)) || t("Verification failed"));
+      topUpUntil[kind] = Date.now() + (Number(r.d && r.d.expiresInMs) || 15 * 60000);
+      return { token: (r.d && r.d.topUpToken) || null };
+    } catch (err) {
+      errEl.textContent = (err && err.message) || t("Verification failed");
+      errEl.style.display = "block";
+      return null;
+    }
+  }
+  // While a channel's top-up screen is open that channel is not judged: the screen covers the page, the passkey was
+  // verified to open it, and a model made in one sitting would turn its own top-up down (that is what the top-up is
+  // for). The pause ends with the screen or with the grant, whichever comes first, and what was collected meanwhile is
+  // dropped, so the samples' own movement or typing is never judged afterwards.
+  function topUpPause(kind) {
+    var on = !!topUpUntil[kind] && Date.now() < topUpUntil[kind] && wizEl.style.display !== "none" && !!wizEl.querySelector('[data-topup="' + kind + '"]');
+    if (on) { topUpWas[kind] = true; return true; }
+    if (topUpWas[kind]) {
+      topUpWas[kind] = false;
+      if (kind === "mouse") { if (mouseTracker) mouseTracker.reset(); lastMouseEvents = 0; }
+      else { if (ksTracker) ksTracker.reset(); contribEndIdx = 0; lastCheckedWindowCount = 0; ksMissedWindow = false; ksPastePending = false; }
+    }
+    return false;
   }
 
   async function stepUp() {
@@ -1299,7 +1338,7 @@
     function headline() {
       if (building) return t(st.enrolled ? "Updating your mouse model…" : "Building your mouse model…");
       if (st.onFile >= st.required) return t(st.enrolled ? "Mouse protection is on ✓" : "Building your mouse model…");
-      return t("Sample {n} of {total}", { n: st.onFile + 1, total: st.required });
+      return t(opts.topUp ? "Extra sample {n} of {total}" : "Sample {n} of {total}", { n: st.onFile + 1, total: st.required });
     }
     function subline() {
       if (building) return t("Training on your samples, usually under a minute. You can leave this open.");
@@ -1315,7 +1354,7 @@
         + '<div class="mtop"><div class="mtt"><div class="t">' + opts.title + '</div><div class="d">' + opts.intro + "</div></div>"
         + '<div class="msamp"><div class="mhead" id="mhead">' + esc(headline()) + '</div><div class="mpips">' + pips() + "</div>"
         + '<div class="msub" id="msub">' + esc(subline()) + "</div></div></div>"
-        + '<div class="pad" id="cpad"></div><div class="bar"><i id="mbar"></i></div>'
+        + '<div class="pad" id="cpad"' + (opts.topUp ? ' data-topup="mouse"' : "") + '></div><div class="bar"><i id="mbar"></i></div>'
         + '<div class="mbot"><div class="diag" id="mdiag"></div><div class="mact">'
         + (opts.allowReset ? '<div class="foot" id="mresetrow"' + (canReset() ? "" : ' style="display:none"') + '><a href="#" id="mreset" class="danger">' + svg("trash") + h("Reset my mouse profile") + "</a></div>" : "")
         + (opts.dismissLabel ? '<div class="row2"><button class="b sec" id="mdone">' + opts.dismissLabel + "</button></div>" : "")
@@ -1358,7 +1397,8 @@
         var last = st.onFile + 1 >= st.required;
         loadT.textContent = t(last && !st.enrolled ? "Saving sample {n} and building your model…" : "Saving sample {n}…", { n: st.onFile + 1 });
         load.classList.add("on");
-        var r = await reqJson(EP.mouseEnroll, "POST", { windows: windows });
+        // a top-up: the gateway's grant goes with the sample (the demo app's backend adds its own)
+        var r = await reqJson(EP.mouseEnroll, "POST", opts.topUp && opts.topUp.token ? { windows: windows, topUpToken: opts.topUp.token } : { windows: windows });
         if (ended) return;
         load.classList.remove("on");
         tracker.reset();
@@ -1378,10 +1418,11 @@
         }
         addedNow += 1; note = "";
         var total = Number((r.d && r.d.totalWindows) || 0);
-        st.onFile = Math.min(st.required, Math.floor(total / st.perSample)) || (st.onFile + 1);
+        if (opts.topUp) st.onFile = Math.min(st.required, Number(r.d && r.d.topUp && r.d.topUp.added) || (st.onFile + 1));
+        else st.onFile = Math.min(st.required, Math.floor(total / st.perSample)) || (st.onFile + 1);
         if (r.d && r.d.trained) { if (!st.enrolled && opts.onEnrolled) opts.onEnrolled(); st.enrolled = true; }
         if (r.d && r.d.training) { waitForModel(); return; }
-        if (st.enrolled) { finish(r.d); return; }
+        if (st.enrolled && !opts.topUp) { finish(r.d); return; }
         refresh();
       }
       function refresh() {
@@ -1444,9 +1485,11 @@
         st.onFile = Number(d.samplesOnFile != null ? d.samplesOnFile : Math.floor((d.totalWindows || 0) / st.perSample));
         st.enrolled = !!d.enrolled;
         building = !!d.training;
+        // A top-up counts its own samples: so many of them (the server says how many), from those already waiting.
+        if (opts.topUp) { st.required = Number(d.topUpSamples) || 4; st.onFile = Math.min(st.required - 1, Number(d.topUpAdded) || 0); st.enrolled = true; }
       } catch (e) {}
       if (ended) return;   // a newer flow took over while the status was being read
-      if (st.enrolled && !building && opts.resolveOnTrained && !opts.allowReset) { finish(null); return; }
+      if (st.enrolled && !building && opts.resolveOnTrained && !opts.allowReset && !opts.topUp) { finish(null); return; }
       render();
     })();
   }
@@ -1500,15 +1543,27 @@
   function reinforceKeystroke() {
     if (!window.continuumKeystrokes) return;
     var added = 0, total = null;
-    // A trained model learns more only through the adaptive popup (the retrain asks for the passkey);
-    // the server refuses enrolment samples once the model exists. What is left here: reset and start over.
-    function renderTrained() {
+    // A top-up (2026-11-25): topUp is the grant while one is in progress, topUpNeed how many samples it takes (the
+    // server says), topUpAdded how many of it are waiting on the server.
+    var topUp = null, topUpNeed = 3, topUpAdded = 0;
+    // A trained model takes more samples in two ways, both behind the passkey: the adaptive popup (its retrain asks for
+    // it) and a top-up from here ("Add samples": the passkey first, then the passages). Without the passkey the server
+    // refuses enrolment samples once the model exists. Also here: reset and start over.
+    function renderTrained(noteText) {
       openWiz('<div class="t">' + h("Your typing rhythm is trained") + '</div><div class="d">' + h("Samples on file: {n}.", { n: total }) + " "
-        + h(ADAPT_ENABLED ? "It learns more only from the popup that offers clean stretches of your typing, and the retrain asks for your passkey."
-          : "Adaptive retraining is off for this organisation, so the model stays as it was trained.")
-        + '</div><div class="row2"><button class="b" id="cdone">' + h("Close") + '</button></div><div class="foot"><a href="#" id="creset" class="danger">' + svg("trash") + h("Reset my typing profile") + '</a></div><div class="e"></div>', closeWiz);
+        + h("You can add {n} samples to widen it; your model is rebuilt after the last one. Adding samples, like a reset, asks for your passkey first.", { n: topUpNeed })
+        + (ADAPT_ENABLED ? " " + h("It also learns from the popup that offers clean stretches of your typing; that retrain asks for your passkey too.") : "")
+        + '</div><div class="row2"><button class="b" id="cadd">' + h("Add samples") + '</button><button class="b sec" id="cdone" style="flex:0 0 96px">' + h("Close")
+        + '</button></div><div class="foot"><a href="#" id="creset" class="danger">' + svg("trash") + h("Reset my typing profile") + '</a></div><div class="e"></div>', closeWiz);
       var e = wizEl.querySelector(".e");
+      if (noteText) { e.textContent = noteText; e.style.display = "block"; }
       wizEl.querySelector("#cdone").addEventListener("click", closeWiz);
+      wizEl.querySelector("#cadd").addEventListener("click", async function () {
+        var btn = this; btn.disabled = true;
+        var grant = await startTopUp("keystroke", e);
+        btn.disabled = false;
+        if (grant && btn.isConnected) { topUp = grant; render(); }
+      });
       wizEl.querySelector("#creset").addEventListener("click", function (ev) {
         ev.preventDefault();
         resetProfile("keystroke", e, function () { setKb("mut", "not enrolled — add samples"); total = 0; added = 0; render(); });
@@ -1518,13 +1573,19 @@
       openWiz('<div class="t">' + h("Your typing model is being built") + '</div><div class="d">' + h("This takes about a minute. You can close this and carry on: typing protection starts by itself once the model is ready.") + '</div><button class="b" id="cdone">' + h("Close") + "</button>", closeWiz);
       wizEl.querySelector("#cdone").addEventListener("click", closeWiz);
     }
+    // After the last sample of a top-up: the present model goes on judging until the new one has been built.
+    function renderRebuilding() {
+      openWiz('<div class="t">' + h("Your typing model is being rebuilt") + '</div><div class="d">' + h("This takes about a minute. Your present model stays in use until the new one is ready. You can close this.") + '</div><button class="b" id="cdone">' + h("Close") + "</button>", closeWiz);
+      wizEl.querySelector("#cdone").addEventListener("click", closeWiz);
+    }
     function render() {
       openWiz('<div class="wizload" id="cwl"><span class="wizspin"></span>' + h("Saving sample…") + '</div><div class="t">' + h("Strengthen your typing rhythm") + '</div><div class="d">'
         + h("Type the passage naturally, then save it as a training sample.") + ' <a href="#" id="cnew">' + h("new text") + '</a></div><div class="samplecount">'
-        + h("Samples on file: {n} · added now: {m}", { n: total == null ? "…" : total, m: added }) + '</div><div class="passage" id="cpass" lang="en"></div><textarea class="ta" id="cta" lang="en" placeholder="'
+        + (topUp ? h("Extra sample {n} of {total}", { n: Math.min(topUpAdded + 1, topUpNeed), total: topUpNeed }) : h("Samples on file: {n} · added now: {m}", { n: total == null ? "…" : total, m: added }))
+        + '</div><div class="passage" id="cpass" lang="en"></div><textarea class="ta" id="cta" lang="en"' + (topUp ? ' data-topup="keystroke"' : "") + ' placeholder="'
         + esc(t("Type it here…")) + '"></textarea><div class="bar"><i id="cbar"></i></div><div class="diag" id="cdiag">' + h("typed {chars} · captured {keys} keystrokes", { chars: 0, keys: 0 })
         + '</div><div class="row2"><button class="b" id="cs" disabled>' + h("Save sample") + '</button><button class="b sec" id="cdone" style="flex:0 0 96px">' + h("Done")
-        + '</button></div><div class="foot"' + (total > 0 ? "" : ' style="display:none"') + '><a href="#" id="creset" class="danger">' + svg("trash") + h("Reset my typing profile") + '</a></div><div class="e"></div>', closeWiz);
+        + '</button></div><div class="foot"' + (total > 0 && !topUp ? "" : ' style="display:none"') + '><a href="#" id="creset" class="danger">' + svg("trash") + h("Reset my typing profile") + '</a></div><div class="e"></div>', closeWiz);
       var ta = wizEl.querySelector("#cta"), bar = wizEl.querySelector("#cbar"), btn = wizEl.querySelector("#cs"), done = wizEl.querySelector("#cdone"), e = wizEl.querySelector(".e"), diag = wizEl.querySelector("#cdiag"), pass = wizEl.querySelector("#cpass"), newBtn = wizEl.querySelector("#cnew"), load = wizEl.querySelector("#cwl");
       var tracker = window.continuumKeystrokes.createTracker(ta);
       var NEED_KEYS = 100, NEED_CHARS = 120;
@@ -1542,8 +1603,19 @@
       ta.addEventListener("input", refresh); ta.addEventListener("keyup", refresh);
       btn.addEventListener("click", async function () {
         e.style.display = "none"; load.classList.add("on");
-        var events = tracker.getEvents(), r = await reqJson(EP.ksEnroll, "POST", { textContent: ta.value.trim(), keystrokeEvents: events, keystrokeTimings: window.continuumKeystrokes.analyze(events), sourcePath: "reinforce" });
+        var events = tracker.getEvents(), sampleBody = { textContent: ta.value.trim(), keystrokeEvents: events, keystrokeTimings: window.continuumKeystrokes.analyze(events), sourcePath: "reinforce" };
+        if (topUp && topUp.token) sampleBody.topUpToken = topUp.token;   // the gateway's grant (the demo app's backend adds its own)
+        var r = await reqJson(EP.ksEnroll, "POST", sampleBody);
         load.classList.remove("on");
+        if (topUp) {
+          // The server took it for a plain enrolment sample: the grant has run out. What was added waits for a while.
+          if (r.status === 409 && r.d && r.d.error === "already_enrolled") { topUp = null; renderTrained(t(TOPUP_NOTE)); return; }
+          if (!r.ok) { e.textContent = "(" + r.status + ") " + ((r.d && r.d.error) || t("rejected")); e.style.display = "block"; return; }
+          topUpAdded = Number(r.d && r.d.topUp && r.d.topUp.added) || (topUpAdded + 1);
+          if (r.d && r.d.training) { topUp = null; topUpAdded = 0; renderRebuilding(); return; }
+          render();
+          return;
+        }
         if (r.status === 409 && r.d && r.d.error === "already_enrolled") { renderTrained(); return; }
         if (!r.ok) { e.textContent = "(" + r.status + ") " + ((r.d && r.d.error) || t("rejected")); e.style.display = "block"; return; }
         added += 1; if (total != null) total += 1;
@@ -1556,13 +1628,16 @@
     // Load the current sample count first so the popup shows how many are on file.
     (async function () {
       var trained = false, building = false;
-      try { var st = await reqJson(EP.ksStatus); total = Number((st.d && st.d.sampleCount) || 0); trained = !!(st.d && st.d.trained); building = !!(st.d && st.d.training); } catch (e) { total = 0; }
+      try {
+        var st = await reqJson(EP.ksStatus); total = Number((st.d && st.d.sampleCount) || 0); trained = !!(st.d && st.d.trained); building = !!(st.d && st.d.training);
+        topUpNeed = Number(st.d && st.d.topUpSamples) || topUpNeed; topUpAdded = Math.min(topUpNeed - 1, Number(st.d && st.d.topUpAdded) || 0);
+      } catch (e) { total = 0; }
       if (trained) renderTrained(); else if (building) { watchKsBuild(); renderBuilding(); } else render();
     })();
   }
-  // A trained mouse profile takes no more enrolment samples (the server answers 409 already_enrolled since
-  // 2026-10-24; until then every extra sample rebuilt the profile, with no passkey). The panel then offers only the
-  // reset, as it does for typing.
+  // A trained mouse profile takes no plain enrolment sample (the server answers 409 already_enrolled since 2026-10-24;
+  // until then every extra sample rebuilt the profile, with no passkey). Since 2026-11-25 the panel offers a top-up
+  // beside the reset, both behind the passkey, as it does for typing.
   function reinforceMouse() {
     if (!window.mouseFeatures) return;
     (async function () {
@@ -1571,14 +1646,21 @@
       if (d.enrolled && !d.training) renderMouseTrained(d); else mouseSamples();
     })();
   }
-  function renderMouseTrained(d) {
+  function renderMouseTrained(d, noteText) {
     if (endSampleFlow) endSampleFlow();
     openWiz('<div class="t">' + h("Your mouse movement is trained") + '</div><div class="d">' + h("Samples on file: {n}.", { n: Number((d && d.samplesOnFile) || MOUSE_SAMPLES_REQUIRED) })
-      + " " + h("A trained mouse model takes no more samples from this page. To enrol again, reset it; you will be asked for your passkey.") + "</div>"
-      + '<div class="row2"><button class="b" id="mdone">' + h("Close") + "</button></div>"
+      + " " + h("You can add {n} samples to widen it; your model is rebuilt after the last one. Adding samples, like a reset, asks for your passkey first.", { n: Number((d && d.topUpSamples) || 4) }) + "</div>"
+      + '<div class="row2"><button class="b" id="madd">' + h("Add samples") + '</button><button class="b sec" id="mdone" style="flex:0 0 96px">' + h("Close") + "</button></div>"
       + '<div class="foot"><a href="#" id="mreset" class="danger">' + svg("trash") + h("Reset my mouse profile") + '</a></div><div class="e"></div>', closeWiz);
     var e = wizEl.querySelector(".e");
+    if (noteText) { e.textContent = noteText; e.style.display = "block"; }
     wizEl.querySelector("#mdone").addEventListener("click", closeWiz);
+    wizEl.querySelector("#madd").addEventListener("click", async function () {
+      var btn = this; btn.disabled = true;
+      var grant = await startTopUp("mouse", e);
+      btn.disabled = false;
+      if (grant && btn.isConnected) mouseTopUp(grant);
+    });
     wizEl.querySelector("#mreset").addEventListener("click", function (ev) {
       ev.preventDefault();
       resetProfile("mouse", e, function () {
@@ -1586,6 +1668,21 @@
         mouseOn = false; updateToggle(); setMouseRow("mut", "not enrolled");
         mouseSamples();
       });
+    });
+  }
+  // More samples for a trained profile: the same pad, so many samples as the server says, and the model rebuilt after
+  // the last one. The grant is the passkey's (startTopUp).
+  function mouseTopUp(grant) {
+    mouseSampleFlow({
+      title: h("More mouse samples"),
+      intro: h("Do the tasks as before. After the last sample your mouse model is rebuilt from your newest samples; until then it stays as it is."),
+      onClose: closeWiz,
+      dismissLabel: h("Done"),
+      allowReset: false,
+      topUp: grant,
+      resolveOnTrained: function (d) { renderMouseTrained(d || {}); },
+      // the server took a sample for a plain enrolment sample: the grant has run out
+      onAlreadyEnrolled: function () { renderMouseTrained({}, t(TOPUP_NOTE)); },
     });
   }
   function mouseSamples() {
@@ -1652,6 +1749,7 @@
     if (e && e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") && e.target.type !== "password" && e.target.type !== "hidden") activeField = e.target;
     else if (e && e.target && e.target.isContentEditable) { var ed = e.target; while (ed.parentElement && ed.parentElement.isContentEditable) ed = ed.parentElement; activeField = ed; }
     if (locked || signedOut || !ksOn || !ksTracker) return;
+    if (topUpPause("keystroke")) return;
     var typed = typedLength(currentTypedText());
     if (typed < KS_MIN_CHARS) { setKb("col", "type {n}/{m} characters to start", { vars: { n: typed, m: KS_MIN_CHARS }, prog: typed / KS_MIN_CHARS }); return; }
     // Live feedback while the user keeps writing between verdicts (feels engaged
@@ -1666,6 +1764,7 @@
   function onKsPaste() {
     setTimeout(function () {   // after the tracker has recorded the paste
       if (locked || !ksOn || !ksTracker) return;
+      if (topUpPause("keystroke")) return;
       if (checkInFlight) { ksPastePending = true; return; }
       runKsCheck(true);
     }, 0);
@@ -1942,6 +2041,7 @@
   function stopMouse() { if (mouseTimer) clearInterval(mouseTimer); mouseTimer = null; }
   async function mouseTick() {
     if (locked || signedOut || !mouseTracker) return;
+    if (topUpPause("mouse")) return;
     var count = mouseTracker.eventCount(); if (count <= lastMouseEvents) return; lastMouseEvents = count;
     var windows; try { windows = window.mouseFeatures.stepsToWindows(window.mouseFeatures.eventsToSteps(mouseTracker.getEvents())); } catch (e) { return; }
     if (!windows || windows.length < MOUSE_MIN_WINDOWS) {

@@ -346,12 +346,23 @@ inference on that process — the fix is gunicorn with separate inference and tr
   sends the passage typed in Continuum's own wizard.
 - **Onboarding modes:** `eager` (popup enrolls everything missing at load) vs `lazy`
   (passkey only; each modality enrolls when its panel toggle is turned on). Lazy is active.
-- **Adaptive retraining, popup only (since 2026-10-05):** after a sustained clean run the
-  popup offers the typing as a sample; 1, 2 or 3 samples (the organisation's choice, 3 by default), then the retrain with the passkey. No other
-  path adds typing samples: the public `contribute()` and ca-service `/v1/keystroke/submit` are
+- **Adaptive retraining, through the popup (since 2026-10-05):** after a sustained clean run the
+  popup offers the typing as a sample; 1, 2 or 3 samples (the organisation's choice, 3 by default), then the retrain with the passkey. The
+  public `contribute()` and ca-service `/v1/keystroke/submit` are
   gone, and `/v1/keystroke/enroll` answers 409 `already_enrolled` once the model exists (it used
-  to take samples and retrain at any time, with no passkey). The panel's "+ train" then offers
-  only the profile reset (passkey). Nothing is called at a page's submit or save.
+  to take samples and retrain at any time, with no passkey). Nothing is called at a page's submit or save.
+- **More samples for a trained profile (since 2026-11-25), "Add samples":** the first enrolment stays in one
+  session, and a profile made in one sitting can be widened later. On a trained profile the panel's "+ train" offers
+  "Add samples" beside the reset, both behind the passkey. The passkey's step-up token buys a top-up grant from the
+  gateway (`/v1/sdk/<channel>/topup`, `/v1/server/<channel>/topup`): one channel, 15 minutes, at most 8 samples. An
+  enrolment sample that carries the grant reaches ca-service with `topUp` set, and nothing else sets it (the caller's
+  own body never does). The samples of a top-up wait outside the profile (the mouse: table `mouse_topup_samples`;
+  typing: purpose `top-up-pending`, not training samples) until the last one arrives: four for the mouse, after
+  which the model is rebuilt from the newest eight samples, half new and half earlier; three for typing, which then
+  become training samples and the model is rebuilt (with the hold-out test of every retrain). A sample that has
+  waited longer than 16 minutes is deleted, so an unfinished top-up never reaches a model. While a channel's top-up
+  screen is open the SDK does not judge that channel. What is left open: someone who takes the seat within the
+  quarter of an hour of the passkey can finish the top-up.
 - Public API: `getRiskToken`, `riskHeader`, `isLocked`, `identify`, `onReady`,
   `requireStepUp(modality, onSuccess)`.
 
@@ -497,7 +508,8 @@ Implementation details:
   own assertion and keys (ca-service's operator routes are not reachable). Checks return a signed
   `riskToken` and push risk changes (CAEP); passkey calls are limited to the organisation's own websites;
   adaptive retraining needs a `stepUpToken` from a passkey verified through Continuum within 2 minutes,
-  used once. Since 2026-11-08 so do a profile reset and a second passkey, here and on the SDK routes: on a
+  used once. Since 2026-11-08 so do a profile reset and a second passkey, and since 2026-11-25 the grant for more
+  samples on a trained profile (above), here and on the SDK routes: on a
   session alone an impostor at an open session, even a locked one, could register his own passkey and pass
   every step-up, or delete the owner's profile and enrol his own behaviour. Removing a user's passkeys
   (`passkey/reset`) is account recovery and stays with the organisation. Policy (locks, gates) stays with

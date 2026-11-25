@@ -115,6 +115,16 @@ representation, its Table I; Experiment A found no richer representation measura
   moves show what the tasks ask for (14 samples each): 68% sideways, 24% slanted, 7% up or down and 127 px up and
   down a window before; 45%, 38%, 18% and 195 px now. The test holds the sideways share to 62% at most. Not measured:
   a person's samples on the new pad.
+- More samples for a trained profile (2026-11-25, "Add samples" on the trained screen). The first enrolment stays in
+  one session (the owner's decision), and what a one-sitting profile lacks can be added on another day: the passkey,
+  then four samples on the same pad, and the model is rebuilt from the newest eight samples, half new and half
+  earlier, the mix that worked on the owner's account when it was made by hand. The four wait in
+  `mouse_topup_samples` until the last arrives and are deleted if the top-up is not finished within 16 minutes; a
+  top-up sample passes every check of an enrolment sample (window count, step spread, no repeated movement, also
+  against the samples of the same top-up). Without the gateway's grant a trained profile still answers
+  `already_enrolled`. Tests: `services/ca-service/test/topUp.test.js`, `services/gateway/test/topUp.test.js`,
+  `extension/scripts/e2e_headless_sdk_mouse.mjs` (sections 6 and 7). Not measured: whether a top-up lowers the
+  requests of a user other than the owner.
 - What the pad does not settle (2026-11-25): a profile built from one short sitting. The owner's eight samples of one
   sitting gave a threshold of 0.79 and turned down all his ordinary movement minutes later (two passkey requests in
   five checks); his sample from the old dot pad in that sitting was as slow as the task samples (median step 5.1 px

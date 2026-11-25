@@ -59,6 +59,10 @@ const TABLES = [
   // One row per scored mouse check (lib/mouse.js checkMouse): what the model saw and decided.
   ["mouse_decisions", `id ID, user_id USERID NOT NULL, checked_at NOWTEXT, window_count INT, threshold REAL,
     low_windows INT, vote_k INT, vote_n INT, warmup INT, suspicious INT, scores TEXT`],
+  // The samples of a top-up in progress (lib/mouse.js, 2026-11-25): more samples for a trained profile, added after the
+  // passkey. They wait here, where no query that builds a profile looks, until the last one of the top-up arrives; an
+  // unfinished top-up is deleted from here and never reaches a model.
+  ["mouse_topup_samples", `id ID, user_id USERID NOT NULL, windows TEXT NOT NULL, window_count INT NOT NULL, created_at NOWTEXT`],
   // LEARNING FROM REAL USE, stage 1 (lib/mouseUse.js, the owner's plan of 2026-10-23): samples of ordinary mouse use
   // recorded right after a verified passkey, stored and never trained on yet. Separate tables, so no query that builds
   // a profile from mouse_samples can pick them up.
@@ -106,6 +110,7 @@ const INDEXES = [
   "CREATE INDEX IF NOT EXISTS idx_jobs_state ON training_jobs(state, id)",
   "CREATE INDEX IF NOT EXISTS idx_jobs_user ON training_jobs(user_id, modality, state)",
   "CREATE INDEX IF NOT EXISTS idx_mouse_decisions_user ON mouse_decisions(user_id, id)",
+  "CREATE INDEX IF NOT EXISTS idx_mouse_topup_samples_user ON mouse_topup_samples(user_id, id)",
   "CREATE INDEX IF NOT EXISTS idx_mouse_use_anchors_user ON mouse_use_anchors(user_id, id)",
   "CREATE INDEX IF NOT EXISTS idx_mouse_use_samples_user ON mouse_use_samples(user_id, id)",
   "CREATE INDEX IF NOT EXISTS idx_mouse_live_windows_user ON mouse_live_windows(user_id, id)",

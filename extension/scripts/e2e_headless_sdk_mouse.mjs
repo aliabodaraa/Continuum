@@ -16,6 +16,10 @@
 //   3. the last sample: the SDK waits for the model (polls the status) and then shows the trained profile
 //   4. a trained profile: "+ train" shows the trained state and the reset, no pad, and sends nothing
 //   5. the server answers already_enrolled to a sample: the recorder stops and the trained state shows
+//   6. more samples for a trained profile (2026-11-25): "Add samples" asks for the passkey, takes the server's grant for
+//      it, and the pad then sends four samples with the grant; the mouse is not judged while that pad is open; after the
+//      fourth the model is rebuilt and the trained screen is back
+//   7. the grant runs out before the samples are finished: the trained screen says so
 //
 //   node extension/scripts/e2e_headless_sdk_mouse.mjs [screenshot dir]     (GUARD_FILE=<path> tests another copy of guard.js)
 import { spawn } from "node:child_process"; import fs from "node:fs"; import os from "node:os"; import path from "node:path";
@@ -35,7 +39,8 @@ const ok = (n, c, d) => { console.log((c ? "  PASS  " : "  FAIL  ") + n + (d ? "
 
 // ---- what the "server" says, set by each step
 let state, look = { lang: "en", theme: "light" };
-const fresh = (over) => ({ enrolled: false, training: false, onFile: 0, statusPolls: 0, trainingPollsLeft: 0, enrolls: [], enrollAnswer: null, ...over });
+const fresh = (over) => ({ enrolled: false, training: false, onFile: 0, statusPolls: 0, trainingPollsLeft: 0, enrolls: [], enrollAnswer: null,
+  verifies: 0, topUps: [], grant: null, topUpAdded: 0, checks: 0, ...over });
 function api(p, method, body) {
   if (p === "/v1/sdk/onboarding") return { passkey: true, keystroke: true, mouse: state.enrolled, keystrokeTraining: false };
   if (p === "/v1/sdk/lock/status") return { locked: false };
@@ -47,16 +52,32 @@ function api(p, method, body) {
     state.statusPolls++;
     if (state.training && state.trainingPollsLeft-- <= 0) { state.training = false; state.enrolled = true; }
     return { enrolled: state.enrolled, training: state.training, samplesOnFile: Math.min(8, state.onFile), samplesRequired: 8, sampleWindows: 55,
-      totalWindows: state.onFile * 55, needWindows: 440, voteN: 60, voteK: 33 };
+      totalWindows: state.onFile * 55, needWindows: 440, voteN: 60, voteK: 33, topUpSamples: 4, topUpAdded: state.topUpAdded };
+  }
+  // the passkey (the page's WebAuthn library is a stand-in here) and the grant it buys for a top-up, as the gateway
+  if (p === "/v1/sdk/passkey/auth/options") return { challengeId: "c1", challenge: "x" };
+  if (p === "/v1/sdk/passkey/auth/complete") { state.verifies++; return { verified: true, stepUpToken: "step-" + state.verifies }; }
+  if (p === "/v1/sdk/mouse/topup") {
+    state.topUps.push(body.stepUpToken || null);
+    if (body.stepUpToken !== "step-" + state.verifies) return { __status: 403, error: "passkey_required" };
+    state.grant = "grant-" + state.verifies;
+    return { ok: true, topUpToken: state.grant, expiresInMs: 900000 };
   }
   if (p === "/v1/sdk/mouse/enroll") {
-    state.enrolls.push({ windows: body.windows || [], at: Date.now() });
+    state.enrolls.push({ windows: body.windows || [], at: Date.now(), topUpToken: body.topUpToken || null });
     if (state.enrollAnswer) return { ...state.enrollAnswer };
+    if (state.enrolled) {   // a trained profile: a sample only with the grant, four of them rebuild the model
+      if (!state.grant || body.topUpToken !== state.grant) return { __status: 409, ok: false, error: "already_enrolled" };
+      state.topUpAdded++;
+      if (state.topUpAdded < 4) return { ok: true, trained: true, topUp: { added: state.topUpAdded, needed: 4 } };
+      state.topUpAdded = 0; state.training = true; state.trainingPollsLeft = 2;
+      return { ok: true, trained: true, training: true, topUp: { added: 4, needed: 4 } };
+    }
     state.onFile++;
     if (state.onFile >= 8) { state.training = true; return { ok: true, trained: false, training: true, samplesOnFile: 8, samplesRequired: 8, sampleWindows: 55, totalWindows: 440 }; }
     return { ok: true, trained: false, samplesOnFile: state.onFile, samplesRequired: 8, sampleWindows: 55, totalWindows: state.onFile * 55 };
   }
-  if (p === "/v1/sdk/mouse/check") return { ok: true, checked: false };
+  if (p === "/v1/sdk/mouse/check") { state.checks++; return { ok: true, checked: false }; }
   return {};
 }
 
@@ -166,6 +187,9 @@ try {
     const reply = (code, type, text) => send("Fetch.fulfillRequest", { requestId, responseCode: code, responseHeaders: [{ name: "Content-Type", value: type }], body: Buffer.from(text).toString("base64") }, s);
     if (url.pathname === "/__mouse_test.html") return reply(200, "text/html; charset=utf-8", html);
     if (url.pathname === "/guard.js") return reply(200, "application/javascript; charset=utf-8", GUARD);
+    // the passkey prompt itself cannot run in headless Chrome: the library that shows it is replaced by one that answers
+    if (url.pathname === "/vendor/simplewebauthn/index.umd.min.js") return reply(200, "application/javascript; charset=utf-8",
+      "window.SimpleWebAuthnBrowser = { startAuthentication: async () => ({ id: 'cred', response: {} }), startRegistration: async () => ({}) };");
     if (SDK_FILES[url.pathname]) return reply(200, "application/javascript; charset=utf-8", fs.readFileSync(path.join(ROOT, SDK_FILES[url.pathname]), "utf8"));
     let body = {}; try { body = request.postData ? JSON.parse(request.postData) : {}; } catch { /* not JSON */ }
     const out = api(url.pathname, request.method, body) || {}, code = out.__status || 200;
@@ -299,6 +323,56 @@ try {
   const n6 = state.enrolls.length;
   await move(s, 700);
   ok("…and the recorder has stopped", n6 === 1 && state.enrolls.length === n6, `${n6} then ${state.enrolls.length} sent`);
+
+  // ---- 6. more samples for a trained profile
+  const TRAINED = "Your mouse movement is trained";
+  const trainedScreen = (s2) => waitFor(s2, `(${WIZ}) && (${WIZ}).title === '${TRAINED}' && !(${WIZ}).pad`, 15000);
+  const openTopUp = async () => {
+    await clickIn(s, ADD);
+    await trainedScreen(s);
+    const label = await ev(s, `(() => { const b = (${SH}).querySelector('#madd'); return b ? b.textContent : null; })()`);
+    await clickIn(s, "#madd");
+    const pad = await waitFor(s, `!!(${SH}).querySelector('#cpad[data-topup="mouse"] .tk-stage[data-kind]')`, 8000);
+    return { label, pad };
+  };
+  await load({ enrolled: true, onFile: 8 });
+  // the mouse switch of the panel (the second of the two switches): the loads above, with no profile, left it off, and
+  // the SDK remembers the choice
+  const MSW = `[...(${SH}).querySelectorAll('.tgl')].pop()`;
+  if ((await ev(s, `(${MSW}).getAttribute('aria-checked')`)) !== "true") await ev(s, `(${MSW}).click(), true`);
+  await move(s, 1300);
+  await sleep(1800);
+  const judged = state.checks;   // the live guard checks this movement (the profile exists)
+  const t6 = await openTopUp();
+  ok("6. a trained profile offers \"Add samples\" beside the reset", t6.label === "Add samples", String(t6.label));
+  ok("…pressing it asks for the passkey, takes the server's grant for it, and opens the pad", t6.pad && state.verifies === 1 && state.topUps.length === 1 && state.topUps[0] === "step-1",
+    `pad ${t6.pad}, ${state.verifies} passkey, grant asked with ${JSON.stringify(state.topUps)}`);
+  const head6 = await ev(s, `((${SH}).querySelector('#mhead') || {}).textContent`);
+  ok("…which counts the top-up's own samples", head6 === "Extra sample 1 of 4", String(head6));
+  await shot(s, "en-light-topup");
+  const checks6 = state.checks;
+  await work(s, 3, 60);
+  const head6b = await ev(s, `((${SH}).querySelector('#mhead') || {}).textContent`);
+  await work(s, 4, 60);
+  const back6 = await trainedScreen(s);
+  ok("…four samples go with the grant, one at a time", state.enrolls.length === 4 && state.enrolls.every((e) => e.topUpToken === "grant-1") && head6b === "Extra sample 4 of 4",
+    `${state.enrolls.length} samples, grants ${[...new Set(state.enrolls.map((e) => e.topUpToken))].join(",")}, after three: ${head6b}`);
+  ok("…the mouse is judged before the top-up and not while its pad is open", judged > 0 && state.checks === checks6, `${judged} checks before, ${state.checks - checks6} during`);
+  ok("…after the fourth the model is rebuilt and the trained screen is back", back6, JSON.stringify(await wiz(s)));
+  await clickIn(s, "#mdone");
+  const checks6c = state.checks;
+  await move(s, 1500);
+  ok("…and the mouse is judged again once it is closed", state.checks > checks6c, `${state.checks - checks6c} checks`);
+
+  // ---- 7. the grant runs out before the samples are finished
+  await load({ enrolled: true, onFile: 8 });
+  const t7 = await openTopUp();
+  await work(s, 1, 30);
+  state.grant = null;   // on the server the quarter of an hour is over
+  await work(s, 2, 30);
+  await trainedScreen(s);
+  const note7 = await ev(s, `(() => { const ov = ${OPEN}; const e = ov && ov.querySelector('.card .e'); return e && getComputedStyle(e).display !== 'none' ? e.textContent : ''; })()`);
+  ok("7. the grant ran out before the samples were finished: the trained screen says so", t7.pad && state.enrolls.length === 2 && /ran out/.test(note7), `${state.enrolls.length} sent; note: ${note7}`);
   ok("no script error on the page in the whole run", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
   ok("run completed", false, e.message);

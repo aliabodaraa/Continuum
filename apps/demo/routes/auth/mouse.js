@@ -38,9 +38,25 @@ const requireAuth = (req, res, next) => {
   next();
 };
 
+// More samples for a trained profile (2026-11-25). A trained profile takes no enrolment sample, or anyone at an open
+// session could teach it their own movement; its user may add samples after a passkey verified moments ago
+// (requireFreshPasskey). Continuum exchanges that verification's step-up token for a grant, which stays in this
+// session, never on the page, and goes with each sample while it lasts (routes/auth/text.js does the same for typing).
+router.post("/topup", requireAuth, requireFreshPasskey, async (req, res, next) => {
+  const stepUpToken = req.session.stepUpToken;
+  delete req.session.stepUpToken;
+  try {
+    const r = await ca.mouseTopUp(req.session.userId, stepUpToken);
+    if (r.status !== 200 || !r.data || !r.data.topUpToken) return res.status(r.status === 200 ? 502 : r.status).json(r.data || {});
+    req.session.topUp = { ...(req.session.topUp || {}), mouse: { token: r.data.topUpToken, until: Date.now() + Number(r.data.expiresInMs || 0) } };
+    res.json({ ok: true, expiresInMs: r.data.expiresInMs });
+  } catch (e) { next(e); }
+});
+
 router.post("/enroll", requireAuth, async (req, res, next) => {
   try {
-    const r = await ca.mouseEnroll(req.session.userId, req.body.windows);
+    const grant = req.session.topUp && req.session.topUp.mouse;
+    const r = await ca.mouseEnroll(req.session.userId, req.body.windows, grant && grant.until > Date.now() ? grant.token : undefined);
     res.status(r.status).json(r.data);
   } catch (e) { next(e); }
 });

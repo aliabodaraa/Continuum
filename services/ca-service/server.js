@@ -104,6 +104,23 @@ function pastePolicyEvaluation(quality, metrics) {
     typingQuality: quality,
   };
 }
+// A typing top-up (the enrolment route below): samples the user adds to a trained model after the passkey, three of them
+// in one sitting, as the adaptive cycle's three by default. Until the third arrives they wait as the adaptive popup's
+// pending samples do (not training samples, so no retrain of any kind uses them); then they become training samples
+// and the model is rebuilt. Samples that have waited longer than the sitting, or since before the present model, are
+// deleted: the passkey that opened the top-up has run out, and an unfinished top-up must never reach a model.
+const KS_TOPUP_SAMPLES = 3, TOPUP_PURPOSE = "top-up", TOPUP_WAITING = "top-up-pending";
+const TOPUP_SITTING_MS = 16 * 60000;   // a little over the life of the gateway's grant (15 minutes)
+const timeText = (ms) => new Date(ms).toISOString().slice(0, 19).replace("T", " ");   // as the database writes submitted_at
+async function topUpWaitingIds(userId, trainedAt) {
+  const stale = await db.all("SELECT id FROM keystroke_texts WHERE user_id = ? AND sample_purpose = ? AND (submitted_at < ? OR submitted_at <= ?)",
+    userId, TOPUP_WAITING, timeText(Date.now() - TOPUP_SITTING_MS), trainedAt || "");
+  for (const r of stale) {   // keystroke_events has no cascading key
+    await db.run("DELETE FROM keystroke_events WHERE keystroke_text_id = ?", r.id);
+    await db.run("DELETE FROM keystroke_texts WHERE id = ?", r.id);
+  }
+  return (await db.all("SELECT id FROM keystroke_texts WHERE user_id = ? AND sample_purpose = ? ORDER BY id", userId, TOPUP_WAITING)).map((r) => r.id);
+}
 async function countTrainingSamplesSince(userId, trainedAt) {
   return (await db.get(
       `SELECT COUNT(*) as count FROM keystroke_texts
@@ -365,6 +382,7 @@ app.get("/v1/keystroke/status/:userId", requireIdentity, aw(async (req, res) => 
   const st = appSettings.forRequest(req);
   const adaptivePending = await adaptive.pendingCount(uid(req));
   res.json({ ...status, adaptiveSamplesSinceRetrain, adaptiveRetrainEvery: st.adaptiveRetrainEvery,
+    topUpSamples: KS_TOPUP_SAMPLES, topUpAdded: status.trained ? (await topUpWaitingIds(uid(req), status.trainedAt)).length : 0,
     adaptiveEnabled: st.adaptive === "on", adaptiveMinGapHours: st.adaptiveGapHours,
     adaptivePending, adaptiveReady: adaptivePending >= st.adaptiveRetrainEvery,
     nextContributionAt: st.adaptive === "on" ? await nextContributionAt(uid(req), st) : null });
@@ -381,13 +399,17 @@ app.post("/v1/keystroke/enroll", requireIdentity, channelOn("keystroke"), async 
   try {
     const userId = uid(req);
     if (await refuseIfLocked(res, userId)) return;
-    // Once the typing model exists it learns more ONLY through the adaptive popup, whose retrain needs
-    // the passkey. Until 2026-10-05 this route took more samples at any time and retrained at once with
-    // no passkey, so anyone at an unlocked session could train the model on their own typing. Enrolling
-    // again needs a profile reset first, and the reset asks for the passkey.
-    if ((await ks.getUserTypingStatus(userId, db)).trained) {
+    // Once the typing model exists it takes more samples in two ways only, both behind the passkey: the adaptive
+    // popup, whose retrain needs it, and since 2026-11-25 a top-up the user asks for (the owner's decision: the first
+    // enrolment stays in one session, and the user may add samples later). The caller (the gateway) sets topUp for a
+    // request that carries its grant from a passkey verified moments before, and for no other. Until 2026-10-05 this
+    // route took more samples at any time and retrained at once with no passkey, so anyone at an unlocked session
+    // could train the model on their own typing. Enrolling from nothing needs a reset, which asks for the passkey.
+    const { trained: trainedNow, trainedAt } = await ks.getUserTypingStatus(userId, db);
+    const topUp = trainedNow && req.body.topUp === true;
+    if (trainedNow && !topUp) {
       return res.status(409).json({ ok: false, error: "already_enrolled",
-        note: "The typing model is trained; it learns more only through the adaptive popup. Reset the profile (passkey) to enrol again." });
+        note: "The typing model is trained. It takes more samples only after the user's passkey (a top-up) or through the adaptive popup; a reset (passkey) starts again." });
     }
     await studyLog.register(userId, studyLog.parseContext(req.body.study));   // so its training is logged
     const { textContent, keystrokeTimings, keystrokeEvents, sourcePath } = req.body;
@@ -407,8 +429,20 @@ app.post("/v1/keystroke/enroll", requireIdentity, channelOn("keystroke"), async 
     const textId = await storeTextSample({
       userId, textContent, keystrokeEvents, metrics,
       evaluation: { modelConfidence: null, isSuspicious: false },
-      samplePurpose: "enrollment", sourcePath: sourcePath || "/enroll.html", isTraining: true,
+      samplePurpose: topUp ? TOPUP_WAITING : "enrollment", sourcePath: sourcePath || "/enroll.html", isTraining: !topUp,
     });
+    if (topUp) {
+      // The last sample of the top-up turns them all into training samples and the model is rebuilt once (the trainer
+      // holds the newest sample out and keeps the earlier model if the new one does worse on it, as for every retrain).
+      const waiting = await topUpWaitingIds(userId, trainedAt);
+      const ready = waiting.length >= KS_TOPUP_SAMPLES;
+      if (ready) {
+        await db.run(`UPDATE keystroke_texts SET is_training = 1, sample_purpose = ? WHERE id IN (${waiting.map(() => "?").join(",")})`, TOPUP_PURPOSE, ...waiting);
+        await trainingQueue.enqueue(userId, "keystroke", "top-up");
+      }
+      return res.json({ ok: true, textId, trained: true, training: ready, topUp: { added: Math.min(waiting.length, KS_TOPUP_SAMPLES), needed: KS_TOPUP_SAMPLES },
+        typingQuality: quality, message: ready ? "Sample saved; your typing model is being rebuilt" : `Sample saved: ${waiting.length} of ${KS_TOPUP_SAMPLES}` });
+    }
     // Training runs from the queue (since 2026-10-06), like mouse enrolment: the user is not held for the
     // ~45 s it takes (up to ~2 min; it used to run inside this request), and a page reload or a restart
     // loses nothing. Clients read `training` / `trainingError` from /status until `trained`.
@@ -688,6 +722,7 @@ app.post("/v1/keystroke/reset", requireIdentity, aw(async (req, res) => {
   await db.run("UPDATE keystroke_texts SET is_training = 0 WHERE user_id = ?", userId);
   await ks.resetUserTypingProfile(userId, db);
   await adaptive.forget(userId);
+  await topUpWaitingIds(userId, timeText(Date.now() + 60000));   // a top-up in progress goes with the profile (every waiting sample is older than that time)
   await trainingQueue.cancel(userId, "keystroke", "typing profile reset");
   res.json({ ok: true, message: "Typing rhythm enrollment was reset", typingStatus: await ks.getUserTypingStatus(userId, db) });
 }));
@@ -834,7 +869,8 @@ app.post("/v1/mouse/enroll", requireIdentity, channelOn("mouse"), async (req, re
   try {
     if (await refuseIfLocked(res, uid(req))) return;
     await studyLog.register(uid(req), studyLog.parseContext(req.body.study));   // so its training is logged
-    const r = await mouse.enrollMouse(uid(req), req.body.windows); res.status(r.status).json(r.body);
+    // topUp: the gateway's word that this request carries its grant from a passkey verified moments before (lib/mouse.js)
+    const r = await mouse.enrollMouse(uid(req), req.body.windows, { topUp: req.body.topUp === true }); res.status(r.status).json(r.body);
   }
   catch (err) { return sendError(res, "mouse-enroll", err); }
 });

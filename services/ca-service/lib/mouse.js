@@ -154,14 +154,33 @@ function repeatedSamples(samples) {
 // Enroll: store this session's windows, then (re)train on ALL accumulated
 // sessions so enrollment builds up over visits — the mouse analogue of the
 // keystroke multi-sample profile. Transfer-learns from the SapiMouse base.
-async function enrollMouse(userId, windows) {
-  // Once the profile exists it takes no more enrolment samples, as typing since 2026-10-05. Until 2026-10-24 any
+// More samples for a trained profile (2026-11-25, the owner's decision). The first enrolment stays in one session,
+// and a profile from one short sitting holds one pace and one kind of movement: the owner's of 25 Nov had a threshold
+// of 0.79 and turned his ordinary movement down minutes later, while the mix of four of those samples with four from
+// earlier days asked for no passkey in his next 166 checks. So the user may add samples later, after proving the
+// passkey. A top-up is half a profile, made in one sitting: its samples wait in mouse_topup_samples, outside the
+// profile's samples, and when the last of TOPUP_SAMPLES arrives they join them and the model is rebuilt from the
+// newest SAMPLES_REQUIRED (retrainMouse), half new and half earlier. Samples that have waited longer than the sitting
+// are deleted: the passkey that opened the top-up has long run out, so whoever finishes it need not be its user, and
+// an unfinished top-up must never reach a model.
+const TOPUP_SAMPLES = Math.floor(SAMPLES_REQUIRED / 2);
+const TOPUP_SITTING_MS = 16 * 60000;   // a little over the life of the gateway's grant (15 minutes)
+const timeText = (ms) => new Date(ms).toISOString().slice(0, 19).replace("T", " ");   // as the database writes created_at
+async function topUpWaiting(userId) {
+  await db.run("DELETE FROM mouse_topup_samples WHERE user_id = ? AND created_at < ?", userId, timeText(Date.now() - TOPUP_SITTING_MS));
+  return db.all("SELECT id, windows, window_count FROM mouse_topup_samples WHERE user_id = ? ORDER BY id", userId);
+}
+
+async function enrollMouse(userId, windows, opts = {}) {
+  // Once the profile exists it takes no plain enrolment sample, as typing since 2026-10-05. Until 2026-10-24 any
   // sample sent here was stored and rebuilt the profile from the newest ones, with no passkey ("+ train"), so
-  // anyone at an unlocked session could replace the profile with their own movement. Enrolling again needs a
-  // reset, and the reset asks for the passkey.
-  if (await mouseEnrolled(userId)) {
+  // anyone at an unlocked session could replace the profile with their own movement. It takes samples again only
+  // as a top-up: the caller (the gateway) sets opts.topUp for a request that carries its grant from a passkey
+  // verified moments before, and for no other. Enrolling from nothing needs a reset, which asks for the passkey too.
+  const enrolled = await mouseEnrolled(userId);
+  if (enrolled && !opts.topUp) {
     return { status: 409, body: { ok: false, error: "already_enrolled",
-      note: "The mouse profile is trained; it takes no more enrolment samples. Reset it (passkey) to enrol again." } };
+      note: "The mouse profile is trained. It takes more samples only after the user's passkey (a top-up); a reset (passkey) starts again." } };
   }
   if (staleClientWindows(windows)) {
     return { status: 400, body: { ok: false, error: "This client sends the retired 7-feature mouse windows. Reload the page or update the extension." } };
@@ -193,7 +212,8 @@ async function enrollMouse(userId, windows) {
     };
   }
   const runs = stepRuns(windows);
-  for (const s of await db.all("SELECT id, windows FROM mouse_samples WHERE user_id = ? ORDER BY id DESC", userId)) {
+  const onFile = await db.all("SELECT id, windows FROM mouse_samples WHERE user_id = ? ORDER BY id DESC", userId);
+  for (const s of onFile.concat(enrolled ? await topUpWaiting(userId) : [])) {
     const share = repeatShare(runs, stepRuns(JSON.parse(s.windows)));
     if (share > REPEAT_LIMIT) {
       return {
@@ -202,6 +222,27 @@ async function enrollMouse(userId, windows) {
                 repeatedShare: share, repeatLimit: REPEAT_LIMIT },
       };
     }
+  }
+
+  if (enrolled) {
+    // A top-up sample waits; the last one of the top-up moves them all to the profile's samples, in the order they were
+    // made, and the model is rebuilt once.
+    await db.run("INSERT INTO mouse_topup_samples (user_id, windows, window_count) VALUES (?, ?, ?)", userId, JSON.stringify(windows), windows.length);
+    const waiting = await topUpWaiting(userId);
+    const body = { ok: true, trained: true, topUp: { added: Math.min(waiting.length, TOPUP_SAMPLES), needed: TOPUP_SAMPLES },
+      samplesOnFile: SAMPLES_REQUIRED, samplesRequired: SAMPLES_REQUIRED, sampleWindows: SAMPLE_WINDOWS, sessionWindows: windows.length };
+    if (waiting.length < TOPUP_SAMPLES) {
+      return { status: 202, body: { ...body, message: `Saved extra sample ${waiting.length} of ${TOPUP_SAMPLES}. Your mouse model is rebuilt after the last one.` } };
+    }
+    await db.tx(async () => {
+      for (const w of waiting) {
+        await db.run("INSERT INTO mouse_samples (user_id, windows, window_count) VALUES (?, ?, ?)", userId, w.windows, w.window_count);
+        await db.run("DELETE FROM mouse_topup_samples WHERE id = ?", w.id);
+      }
+    });
+    const rebuild = await trainingQueue.enqueue(userId, "mouse", "top-up");
+    return { status: 202, body: { ...body, training: true, jobId: rebuild.id,
+      message: "Saved. Your mouse model is being rebuilt from your newest samples: usually under a minute." } };
   }
 
   await db.run(
@@ -497,6 +538,9 @@ async function mouseStatus(userId) {
     sampleWindows: SAMPLE_WINDOWS,
     samplesRequired: SAMPLES_REQUIRED,
     samplesOnFile: Math.min(SAMPLES_REQUIRED, Math.floor(totalWindows / SAMPLE_WINDOWS)),
+    // A top-up (enrollMouse): how many samples it takes, and how many of one in progress are waiting.
+    topUpSamples: TOPUP_SAMPLES,
+    topUpAdded: current ? (await topUpWaiting(userId)).length : 0,
     // The live rule, so clients send enough windows per check and label the panel correctly.
     voteN: VOTE_N,
     voteK: VOTE_K,
@@ -519,6 +563,7 @@ async function resetMouseProfile(userId) {
   const before = await db.get("SELECT COUNT(*) AS n FROM mouse_samples WHERE user_id = ?", userId);
   await db.run("DELETE FROM mouse_profiles WHERE user_id = ?", userId);
   await db.run("DELETE FROM mouse_samples WHERE user_id = ?", userId);
+  await db.run("DELETE FROM mouse_topup_samples WHERE user_id = ?", userId);   // a top-up in progress goes with the profile
   // and everything learning from real use kept for this user (lib/mouseUse.js)
   await db.run("DELETE FROM mouse_use_samples WHERE user_id = ?", userId);
   await db.run("DELETE FROM mouse_use_anchors WHERE user_id = ?", userId);
@@ -550,6 +595,7 @@ module.exports = {
   MIN_SESSION_WINDOWS,
   SAMPLE_WINDOWS,
   SAMPLES_REQUIRED,
+  TOPUP_SAMPLES,
   THRESHOLD_PERCENTILE,
   THRESHOLD_SOURCE,
   RECENT_WINDOW_COUNT,

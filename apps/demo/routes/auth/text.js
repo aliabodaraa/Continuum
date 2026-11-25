@@ -78,8 +78,28 @@ router.post("/typing-retrain", requireAuth, async (req, res, next) => {
   try { passthrough(res, await ca.keystrokeRetrain(req.session.userId)); } catch (e) { next(e); }
 });
 
+// More samples for a trained typing model (2026-11-25): only after a passkey verified moments ago. Continuum exchanges
+// that verification's step-up token for a grant, which stays in this session and goes with each sample while it lasts
+// (as routes/auth/mouse.js for the mouse). Whatever the page writes as a grant is dropped.
+router.post("/topup", requireAuth, requireUnlockedSession, requireFreshPasskey, async (req, res, next) => {
+  const stepUpToken = req.session.stepUpToken;
+  delete req.session.stepUpToken;
+  try {
+    const r = await ca.keystrokeTopUp(req.session.userId, stepUpToken);
+    if (r.status !== 200 || !r.data || !r.data.topUpToken) return res.status(r.status === 200 ? 502 : r.status).json(r.data || {});
+    req.session.topUp = { ...(req.session.topUp || {}), keystroke: { token: r.data.topUpToken, until: Date.now() + Number(r.data.expiresInMs || 0) } };
+    res.json({ ok: true, expiresInMs: r.data.expiresInMs });
+  } catch (e) { next(e); }
+});
+
 router.post("/enroll", requireAuth, requireUnlockedSession, async (req, res, next) => {
-  try { passthrough(res, await ca.keystrokeEnroll(req.session.userId, req.body)); } catch (e) { next(e); }
+  try {
+    const body = { ...(req.body || {}) };
+    delete body.topUp; delete body.topUpToken;
+    const grant = req.session.topUp && req.session.topUp.keystroke;
+    if (grant && grant.until > Date.now()) body.topUpToken = grant.token;
+    passthrough(res, await ca.keystrokeEnroll(req.session.userId, body));
+  } catch (e) { next(e); }
 });
 
 router.post("/check", requireAuth, requireUnlockedSession, requireTrainedRhythm, async (req, res, next) => {
