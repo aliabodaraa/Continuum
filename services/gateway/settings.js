@@ -161,8 +161,14 @@ function createSettings(source) {
     }
   }
 
+  // 2026-11-25: the pair is checked only when a save changes the panel or enrolment. Set by two levels (the operator's
+  // hidden panel, the organisation's on-demand enrolment) it refused every later save, even of another setting;
+  // effective() already asks for enrolment up front while the panel is hidden.
+  const pairChanged = (a, b) => ["panel", "onboarding"].some((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
+
   function updateTenant(tenant, changes) {
     const { next, changed } = applyApp(tenant.settings || {}, changes, (n) => {
+      if (!pairChanged(tenant.settings || {}, n)) return;
       const vals = {};
       for (const key of Object.keys(APP)) vals[key] = resolve(key, n).value;
       lazyNeedsPanel(vals);
@@ -188,6 +194,7 @@ function createSettings(source) {
   // rejects with { code: bad_setting | unknown_setting | lazy_needs_panel | store_write_failed }.
   async function updateOperator(body) {
     const d = applyApp(store.defaults, body.defaults, (n) => {
+      if (!pairChanged(store.defaults, n)) return;
       const vals = {};
       for (const key of Object.keys(APP)) {
         vals[key] = Object.prototype.hasOwnProperty.call(n, key) ? n[key] : (fromEnv(APP[key]) ?? APP[key].def);

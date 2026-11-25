@@ -16,18 +16,25 @@
   function call(path, opts) {
     opts = opts || {}; opts.token = token;
     return C.api(path, opts).catch(function (e) {
-      if (e.code === "invalid_console_session") { signOut(); C.toast("info", C.MESSAGES.invalid_console_session); }
+      if (e.code === "invalid_console_session") {
+        // 2026-11-25: one message, from the first call to find the session over, and the answer goes no further: the
+        // page is the sign-in now, so the caller's own error toast (a second one) and redraw (another call) are not wanted.
+        if (opts.token === token) { signOut(); C.toast("info", C.MESSAGES.invalid_console_session); }
+        return new Promise(function () {});
+      }
       throw e;
     });
   }
   function signIn(t) { token = t; try { sessionStorage.setItem("continuumConsole", t); } catch (e) {} orgs = null; location.hash = "#/organisations"; route(); }
   // Back to the list as well: whoever signs in next must not land on the previous account's organisation.
-  function signOut() { token = null; me = null; orgs = null; try { sessionStorage.removeItem("continuumConsole"); } catch (e) {} history.replaceState(null, "", location.pathname + "#/organisations"); route(); }
+  function signOut() { C.closeModals(); token = null; me = null; orgs = null; try { sessionStorage.removeItem("continuumConsole"); } catch (e) {} history.replaceState(null, "", location.pathname + "#/organisations"); route(); }
   function loadOrgs(force) {
     if (orgs && !force) return Promise.resolve(orgs);
     return call("/v1/console/tenants").then(function (d) { orgs = d.tenants; return orgs; });
   }
   function nonExt(origins) { return (origins || []).filter(function (o) { return o.indexOf("chrome-extension://") !== 0; }); }
+  // The server's limit counts the organisations that are not revoked (POST /v1/console/tenants).
+  function atLimit(list) { return !!cfg.tenantLimit && !!list && list.filter(function (t) { return t.status !== "revoked"; }).length >= cfg.tenantLimit; }
 
   // ================= signed out =================
   function renderAuth(mode) {
@@ -36,6 +43,10 @@
     var email = el("input.input#authEmail", { type: "email", autocomplete: "username webauthn", placeholder: "you@company.com", required: true });
     var msg = el("div.field-error#authMsg");
     var btn = el("button.btn.btn-primary.btn-lg.btn-block#authBtn", { type: "submit" }, [icon("fingerprint"), creating ? "Create account with a passkey" : "Sign in with your passkey"]);
+    // 2026-11-25: the server takes account passkeys only from its public address (origin_not_allowed elsewhere, such
+    // as 127.0.0.1 for localhost): on another address the page names the right one instead of a button that fails.
+    var home = new URL(cfg.publicUrl, location.href).origin, elsewhere = home !== location.origin;
+    if (elsewhere) btn.disabled = true;
     var form = el("form", { novalidate: true }, [
       el("label.field", [el("span.label", "Work email"), email]),
       el("div", { style: "margin-top:18px" }, btn), msg,
@@ -70,6 +81,8 @@
         el("div.row", { style: "justify-content:flex-end;margin-bottom:10px" }, C.langButton()),
         el("h2", creating ? "Create your account" : "Sign in to the console"),
         el("p.sub", creating ? "For organisations that want to use Continuum." : "Welcome back. Use the passkey on this device."),
+        elsewhere ? el("div.callout.warn#authElsewhere", { style: "margin-bottom:16px" }, [icon("alert"), el("div", C.t("This console works at {url}, where its passkeys belong. Open it there to sign in.",
+          { url: el("a", { href: home + location.pathname + location.hash }, C.text(home)) }))]) : null,
         form,
         el("div.passkey-note", [icon("info", "sm"), el("div", creating
           ? "Your device will ask you to create a passkey (fingerprint, face or PIN). The email is your account's name."
@@ -121,6 +134,11 @@
     page([head("Organisations", "Each organisation is one app or company that protects its users with Continuum.", [newBtn]), body]);
     loadOrgs(true).then(function (list) {
       C.clear(body);
+      // 2026-11-25: at the server's limit the wizard could only end in tenant_limit_reached: the button is off, with why.
+      if (atLimit(list)) {
+        newBtn.removeAttribute("href"); newBtn.setAttribute("aria-disabled", "true"); newBtn.style.cssText = "pointer-events:none;opacity:.55";
+        body.appendChild(el("div.callout.warn#limitNote", { style: "margin-bottom:16px" }, [icon("info"), el("div", C.msg("tenant_limit_reached") + " " + C.tr("Delete or revoke one to add another."))]));
+      }
       if (!list.length) {
         body.appendChild(el("div.card", el("div.empty", [el("div.art", icon("building")), el("h3", "No organisations yet"),
           el("p", "Register your app or company to get a site key for your pages and a secret for your server."),
@@ -184,6 +202,7 @@
   }
   function renderWizard() {
     setNav("organisations");
+    if (atLimit(orgs)) { history.replaceState(null, "", "#/organisations"); renderList(); return; }   // the list says why
     var st = { step: 0, name: "", sites: [], ext: false, signIn: "", extId: "", hook: "" };
     var STEPS = ["Details", "Websites", "Browser extension", "Alerts"];
     var stepper = el("div.steps"), card = el("div.card"), wrap = el("div", [stepper, card]);
@@ -233,6 +252,8 @@
         next.addEventListener("click", function () {
           st.ext = sw.checked; st.signIn = signIn.value.trim(); st.extId = extId.value.trim();
           if (st.ext && !st.signIn) { err.textContent = C.t("Add the sign-in page your users will use for the extension."); return; }
+          // 2026-11-25: here, where the field is, not after "Create organisation" two steps on
+          if (st.ext && !cfg.extensionId && !/^[a-p]{32}$/.test(st.extId)) { err.textContent = C.msg("extension_id_required"); return; }
           if (!st.ext && !st.sites.length) { err.textContent = C.msg("origins_required"); return; }
           st.step = 3; draw();
         });
@@ -354,16 +375,19 @@
   }
   function tabWebsites(t, pane, locked) {
     var list = nonExt(t.origins).slice(), saveBtn = el("button.btn.btn-primary#sitesSave", { type: "button", disabled: true }, "Save changes");
-    var chips = siteChips(list, function () { saveBtn.disabled = false; }, locked);
+    // 2026-11-25: no website and no extension is refused (origins_required), so that list can't be saved
+    var edited = function () { saveBtn.disabled = !list.length && !t.allowExtension; };
+    var chips = siteChips(list, edited, locked);
     saveBtn.addEventListener("click", function () { save(t, { origins: list, allowExtension: t.allowExtension }, saveBtn).then(function () { saveBtn.disabled = true; renderOrg(t.siteKey, "websites"); }, function () {}); });
     append(pane, el("div.card", [el("div.card-head", el("div", [el("h3", "Websites"), el("p.muted.small", "Only these websites may use your site key. Anyone else who copies it is refused.")])),
-      el("div.card-body.stack", [locked ? null : siteAdder(list, chips, function () { saveBtn.disabled = false; }, { input: "siteInput", add: "siteAdd" }), chips.node]),
+      el("div.card-body.stack", [locked ? null : siteAdder(list, chips, edited, { input: "siteInput", add: "siteAdd" }), chips.node]),
       locked ? null : el("div.card-foot", saveBtn)]));
   }
   function tabExtension(t, pane, locked) {
     var sw = el("input#extToggle", { type: "checkbox", checked: t.allowExtension, disabled: locked });
     var signIn = el("input.input.mono#extSignIn", { value: t.signInUrl || "", placeholder: (nonExt(t.origins)[0] || "https://app.acme.com") + "/continuum/link", disabled: locked });
-    var extId = el("input.input.mono#extId", { placeholder: "32 letters, from chrome://extensions", disabled: locked });
+    // the id the organisation has now (2026-11-25: the field was empty, as if it had none)
+    var extId = el("input.input.mono#extId", { value: ((t.origins || []).filter(function (o) { return o.indexOf("chrome-extension://") === 0; })[0] || "").slice(19), placeholder: "32 letters, from chrome://extensions", disabled: locked });
     var btn = el("button.btn.btn-primary#extSave", { type: "button" }, "Save");
     btn.addEventListener("click", function () {
       var patch = { allowExtension: sw.checked, origins: nonExt(t.origins), signInUrl: sw.checked ? signIn.value.trim() : "" };
@@ -408,7 +432,9 @@
   function tabAlerts(t, pane, locked) {
     var hook = el("input.input.mono#hookInput", { value: t.webhookUrl || "", placeholder: "https://app.acme.com/continuum/events", disabled: locked });
     var saveBtn = el("button.btn.btn-primary#hookSave", { type: "button" }, "Save");
-    var testBtn = el("button.btn.btn-secondary#hookTest", { type: "button", disabled: locked || !t.webhookUrl }, [icon("send", "sm"), "Send test alert"]);
+    // 2026-11-25: a stored address that isn't public (one the operator set) is refused for tests (webhook_not_public)
+    var notPublic = !!t.webhookUrl && t.webhookPublic === false;
+    var testBtn = el("button.btn.btn-secondary#hookTest", { type: "button", disabled: locked || !t.webhookUrl || notPublic }, [icon("send", "sm"), "Send test alert"]);
     var result = el("div#hookResult");
     saveBtn.addEventListener("click", function () { save(t, { webhookUrl: hook.value.trim() }, saveBtn).then(function () { renderOrg(t.siteKey, "alerts"); }, function () {}); });
     testBtn.addEventListener("click", function () {
@@ -420,7 +446,8 @@
       }).catch(function (e) { C.clear(result).appendChild(failed(e)); }).then(function () { testBtn.disabled = false; });
     });
     append(pane, el("div.card", [el("div.card-head", el("div", [el("h3", "Risk-change alerts"), el("p.muted.small", "A signed message reaches your server the moment one of your users turns suspicious, and when they are back to normal.")])),
-      el("div.card-body.stack", [el("label.field", [el("span.label", "Webhook address"), hook, el("p.hint", "A public https:// address on your server. Verify each message with the public keys on the Keys tab.")]), result]),
+      el("div.card-body.stack", [el("label.field", [el("span.label", "Webhook address"), hook, el("p.hint", "A public https:// address on your server. Verify each message with the public keys on the Keys tab.")]),
+        notPublic ? el("div.callout.info#hookNotPublic", [icon("info"), el("div", "Test alerts go only to public https:// addresses.")]) : null, result]),
       locked ? null : el("div.card-foot", [testBtn, el("span.spacer"), saveBtn])]));
   }
   var ACTIONS = {

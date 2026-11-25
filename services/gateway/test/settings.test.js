@@ -102,6 +102,19 @@ test("on-demand enrolment needs the panel", async () => {
   await assert.rejects(s.updateOperator({ defaults: { panel: "hide", onboarding: "lazy" } }), { code: "lazy_needs_panel" });
 });
 
+test("a hidden panel from one level and on-demand enrolment from the other do not block saving other settings (2026-11-25)", async () => {
+  const { s } = fresh();
+  const tenant = { settings: s.updateTenant({ settings: {} }, { onboarding: "lazy" }).settings };   // the panel shows: allowed
+  await s.updateOperator({ defaults: { panel: "hide" } });                                           // the operator hides it later
+  assert.equal(s.effective(tenant).values.onboarding, "eager", "enrolment is asked up front while the panel is hidden");
+  assert.deepEqual(s.updateTenant(tenant, { mouse: "off" }).changed, ["mouse"], "another setting saves");
+  await s.updateOperator({ defaults: { keystrokeDecisionWindows: 6 } });                             // and so does the operator's
+  assert.throws(() => s.updateTenant({ settings: {} }, { onboarding: "lazy" }), { code: "lazy_needs_panel" }, "choosing the pair is still refused");
+  const mended = { settings: s.updateTenant(tenant, { panel: "show" }).settings };
+  assert.deepEqual(mended.settings, { onboarding: "lazy", panel: "show" }, "showing the panel mends it");
+  assert.throws(() => s.updateTenant(mended, { panel: null }), { code: "lazy_needs_panel" }, "going back to the operator's hidden panel is refused");
+});
+
 test("bad values and unknown settings are refused", () => {
   const { s } = fresh();
   assert.throws(() => s.updateTenant({ settings: {} }, { adaptiveGapHours: 500 }), { code: "bad_setting" });

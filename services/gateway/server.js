@@ -104,8 +104,12 @@ async function seedBuiltInTenants() {
     tenants.tenants["pk_demo"] = { name: "Demo", secret: DEMO_SECRET, origins: [], webhookUrl: process.env.DEMO_WEBHOOK_URL || null, createdAt: new Date().toISOString() };
     await storage.saveTenant("pk_demo");
   }
+  // 2026-11-25: while nobody owns the demo, env keeps its webhook, sign-in page, website and extension in sync, as
+  // before. Once the operator gives it to a console account (/v1/admin/tenants/:siteKey/owner), that account's
+  // edits stand and env only fills what is unset: they used to be put back at every start.
+  const envWins = !!tenants.tenants["pk_demo"] && !tenants.tenants["pk_demo"].owner;
   // Keep the demo tenant's webhook in sync with env (so CAEP is demonstrable).
-  if (tenants.tenants["pk_demo"] && process.env.DEMO_WEBHOOK_URL) tenants.tenants["pk_demo"].webhookUrl = process.env.DEMO_WEBHOOK_URL;
+  if (tenants.tenants["pk_demo"] && process.env.DEMO_WEBHOOK_URL && (envWins || !tenants.tenants["pk_demo"].webhookUrl)) tenants.tenants["pk_demo"].webhookUrl = process.env.DEMO_WEBHOOK_URL;
   // The demo is an organisation whose users can sign in to the extension: its sign-in page for the
   // extension (served by @continuum/node's link handler) and the extension's origin come from env.
   const demo = tenants.tenants["pk_demo"];
@@ -115,12 +119,13 @@ async function seedBuiltInTenants() {
     // move away from the development default) must reach the stored tenant, or the demo's identity tokens
     // would be refused. It was copied only at the first start.
     if (demo.secret !== DEMO_SECRET) { demo.secret = DEMO_SECRET; demo.secretRotatedAt = new Date().toISOString(); changed = true; }
-    if (process.env.DEMO_SIGNIN_URL && demo.signInUrl !== process.env.DEMO_SIGNIN_URL) { demo.signInUrl = process.env.DEMO_SIGNIN_URL; changed = true; }
+    if (process.env.DEMO_SIGNIN_URL && (envWins ? demo.signInUrl !== process.env.DEMO_SIGNIN_URL : !demo.signInUrl)) { demo.signInUrl = process.env.DEMO_SIGNIN_URL; changed = true; }
     // The sign-in page is on the demo's own site, so that site is one of its websites (passkeys and the SDK
     // are allowed there). A fresh install (the bundle, Kubernetes) has no other way to know it.
     const demoSite = process.env.DEMO_SIGNIN_URL ? new URL(process.env.DEMO_SIGNIN_URL).origin : null;
-    if (demoSite && !(demo.origins || []).includes(demoSite)) { demo.origins = (demo.origins || []).concat(demoSite); changed = true; }
-    if (EXTENSION_ORIGIN && !(demo.origins || []).includes(EXTENSION_ORIGIN)) { demo.origins = (demo.origins || []).concat(EXTENSION_ORIGIN); demo.allowExtension = true; changed = true; }
+    // Owned: only while it has no website at all; and the extension only while the owner has not switched it off.
+    if (demoSite && (envWins ? !(demo.origins || []).includes(demoSite) : !(demo.origins || []).some((o) => !EXT_ORIGIN_RE.test(o)))) { demo.origins = (demo.origins || []).concat(demoSite); changed = true; }
+    if (EXTENSION_ORIGIN && !(demo.origins || []).includes(EXTENSION_ORIGIN) && (envWins || demo.allowExtension !== false)) { demo.origins = (demo.origins || []).concat(EXTENSION_ORIGIN); demo.allowExtension = true; changed = true; }
     if (changed) await storage.saveTenant("pk_demo");
   }
   // Seed the personal tenant. Its secret signs nothing a customer holds (its users sign in with a
@@ -676,8 +681,9 @@ const httpUrl = (s) => { try { const u = new URL(s); return /^https?:$/.test(u.p
 // Validate the editable fields of a tenant. With `partial`, absent fields are left out. A site key is
 // PUBLIC (it lives in the page); binding it to the tenant's origin(s) is what stops another app from
 // reusing it, so a tenant must declare at least one origin. `allowExtension` admits the Continuum
-// Guard extension (this gateway's CONTINUUM_EXTENSION_ID, or the id given as `extensionId`).
-function tenantFields(body, partial) {
+// Guard extension (this gateway's CONTINUUM_EXTENSION_ID, or the id given as `extensionId`). `current` is the stored
+// tenant, on an update.
+function tenantFields(body, partial, current) {
   const out = {};
   if (!partial || body.name != null) {
     out.name = String(body.name || "").trim().slice(0, 80);
@@ -694,8 +700,12 @@ function tenantFields(body, partial) {
     }
     if (body.allowExtension === true) {
       const id = String(body.extensionId || EXTENSION_ID || "").trim();
-      if (!/^[a-p]{32}$/.test(id)) return { error: "extension_id_required", note: "This gateway does not know the extension's id; give it as extensionId (see chrome://extensions)." };
-      origins.push("chrome-extension://" + id);
+      // 2026-11-25: with no id in the request and none on this server, an update keeps the extension origin the
+      // organisation already has. Every Websites save of such an organisation was refused (extension_id_required).
+      const kept = !id && current ? (current.origins || []).filter((o) => EXT_ORIGIN_RE.test(o)) : [];
+      if (kept.length) origins.push(...kept);
+      else if (!/^[a-p]{32}$/.test(id)) return { error: "extension_id_required", note: "This gateway does not know the extension's id; give it as extensionId (see chrome://extensions)." };
+      else origins.push("chrome-extension://" + id);
     } else if (body.allowExtension === false) {
       for (let i = origins.length - 1; i >= 0; i--) if (EXT_ORIGIN_RE.test(origins[i])) origins.splice(i, 1);
     }
@@ -734,7 +744,8 @@ async function createTenant(fields, extra) {
 // What the console and the operator see of a tenant: everything but the secret.
 function tenantView(siteKey, t) {
   return { siteKey, name: t.name, status: t.status || "active", origins: t.origins || [], allowExtension: (t.origins || []).some((o) => EXT_ORIGIN_RE.test(o)),
-    signInUrl: t.signInUrl || null, webhookUrl: t.webhookUrl || null, owner: t.owner ? ((accounts.accounts[t.owner] || {}).email || null) : null,
+    // webhookPublic (2026-11-25): whether a test alert may go to it (the console disables its button otherwise)
+    signInUrl: t.signInUrl || null, webhookUrl: t.webhookUrl || null, webhookPublic: t.webhookUrl ? publicWebhook(t.webhookUrl) : null, owner: t.owner ? ((accounts.accounts[t.owner] || {}).email || null) : null,
     builtIn: siteKey === PERSONAL_KEY, serverManaged: SERVER_MANAGED.has(siteKey), createdAt: t.createdAt, secretRotatedAt: t.secretRotatedAt || null };
 }
 const NOTE_KEYS = "Put siteKey in the SDK <script data-site-key>, and secret in your backend CONTINUUM_SECRET.";
@@ -927,6 +938,9 @@ app.post("/v1/accounts/register/complete", ownPage, async (req, res) => {
   const c = await takeCeremony(req.body.ceremonyId, "register");
   if (!c) return res.status(400).json({ error: "ceremony_expired" });
   if (accounts.byEmail[c.email]) return res.status(409).json({ error: "email_taken" });
+  // 2026-11-25: the extension's sign-in link may have expired during the ceremony. Checked before the passkey and the
+  // account are saved: it used to be found only after, leaving an account the extension never signed in to.
+  if (c.purpose === "link") { const p = await purposeOf(c); if (p.error) return res.status(400).json(p); }
   const r = await fwd(`${PASSKEY_URL}/v1/register/complete`, "POST", { userId: c.userId, credential: req.body.credential, rpId: PUBLIC_RP_ID, origin: PUBLIC_ORIGIN });
   if (r.status !== 200) return relay(res, r);
   passkeyChanged(c.userId);
@@ -981,7 +995,8 @@ function ownTenantRead(req, res, next) {
   req.t = t; next();
 }
 const MAX_TENANTS_PER_ACCOUNT = 10;
-app.get("/v1/console/config", (req, res) => res.json({ extensionId: EXTENSION_ID || null, autoApprove: autoApprove(), operatorKeyRequired: !!ADMIN_KEY, publicUrl: PUBLIC_URL }));
+// tenantLimit (2026-11-25): the page disables "New organisation" at the limit, instead of refusing after the wizard.
+app.get("/v1/console/config", (req, res) => res.json({ extensionId: EXTENSION_ID || null, autoApprove: autoApprove(), operatorKeyRequired: !!ADMIN_KEY, publicUrl: PUBLIC_URL, tenantLimit: MAX_TENANTS_PER_ACCOUNT }));
 app.get("/v1/console/me", consoleAuth, (req, res) => res.json({ email: accounts.accounts[req.acct].email }));
 app.get("/v1/console/tenants", consoleAuth, (req, res) => {
   res.json({ tenants: Object.entries(tenants.tenants).filter(([, t]) => t.owner === req.acct).map(([k, t]) => tenantView(k, t)) });
@@ -999,7 +1014,7 @@ app.post("/v1/console/tenants", consoleAuth, async (req, res) => {
   res.json({ ...k, ...tenantView(k.siteKey, tenants.tenants[k.siteKey]), note: NOTE_KEYS });
 });
 app.post("/v1/console/tenants/:siteKey", consoleAuth, ownTenant, async (req, res) => {
-  const f = tenantFields(req.body, true);
+  const f = tenantFields(req.body, true, req.t);
   if (f.error) return res.status(400).json(f);
   if (f.webhookUrl && f.webhookUrl !== req.t.webhookUrl && !publicWebhook(f.webhookUrl)) return res.status(400).json({ error: "webhook_not_public" });
   const prev = { ...req.t };
@@ -1122,6 +1137,9 @@ app.post("/v1/link/start", ownPage, async (req, res) => {
   if (!tenantActive(t)) return res.status(403).json({ error: t.status === "pending" ? "organisation_pending_approval" : "organisation_revoked" });
   if (!/^[A-Za-z0-9_-]{43}$/.test(String(req.body.codeChallenge || ""))) return res.status(400).json({ error: "bad_code_challenge" });
   const personal = siteKey === PERSONAL_KEY;
+  // 2026-11-25: the personal tenant admits the extension only through this server's CONTINUUM_EXTENSION_ID. Without
+  // it the extension's /v1/link/token is refused, but only after the account and its passkey were made: say so now.
+  if (personal && !EXTENSION_ORIGIN) return res.status(409).json({ error: "extension_not_configured", note: "This gateway does not know the extension's id (CONTINUUM_EXTENSION_ID)." });
   if (!personal && !t.signInUrl) return res.status(409).json({ error: "no_extension_sign_in", note: "This organisation has not set up sign-in for the browser extension." });
   if (!personal && (t.origins || []).length && !(t.origins || []).some((o) => EXT_ORIGIN_RE.test(o))) {
     return res.status(409).json({ error: "extension_not_allowed", note: "This organisation does not allow the browser extension." });

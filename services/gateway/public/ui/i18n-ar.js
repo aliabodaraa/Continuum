@@ -43,6 +43,7 @@ window.CUI_AR = {
   "This organisation is not active.": "هذه المؤسسة غير فعّالة.",
   "This organisation hasn't set up sign-in for the browser extension yet. Ask its administrator.": "لم تُعدّ هذه المؤسسة تسجيل الدخول لإضافة المتصفح بعد. اسأل مسؤولها.",
   "This organisation doesn't allow the browser extension.": "لا تسمح هذه المؤسسة بإضافة المتصفح.",
+  "This server isn't set up for the browser extension yet. Ask its operator to add the extension's id.": "هذا الخادم غير مُعدّ لإضافة المتصفح بعد. اطلب من مشغّله إضافة معرّف الإضافة.",
   "This sign-in expired or was already used. Start again from the extension.": "انتهت صلاحية تسجيل الدخول هذا أو استُخدم من قبل. ابدأ من جديد من الإضافة.",
   "The organisation's sign-in couldn't be verified. Start again from the extension.": "لم يمكن التحقق من تسجيل دخول المؤسسة. ابدأ من جديد من الإضافة.",
   "This page was opened incorrectly. Start again from the extension.": "فُتحت هذه الصفحة بطريقة غير صحيحة. ابدأ من جديد من الإضافة.",
@@ -150,6 +151,7 @@ window.CUI_AR = {
   "New to Continuum?": "جديد على Continuum؟",
   "Sign in": "تسجيل الدخول",
   "Create an account": "إنشاء حساب",
+  "This console works at {url}, where its passkeys belong. Open it there to sign in.": "تعمل لوحة التحكم هذه على العنوان {url}، فمفاتيح المرور الخاصة بها مرتبطة به. افتحها هناك لتسجيل الدخول.",
 
   // ---- console: shell and list ----
   "Build": "البناء",
@@ -168,6 +170,7 @@ window.CUI_AR = {
   "{n} organisations are waiting for approval.": { one: "مؤسسة واحدة بانتظار الموافقة.", two: "مؤسستان بانتظار الموافقة.", few: "{n} مؤسسات بانتظار الموافقة.", other: "{n} مؤسسة بانتظار الموافقة." },
   "Their site keys start working as soon as the operator approves them.": "تبدأ مفاتيح مواقعها بالعمل فور موافقة المشغّل عليها.",
   "Search by name or site key": "ابحث بالاسم أو مفتاح الموقع",
+  "Delete or revoke one to add another.": "احذف إحداها أو أوقفها لتضيف أخرى.",
   "Search": "بحث",
   "{n} websites": { zero: "لا مواقع", one: "موقع واحد", two: "موقعان", few: "{n} مواقع", other: "{n} موقعاً" },
   "Allowed": "مسموح بها",
@@ -297,6 +300,7 @@ window.CUI_AR = {
   "A signed message reaches your server the moment one of your users turns suspicious, and when they are back to normal.": "تصل رسالة موقّعة إلى خادمك لحظة يصبح أحد مستخدميك مشبوهاً، وعندما يعود إلى وضعه الطبيعي.",
   "Webhook address": "عنوان التنبيهات (webhook)",
   "A public https:// address on your server. Verify each message with the public keys on the Keys tab.": "عنوان https://‎ عامّ على خادمك. تحقق من كل رسالة بالمفاتيح العامة في تبويب المفاتيح.",
+  "Test alerts go only to public https:// addresses.": "تُرسل التنبيهات التجريبية إلى عناوين https://‎ العامة فقط.",
 
   // ---- activity (console and operator) ----
   "Organisation created": "أُنشئت المؤسسة",

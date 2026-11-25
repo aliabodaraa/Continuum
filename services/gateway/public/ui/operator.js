@@ -30,7 +30,9 @@
         key = k; try { sessionStorage.setItem("continuumOperator", k); } catch (e) {}
         all = d.tenants; route();
       }).catch(function (e) {
-        btn.disabled = false;
+        // 2026-11-25: during the pause every try is refused, so the button waits it out
+        btn.disabled = e.code === "too_many_attempts";
+        if (btn.disabled) setTimeout(function () { btn.disabled = false; }, (e.data.retryAfterSec || 900) * 1000);
         if (e.code === "too_many_attempts") msg.textContent = C.plural(Math.ceil((e.data.retryAfterSec || 900) / 60), "Too many wrong keys. Operator sign-in is paused for about {n} minute.", "Too many wrong keys. Operator sign-in is paused for about {n} minutes.");
         else if (e.code === "invalid_admin_key") msg.textContent = C.t("That key is not right.") + (e.data && e.data.attemptsLeft != null ? " " + C.plural(e.data.attemptsLeft, "{n} try left before a 15-minute pause.", "{n} tries left before a 15-minute pause.") : "");
         else msg.textContent = C.explain(e);

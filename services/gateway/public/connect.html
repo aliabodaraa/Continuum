@@ -124,13 +124,13 @@
       var m = /(?:^|[#&])s=([^&]+)/.exec(location.hash);
       if (m) { session = decodeURIComponent(m[1]); history.replaceState(null, "", location.pathname + location.search); }
       function sessionSiteKey() { try { return JSON.parse(atob(session.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).sk || ""; } catch (e) { return ""; } }
-      function loadGuard(on) {
+      function loadGuard(ks, ms) {
         var s = document.createElement("script");
         s.src = "/guard.js";
         s.setAttribute("data-site-key", sessionSiteKey());
         s.setAttribute("data-session", session);
-        s.setAttribute("data-keystroke", on ? "on" : "off");
-        s.setAttribute("data-mouse", on ? "on" : "off");
+        s.setAttribute("data-keystroke", ks);
+        s.setAttribute("data-mouse", ms);
         s.setAttribute("data-onboarding", "eager");
         s.setAttribute("data-login-url", "/connect.html?mode=closed");
         document.body.appendChild(s);
@@ -174,13 +174,18 @@
         if (mode === "enrol") {
           art("info", "shieldCheck");
           title("Set up Continuum Guard", "Continuum learns how you type and move the mouse, so it can tell when someone else is using your session. It takes about 15 minutes, once.");
-          plan([
-            ["fingerprint", "A passkey", "If you have none yet. It is how you prove it's you if Continuum ever doubts it."],
-            ["keyboard", "Your typing", "Type a few short texts as they appear."],
-            ["mouse", "Your mouse", "Move and click as asked."],
-          ]);
           status("Loading…", "busy");
-          loadGuard(true);
+          // 2026-11-25: only the channels that are on for this user (the organisation's console, the operator, or the
+          // server's .env). Both were forced on, so a channel switched off got 409 for every sample and this never ended.
+          C.api("/v1/sdk/keystroke/config", { token: session }).catch(function () { return {}; }).then(function (c) {
+            var ks = c.keystroke === "off" ? "off" : "on", ms = c.mouse === "off" ? "off" : "on";
+            plan([
+              ["fingerprint", "A passkey", "If you have none yet. It is how you prove it's you if Continuum ever doubts it."],
+              ks === "on" ? ["keyboard", "Your typing", "Type a few short texts as they appear."] : null,
+              ms === "on" ? ["mouse", "Your mouse", "Move and click as asked."] : null,
+            ].filter(Boolean));
+            loadGuard(ks, ms);
+          });
           whenReady(function () {
             art("ok", "check");
             title("You're all set", "Continuum Guard now protects you on every website. You can close this tab.");
@@ -194,7 +199,7 @@
           title("Verify it's you", (reason === "mouse" ? "The way the mouse was moving" : "The way someone was typing") +
             " didn't look like you, so Continuum Guard locked your session. Use your passkey to unlock it.");
           status("Loading…", "busy");
-          loadGuard(false);
+          loadGuard("off", "off");
           // The SDK's own dialog runs the passkey and stays open after a failure with its own
           // "Verify with passkey" button, so a retry needs nothing from this page.
           whenReady(function () {
@@ -212,6 +217,8 @@
                   + "records about 16 seconds of your mouse movement (only how the pointer moves, nothing you type or click on). It is kept to "
                   + "test whether learning from real use lowers false passkey requests. Your profile does not change.";
                 $("useAsk").classList.remove("hidden");
+                // 2026-11-25: the extension takes the answer only until 5 s before the offer ends; then "Record" would record nothing
+                setTimeout(function () { if (!$("useAsk").classList.contains("hidden")) { $("useAsk").classList.add("hidden"); title("Verified", "Thanks, it's you. Your session is unlocked; you can close this tab."); } }, Math.max(0, Number(offer.expiresInMs) - 5000));
                 function answer(yes) {
                   $("useAsk").classList.add("hidden");
                   title("Verified", yes ? "Recording starts now: keep browsing as usual. This window closes by itself."
@@ -286,7 +293,8 @@
             location.replace("/connect.html?mode=done&link=" + encodeURIComponent(r.linkId) + "&code=" + encodeURIComponent(r.code));
           }).catch(function (e) {
             status(C.explain(e), "bad");
-            $("accountBtn").disabled = false;
+            // 2026-11-25: an expired sign-in stays expired, so the button would only fail again: start from the extension
+            $("accountBtn").disabled = e.code === "link_expired";
           });
         });
       }

@@ -181,7 +181,10 @@ try {
   await ev(con, click("#wNext")); await sleep(100);
   ok("wizard: the sign-in page error is Arabic", await ev(con, "document.getElementById('wErr').textContent.startsWith('أضف صفحة تسجيل الدخول')"), await ev(con, "document.getElementById('wErr').textContent"));
   await english(con, "wizard extension");
-  await ev(con, fill("#wSignIn", "https://app.acme.com/continuum/link")); await ev(con, click("#wNext")); await waitFor(con, "!!document.getElementById('wHook')");
+  await ev(con, fill("#wSignIn", "https://app.acme.com/continuum/link")); await ev(con, click("#wNext")); await sleep(100);
+  // this server knows no extension id, so the step asks for it (2026-11-25)
+  ok("wizard: the extension id error is Arabic", await ev(con, "document.getElementById('wErr').textContent.startsWith('لا يعرف هذا الخادم معرّف الإضافة')"), await ev(con, "document.getElementById('wErr').textContent"));
+  await ev(con, fill("#wExtId", "abcdefghijklmnopabcdefghijklmnop")); await ev(con, click("#wNext")); await waitFor(con, "!!document.getElementById('wHook')");
   ok("wizard: the review line is Arabic", await ev(con, "document.querySelector('.callout strong').nextSibling.textContent === 'Acme Notes · موقع واحد · الإضافة مسموحة'"), await ev(con, "document.querySelector('.callout strong').nextSibling.textContent"));
   await english(con, "wizard alerts");
   console.log("  shot", await shot(con, "04-console-wizard-review-ar"));

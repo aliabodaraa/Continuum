@@ -187,6 +187,7 @@
     organisation_not_active: "This organisation is not active.",
     no_extension_sign_in: "This organisation hasn't set up sign-in for the browser extension yet. Ask its administrator.",
     extension_not_allowed: "This organisation doesn't allow the browser extension.",
+    extension_not_configured: "This server isn't set up for the browser extension yet. Ask its operator to add the extension's id.",
     link_expired: "This sign-in expired or was already used. Start again from the extension.",
     invalid_identity_token: "The organisation's sign-in couldn't be verified. Start again from the extension.",
     bad_code_challenge: "This page was opened incorrectly. Start again from the extension.",
@@ -233,9 +234,12 @@
     setTimeout(function () { t.style.transition = "opacity .3s"; t.style.opacity = "0"; setTimeout(function () { t.remove(); }, 320); }, kind === "bad" ? 6000 : 3500);
   }
   // modal({ title, text, body: node, actions: [{label, kind, onClick(close) -> promise|void}], onClose })
+  // closeModals() closes every open one (2026-11-25: a console session that ends left them open over the sign-in).
+  var openModals = [];
+  function closeModals() { openModals.slice().forEach(function (c) { c(); }); }
   function modal(o) {
     var back = el("div.modal-back"), box = el("div.modal", { role: "dialog", "aria-modal": "true" });
-    function close() { back.remove(); document.removeEventListener("keydown", esc); if (o.onClose) o.onClose(); }
+    function close() { back.remove(); document.removeEventListener("keydown", esc); openModals = openModals.filter(function (c) { return c !== close; }); if (o.onClose) o.onClose(); }
     function esc(e) { if (e.key === "Escape" && !o.sticky) close(); }
     var foot = el("div.card-foot");
     (o.actions || [{ label: "Close", kind: "secondary" }]).forEach(function (a) {
@@ -257,6 +261,7 @@
     back.addEventListener("click", function (e) { if (e.target === back && !o.sticky) close(); });
     document.addEventListener("keydown", esc);
     document.body.appendChild(back);
+    openModals.push(close);
     var first = box.querySelector("input,textarea,button.btn-primary,button.btn-danger");
     if (first) setTimeout(function () { first.focus(); }, 30);
     return close;
@@ -454,7 +459,7 @@
   }
 
   window.CUI = { icon: icon, el: el, append: append, clear: clear, brand: brand, api: api, explain: explain, MESSAGES: MESSAGES, msg: msg,
-    toast: toast, modal: modal, copyText: copyText, copyField: copyField, codeBlock: codeBlock, badge: badge, when: when, fullDate: fullDate,
+    toast: toast, modal: modal, closeModals: closeModals, copyText: copyText, copyField: copyField, codeBlock: codeBlock, badge: badge, when: when, fullDate: fullDate,
     passkeyRegister: passkeyRegister, passkeyLogin: passkeyLogin, settingsForm: settingsForm, showValue: showValue, SOURCE_TEXT: SOURCE_TEXT,
     tr: tr, t: t, plural: plural, text: text, lang: function () { return lang; }, setLang: setLang, onLang: onLang, langButton: langButton };
 })();
