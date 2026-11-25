@@ -1,0 +1,10 @@
+Re-enrolment check, code e0c8512a795e, valid True (V1 A 0.0e+00, N 0.0e+00; V2 A 3.3e-16, N 1.4e-16)
+his checks of 22-24 Nov: 558 (558 non-warm-up, 14.9 min of movement, 35 segments), 18 live requests under A
+  A: threshold 0.2621, requests 16 (1.08/min), checks at 33+ 18, mean low 17.4; the 5 checks since N went live: [0, 0, 0, 0, 1]
+  N: threshold 0.7902, requests 63 (4.23/min), checks at 33+ 558, mean low 59.7; the 5 checks since N went live: [13, 27, 32, 33, 60]
+  M: threshold 0.2556, requests 8 (0.54/min), checks at 33+ 17, mean low 16.2; the 5 checks since N went live: [0, 0, 0, 0, 2]
+impostors raw: A 77.1%, N 100.0% (+22.9 points, 95% [+3.7, +42.9])
+impostors raw: A 77.1%, M 79.9% (+2.7 points, 95% [+0.3, +5.8])
+impostors scaled: A 57.0%, N 100.0% (+43.0 points, 95% [+21.1, +63.0])
+impostors scaled: A 57.0%, M 76.5% (+19.5 points, 95% [+8.2, +32.6])
+rule: {"N": {"fewerRequests": false, "captureWithin5Points": true, "acceptable": false}, "M": {"fewerRequests": true, "captureWithin5Points": true, "acceptable": true}}; choice: M

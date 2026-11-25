@@ -1,0 +1,127 @@
+{
+ "code": "e0c8512a795e826a24a87967caccbcda019e5f92b5e3c9d286247083f970d519",
+ "seconds": 29.9,
+ "valid": true,
+ "V1": {
+  "A": 0.0,
+  "N": 0.0
+ },
+ "V2": {
+  "A": 3.3306690738754696e-16,
+  "N": 1.3877787807814457e-16
+ },
+ "ownerMedianStep": 10.198039054870605,
+ "genuine": {
+  "checks": 558,
+  "nonWarmupChecks": 558,
+  "minutes": 14.88,
+  "segments": 35,
+  "liveRequestsUnderA": 18,
+  "arms": {
+   "A": {
+    "threshold": 0.26208394455013234,
+    "requests": 16,
+    "perMin": 1.075268817204301,
+    "checksAt33": 18,
+    "meanLow": 17.385304659498207,
+    "sinceNLive": [
+     0,
+     0,
+     0,
+     0,
+     1
+    ]
+   },
+   "N": {
+    "threshold": 0.7902170168193853,
+    "requests": 63,
+    "perMin": 4.233870967741935,
+    "checksAt33": 558,
+    "meanLow": 59.67562724014337,
+    "sinceNLive": [
+     13,
+     27,
+     32,
+     33,
+     60
+    ]
+   },
+   "M": {
+    "threshold": 0.2556259705627145,
+    "requests": 8,
+    "perMin": 0.5376344086021505,
+    "checksAt33": 17,
+    "meanLow": 16.22043010752688,
+    "sinceNLive": [
+     0,
+     0,
+     0,
+     0,
+     2
+    ]
+   }
+  }
+ },
+ "impostors": {
+  "users": 20,
+  "I": {
+   "raw": {
+    "N": {
+     "captureA": 77.13310580204778,
+     "capture": 100.0,
+     "deltaPoints": 22.866894197952217,
+     "ci95": [
+      3.7306522940851305,
+      42.94747895459828
+     ],
+     "decisions": 293
+    },
+    "M": {
+     "captureA": 77.13310580204778,
+     "capture": 79.86348122866895,
+     "deltaPoints": 2.7303754266211606,
+     "ci95": [
+      0.2873357375753384,
+      5.841924398625429
+     ],
+     "decisions": 293
+    }
+   },
+   "scaled": {
+    "N": {
+     "captureA": 56.996587030716725,
+     "capture": 100.0,
+     "deltaPoints": 43.003412969283275,
+     "ci95": [
+      21.05214604777627,
+      63.022702913378154
+     ],
+     "decisions": 293
+    },
+    "M": {
+     "captureA": 56.996587030716725,
+     "capture": 76.45051194539249,
+     "deltaPoints": 19.453924914675767,
+     "ci95": [
+      8.191833590138677,
+      32.58447773616313
+     ],
+     "decisions": 293
+    }
+   }
+  }
+ },
+ "rule": {
+  "N": {
+   "fewerRequests": false,
+   "captureWithin5Points": true,
+   "acceptable": false
+  },
+  "M": {
+   "fewerRequests": true,
+   "captureWithin5Points": true,
+   "acceptable": true
+  }
+ },
+ "choice": "M"
+}
