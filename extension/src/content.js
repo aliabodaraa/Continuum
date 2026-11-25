@@ -248,6 +248,22 @@
     err.textContent = message + ". " + T("Check that the Continuum server is running, or its address in the extension's settings, then press the button again.");
     err.style.display = "block";
   }
+  // The sign-in itself expired, or signing in again failed (background.js gatewayDown, cg:link-code): no passkey can be asked
+  // for without it. Said so, with "Sign in again"; only the locked account can (finishSignIn). Before 2026-11-25 this said
+  // "Can't reach Continuum", and signing out is refused while locked: the user had no way out.
+  function showSignInNeeded(message) {
+    if (!lockEl) return;
+    var err = lockEl.querySelector("#__cgErr");
+    if (!err) return;
+    err.textContent = message || T("Your sign-in has expired. Sign in again, then verify with your passkey.");
+    var b = document.createElement("button");
+    b.id = "__cgSignInBtn";
+    b.textContent = T("Sign in again");
+    b.setAttribute("style", "display:block;width:100%;margin-top:10px;background:#b91c1c;color:#fff;border:0;border-radius:10px;padding:10px 16px;font:700 14px system-ui,Tahoma,sans-serif;cursor:pointer");
+    b.addEventListener("click", function () { err.style.display = "none"; safeSend({ type: "cg:sign-in-again" }); });
+    err.appendChild(b);
+    err.style.display = "block";
+  }
   function hideLock() { if (lockEl) { try { lockEl.remove(); } catch (e) {} lockEl = null; } }
 
   // The gateway's pages post their outcome into their own window; this relays it to the worker, which
@@ -322,6 +338,7 @@
     if (msg.type === "cg:use-sample-start" && msg.epoch) useRec = { epoch: msg.epoch, until: Number(msg.until) || 0, events: [] };
     if (msg.type === "cg:use-sample-stop") useRec = null;
     if (msg.type === "cg:gateway-unreachable") showGatewayError(msg.message || "Can't reach the Continuum server");
+    if (msg.type === "cg:sign-in-needed") showSignInNeeded(msg.message);
     if (msg.type === "cg:reset") { clearCapture(); if (msg.bufferEpoch) bufferEpoch = msg.bufferEpoch; }   // fresh evidence after a verified step-up
   }
 

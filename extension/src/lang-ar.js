@@ -74,4 +74,6 @@ self.CG_AR = {
   "Verify with passkey": "تحقّق بمفتاح المرور",
   "Opening…": "جارٍ الفتح…",
   "Check that the Continuum server is running, or its address in the extension's settings, then press the button again.": "تأكد أن خادم Continuum يعمل، أو من عنوانه في إعدادات الإضافة، ثم اضغط الزر مجدداً.",
+  "Your sign-in has expired. Sign in again, then verify with your passkey.": "انتهت صلاحية تسجيل دخولك. سجّل الدخول مجدداً، ثم تحقّق بمفتاح المرور.",
+  "Sign in again": "سجّل الدخول مجدداً",
 };

@@ -69,6 +69,9 @@ var restored = new Promise(function (resolve) { restoreResolve = resolve; });
 function markRestored() { if (!restoreDone) { restoreDone = true; restoreResolve(); } }
 setTimeout(markRestored, 3000);   // a read that never answers must not hold every message for ever
 var session = null;     // { token, userId, key } from /v1/sdk/session; re-minted on a 401 or a change of user
+// The account's sign-in itself refused by the gateway (its refresh token expired or revoked, its organisation revoked): no
+// session, so no passkey page either. The settings and the lock overlay then offer "Sign in again" (2026-11-25).
+var signInDead = false;
 var probation = false;  // after a step-up: re-challenge on any scored suspicious verdict (as the SDK); kept in cg_progress
 var openPrompt = null;      // the open step-up: { channel, decisionId, sessionId, tabId } (study logging)
 // Learning from real use, stage 1: after a verified step-up the gateway may offer to record a real-use mouse sample
@@ -118,6 +121,9 @@ function captureInfo() {
   return c ? { kind: c.kind, paused: paused, offline: !!offline, off: { keystroke: !!state.disabled.keystroke, mouse: !!state.disabled.mouse } } : null;
 }
 function disabledKey() { return Object.keys(state.disabled).sort().join(","); }
+// Kept in storage (2026-11-25): it lived only in state.disabled, so every restart of this worker (~30 s idle) forgot it and
+// the pages collected a channel the organisation had turned off until its next check was refused.
+function persistDisabled() { try { api.storage.local.set({ cg_disabled: state.disabled }); } catch (e) {} }
 // The signed-in organisation's settings (its console, or the operator's default): which channels are on,
 // the "fields never watched" and the typing packet. The field types and the packet are kept in storage
 // because the worker loses its variables when idle. The server enforces all of them anyway.
@@ -138,7 +144,7 @@ function refreshOrgConfig() {
       if (r.d[ch] === "off") { if (!state.disabled[ch]) state.disabled[ch] = Date.now(); }
       else if (r.d[ch] === "on") delete state.disabled[ch];
     });
-    if (disabledKey() !== before) broadcastConfig();   // the pages stop or resume collecting that channel
+    if (disabledKey() !== before) { broadcastConfig(); persistDisabled(); }   // the pages stop or resume collecting that channel
     refreshAllBadges();
     if (Array.isArray(r.d.excludeFieldTypes)) {
       excludeTypes = r.d.excludeFieldTypes.map(function (x) { return String(x).toLowerCase(); });
@@ -171,7 +177,7 @@ function loadAccount(v) {
 }
 // Any change of user: drop what belonged to the previous one.
 function resetUser() {
-  session = null; probation = false; openPrompt = null;
+  session = null; probation = false; openPrompt = null; signInDead = false;
   stopUseRecording();
   state.verdict = null; state.mouseVerdict = null; state.error = null; state.notEnrolled = null; state.unavailable = {};
   // Another gateway, or none: whether the old one answered says nothing about it.
@@ -238,9 +244,13 @@ async function sessionToken(force) {
   var d = await r.json().catch(function () { return {}; });
   if (!r.ok || !d.token) {
     // The refresh token was revoked or has expired, or the organisation was: sign in again.
-    if (c.kind !== "study" && /refresh_token|tenant_revoked|invalid_site_key/.test(d.error || "")) state.error = "Your sign-in has expired. Sign in again in the settings.";
-    throw new Error(d.error || ("session HTTP " + r.status));
+    var dead = c.kind !== "study" && /refresh_token|tenant_revoked|invalid_site_key/.test(d.error || "");
+    if (dead) { state.error = "Your sign-in has expired. Sign in again in the settings."; signInDead = true; }
+    var err = new Error(d.error || ("session HTTP " + r.status));
+    err.signInDead = dead;   // gatewayDown: the gateway answered, so not "Can't reach Continuum"
+    throw err;
   }
+  signInDead = false;
   session = { token: d.token, userId: d.userId, key: key };
   if (d.onboarding) setOnboarding(d.onboarding);
   return d.token;
@@ -301,11 +311,11 @@ function onVerdict(channel, r, sessionId) {
   if (r && r.status === 409 && /_disabled$/.test(String(d.error || ""))) {
     var wasOff = !!state.disabled[channel];
     state.disabled[channel] = Date.now();
-    if (!wasOff) broadcastConfig();
+    if (!wasOff) { broadcastConfig(); persistDisabled(); }
     refreshAllBadges();
     return;
   }
-  if (d.checked && state.disabled[channel]) { delete state.disabled[channel]; broadcastConfig(); }
+  if (d.checked && state.disabled[channel]) { delete state.disabled[channel]; broadcastConfig(); persistDisabled(); }
   // That channel's model cannot score: no verdict, so its last one is dropped (no stale "it's you"); the other channel
   // goes on, and the next check of this one tries again.
   if (r && r.status === 503 && d.error === "model_unavailable") {
@@ -383,6 +393,9 @@ function openEnrol() {
 // The step-up is the only way to clear a lock, so an unreachable gateway must be said out loud, in the
 // overlay too; otherwise the click seems to do nothing and the user looks locked out for good.
 function gatewayDown(e) {
+  // The gateway answered, but the sign-in itself is no longer valid: said as such, with "Sign in again" in the overlay
+  // (2026-11-25). It said "Can't reach Continuum", and signing out is refused while locked, so a locked user had no way out.
+  if (e && e.signInDead) { broadcastAll({ type: "cg:sign-in-needed" }); refreshAllBadges(); return; }
   state.error = "Can't reach Continuum at " + ((conn() || {}).gateway || "the gateway") + " (" + ((e && e.message) || "unreachable") + ")";
   broadcastAll({ type: "cg:gateway-unreachable", message: state.error });
   refreshAllBadges();
@@ -412,14 +425,31 @@ function b64url(bytes) {
   var s = ""; for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
+function tabById(id) {
+  return new Promise(function (resolve) { try { api.tabs.get(id, function (t) { void api.runtime.lastError; resolve(t || null); }); } catch (e) { resolve(null); } });
+}
 async function startSignIn(gateway, siteKey) {
   gateway = String(gateway || DEFAULT_GATEWAY).trim().replace(/\/+$/, "");
   siteKey = String(siteKey || "").trim();
+  // A sign-in already open (2026-11-25): a second click made a new verifier, so neither window could finish (the first
+  // one's code no longer matched it, the second found nothing pending). The same sign-in is brought to the front; another
+  // one (other server or organisation) replaces it and its window is closed.
+  var old = (await api.storage.session.get("cg_link_pending")).cg_link_pending;
+  if (old && old.tabId == null && Date.now() - old.at < 5000) return;   // its window is being opened
+  var oldTab = old && old.tabId != null && Date.now() - old.at < 15 * 60000 ? await tabById(old.tabId) : null;
+  if (oldTab && old.gateway === gateway && old.siteKey === siteKey) {
+    try { api.windows.update(oldTab.windowId, { focused: true }, function () { void api.runtime.lastError; }); } catch (e) {}
+    return;
+  }
+  if (oldTab) { try { api.tabs.remove(oldTab.id, function () { void api.runtime.lastError; }); } catch (e) {} }
   var verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
   var challengeS256 = b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
-  await api.storage.session.set({ cg_link_pending: { gateway: gateway, siteKey: siteKey, verifier: verifier, at: Date.now() } });
+  var pending = { gateway: gateway, siteKey: siteKey, verifier: verifier, at: Date.now() };
+  await api.storage.session.set({ cg_link_pending: pending });
   pendingGateway = gateway;
-  openPage(gateway + "/connect.html?mode=link&k=" + encodeURIComponent(siteKey) + "&cc=" + challengeS256, true);
+  openPage(gateway + "/connect.html?mode=link&k=" + encodeURIComponent(siteKey) + "&cc=" + challengeS256, true, function (t) {
+    if (t && t.id != null) { pending.tabId = t.id; try { api.storage.session.set({ cg_link_pending: pending }); } catch (e) {} }
+  });
 }
 async function finishSignIn(msg, sender) {
   var p = (await api.storage.session.get("cg_link_pending")).cg_link_pending;
@@ -430,17 +460,30 @@ async function finishSignIn(msg, sender) {
   await api.storage.session.remove("cg_link_pending");
   pendingGateway = "";
   if (!r.ok || !d.refreshToken) throw new Error(d.error || ("sign-in HTTP " + r.status));
+  // Locked: only the locked account may sign in again ("Sign in again" after its sign-in expired, 2026-11-25). Anyone else
+  // would replace it here and could then lift the lock with their own passkey.
+  if (state.locked && account && !studyOn() && (p.gateway !== account.gateway || d.siteKey !== account.siteKey || String(d.userId) !== String(account.userId))) {
+    revoke({ gateway: p.gateway, refreshToken: d.refreshToken });
+    throw new Error("this browser is locked for " + (account.label || "user " + account.userId) + ": sign in with that account");
+  }
+  var who = connKey();
   if (account && account.refreshToken) revoke(account);   // signing in as someone else replaces the old sign-in
   resetUser();
   account = { gateway: p.gateway, siteKey: d.siteKey, kind: d.kind, tenantName: d.tenantName, label: d.label, userId: d.userId,
     refreshToken: d.refreshToken, onboarding: d.onboarding || null, linkedAt: new Date().toISOString() };
   await api.storage.local.set({ cg_account: account });
   if (!studyOn()) session = { token: d.token, userId: d.userId, key: connKey() };
+  // Another user: what the pages collected belonged to the one before (storage.onChanged does not see this change, the
+  // account is replaced here first). Reachable from "Sign in again" since 2026-11-25.
+  if (connKey() !== who) { newBufferEpoch(); broadcastAll({ type: "cg:reset", bufferEpoch: bufferEpoch }); }
   closeSenderTab(sender);
   broadcastConfig();
   refreshAllBadges();
   var ob = d.onboarding || {};
-  if (!studyOn() && !(ob.passkey && ob.keystroke && ob.mouse)) openEnrol();   // nothing to score before enrolment
+  if (!studyOn()) {
+    if (state.locked) openVerify();   // signed in again to lift the lock: the passkey next, never the enrolment
+    else if (!(ob.passkey && ob.keystroke && ob.mouse)) openEnrol();   // nothing to score before enrolment
+  }
 }
 function revoke(acc) {
   try {
@@ -450,7 +493,7 @@ function revoke(acc) {
 }
 
 // ---- restore at worker start ----
-api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "cg_account", "cg_paused", "cg_show_verdict", "cg_study_paused", "cg_exclude_types", "cg_ks_packet", "cg_offline", "cg_look", "cg_buffer_epoch"], function (d) {
+api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "cg_account", "cg_paused", "cg_show_verdict", "cg_study_paused", "cg_exclude_types", "cg_ks_packet", "cg_offline", "cg_look", "cg_buffer_epoch", "cg_disabled"], function (d) {
   try {
   d = d || {};
   // An epoch issued before this read (a change of user that woke the worker) stays: the read is older than it.
@@ -458,6 +501,7 @@ api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "
   if (Array.isArray(d.cg_exclude_types)) excludeTypes = d.cg_exclude_types;
   if (Number(d.cg_ks_packet) > 0) RECENT = Number(d.cg_ks_packet);
   if (d.cg_look && d.cg_look.lang) look = { lang: d.cg_look.lang, theme: d.cg_look.theme || "auto" };
+  if (d.cg_disabled) ["keystroke", "mouse"].forEach(function (ch) { if (d.cg_disabled[ch] && !state.disabled[ch]) state.disabled[ch] = Number(d.cg_disabled[ch]) || Date.now(); });
   loadStudy(d.cg_study);
   loadAccount(d.cg_account);
   paused = d.cg_paused === true;
@@ -489,6 +533,8 @@ api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "
   broadcastConfig();
   refreshAllBadges();
   if (offline) probeGateway();
+  // A page sends nothing of a channel that is off, so nothing else would notice it switched back on.
+  else if (disabledKey()) refreshOrgConfig();
   } finally { markRestored(); }
 });
 if (api.storage.session && api.storage.session.get) {
@@ -536,7 +582,8 @@ function injectAll() {
   api.tabs.query({ url: ["http://*/*", "https://*/*"] }, function (tabs) {
     (tabs || []).forEach(function (t) {
       try {
-        api.scripting.executeScript({ target: { tabId: t.id }, files: ["src/features.js", "src/features-mouse.js", "src/content.js"] },
+        // lang-ar.js before content.js, as in the manifest: without it the lock overlay was English in these tabs (2026-11-25)
+        api.scripting.executeScript({ target: { tabId: t.id }, files: ["src/features.js", "src/features-mouse.js", "src/lang-ar.js", "src/content.js"] },
           function () { void api.runtime.lastError; });   // chrome:// & store tabs refuse — fine
       } catch (e) {}
     });
@@ -597,6 +644,7 @@ function statusObj(tabId) {
     disabled: { keystroke: !!state.disabled.keystroke, mouse: !!state.disabled.mouse },
     unavailable: { keystroke: !!state.unavailable.keystroke, mouse: !!state.unavailable.mouse },
     look: look,
+    signInExpired: !!(signInDead && account && !studyOn()),   // the settings offer "Sign in again"
     bars: tabId != null ? { keystroke: barState("keystroke", tabId).text, mouse: barState("mouse", tabId).text } : null,
     useSample: { recording: !!(useRec && useRec.until > Date.now()), last: lastUseSample },
   };
@@ -812,7 +860,7 @@ function onMessage(msg, sender, reply) {
       if (c.kind === "study") body = Object.assign({}, msg.body, { study: studyContext(msg.sessionId, msg.clientTs, ch === "mouse" ? { windowKeys: msg.windowKeys || [] } : null) });
       gw(path, body)
         .then(function (r) { onVerdict(ch, r, msg.sessionId); reply({ ok: true, status: r.status }); })
-        .catch(function (e) { if (!offline) state.error = (e && e.message) || "gateway unreachable"; refreshAllBadges(); reply({ ok: false, error: state.error }); });
+        .catch(function (e) { if (!offline && !(e && e.signInDead)) state.error = (e && e.message) || "gateway unreachable"; refreshAllBadges(); reply({ ok: false, error: state.error }); });
       return true;
     }
     case "cg:open-verify":
@@ -865,14 +913,27 @@ function onMessage(msg, sender, reply) {
     case "cg:link-code":
       if (!fromGatewayPage(sender, "/connect.html")) return;
       finishSignIn(msg, sender).catch(function (e) {
-        state.error = "Sign-in failed: " + ((e && e.message) || e);
+        var why = (e && e.message) || String(e);
+        // The gateway refused this copy of the extension (its id is not allowed): said plainly, with the id (2026-11-25).
+        if (why === "origin_not_allowed") why = "this Continuum server does not accept this copy of the extension (id " + api.runtime.id + "). Ask whoever runs it, or your organisation, to allow that id";
+        state.error = "Sign-in failed: " + why;
         console.warn("[continuum-guard] " + state.error);
+        // Its window would wait, then say to sign in again: closed, so the settings page or the lock overlay behind it says
+        // what went wrong.
+        closeSenderTab(sender);
+        if (state.locked) broadcastAll({ type: "cg:sign-in-needed", message: state.error });
         refreshAllBadges();
       });
       return;
     // ---- from the options page and the popup ----
     case "cg:sign-in":
       startSignIn(msg.gateway, msg.siteKey).then(function () { reply({ ok: true }); }).catch(function (e) { reply({ ok: false, error: (e && e.message) || String(e) }); });
+      return true;
+    case "cg:sign-in-again":
+      // The account's own server and organisation, from the lock overlay or the settings once its sign-in expired. Who
+      // signs in is checked when it finishes: while locked, only the locked account (finishSignIn).
+      if (!account || studyOn()) { reply({ ok: false, error: "not signed in" }); return true; }
+      startSignIn(account.gateway, account.siteKey).then(function () { reply({ ok: true }); }).catch(function (e) { reply({ ok: false, error: (e && e.message) || String(e) }); });
       return true;
     case "cg:sign-out":
       // Locked: verify first. Signing out would otherwise be a way round the lock.
@@ -881,8 +942,11 @@ function onMessage(msg, sender, reply) {
       api.storage.local.remove("cg_account", function () { reply({ ok: true }); });
       return true;
     case "cg:open-enrol":
+      // Never while locked (2026-11-25): the enrolment page asked for the passkey too, and the lock then asked again.
+      if (state.locked) { reply({ ok: false, error: "locked" }); return true; }
       openEnrol();
-      return;
+      reply({ ok: true });
+      return true;
     case "cg:status":
       maybeRefreshOrgConfig(5000);
       if (account && account.onboarding && account.onboarding.keystrokeTraining && !account.onboarding.keystroke) maybeRefreshOnboarding(8000);

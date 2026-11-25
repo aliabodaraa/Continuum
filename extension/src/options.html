@@ -33,6 +33,7 @@
       button:hover { filter: brightness(1.07); }
       button:active { transform: translateY(1px); }
       button.ghost { background: none; border: 1.5px solid var(--field-border); color: var(--text); }
+      button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
       .check { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 13px; margin-top: 12px; }
       .msg { font-size: 13px; font-weight: 600; margin-top: 10px; min-height: 1.2em; }
       .ok { color: var(--ok); } .bad { color: var(--bad); }
@@ -53,7 +54,9 @@
       <p id="whoLine"></p>
       <div class="steps" id="enrolLine"></div>
       <button id="enrolBtn" class="hidden">Finish enrolment</button>
+      <button id="reSignInBtn" class="hidden">Sign in again</button>
       <button id="signOutBtn" class="ghost">Sign out</button>
+      <div id="lockNote" class="note"></div>
       <div id="accountMsg" class="msg"></div>
     </div>
 
@@ -83,6 +86,7 @@
 
     <h2>Display</h2>
     <label class="check"><input id="showVerdict" type="checkbox" /> Show the live verdict (typing and mouse) in the popup and on the toolbar badge</label>
+    <p class="note hidden" id="verdictNote">Study mode is on: its own "Show verdicts while testing" decides.</p>
     <label class="check"><input id="debug" type="checkbox" /> Verbose diagnostics in the console</label>
     <p class="note">Diagnostics are off by default. When on, every check and verdict is logged to the service-worker console and to each page's console.</p>
 

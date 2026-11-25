@@ -98,8 +98,14 @@ function refresh() {
     var ob = (s.account && !s.study && s.account.onboarding) || null;
     // Typing enrolment done, its model being built on the server (about a minute): nothing is missing.
     var ksBuilding = !!(ob && ob.keystrokeTraining && !ob.keystroke);
-    var incomplete = (ob && !(ob.passkey && (ob.keystroke || ksBuilding) && ob.mouse)) || (!!s.notEnrolled && !(s.notEnrolled === "keystroke" && ksBuilding));
-    show("enrolBtn", incomplete);
+    // A channel the organisation turned off is not enrolled (the enrolment page skips it), so it is not missing: the button
+    // stayed for good before 2026-11-25.
+    var chOff = s.disabled || {};
+    var incomplete = (ob && !(ob.passkey && (chOff.keystroke || ob.keystroke || ksBuilding) && (chOff.mouse || ob.mouse)))
+      || (!!s.notEnrolled && !chOff[s.notEnrolled] && !(s.notEnrolled === "keystroke" && ksBuilding));
+    // Not while locked (the enrolment page asked for the passkey first, then the lock again) nor while the server cannot be
+    // reached (the page cannot load).
+    show("enrolBtn", incomplete && !s.locked && !s.offline);
 
     // The banner.
     var vd = q("verdict"), cls = "", txt;
@@ -151,6 +157,9 @@ function refresh() {
     show("errLine", !!s.error);
     if (s.error) q("errLine").textContent = s.offline ? T("Can't reach Continuum at {gw} ({why}): nothing is checked", { gw: s.gateway, why: s.offline.message }) : s.error;
     q("exclude").textContent = T(excluded ? "Include this site" : "Exclude this site");
+    // Not on a page that is never recorded (Chrome's own pages, the gateway's): there it changed nothing (2026-11-25).
+    var gwOrigin = ""; try { gwOrigin = s.gateway ? new URL(s.gateway).origin : ""; } catch (e) {}
+    show("exclude", !curRestricted && !!curOrigin && curOrigin !== gwOrigin);
   });
 }
 
