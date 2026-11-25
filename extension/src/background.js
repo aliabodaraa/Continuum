@@ -52,6 +52,22 @@ var PROBE_ALARM = "cg-gateway-probe";
 var state = { locked: false, lockReason: null, lockPasted: false, verdict: null, mouseVerdict: null, error: null, notEnrolled: null, lastCheckAt: 0,
   disabled: {},      // channel -> when the server last said the organisation turned it off
   unavailable: {} }; // channel -> when its model last could not score (ca-service 503 model_unavailable): no verdict for it
+// The buffer epoch (2026-11-25): a new value at every unlock and every change of user, kept in storage.local so a
+// restarted worker keeps it. A page's buffers belong to the epoch they were collected in, and a check from another
+// epoch is refused and the page told to start again. Before this, a page that did not hear the unlock (kept in the
+// back/forward cache, frozen, or hidden) kept the movement that had locked the account and sent it again after the
+// passkey: the owner was asked twice in a row on 22 and 24 Nov (58 and 59 of 60 windows the same).
+var bufferEpoch = null;
+function newBufferEpoch() {
+  bufferEpoch = "b" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  try { api.storage.local.set({ cg_buffer_epoch: bufferEpoch }); } catch (e) {}
+}
+// The message that wakes this worker can arrive before its saved state is read, so every message waits for that read.
+// Answered before it, a page heard "not locked, nobody signed in", and an unlock could be undone by the read.
+var restoreDone = false, restoreResolve = null;
+var restored = new Promise(function (resolve) { restoreResolve = resolve; });
+function markRestored() { if (!restoreDone) { restoreDone = true; restoreResolve(); } }
+setTimeout(markRestored, 3000);   // a read that never answers must not hold every message for ever
 var session = null;     // { token, userId, key } from /v1/sdk/session; re-minted on a 401 or a change of user
 var probation = false;  // after a step-up: re-challenge on any scored suspicious verdict (as the SDK); kept in cg_progress
 var openPrompt = null;      // the open step-up: { channel, decisionId, sessionId, tabId } (study logging)
@@ -434,8 +450,10 @@ function revoke(acc) {
 }
 
 // ---- restore at worker start ----
-api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "cg_account", "cg_paused", "cg_show_verdict", "cg_study_paused", "cg_exclude_types", "cg_ks_packet", "cg_offline", "cg_look"], function (d) {
+api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "cg_account", "cg_paused", "cg_show_verdict", "cg_study_paused", "cg_exclude_types", "cg_ks_packet", "cg_offline", "cg_look", "cg_buffer_epoch"], function (d) {
+  try {
   d = d || {};
+  if (typeof d.cg_buffer_epoch === "string" && d.cg_buffer_epoch) bufferEpoch = d.cg_buffer_epoch; else newBufferEpoch();
   if (Array.isArray(d.cg_exclude_types)) excludeTypes = d.cg_exclude_types;
   if (Number(d.cg_ks_packet) > 0) RECENT = Number(d.cg_ks_packet);
   if (d.cg_look && d.cg_look.lang) look = { lang: d.cg_look.lang, theme: d.cg_look.theme || "auto" };
@@ -470,6 +488,7 @@ api.storage.local.get(["cg_exclusions", "cg_progress", "cg_debug", "cg_study", "
   broadcastConfig();
   refreshAllBadges();
   if (offline) probeGateway();
+  } finally { markRestored(); }
 });
 if (api.storage.session && api.storage.session.get) {
   api.storage.session.get("cg_link_pending", function (d) { var p = d && d.cg_link_pending; if (p) pendingGateway = p.gateway; });
@@ -550,7 +569,9 @@ if (api.storage.onChanged) {
     if (connKey() !== who) {
       // Another user (or nobody): the old lock and verdicts belonged to the previous one.
       resetUser();
-      if (state.locked) { state.locked = false; state.lockReason = null; state.lockPasted = false; broadcastAll({ type: "cg:unlock" }); }
+      newBufferEpoch();
+      if (state.locked) { state.locked = false; state.lockReason = null; state.lockPasted = false; broadcastAll({ type: "cg:unlock", bufferEpoch: bufferEpoch }); }
+      broadcastAll({ type: "cg:reset", bufferEpoch: bufferEpoch });
       persistProgress(true);
     }
     if (changes.cg_study || changes.cg_account || changes.cg_paused || changes.cg_debug) broadcastConfig();
@@ -734,8 +755,9 @@ function releaseLock() {
   state.error = null;
   state.verdict = null;
   state.mouseVerdict = null;
-  broadcastAll({ type: "cg:unlock" });
-  broadcastAll({ type: "cg:reset" });   // content scripts drop their buffers: fresh evidence after a step-up
+  newBufferEpoch();
+  broadcastAll({ type: "cg:unlock", bufferEpoch: bufferEpoch });
+  broadcastAll({ type: "cg:reset", bufferEpoch: bufferEpoch });   // content scripts drop their buffers: fresh evidence after a step-up
   refreshAllBadges();
   persistProgress(true);
 }
@@ -744,7 +766,7 @@ function broadcastConfig() {
   api.tabs.query({}, function (tabs) {
     (tabs || []).forEach(function (t) {
       try {
-        api.tabs.sendMessage(t.id, { type: "cg:config", capture: captureInfo(), exclusions: config.exclusions, gatewayOrigin: gatewayOrigin(), debug: debugLog, excludeTypes: excludeTypes, look: look },
+        api.tabs.sendMessage(t.id, { type: "cg:config", capture: captureInfo(), exclusions: config.exclusions, gatewayOrigin: gatewayOrigin(), debug: debugLog, excludeTypes: excludeTypes, look: look, bufferEpoch: bufferEpoch },
           function () { void api.runtime.lastError; });
       } catch (e) {}
     });
@@ -753,14 +775,21 @@ function broadcastConfig() {
 
 api.runtime.onMessage.addListener(function (msg, sender, reply) {
   if (!msg) return;
+  if (restoreDone) return onMessage(msg, sender, reply);
+  restored.then(function () { onMessage(msg, sender, reply); });
+  return true;
+});
+function onMessage(msg, sender, reply) {
   switch (msg.type) {
     case "cg:hello":
-      reply({ capture: captureInfo(), excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, lockPasted: state.lockPasted, gatewayOrigin: gatewayOrigin(), debug: debugLog, excludeTypes: excludeTypes, look: look });
+      reply({ capture: captureInfo(), excluded: config.exclusions.indexOf(msg.origin) >= 0, locked: state.locked, lockPasted: state.lockPasted, gatewayOrigin: gatewayOrigin(), debug: debugLog, excludeTypes: excludeTypes, look: look, bufferEpoch: bufferEpoch });
       return true;
     case "cg:check": {
       // From a content script: { channel, sessionId, clientTs, body, windowKeys }.
       var c = conn();
       if (!c || paused || state.locked || !msg.body) { reply({ ok: false, paused: paused }); return true; }
+      // Collected before the last unlock, or for another user: refused, and the page starts again.
+      if (bufferEpoch && msg.bufferEpoch !== bufferEpoch) { reply({ ok: false, stale: true, bufferEpoch: bufferEpoch }); return true; }
       var ch = msg.channel === "mouse" ? "mouse" : "keystroke";
       // Turned off by the organisation: nothing is sent; its settings are read again every 30 s while the
       // user is active, so switching the channel back on takes effect without waiting.
@@ -860,4 +889,4 @@ api.runtime.onMessage.addListener(function (msg, sender, reply) {
       return true;
     }
   }
-});
+}
