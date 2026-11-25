@@ -265,7 +265,16 @@
     // consecutive hops can be, and a 480px card taught the model one cramped amplitude that never matched full-page movement.
     // Since the tasks (2026-11-24) the pad is a little lower, so the whole card fits a laptop screen without scrolling:
     // a task sets its own distances.
-    ".card.wide{max-width:min(1100px,94vw)}.card.wide .pad{height:min(50vh,480px)}",
+    // The mouse samples' card is as tall as the window: one row above the pad (.mtop) and one below it (.mbot), and the
+    // pad has all the height between them. Its width follows its height, about as a screen's does: until 2026-11-25
+    // the pad was a strip up to 1100 px wide and half the window high (three times as wide as high on a laptop), and
+    // movement between targets on a strip runs sideways.
+    ".card.wide{max-width:min(96vw,1500px,calc((100vh - 230px)*1.8));height:calc(100vh - 32px);display:flex;flex-direction:column;padding:20px 24px}.card.wide>*{flex:0 0 auto}",
+    ".card.wide .brand{margin-bottom:10px}.card.wide .pad{flex:1 1 0;height:auto;min-height:260px;margin-bottom:0}.card.wide .bar{margin:10px 0 8px}",
+    ".mtop{display:flex;align-items:flex-end;justify-content:space-between;gap:6px 24px;flex-wrap:wrap;margin-bottom:10px}.mtop .mtt{flex:1 1 320px;min-width:0}",
+    ".mtop .t{margin-bottom:2px}.mtop .d{margin:0;line-height:1.5}.mtop .msamp{margin:0}",
+    ".mbot{display:flex;align-items:center;justify-content:space-between;gap:8px 18px;flex-wrap:wrap}.mbot .diag{margin:0}",
+    ".mact{display:flex;align-items:center;gap:18px;margin-inline-start:auto}.mact .foot{margin:0}.mact .row2 .b{flex:0 0 auto;width:auto;padding:10px 30px}",
     ".card.center .t,.card.center .d{text-align:center}",
     ".wizx{position:absolute;top:12px;inset-inline-end:12px;width:32px;height:32px;border:0;border-radius:10px;background:transparent;color:var(--faint);display:grid;place-items:center;cursor:pointer;padding:0;transition:background .2s,color .2s,transform .3s}",
     ".wizx:hover{background:var(--card2);color:var(--text);transform:rotate(90deg)}",
@@ -333,6 +342,7 @@
     ".tk-chip.next{border-color:var(--acc);color:var(--acc);box-shadow:0 0 0 5px var(--accw)}.tk-chip.done{background:var(--ok);border-color:var(--ok);color:#fff}",
     ".tk-text{position:absolute;font-size:17px;line-height:2.05;font-weight:500;color:var(--text);cursor:text}",
     ".tk-w{display:inline-block;padding:0 4px;border-radius:6px;transition:background .15s,color .15s,box-shadow .15s}",
+    ".tk-text.col .tk-w{display:block;width:max-content}",   // the list form: one word a line
     ".tk-w.mark{background:var(--accw);box-shadow:inset 0 -2px 0 var(--acc)}.tk-w.sel{background:var(--acc);color:#fff;box-shadow:none}",
     ".tk-w.lit{background:var(--okw);color:var(--ok)}.tk-w.cur{box-shadow:inset 0 -3px 0 var(--acc)}",
     ".tk-track{position:absolute;height:6px;border-radius:999px;background:var(--track)}.tk-track.v{width:6px}",
@@ -896,6 +906,15 @@
   // pick from a menu, drag a card. Tasks come in shuffled rounds of every kind, so a sample holds several kinds and no
   // kind is left to one sample (the threshold is leave-one-sample-out). Recording is unchanged: the same tracker on the
   // whole page and the same windows. Only what the user is asked to do is new.
+  // 2026-11-25: that pad ran sideways. In the owner's seven samples from it 64% of the steps were sideways, 24% slanted
+  // and 12% up or down, a window travelled 63 px up and down and 3% of the steps were 25 px or longer; his real use the
+  // same day was 41 / 35 / 24, 188 px and 9%. The text, the bars and the hops (a hop that did not fit the low, wide
+  // stage was drawn again, so it came out sideways) made it so. Now the direction of a hop is drawn first and the hop
+  // shortened to fit, half the texts are set as a list (one word a line), both bars stand upright every other time,
+  // and half the cards are dropped a good way above or below. The pad itself is as tall as the window and at most 1.8
+  // times as wide as high (the CSS, ".card.wide"). The test's robot, whose straight moves show what the tasks ask for,
+  // went from 68% sideways and 7% up or down to 45% and 18% (docs/MOUSE_MODALITY.md). A person's samples on this pad
+  // are not measured yet.
   // Each task marks its start with data-tk-a and its end with data-tk-b (the headless test reads them).
   var TASK_TEXTS = [
     "The quiet river carries small boats past the old stone bridge every morning before the market opens.",
@@ -953,23 +972,37 @@
       TASKS[kind]();
       later(function () { skipEl.style.display = "block"; }, MOUSE_TASK_SKIP_MS);
     }
-    // A spot some way from the pointer, in a random direction, inside the stage (m px from its edges). Short, medium
-    // and long hops in fixed shares: a spot drawn uniformly in a wide pad is 400 px away on average, and every hop
-    // then looks like the last one.
+    // A spot some way from the pointer, inside the stage (m px from its edges). Short, medium and long hops in fixed
+    // shares: a spot drawn uniformly in a wide pad is 400 px away on average, and every hop then looks like the last
+    // one. The direction is drawn first (sideways, slanted, up or down) and a hop too long for it is shortened to fit:
+    // drawn again until it fitted, as before, the hops of a low, wide stage all ran sideways.
     function hop(m) {
-      var s = size(), cx = px == null ? s.w / 2 : px, cy = py == null ? s.h / 2 : py;
-      for (var i = 0; i < 24; i++) {
-        var r = Math.random(), d = r < 0.45 ? rnd(60, 150) : r < 0.8 ? rnd(150, 330) : rnd(330, Math.max(340, s.w * 0.8));
-        var a = rnd(0, 2 * Math.PI), x = cx + d * Math.cos(a), y = cy + d * Math.sin(a);
-        if (x >= m && x <= s.w - m && y >= m && y <= s.h - m) return { x: x, y: y };
+      var s = size(), mx = Math.min(m, s.w / 2), my = Math.min(m, s.h / 2);
+      var cx = Math.max(mx, Math.min(s.w - mx, px == null ? s.w / 2 : px)), cy = Math.max(my, Math.min(s.h - my, py == null ? s.h / 2 : py));
+      var best = null;
+      for (var i = 0; i < 12; i++) {
+        var r = Math.random(), d = r < 0.4 ? rnd(60, 150) : r < 0.75 ? rnd(150, 330) : rnd(330, Math.max(340, Math.max(s.w, s.h) * 0.8));
+        var k = Math.random(), a = (k < 0.25 ? rnd(0, 20) : k < 0.6 ? rnd(25, 65) : rnd(70, 90)) * Math.PI / 180;
+        var ux = (Math.random() < 0.5 ? -1 : 1) * Math.cos(a), uy = (Math.random() < 0.5 ? -1 : 1) * Math.sin(a);
+        // the room the stage leaves in that direction
+        var room = Math.min(ux > 0 ? (s.w - mx - cx) / ux : ux < 0 ? (mx - cx) / ux : 1e9, uy > 0 ? (s.h - my - cy) / uy : uy < 0 ? (my - cy) / uy : 1e9);
+        var len = Math.max(0, Math.min(d, room)), p = { x: cx + ux * len, y: cy + uy * len, len: len };
+        if (len >= Math.min(d, 60)) return p;
+        if (!best || len > best.len) best = p;
       }
-      return { x: rnd(Math.min(m, s.w / 2), Math.max(s.w - m, s.w / 2)), y: rnd(Math.min(m, s.h / 2), Math.max(s.h - m, s.h / 2)) };
+      return best;
     }
-    // A short text, one <span> a word, somewhere on the stage.
+    // A short text, one <span> a word, somewhere on the stage: a block of three to six lines, or (half the time) a
+    // list, one word a line. Following or selecting a list goes down, a wide line only across, and a pad whose every
+    // text was one wide line taught sideways movement alone.
     function passage() {
-      var s = size(), words = t(pick(TASK_TEXTS)).split(/\s+/), box = add("tk-text"), width = Math.min(620, Math.max(180, s.w - 40));
-      box.style.width = width + "px";
+      var s = size(), words = t(pick(TASK_TEXTS)).split(/\s+/), box = add("tk-text"), widest = Math.max(180, s.w - 40);
+      var list = Math.random() < 0.5 && s.h >= 300, width = Math.min(rnd(230, 470), widest);
+      if (list) { words = words.slice(0, Math.max(5, Math.min(9, Math.floor((s.h - 60) / 36)))); box.classList.add("col"); }   // as many lines as the stage takes
+      else box.style.width = width + "px";
       var spans = words.map(function (w) { var sp = el("span", "tk-w", w); box.appendChild(sp); box.appendChild(document.createTextNode(" ")); return sp; });
+      if (list) width = box.offsetWidth;
+      for (var g = 0; !list && g < 12 && box.offsetHeight > s.h - 44 && width < widest; g++) { width = Math.min(widest, width + 70); box.style.width = width + "px"; }   // a low stage: wider, fewer lines
       at(box, rnd(16, Math.max(16, s.w - width - 16)), rnd(8, Math.max(8, s.h - box.offsetHeight - 30)));
       return { box: box, spans: spans };
     }
@@ -1067,12 +1100,12 @@
       });
       hintDrag(p.spans[from], p.spans[to]);
     };
-    // 5 and 6. A bar with a mark: drag its handle to the mark (across or down), or click the thin bar at the mark
-    // (the seek bar of a recording).
+    // 5 and 6. A bar with a mark: drag its handle to the mark, or click the thin bar at the mark (the seek bar of a
+    // recording, a scroll bar). Each lies across one time and stands upright the next.
     function bar(seek) {
       say(seek ? "Click the bar exactly at the mark" : "Drag the handle to the mark", "slider");
       flip = !flip;
-      var s = size(), vert = !seek && flip && s.h >= 300, len = vert ? Math.min(300, s.h - 90) : Math.min(520, Math.max(200, s.w * 0.5));
+      var s = size(), vert = flip && s.h >= 260, len = vert ? Math.min(420, s.h - 90) : Math.min(520, Math.max(200, s.w * 0.5));
       var track = add("tk-track" + (vert ? " v" : "") + (seek ? " seek" : ""));
       at(track, vert ? rnd(60, Math.max(60, s.w - 60)) : rnd(30, Math.max(30, s.w - len - 30)), vert ? rnd(30, Math.max(30, s.h - len - 40)) : rnd(50, Math.max(50, s.h - 50)));
       track.style[vert ? "height" : "width"] = len + "px";
@@ -1131,10 +1164,10 @@
     // 9. Drag a card into a box some way off, in any direction.
     TASKS.drop = function () {
       say("Drag the card into the box", "move");
-      var s = size(), a, b, far = Math.min(240, s.w * 0.4);
-      for (var i = 0; i < 60; i++) {
+      var s = size(), a, b, far = Math.min(240, s.w * 0.4), rise = Math.random() < 0.5 ? Math.min(170, s.h * 0.4) : 0;   // half of them a good way up or down
+      for (var i = 0; i < 80; i++) {
         a = { x: rnd(48, Math.max(48, s.w - 48)), y: rnd(34, Math.max(34, s.h - 34)) }; b = { x: rnd(70, Math.max(70, s.w - 70)), y: rnd(52, Math.max(52, s.h - 52)) };
-        if (Math.hypot(a.x - b.x, a.y - b.y) >= far) break;
+        if (Math.hypot(a.x - b.x, a.y - b.y) >= far && Math.abs(a.y - b.y) >= rise) break;
       }
       var zone = add("tk-zone", t("Drop here")); at(zone, b.x, b.y); zone.setAttribute("data-tk-b", "");
       var card = add("tk-card", t("File")); at(card, a.x, a.y); card.setAttribute("data-tk-a", "");
@@ -1278,13 +1311,15 @@
     function canReset() { return st.onFile > 0 || st.enrolled || building; }
     function render() {
       openWiz((opts.stepBar || "") + '<div class="wizload" id="mwl"><span class="wizspin"></span><span id="mwlt">' + h("Saving sample…") + "</span></div>"
-        + '<div class="t">' + opts.title + '</div><div class="d">' + opts.intro + "</div>"
+        // one row above the pad and one below it, so the pad has the height of the window (the CSS, ".card.wide")
+        + '<div class="mtop"><div class="mtt"><div class="t">' + opts.title + '</div><div class="d">' + opts.intro + "</div></div>"
         + '<div class="msamp"><div class="mhead" id="mhead">' + esc(headline()) + '</div><div class="mpips">' + pips() + "</div>"
-        + '<div class="msub" id="msub">' + esc(subline()) + "</div></div>"
+        + '<div class="msub" id="msub">' + esc(subline()) + "</div></div></div>"
         + '<div class="pad" id="cpad"></div><div class="bar"><i id="mbar"></i></div>'
-        + '<div class="diag" id="mdiag"></div>'
-        + (opts.dismissLabel ? '<div class="row2"><button class="b sec" id="mdone">' + opts.dismissLabel + "</button></div>" : "")
+        + '<div class="mbot"><div class="diag" id="mdiag"></div><div class="mact">'
         + (opts.allowReset ? '<div class="foot" id="mresetrow"' + (canReset() ? "" : ' style="display:none"') + '><a href="#" id="mreset" class="danger">' + svg("trash") + h("Reset my mouse profile") + "</a></div>" : "")
+        + (opts.dismissLabel ? '<div class="row2"><button class="b sec" id="mdone">' + opts.dismissLabel + "</button></div>" : "")
+        + "</div></div>"
         + '<div class="e"></div>', close, "wide");
       var pad = wizEl.querySelector("#cpad"), bar = wizEl.querySelector("#mbar"), diag = wizEl.querySelector("#mdiag"),
         e = wizEl.querySelector(".e"), load = wizEl.querySelector("#mwl"), loadT = wizEl.querySelector("#mwlt");

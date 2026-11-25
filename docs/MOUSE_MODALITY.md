@@ -104,6 +104,23 @@ representation, its Table I; Experiment A found no richer representation measura
   31% of those windows down (2% once rescaled to his enrolment's size). Recording, windows and the server's checks
   are unchanged. Test: `extension/scripts/e2e_headless_sdk_mouse.mjs`, where a robot does every kind of task with
   real mouse input, in English and Arabic.
+- The pad's shape and directions (2026-11-25). The first task pad ran sideways: in the owner's seven samples from it
+  64% of the steps were sideways, 24% slanted and 12% up or down, a window travelled 63 px up and down, and 3% of the
+  steps were 25 px or longer; his real use the same day (1,897 windows) was 41 / 35 / 24, 188 px and 9%. The pad was
+  a strip up to 1100 px wide and half the window high, and its texts, bars and hops ran across it. Now the samples'
+  card is as tall as the window with one row above the pad and one below it, and the pad is at most 1.8 times as wide
+  as the height left for it; a hop's direction is drawn first (a quarter sideways, the rest slanted or up and down)
+  and the hop shortened to fit; half the texts are set as a list, one word a line; both bars stand upright every
+  other time; half the cards are dropped a good way above or below. Measured with the test's robot, whose straight
+  moves show what the tasks ask for (14 samples each): 68% sideways, 24% slanted, 7% up or down and 127 px up and
+  down a window before; 45%, 38%, 18% and 195 px now. The test holds the sideways share to 62% at most. Not measured:
+  a person's samples on the new pad.
+- What the pad does not settle (2026-11-25): a profile built from one short sitting. The owner's eight samples of one
+  sitting gave a threshold of 0.79 and turned down all his ordinary movement minutes later (two passkey requests in
+  five checks); his sample from the old dot pad in that sitting was as slow as the task samples (median step 5.1 px
+  against 4.0, and 7 to 15 px in his dot samples of earlier days), so the sitting, not only the pad, set the pace.
+  The mix of four of those samples with four from earlier days (threshold 0.2556) asked for no passkey in his next
+  166 checks (17 of 60 low at the median, 27 at most, 33 needed).
 - ca-service stores samples; once the total reaches 440 it queues training in its durable training
   queue (`training_jobs`, one job at a time) instead of training inside the request, and every
   extra sample queues a rebuild. The model is always trained on the user's latest 440 windows, in

@@ -134,7 +134,7 @@ async function doTask(s, before) {
   else if (k.kind === "phrase" || k.kind === "slider" || k.kind === "drop") await drag(s, k.a, k.b);
   else if (k.kind === "seek") { await glide(s, k.b.x, k.b.y); await click(s); }
   else if (k.kind === "line") { for (const w of k.words) await glide(s, w.x, w.y); }
-  else if (k.kind === "menu") { await glide(s, k.a.x, k.a.y); await click(s); await sleep(150); const m = await ev(s, TASK); await glide(s, m.b.x, m.b.y); await click(s); }
+  else if (k.kind === "menu") { await glide(s, k.a.x, k.a.y); await click(s); await sleep(150); const m = await ev(s, TASK); if (m && m.b) { await glide(s, m.b.x, m.b.y); await click(s); } }   // the pad may have closed meanwhile (a saved sample ended the flow)
   const moved = await waitFor(s, `(() => { const k = ${TASK}; return !k || k.seq !== ${JSON.stringify(k.seq)}; })()`, 3000);
   return moved ? k.kind : null;
 }
@@ -148,6 +148,14 @@ async function work(s, n, max = 40) {
 // Two samples share movement when a run of 20 consecutive steps of one occurs in the other (lib/mouse.js REPEAT_RUN).
 const runs = (windows) => { const r = new Set(); for (const w of windows) for (let i = 0; i + 20 <= w.length; i++) r.add(JSON.stringify(w.slice(i, i + 20))); return r; };
 const shared = (a, b) => { const ra = runs(a), rb = runs(b); let n = 0; for (const x of rb) if (ra.has(x)) n++; return rb.size ? n / rb.size : 0; };
+// The direction of the steps of saved samples (the model sees |dx| and |dy| only): sideways, slanted, up or down, in
+// per cent, and the pixels travelled up and down in a window.
+function geometry(enrolls) {
+  const c = [0, 0, 0]; let vy = 0, n = 0;
+  for (const e of enrolls) for (const w of e.windows) { n++; for (const [dx, dy] of w) { if (!dx && !dy) continue; const a = Math.atan2(dy, dx) * 180 / Math.PI; c[a < 22.5 ? 0 : a < 67.5 ? 1 : 2]++; vy += dy; } }
+  const t = c[0] + c[1] + c[2] || 1;
+  return { sideways: Math.round(100 * c[0] / t), slanted: Math.round(100 * c[1] / t), upDown: Math.round(100 * c[2] / t), upDownPx: Math.round(vy / (n || 1)) };
+}
 
 try {
   const { targetId } = await send("Target.createTarget", { url: "about:blank" });
@@ -214,6 +222,20 @@ try {
   ok("…in Arabic every kind is done too, right to left, and the pad shows no English", seenAr.size === KINDS.length && dirAr === "rtl" && !latin.length,
     `${seenAr.size} kinds, direction ${dirAr}${latin.length ? ", English: " + latin.slice(0, 3).join(" | ") : ""}`);
   look = { lang: "en", theme: "light" };
+
+  // ---- what the tasks ask of the pointer (2026-11-25). The first task pad ran sideways: 64% of the owner's steps on it
+  // were sideways and 12% up or down, against 41% and 24% in his real use the same day. The robot moves in straight
+  // lines, so its samples show what the tasks themselves ask for: on that pad 70% sideways, 8% up or down and 124 px up
+  // and down a window; with the pad as tall as the window, list texts, upright bars and hops drawn by direction,
+  // about 48%, 18% and 190 px.
+  // Seven samples differ by which tasks came up (49 to 58% sideways in single rounds), so two rounds are read together
+  // and only the sideways share is held to a limit, well between the two pads; the rest is reported.
+  const robot = [];
+  for (let round = 0; round < 2; round++) { await load(); await openPad(); await work(s, 7, 90); robot.push(...state.enrolls); }
+  const g = geometry(robot);
+  await shot(s, "en-light-layout");
+  ok("…the tasks do not run sideways: the robot's steps go up, down and slanted too", robot.length >= 14 && g.sideways <= 62,
+    `${robot.length} samples: ${g.sideways}% sideways, ${g.slanted}% slanted, ${g.upDown}% up or down, ${g.upDownPx} px up and down a window`);
 
   // ---- 1. "+ train" pressed twice
   await load();
