@@ -53,6 +53,19 @@ router.post("/topup", requireAuth, requireFreshPasskey, async (req, res, next) =
   } catch (e) { next(e); }
 });
 
+// The end of a top-up (2026-11-26): its samples wait at Continuum and reach the model only after a second passkey,
+// verified once they were made (requireFreshPasskey again: the first verification was spent on the grant). A top-up left
+// open on the screen cannot be finished by someone else.
+router.post("/topup/confirm", requireAuth, requireFreshPasskey, async (req, res, next) => {
+  const stepUpToken = req.session.stepUpToken;
+  delete req.session.stepUpToken;
+  try {
+    const r = await ca.mouseTopUpConfirm(req.session.userId, stepUpToken);
+    if (r.status >= 200 && r.status < 300 && req.session.topUp) delete req.session.topUp.mouse;   // the top-up is over, and its grant with it
+    res.status(r.status).json(r.data);
+  } catch (e) { next(e); }
+});
+
 router.post("/enroll", requireAuth, async (req, res, next) => {
   try {
     const grant = req.session.topUp && req.session.topUp.mouse;

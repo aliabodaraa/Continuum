@@ -1,8 +1,10 @@
 // More samples for a trained profile (2026-11-25): a trained typing or mouse profile takes samples again only after the
 // user's passkey. The proof is a step-up token (as for a reset); it buys a top-up grant for one channel, and an
 // enrolment sample that carries the grant reaches ca-service with `topUp` set. Nothing else sets it: not the caller's
-// body, not another user's grant, not the other channel's. The real gateway (STORAGE=json, a temporary folder) runs
-// against a stub ca-service and passkey-service, on the SDK routes and on the tenant API. node --test
+// body, not another user's grant, not the other channel's. The samples wait until the end of the top-up, which needs a
+// step-up token of its own (2026-11-26): not the grant, not the token that opened the top-up, not another user's.
+// The real gateway (STORAGE=json, a temporary folder) runs against a stub ca-service and passkey-service, on the SDK
+// routes and on the tenant API. node --test
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("crypto");
@@ -18,7 +20,7 @@ const SITE = "http://demo.test";                 // pk_demo's website (from DEMO
 
 // ---- stub ca-service and passkey-service. An enrolment sample is recorded as ca-service received it; a sample that
 // says refuse is answered 422, as a sample that fails ca-service's checks is.
-const stub = { enrols: [] };
+const stub = { enrols: [], confirms: [] };
 const stubServer = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => { body += c; });
@@ -29,6 +31,11 @@ const stubServer = http.createServer((req, res) => {
       const b = JSON.parse(body || "{}");
       stub.enrols.push({ channel: m[1], body: b });
       return b.refuse ? send(422, { ok: false, error: "not a sample" }) : send(202, { ok: true });
+    }
+    const c = /^\/v1\/(mouse|keystroke)\/topup\/confirm$/.exec(req.url);
+    if (c) {
+      stub.confirms.push({ channel: c[1], body: JSON.parse(body || "{}") });
+      return send(202, { ok: true, training: true });
     }
     if (/^\/v1\/users\/\d+\/passkeys$/.test(req.url)) return send(200, { hasPasskey: true });
     if (/^\/v1\/users\/\d+\/onboarding$/.test(req.url)) return send(200, {});
@@ -165,6 +172,53 @@ test("SDK: a refused sample uses none of the grant, and the grant ends after its
   }
   await sdk("/v1/sdk/keystroke/enroll", { textContent: "s9", topUpToken: g }, t);
   assert.equal("topUp" in last().body, false, "the ninth sample is outside the grant");
+});
+
+test("SDK: the end of a top-up needs a passkey of its own, verified after the samples", async () => {
+  const s = await sdk("/v1/sdk/session", { siteKey: "pk_demo", externalId: "user-confirm" });
+  const t = s.d.token, other = await session("user-confirm-other");
+  const opened = await verify(t);
+  const g = await sdk("/v1/sdk/mouse/topup", { stepUpToken: opened.d.stepUpToken }, t);
+  assert.equal(g.status, 200, JSON.stringify(g.d));
+  await sdk("/v1/sdk/mouse/enroll", { windows: "a", topUpToken: g.d.topUpToken }, t);
+  const before = stub.confirms.length;
+
+  const bare = await sdk("/v1/sdk/mouse/topup/confirm", {}, t);
+  assert.equal(bare.status, 403);
+  assert.equal(bare.d.error, "passkey_required");
+  assert.equal((await sdk("/v1/sdk/mouse/topup/confirm", { topUpToken: g.d.topUpToken, stepUpToken: g.d.topUpToken }, t)).status, 403, "the grant is not a passkey");
+  assert.equal((await sdk("/v1/sdk/mouse/topup/confirm", { stepUpToken: opened.d.stepUpToken }, t)).status, 403, "the passkey that opened the top-up does not close it");
+  const theirs = await verify(other);
+  assert.equal((await sdk("/v1/sdk/mouse/topup/confirm", { stepUpToken: theirs.d.stepUpToken }, t)).status, 403, "nor does another user's passkey");
+  assert.equal(stub.confirms.length, before, "nothing reached ca-service");
+
+  const closed = await verify(t);
+  const done = await sdk("/v1/sdk/mouse/topup/confirm", { stepUpToken: closed.d.stepUpToken, userId: 999999, topUp: true, windows: "smuggled" }, t);
+  assert.equal(done.status, 202, JSON.stringify(done.d));
+  assert.equal(done.d.training, true);
+  assert.equal(stub.confirms.length, before + 1);
+  assert.deepEqual(stub.confirms[before], { channel: "mouse", body: { userId: s.d.userId } }, "only the session's user goes on, nothing of the caller's body");
+  assert.equal((await sdk("/v1/sdk/mouse/topup/confirm", { stepUpToken: closed.d.stepUpToken }, t)).status, 403, "a passkey closes one top-up");
+
+  const typing = await verify(t);
+  assert.equal((await sdk("/v1/sdk/keystroke/topup/confirm", { stepUpToken: typing.d.stepUpToken }, t)).status, 202);
+  assert.equal(stub.confirms[before + 1].channel, "keystroke");
+});
+
+test("tenant API: the end of a top-up needs the step-up token of a second verification", async () => {
+  const sub = "backend-confirm";
+  const before = stub.confirms.length;
+  assert.equal((await server("/mouse/topup/confirm", sub, {})).status, 403);
+  const v = await server("/passkey/auth/complete", sub, { origin: SITE, challengeId: 1, assertion: { id: "x" } });
+  const g = await server("/mouse/topup", sub, { stepUpToken: v.d.stepUpToken });
+  assert.equal(g.status, 200, JSON.stringify(g.d));
+  assert.equal((await server("/mouse/topup/confirm", sub, { stepUpToken: v.d.stepUpToken })).status, 403, "the first verification was spent on the grant");
+  assert.equal(stub.confirms.length, before);
+  const v2 = await server("/passkey/auth/complete", sub, { origin: SITE, challengeId: 1, assertion: { id: "x" } });
+  const done = await server("/mouse/topup/confirm", sub, { stepUpToken: v2.d.stepUpToken, topUp: true });
+  assert.equal(done.status, 202, JSON.stringify(done.d));
+  assert.equal(stub.confirms.length, before + 1);
+  assert.deepEqual(Object.keys(stub.confirms[before].body), ["userId"]);
 });
 
 test("tenant API: the same rules for an organisation's backend", async () => {

@@ -18,8 +18,11 @@
 //   5. the server answers already_enrolled to a sample: the recorder stops and the trained state shows
 //   6. more samples for a trained profile (2026-11-25): "Add samples" asks for the passkey, takes the server's grant for
 //      it, and the pad then sends four samples with the grant; the mouse is not judged while that pad is open; after the
-//      fourth the model is rebuilt and the trained screen is back
+//      fourth the samples wait and the screen asks for the passkey again (2026-11-26): not given, nothing reaches the
+//      model and the mouse is judged as before; given, the model is rebuilt and the trained screen is back
 //   7. the grant runs out before the samples are finished: the trained screen says so
+//   8. the samples waited too long and were removed before the confirmation: the trained screen says so
+//   9. the samples all wait already when "Add samples" is pressed: the confirmation is next, no pad
 //
 //   node extension/scripts/e2e_headless_sdk_mouse.mjs [screenshot dir]     (GUARD_FILE=<path> tests another copy of guard.js)
 import { spawn } from "node:child_process"; import fs from "node:fs"; import os from "node:os"; import path from "node:path";
@@ -40,7 +43,7 @@ const ok = (n, c, d) => { console.log((c ? "  PASS  " : "  FAIL  ") + n + (d ? "
 // ---- what the "server" says, set by each step
 let state, look = { lang: "en", theme: "light" };
 const fresh = (over) => ({ enrolled: false, training: false, onFile: 0, statusPolls: 0, trainingPollsLeft: 0, enrolls: [], enrollAnswer: null,
-  verifies: 0, topUps: [], grant: null, topUpAdded: 0, checks: 0, ...over });
+  verifies: 0, topUps: [], grant: null, topUpAdded: 0, confirms: [], committed: 0, checks: 0, ...over });
 function api(p, method, body) {
   if (p === "/v1/sdk/onboarding") return { passkey: true, keystroke: true, mouse: state.enrolled, keystrokeTraining: false };
   if (p === "/v1/sdk/lock/status") return { locked: false };
@@ -66,16 +69,23 @@ function api(p, method, body) {
   if (p === "/v1/sdk/mouse/enroll") {
     state.enrolls.push({ windows: body.windows || [], at: Date.now(), topUpToken: body.topUpToken || null });
     if (state.enrollAnswer) return { ...state.enrollAnswer };
-    if (state.enrolled) {   // a trained profile: a sample only with the grant, four of them rebuild the model
+    if (state.enrolled) {   // a trained profile: a sample only with the grant; four of them wait for the confirmation
       if (!state.grant || body.topUpToken !== state.grant) return { __status: 409, ok: false, error: "already_enrolled" };
+      if (state.topUpAdded >= 4) return { __status: 409, ok: false, error: "topup_full", topUp: { added: 4, needed: 4 } };
       state.topUpAdded++;
-      if (state.topUpAdded < 4) return { ok: true, trained: true, topUp: { added: state.topUpAdded, needed: 4 } };
-      state.topUpAdded = 0; state.training = true; state.trainingPollsLeft = 2;
-      return { ok: true, trained: true, training: true, topUp: { added: 4, needed: 4 } };
+      return { ok: true, trained: true, topUp: { added: state.topUpAdded, needed: 4 } };
     }
     state.onFile++;
     if (state.onFile >= 8) { state.training = true; return { ok: true, trained: false, training: true, samplesOnFile: 8, samplesRequired: 8, sampleWindows: 55, totalWindows: 440 }; }
     return { ok: true, trained: false, samplesOnFile: state.onFile, samplesRequired: 8, sampleWindows: 55, totalWindows: state.onFile * 55 };
+  }
+  // the end of a top-up: only with the step-up token of a passkey verified after the samples
+  if (p === "/v1/sdk/mouse/topup/confirm") {
+    state.confirms.push(body.stepUpToken || null);
+    if (body.stepUpToken !== "step-" + state.verifies) return { __status: 403, error: "passkey_required" };
+    if (state.topUpAdded < 4) return { __status: 409, ok: false, error: "topup_incomplete", topUp: { added: state.topUpAdded, needed: 4 } };
+    state.committed += state.topUpAdded; state.topUpAdded = 0; state.training = true; state.trainingPollsLeft = 2;
+    return { ok: true, trained: true, training: true };
   }
   if (p === "/v1/sdk/mouse/check") { state.checks++; return { ok: true, checked: false }; }
   return {};
@@ -95,6 +105,7 @@ const OPEN = `[...((${SH}) ? (${SH}).querySelectorAll('.ov') : [])].find((o) => 
 const WIZ = `(() => { const ov = ${OPEN}; const t = ov && ov.querySelector('.card .t');
   return t ? { title: t.textContent, pad: !!ov.querySelector('#cpad'), reset: !!ov.querySelector('#mreset') } : null; })()`;
 const wiz = (s) => ev(s, WIZ);
+const ROWS = `(() => { const r = ${SH}; return r ? [...r.querySelectorAll('.st')].map((x) => x.textContent) : []; })()`;   // the panel's two lines
 const clickIn = (s, sel) => ev(s, `(() => { const b = (${SH}).querySelector(${JSON.stringify(sel)}); if (b) b.click(); return !!b; })()`);
 // The task on the pad: its kind, its number, and where its start (data-tk-a) and end (data-tk-b) are on the page.
 const TASK = `(() => { const sh = ${SH}; const pad = sh && sh.querySelector('#cpad'); const st = pad && pad.querySelector('.tk-stage'); if (!st) return null;
@@ -128,6 +139,14 @@ async function move(s, n) {
     if (i % 4 === 0) await sleep(4);
   }
   await sleep(900);   // the recorder looks every 400 ms; a save and its answer
+}
+// Movement until the guard has sent a check, at most `rounds` times `n` steps; returns the checks sent since `from`.
+// A fixed amount is sometimes too little: Chrome merges mouse moves when it is busy (of 1500 sent the page saw 926 in
+// one run, 2026-11-26), and after a pause the guard starts from nothing and needs 60 windows, 640 steps, for a check.
+// A guard that stays paused sends none however long this moves.
+async function moveUntilChecked(s, from, n = 800, rounds = 6) {
+  for (let i = 0; i < rounds && state.checks <= from; i++) await move(s, n);
+  return state.checks - from;
 }
 // ---- the robot: real mouse input, as a person would do each task
 const mouse = (s, type, extra = {}) => send("Input.dispatchMouseEvent", { type, x: Math.round(pos.x), y: Math.round(pos.y), ...extra }, s);
@@ -187,9 +206,9 @@ try {
     const reply = (code, type, text) => send("Fetch.fulfillRequest", { requestId, responseCode: code, responseHeaders: [{ name: "Content-Type", value: type }], body: Buffer.from(text).toString("base64") }, s);
     if (url.pathname === "/__mouse_test.html") return reply(200, "text/html; charset=utf-8", html);
     if (url.pathname === "/guard.js") return reply(200, "application/javascript; charset=utf-8", GUARD);
-    // the passkey prompt itself cannot run in headless Chrome: the library that shows it is replaced by one that answers
+    // the passkey prompt itself cannot run in headless Chrome: the library that shows it answers, or refuses as a cancel does
     if (url.pathname === "/vendor/simplewebauthn/index.umd.min.js") return reply(200, "application/javascript; charset=utf-8",
-      "window.SimpleWebAuthnBrowser = { startAuthentication: async () => ({ id: 'cred', response: {} }), startRegistration: async () => ({}) };");
+      "window.__passkey = 'ok'; window.SimpleWebAuthnBrowser = { startAuthentication: async () => { if (window.__passkey !== 'ok') throw new Error('The operation was cancelled'); return { id: 'cred', response: {} }; }, startRegistration: async () => ({}) };");
     if (SDK_FILES[url.pathname]) return reply(200, "application/javascript; charset=utf-8", fs.readFileSync(path.join(ROOT, SDK_FILES[url.pathname]), "utf8"));
     let body = {}; try { body = request.postData ? JSON.parse(request.postData) : {}; } catch { /* not JSON */ }
     const out = api(url.pathname, request.method, body) || {}, code = out.__status || 200;
@@ -357,15 +376,35 @@ try {
   await work(s, 3, 60);
   const head6b = await ev(s, `((${SH}).querySelector('#mhead') || {}).textContent`);
   await work(s, 4, 60);
-  const back6 = await trainedScreen(s);
+  const READY = "Your samples are ready";
+  const readyScreen = (s2) => waitFor(s2, `(${WIZ}) && (${WIZ}).title === '${READY}' && !(${WIZ}).pad`, 15000);
+  const noteNow = () => ev(s, `(() => { const ov = ${OPEN}; const e = ov && ov.querySelector('.card .e'); return e && getComputedStyle(e).display !== 'none' ? e.textContent : ''; })()`);
+  const ready6 = await readyScreen(s);
+  const during6 = state.checks - checks6;
   ok("…four samples go with the grant, one at a time", state.enrolls.length === 4 && state.enrolls.every((e) => e.topUpToken === "grant-1") && head6b === "Extra sample 4 of 4",
     `${state.enrolls.length} samples, grants ${[...new Set(state.enrolls.map((e) => e.topUpToken))].join(",")}, after three: ${head6b}`);
-  ok("…the mouse is judged before the top-up and not while its pad is open", judged > 0 && state.checks === checks6, `${judged} checks before, ${state.checks - checks6} during`);
-  ok("…after the fourth the model is rebuilt and the trained screen is back", back6, JSON.stringify(await wiz(s)));
+  ok("…the mouse is judged before the top-up and not while its pad is open", judged > 0 && during6 === 0, `${judged} checks before, ${during6} during`);
+  ok("…after the fourth the samples wait: the screen asks for the passkey again, and the model is as it was", ready6 && state.verifies === 1 && state.confirms.length === 0
+    && state.committed === 0 && state.topUpAdded === 4 && !state.training, `${JSON.stringify(await wiz(s))}; ${state.verifies} passkey so far, ${state.committed} samples in the model`);
+  await shot(s, "en-light-topup-confirm");
+  // someone else finished the samples: no passkey, so nothing of them reaches the model, and their movement is judged
+  await ev(s, "window.__passkey = 'cancel'; true");
+  await clickIn(s, "#mconf");
+  await sleep(1200);
+  const w6c = await wiz(s), note6c = await noteNow();
+  ok("…the passkey not given at the end: the server is not asked, nothing reaches the model, and the reason shows", !!w6c && w6c.title === READY && !!note6c && state.confirms.length === 0
+    && state.committed === 0 && state.topUpAdded === 4, `asked ${state.confirms.length} times, ${state.committed} in the model, note: ${note6c}`);
+  const checks6w = state.checks;
+  ok("…and the mouse is judged again while the confirmation waits", (await moveUntilChecked(s, checks6w)) > 0, `${state.checks - checks6w} checks`);
+  await ev(s, "window.__passkey = 'ok'; true");
+  await clickIn(s, "#mconf");
+  const back6 = await trainedScreen(s);
+  ok("…the passkey given: its own step-up token goes with the confirmation and the samples reach the model", state.verifies === 2 && state.confirms.length === 1 && state.confirms[0] === "step-2"
+    && state.committed === 4, `confirmed with ${JSON.stringify(state.confirms)}, ${state.committed} in the model`);
+  ok("…the model is rebuilt and the trained screen is back", back6, JSON.stringify(await wiz(s)));
   await clickIn(s, "#mdone");
-  const checks6c = state.checks;
-  await move(s, 1500);
-  ok("…and the mouse is judged again once it is closed", state.checks > checks6c, `${state.checks - checks6c} checks`);
+  const checks6c = state.checks, t6c = Date.now();
+  ok("…and the mouse is judged again once it is closed", (await moveUntilChecked(s, checks6c)) > 0, `${state.checks - checks6c} checks in ${Date.now() - t6c} ms; panel: ${JSON.stringify(await ev(s, ROWS))}`);
 
   // ---- 7. the grant runs out before the samples are finished
   await load({ enrolled: true, onFile: 8 });
@@ -376,6 +415,29 @@ try {
   await trainedScreen(s);
   const note7 = await ev(s, `(() => { const ov = ${OPEN}; const e = ov && ov.querySelector('.card .e'); return e && getComputedStyle(e).display !== 'none' ? e.textContent : ''; })()`);
   ok("7. the grant ran out before the samples were finished: the trained screen says so", t7.pad && state.enrolls.length === 2 && /ran out/.test(note7), `${state.enrolls.length} sent; note: ${note7}`);
+
+  // ---- 8. the samples waited too long and were removed before the confirmation
+  await load({ enrolled: true, onFile: 8 });
+  await openTopUp();
+  await work(s, 4, 60);
+  await readyScreen(s);
+  state.topUpAdded = 0;   // on the server the sitting is over
+  await clickIn(s, "#mconf");
+  const back8 = await trainedScreen(s);
+  const note8 = await noteNow();
+  ok("8. the samples were removed before the confirmation: the trained screen says so, and the model is as it was", back8 && /waited too long/.test(note8) && state.committed === 0 && !state.training,
+    `note: ${note8}; ${state.committed} in the model`);
+
+  // ---- 9. all the samples wait already (the window was closed before the confirmation)
+  await load({ enrolled: true, onFile: 8, topUpAdded: 4 });
+  await clickIn(s, ADD);
+  await trainedScreen(s);
+  await clickIn(s, "#madd");
+  const ready9 = await readyScreen(s);
+  await clickIn(s, "#mconf");
+  const back9 = await trainedScreen(s);
+  ok("9. the samples all wait already: the confirmation is next, with a passkey of its own, and no sample is asked for", ready9 && back9 && state.enrolls.length === 0 && state.verifies === 2
+    && state.confirms[0] === "step-2" && state.committed === 4, `${state.verifies} passkeys, ${state.enrolls.length} samples sent, ${state.committed} in the model`);
   ok("no script error on the page in the whole run", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
   ok("run completed", false, e.message);

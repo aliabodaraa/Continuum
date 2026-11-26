@@ -6,6 +6,7 @@
 //   2. the grant stays in the session: the page never gets it, and it goes with each enrolment sample of its channel
 //   3. whatever the page writes as a grant is dropped
 //   4. Continuum's "locked" answer to a mouse check goes to the page as it is, and the session locks with it
+//   5. the end of a top-up needs a second passkey, verified after the samples; with it the grant leaves the session
 // node --test apps/demo/test/*.test.js
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -34,6 +35,10 @@ require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports
       return ok({ ok: true, topUpToken: "grant-" + p.split("/")[1] + "-" + continuum.verifies, expiresInMs: 900000, maxSamples: 8 });
     }
     if (p === "/mouse/enroll" || p === "/keystroke/enroll") return { status: 202, ok: true, data: { ok: true, trained: true, topUp: { added: 1, needed: 4 } } };
+    if (p === "/mouse/topup/confirm" || p === "/keystroke/topup/confirm") {
+      if (!body || body.stepUpToken !== "step-" + continuum.verifies) return { status: 403, ok: false, data: { error: "passkey_required" } };
+      return { status: 202, ok: true, data: { ok: true, training: true } };
+    }
     if (p === "/mouse/check") {
       return continuum.mouseLocked
         ? { status: 423, ok: false, data: { ok: false, checked: true, locked: true, warmup: false, isSuspicious: true, requiresPasskeyChallenge: true } }
@@ -132,6 +137,33 @@ test("a refused grant is passed on as refused, and nothing is kept", async () =>
   assert.equal(g.json.error, "passkey_required");
   await b("POST", "/api/mouse/enroll", { windows: "x" });
   assert.deepEqual(sent("/mouse/enroll").slice(-1)[0].body, { windows: "x" });
+});
+
+test("the end of a top-up needs a second passkey, and the grant leaves the session with it", async () => {
+  for (const [api, ch] of [["mouse", "mouse"], ["text", "keystroke"]]) {
+    const b = browser();
+    await signIn(b);
+    await passkey(b);
+    assert.equal((await b("POST", `/api/${api}/topup`, {})).status, 200);
+    const sample = api === "mouse" ? { windows: "w" } : { textContent: "t" };
+    await b("POST", `/api/${api}/enroll`, sample);
+    assert.ok(sent(`/${ch}/enroll`).slice(-1)[0].body.topUpToken, "the sample went with the grant");
+
+    const asked = sent(`/${ch}/topup/confirm`).length;
+    const bare = await b("POST", `/api/${api}/topup/confirm`, {});
+    assert.equal(bare.status, 401, `${ch}: the passkey that opened the top-up does not close it`);
+    assert.equal(bare.json.passkeyRequired, true);
+    assert.equal(sent(`/${ch}/topup/confirm`).length, asked, "Continuum was not asked");
+
+    await passkey(b);
+    const done = await b("POST", `/api/${api}/topup/confirm`, { stepUpToken: "from-the-page" });
+    assert.equal(done.status, 202, JSON.stringify(done.json));
+    assert.deepEqual(sent(`/${ch}/topup/confirm`).slice(-1)[0].body, { stepUpToken: "step-" + continuum.verifies }, "the step-up token of the second passkey, not the page's");
+    assert.equal((await b("POST", `/api/${api}/topup/confirm`, {})).status, 401, "one passkey closes one top-up");
+
+    await b("POST", `/api/${api}/enroll`, sample);
+    assert.equal("topUpToken" in sent(`/${ch}/enroll`).slice(-1)[0].body, false, `${ch}: the grant ended with the top-up`);
+  }
 });
 
 test("Continuum's \"locked\" answer to a mouse check goes to the page as it is, and the session locks with it", async () => {

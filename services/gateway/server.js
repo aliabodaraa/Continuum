@@ -1326,6 +1326,9 @@ async function mayRegisterPasskey(req, res) {
 // The proof is a step-up token, as for a reset. It buys a top-up grant for one channel, good for a quarter of an hour
 // and a few samples, because samples take longer to make than a step-up token lives. An enrolment request that carries
 // the grant reaches ca-service with topUp set, and nothing else can set it: the caller's own body never does.
+// The samples it stores wait outside the profile. They reach it at the end of the top-up (confirmTopUp, 2026-11-26),
+// which needs a step-up token of its own: a passkey verified after the samples were made. For one day the grant alone
+// let whoever sat down within its quarter of an hour finish the samples, and the profile learned them.
 const TOPUP_TTL_MS = 15 * 60000, TOPUP_MAX_SAMPLES = 8;
 async function startTopUp(req, res, channel) {
   if (!(await takeStepUp(req))) return passkeyRequired(res, "Adding samples to a trained profile");
@@ -1359,6 +1362,12 @@ async function enrol(req, res, channel) {
   }
   relay(res, r);
 }
+// The end of a top-up: ca-service adds the waiting samples to the profile and rebuilds the model. Nothing of the
+// caller's body goes on, and the grant is not asked for: it is no proof of who is there now.
+async function confirmTopUp(req, res, channel) {
+  if (!(await takeStepUp(req))) return passkeyRequired(res, "Adding samples to a trained profile");
+  relay(res, await fwd(`${CA_URL}/v1/${channel}/topup/confirm`, "POST", { userId: req.uid }, caAssert(req)));
+}
 
 app.get("/v1/sdk/onboarding", auth, async (req, res) => res.json(await onboardingFor(req.uid, req.tenantKey)));
 
@@ -1367,6 +1376,7 @@ app.get("/v1/sdk/keystroke/config", auth, async (req, res) => relay(res, await f
 app.get("/v1/sdk/keystroke/status", auth, async (req, res) => relay(res, await fwd(`${CA_URL}/v1/keystroke/status/${req.uid}`, "GET", undefined, caAssert(req))));
 app.post("/v1/sdk/keystroke/enroll", auth, (req, res) => enrol(req, res, "keystroke"));
 app.post("/v1/sdk/keystroke/topup", auth, (req, res) => startTopUp(req, res, "keystroke"));
+app.post("/v1/sdk/keystroke/topup/confirm", auth, (req, res) => confirmTopUp(req, res, "keystroke"));
 // Enrolment resets. sdk/guard.js (resetProfile) has called these since the reset button existed, but
 // the gateway never had them, so a reset through the gateway got 404 and changed nothing. They need a step-up token
 // (mintStepUp above): the SDK verifies the passkey first and passes the token that verification returns.
@@ -1399,6 +1409,7 @@ app.post("/v1/sdk/keystroke/check", auth, async (req, res) => {
 // mouse
 app.post("/v1/sdk/mouse/enroll", auth, (req, res) => enrol(req, res, "mouse"));
 app.post("/v1/sdk/mouse/topup", auth, (req, res) => startTopUp(req, res, "mouse"));
+app.post("/v1/sdk/mouse/topup/confirm", auth, (req, res) => confirmTopUp(req, res, "mouse"));
 // THRESHOLD, not state. The count is persisted by ca-service (lib/decisionState.js) and
 // comes back as `suspiciousStreak`. It used to be a `Map` here, with two consequences: a
 // gateway restart amnestied an impostor mid-escalation, and a second gateway replica was
@@ -1558,11 +1569,13 @@ for (const [method, p, target] of SERVER_CA_ROUTES) {
   }));
 }
 // Enrolment samples, and more samples for a trained profile (startTopUp and enrol above): the tenant's backend passes
-// the step-up token of a passkey verified through /v1/server/passkey/auth/complete, as for a reset, and then the grant
-// with each sample. These two are not in the table above because its bodies go to ca-service as the caller wrote them.
+// the step-up token of a passkey verified through /v1/server/passkey/auth/complete, as for a reset, then the grant
+// with each sample, and at the end the step-up token of a second verification (confirmTopUp). These are not in the
+// table above because its bodies go to ca-service as the caller wrote them.
 for (const channel of ["keystroke", "mouse"]) {
   app.post(`/v1/server/${channel}/enroll`, serverAuth, serverRoute((req, res) => enrol(req, res, channel)));
   app.post(`/v1/server/${channel}/topup`, serverAuth, serverRoute((req, res) => startTopUp(req, res, channel)));
+  app.post(`/v1/server/${channel}/topup/confirm`, serverAuth, serverRoute((req, res) => confirmTopUp(req, res, channel)));
 }
 // Deleting a profile: only with a step-up token from passkey/auth/complete below (takeStepUp), as on the SDK routes.
 for (const [channel, what] of [["keystroke", "Deleting the typing profile"], ["mouse", "Deleting the mouse profile"]]) {

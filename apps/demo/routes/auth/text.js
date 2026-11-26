@@ -92,6 +92,17 @@ router.post("/topup", requireAuth, requireUnlockedSession, requireFreshPasskey, 
   } catch (e) { next(e); }
 });
 
+// The end of a top-up (2026-11-26): its samples reach the model only after a second passkey, verified once they were typed.
+router.post("/topup/confirm", requireAuth, requireUnlockedSession, requireFreshPasskey, async (req, res, next) => {
+  const stepUpToken = req.session.stepUpToken;
+  delete req.session.stepUpToken;
+  try {
+    const r = await ca.keystrokeTopUpConfirm(req.session.userId, stepUpToken);
+    if (r.status >= 200 && r.status < 300 && req.session.topUp) delete req.session.topUp.keystroke;   // the top-up is over, and its grant with it
+    passthrough(res, r);
+  } catch (e) { next(e); }
+});
+
 router.post("/enroll", requireAuth, requireUnlockedSession, async (req, res, next) => {
   try {
     const body = { ...(req.body || {}) };

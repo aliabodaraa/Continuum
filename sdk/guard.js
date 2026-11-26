@@ -156,6 +156,7 @@
     config: "/v1/sdk/keystroke/config", ksStatus: "/v1/sdk/keystroke/status", ksEnroll: "/v1/sdk/keystroke/enroll", ksCheck: "/v1/sdk/keystroke/check", ksContribute: "/v1/sdk/keystroke/contribute",
     mouseEnroll: "/v1/sdk/mouse/enroll", mouseCheck: "/v1/sdk/mouse/check", mouseStatus: "/v1/sdk/mouse/status", onboarding: "/v1/sdk/onboarding",
     ksReset: "/v1/sdk/keystroke/reset", mouseReset: "/v1/sdk/mouse/reset", ksTopUp: "/v1/sdk/keystroke/topup", mouseTopUp: "/v1/sdk/mouse/topup",
+    ksTopUpConfirm: "/v1/sdk/keystroke/topup/confirm", mouseTopUpConfirm: "/v1/sdk/mouse/topup/confirm",
     pkRegOpts: "/v1/sdk/passkey/register/options", pkRegDone: "/v1/sdk/passkey/register/complete",
     pkAuthOpts: "/v1/sdk/passkey/auth/options", pkAuthDone: "/v1/sdk/passkey/auth/complete",
     lockStatus: "/v1/sdk/lock/status", adaptiveRetrain: "/v1/sdk/keystroke/adaptive/retrain",
@@ -164,7 +165,7 @@
     config: "/api/text/config", ksStatus: "/api/text/typing-status", ksEnroll: "/api/text/enroll", ksCheck: "/api/text/check", ksContribute: "/api/text/contribute",
     mouseEnroll: "/api/mouse/enroll", mouseCheck: "/api/mouse/check", mouseStatus: "/api/mouse/status",
     ksReset: "/api/text/typing-reset", mouseReset: "/api/mouse/reset", adaptiveRetrain: "/api/text/adaptive-retrain",
-    ksTopUp: "/api/text/topup", mouseTopUp: "/api/mouse/topup",
+    ksTopUp: "/api/text/topup", mouseTopUp: "/api/mouse/topup", ksTopUpConfirm: "/api/text/topup/confirm", mouseTopUpConfirm: "/api/mouse/topup/confirm",
     mouseUseSample: "/api/mouse/use-sample",
   };
 
@@ -736,7 +737,11 @@
   // server, good for a quarter of an hour: the gateway returns it and it goes with each sample; the demo app's
   // backend keeps it in the session. Resolves to { token } (no token in demo mode), or null when the user cancelled
   // or the server refused, with the reason shown in errEl.
+  // The samples wait on the server and reach the model only at the end, after the passkey is given a second time
+  // (confirmTopUp, 2026-11-26): the grant alone let whoever sat down within its quarter of an hour finish the samples.
   var TOPUP_NOTE = "The passkey confirmation ran out before the samples were finished. Press “Add samples” to go on.";
+  var TOPUP_CONFIRM = "Confirm with your passkey to add them to your model, and only if you made all of them yourself. Unconfirmed samples are removed after a quarter of an hour, and your model stays as it is.";
+  var TOPUP_GONE = "These samples waited too long and were removed. Press “Add samples” to start again.";
   var topUpUntil = {}, topUpWas = {};
   async function startTopUp(kind, errEl) {
     errEl.style.display = "none";
@@ -746,6 +751,20 @@
       if (!r.ok) throw new Error((r.d && (r.d.note || r.d.error)) || t("Verification failed"));
       topUpUntil[kind] = Date.now() + (Number(r.d && r.d.expiresInMs) || 15 * 60000);
       return { token: (r.d && r.d.topUpToken) || null };
+    } catch (err) {
+      errEl.textContent = (err && err.message) || t("Verification failed");
+      errEl.style.display = "block";
+      return null;
+    }
+  }
+  // The end of a top-up: the passkey again, then the server adds the waiting samples to the profile and rebuilds the
+  // model. Resolves to the server's answer, or to null when the passkey was not given (the reason is shown in errEl and
+  // the samples go on waiting).
+  async function confirmTopUp(kind, errEl) {
+    errEl.style.display = "none";
+    try {
+      var verified = await verifyPasskeyForAction();
+      return await reqJson(kind === "mouse" ? EP.mouseTopUpConfirm : EP.ksTopUpConfirm, "POST", MODE === "gateway" ? { stepUpToken: verified.stepUpToken } : {});
     } catch (err) {
       errEl.textContent = (err && err.message) || t("Verification failed");
       errEl.style.display = "block";
@@ -1326,7 +1345,8 @@
   // another popup also kept its page-wide tracker and its timer, and went on saving samples in the background.
   var endSampleFlow = null;
   function mouseSampleFlow(opts) {
-    // opts: { title, intro, stepBar, onClose, dismissLabel, allowReset, onEnrolled, resolveOnTrained(result), onAlreadyEnrolled }
+    // opts: { title, intro, stepBar, onClose, dismissLabel, allowReset, onEnrolled, resolveOnTrained(result), onAlreadyEnrolled,
+    //         topUp (the grant: more samples for a trained profile), onTopUpGone }
     if (endSampleFlow) endSampleFlow();
     var st = { onFile: 0, required: MOUSE_SAMPLES_REQUIRED, perSample: MOUSE_SAMPLE_WINDOWS, enrolled: false };
     var tracker = null, tasks = null, iv = null, saving = false, addedNow = 0, building = false, pollT = null, note = "", ended = false;
@@ -1358,6 +1378,30 @@
     }
     // The reset deletes the samples on file and the model: with neither, the link has nothing to do and is not shown.
     function canReset() { return st.onFile > 0 || st.enrolled || building; }
+    // A top-up has its samples: they wait on the server until the passkey is given again (confirmTopUp). The pad and its
+    // recorder are gone meanwhile; after the passkey the model is rebuilt and the pad's window waits for it.
+    function renderConfirm() {
+      stop(); clearTimeout(pollT);
+      if (tracker) { tracker.stop(); tracker = null; }
+      if (tasks) { tasks.stop(); tasks = null; }
+      openWiz('<div class="t">' + h("Your samples are ready") + '</div><div class="d">' + h(TOPUP_CONFIRM) + '</div><div class="row2"><button class="b" id="mconf">'
+        + h("Confirm with passkey") + '</button><button class="b sec" id="mdone" style="flex:0 0 96px">' + h("Close") + '</button></div><div class="e"></div>', close);
+      var e = wizEl.querySelector(".e"), btn = wizEl.querySelector("#mconf");
+      wizEl.querySelector("#mdone").addEventListener("click", close);
+      btn.addEventListener("click", async function () {
+        btn.disabled = true;
+        var r = await confirmTopUp("mouse", e);
+        if (ended || !btn.isConnected) return;
+        btn.disabled = false;
+        if (!r) return;   // the passkey was not given
+        if (r.status === 423) { close(); return; }   // locked meanwhile: the passkey prompt is up (reqJson)
+        if (r.ok && r.d && r.d.training) { building = true; render(); return; }
+        // they waited longer than a sitting and were removed
+        if (r.status === 409 && r.d && r.d.error === "topup_incomplete") { end(); if (opts.onTopUpGone) opts.onTopUpGone(); else opts.onClose(); return; }
+        e.textContent = (r.d && (r.d.note || r.d.error)) || t("Verification failed");
+        e.style.display = "block";
+      });
+    }
     function render() {
       openWiz((opts.stepBar || "") + '<div class="wizload" id="mwl"><span class="wizspin"></span><span id="mwlt">' + h("Saving sample…") + "</span></div>"
         // one row above the pad and one below it, so the pad has the height of the window (the CSS, ".card.wide")
@@ -1423,6 +1467,8 @@
         // The account was locked meanwhile (the other channel, another tab): the passkey prompt is up (reqJson), under this
         // window. A top-up gives way to it; what it had added waits a while on the server.
         if (opts.topUp && r.status === 423) { close(); return; }
+        // The top-up had its samples already (its last one sent from another window): nothing more is stored.
+        if (opts.topUp && r.status === 409 && r.d && r.d.error === "topup_full") { st.onFile = st.required; renderConfirm(); return; }
         if (!r.ok) {
           // e.g. the step-size gate: a mechanical or jittering movement is not stored. Redo it.
           e.textContent = t("{why} — this sample starts again.", { why: (r.d && r.d.error) || t("This sample was not accepted") });
@@ -1436,6 +1482,7 @@
         if (r.d && r.d.trained) { if (!st.enrolled && opts.onEnrolled) opts.onEnrolled(); st.enrolled = true; }
         if (r.d && r.d.training) { waitForModel(); return; }
         if (st.enrolled && !opts.topUp) { finish(r.d); return; }
+        if (opts.topUp && st.onFile >= st.required) { renderConfirm(); return; }   // the last one: the passkey next
         refresh();
       }
       function refresh() {
@@ -1499,10 +1546,11 @@
         st.enrolled = !!d.enrolled;
         building = !!d.training;
         // A top-up counts its own samples: so many of them (the server says how many), from those already waiting.
-        if (opts.topUp) { st.required = Number(d.topUpSamples) || 4; st.onFile = Math.min(st.required - 1, Number(d.topUpAdded) || 0); st.enrolled = true; }
+        if (opts.topUp) { st.required = Number(d.topUpSamples) || 4; st.onFile = Math.min(st.required, Number(d.topUpAdded) || 0); st.enrolled = true; }
       } catch (e) {}
       if (ended) return;   // a newer flow took over while the status was being read
       if (st.enrolled && !building && opts.resolveOnTrained && !opts.allowReset && !opts.topUp) { finish(null); return; }
+      if (opts.topUp && !building && st.onFile >= st.required) { renderConfirm(); return; }   // all of them wait already
       render();
     })();
   }
@@ -1564,7 +1612,7 @@
     // refuses enrolment samples once the model exists. Also here: reset and start over.
     function renderTrained(noteText) {
       openWiz('<div class="t">' + h("Your typing rhythm is trained") + '</div><div class="d">' + h("Samples on file: {n}.", { n: total }) + " "
-        + h("You can add {n} samples to widen it; your model is rebuilt after the last one. Adding samples, like a reset, asks for your passkey first.", { n: topUpNeed })
+        + h("You can add {n} samples to widen it. Your passkey is asked before the first sample and again after the last one, then your model is rebuilt.", { n: topUpNeed })
         + (ADAPT_ENABLED ? " " + h("It also learns from the popup that offers clean stretches of your typing; that retrain asks for your passkey too.") : "")
         + '</div><div class="row2"><button class="b" id="cadd">' + h("Add samples") + '</button><button class="b sec" id="cdone" style="flex:0 0 96px">' + h("Close")
         + '</button></div><div class="foot"><a href="#" id="creset" class="danger">' + svg("trash") + h("Reset my typing profile") + '</a></div><div class="e"></div>', closeWiz);
@@ -1575,7 +1623,7 @@
         var btn = this; btn.disabled = true;
         var grant = await startTopUp("keystroke", e);
         btn.disabled = false;
-        if (grant && btn.isConnected) { topUp = grant; render(); }
+        if (grant && btn.isConnected) { topUp = grant; if (topUpAdded >= topUpNeed) renderConfirm(); else render(); }
       });
       wizEl.querySelector("#creset").addEventListener("click", function (ev) {
         ev.preventDefault();
@@ -1586,7 +1634,31 @@
       openWiz('<div class="t">' + h("Your typing model is being built") + '</div><div class="d">' + h("This takes about a minute. You can close this and carry on: typing protection starts by itself once the model is ready.") + '</div><button class="b" id="cdone">' + h("Close") + "</button>", closeWiz);
       wizEl.querySelector("#cdone").addEventListener("click", closeWiz);
     }
-    // After the last sample of a top-up: the present model goes on judging until the new one has been built.
+    // A top-up has its samples: they wait on the server until the passkey is given again (confirmTopUp).
+    function renderConfirm() {
+      openWiz('<div class="t">' + h("Your samples are ready") + '</div><div class="d">' + h(TOPUP_CONFIRM) + '</div><div class="row2"><button class="b" id="cconf">'
+        + h("Confirm with passkey") + '</button><button class="b sec" id="cdone" style="flex:0 0 96px">' + h("Close") + '</button></div><div class="e"></div>', closeWiz);
+      var e = wizEl.querySelector(".e"), btn = wizEl.querySelector("#cconf");
+      wizEl.querySelector("#cdone").addEventListener("click", closeWiz);
+      btn.addEventListener("click", async function () {
+        btn.disabled = true;
+        var r = await confirmTopUp("keystroke", e);
+        if (!btn.isConnected) return;
+        btn.disabled = false;
+        if (!r) return;   // the passkey was not given
+        if (r.status === 423) { topUp = null; closeWiz(); return; }   // locked meanwhile: the passkey prompt is up (reqJson)
+        if (r.ok && r.d && r.d.training) { topUp = null; topUpAdded = 0; renderRebuilding(); return; }
+        // they waited longer than a sitting and were removed
+        if (r.status === 409 && r.d && r.d.error === "topup_incomplete") {
+          topUp = null; topUpAdded = Math.min(topUpNeed, Number(r.d.topUp && r.d.topUp.added) || 0);
+          renderTrained(t(TOPUP_GONE));
+          return;
+        }
+        e.textContent = (r.d && (r.d.note || r.d.error)) || t("Verification failed");
+        e.style.display = "block";
+      });
+    }
+    // After the passkey that ends a top-up: the present model goes on judging until the new one has been built.
     function renderRebuilding() {
       openWiz('<div class="t">' + h("Your typing model is being rebuilt") + '</div><div class="d">' + h("This takes about a minute. Your present model stays in use until the new one is ready. You can close this.") + '</div><button class="b" id="cdone">' + h("Close") + "</button>", closeWiz);
       wizEl.querySelector("#cdone").addEventListener("click", closeWiz);
@@ -1625,9 +1697,11 @@
           if (r.status === 409 && r.d && r.d.error === "already_enrolled") { topUp = null; renderTrained(t(TOPUP_NOTE)); return; }
           // Locked meanwhile: the passkey prompt is up (reqJson) under this window, which gives way to it.
           if (r.status === 423) { topUp = null; closeWiz(); return; }
+          // The top-up had its samples already (its last one sent from another window): nothing more is stored.
+          if (r.status === 409 && r.d && r.d.error === "topup_full") { topUpAdded = topUpNeed; renderConfirm(); return; }
           if (!r.ok) { e.textContent = "(" + r.status + ") " + ((r.d && r.d.error) || t("rejected")); e.style.display = "block"; return; }
           topUpAdded = Number(r.d && r.d.topUp && r.d.topUp.added) || (topUpAdded + 1);
-          if (r.d && r.d.training) { topUp = null; topUpAdded = 0; renderRebuilding(); return; }
+          if (topUpAdded >= topUpNeed) { renderConfirm(); return; }   // the last one: the passkey next
           render();
           return;
         }
@@ -1645,7 +1719,7 @@
       var trained = false, building = false;
       try {
         var st = await reqJson(EP.ksStatus); total = Number((st.d && st.d.sampleCount) || 0); trained = !!(st.d && st.d.trained); building = !!(st.d && st.d.training);
-        topUpNeed = Number(st.d && st.d.topUpSamples) || topUpNeed; topUpAdded = Math.min(topUpNeed - 1, Number(st.d && st.d.topUpAdded) || 0);
+        topUpNeed = Number(st.d && st.d.topUpSamples) || topUpNeed; topUpAdded = Math.min(topUpNeed, Number(st.d && st.d.topUpAdded) || 0);
       } catch (e) { total = 0; }
       if (trained) renderTrained(); else if (building) { watchKsBuild(); renderBuilding(); } else render();
     })();
@@ -1664,7 +1738,7 @@
   function renderMouseTrained(d, noteText) {
     if (endSampleFlow) endSampleFlow();
     openWiz('<div class="t">' + h("Your mouse movement is trained") + '</div><div class="d">' + h("Samples on file: {n}.", { n: Number((d && d.samplesOnFile) || MOUSE_SAMPLES_REQUIRED) })
-      + " " + h("You can add {n} samples to widen it; your model is rebuilt after the last one. Adding samples, like a reset, asks for your passkey first.", { n: Number((d && d.topUpSamples) || 4) }) + "</div>"
+      + " " + h("You can add {n} samples to widen it. Your passkey is asked before the first sample and again after the last one, then your model is rebuilt.", { n: Number((d && d.topUpSamples) || 4) }) + "</div>"
       + '<div class="row2"><button class="b" id="madd">' + h("Add samples") + '</button><button class="b sec" id="mdone" style="flex:0 0 96px">' + h("Close") + "</button></div>"
       + '<div class="foot"><a href="#" id="mreset" class="danger">' + svg("trash") + h("Reset my mouse profile") + '</a></div><div class="e"></div>', closeWiz);
     var e = wizEl.querySelector(".e");
@@ -1685,12 +1759,12 @@
       });
     });
   }
-  // More samples for a trained profile: the same pad, so many samples as the server says, and the model rebuilt after
-  // the last one. The grant is the passkey's (startTopUp).
+  // More samples for a trained profile: the same pad, so many samples as the server says, then the passkey again and
+  // the model is rebuilt. The grant is the first passkey's (startTopUp).
   function mouseTopUp(grant) {
     mouseSampleFlow({
       title: h("More mouse samples"),
-      intro: h("Do the tasks as before. After the last sample your mouse model is rebuilt from your newest samples; until then it stays as it is."),
+      intro: h("Do the tasks as before. After the last sample you confirm with your passkey, and your mouse model is rebuilt from your newest samples; until then it stays as it is."),
       onClose: closeWiz,
       dismissLabel: h("Done"),
       allowReset: false,
@@ -1698,6 +1772,7 @@
       resolveOnTrained: function (d) { renderMouseTrained(d || {}); },
       // the server took a sample for a plain enrolment sample: the grant has run out
       onAlreadyEnrolled: function () { renderMouseTrained({}, t(TOPUP_NOTE)); },
+      onTopUpGone: function () { renderMouseTrained({}, t(TOPUP_GONE)); },
     });
   }
   function mouseSamples() {

@@ -117,13 +117,16 @@ representation, its Table I; Experiment A found no richer representation measura
   a person's samples on the new pad.
 - More samples for a trained profile (2026-11-25, "Add samples" on the trained screen). The first enrolment stays in
   one session (the owner's decision), and what a one-sitting profile lacks can be added on another day: the passkey,
-  then four samples on the same pad, and the model is rebuilt from the newest eight samples, half new and half
-  earlier, the mix that worked on the owner's account when it was made by hand. The four wait in
-  `mouse_topup_samples` until the last arrives and are deleted if the top-up is not finished within 16 minutes; a
-  top-up sample passes every check of an enrolment sample (window count, step spread, no repeated movement, also
-  against the samples of the same top-up). Without the gateway's grant a trained profile still answers
-  `already_enrolled`. Tests: `services/ca-service/test/topUp.test.js`, `services/gateway/test/topUp.test.js`,
-  `extension/scripts/e2e_headless_sdk_mouse.mjs` (sections 6 and 7). Not measured: whether a top-up lowers the
+  then four samples on the same pad, then the passkey again (2026-11-26), and the model is rebuilt from the newest
+  eight samples, half new and half earlier, the mix that worked on the owner's account when it was made by hand.
+  The four wait in `mouse_topup_samples` until that second passkey, and a sample is deleted once it has waited 16
+  minutes; a top-up sample passes every check of an enrolment sample (window count, step spread, no repeated
+  movement, also against the samples of the same top-up), and a top-up that has its four takes no more. The second
+  passkey is there because the first one's grant lasts a quarter of an hour: for one day the fourth sample rebuilt
+  the model by itself, so whoever sat down in that time could finish the samples and the profile learned them.
+  Without the gateway's grant a trained profile still answers `already_enrolled`. Tests:
+  `services/ca-service/test/topUp.test.js`, `services/gateway/test/topUp.test.js`,
+  `extension/scripts/e2e_headless_sdk_mouse.mjs` (sections 6 to 9). Not measured: whether a top-up lowers the
   requests of a user other than the owner.
 - What the pad does not settle (2026-11-25): a profile built from one short sitting. The owner's eight samples of one
   sitting gave a threshold of 0.79 and turned down all his ordinary movement minutes later (two passkey requests in

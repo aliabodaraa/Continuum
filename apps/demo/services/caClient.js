@@ -14,6 +14,8 @@ module.exports = {
   // More samples for a trained profile: Continuum gives a grant for the stepUpToken of a passkey verified moments ago,
   // and takes a sample for a trained profile only with that grant (topUpToken in the enrolment body; mouse below).
   keystrokeTopUp: (userId, stepUpToken) => request("POST", "/keystroke/topup", userId, { stepUpToken }),
+  // The end of a top-up: the samples reach the model only with the stepUpToken of a second verification, made after them.
+  keystrokeTopUpConfirm: (userId, stepUpToken) => request("POST", "/keystroke/topup/confirm", userId, { stepUpToken }),
   keystrokeCheck: (userId, body) => request("POST", "/keystroke/check", userId, body),
   keystrokeContribute: (userId, body) => request("POST", "/keystroke/contribute", userId, body),
   // Pending adaptive samples -> retrain. Continuum asks for proof of a passkey verified moments ago: the
@@ -34,6 +36,7 @@ module.exports = {
   // mouse
   mouseEnroll: (userId, windows, topUpToken) => request("POST", "/mouse/enroll", userId, topUpToken ? { windows, topUpToken } : { windows }),
   mouseTopUp: (userId, stepUpToken) => request("POST", "/mouse/topup", userId, { stepUpToken }),
+  mouseTopUpConfirm: (userId, stepUpToken) => request("POST", "/mouse/topup/confirm", userId, { stepUpToken }),
   mouseCheck: (userId, windows) => request("POST", "/mouse/check", userId, { windows }),
   mouseStatus: (userId) => request("GET", "/mouse/status", userId),
   // A real-use sample: the movement right after a passkey verification (Continuum keeps it only then, once).

@@ -7,10 +7,13 @@
 //   1. the trained screen offers "Add samples" beside the reset
 //   2. pressing it asks for the passkey, takes the server's grant for it, and opens the passage screen counting the
 //      top-up's own samples
-//   3. three samples go with the grant; typing is not judged while that screen is open; after the third the screen says
-//      the model is being rebuilt
+//   3. three samples go with the grant; typing is not judged while that screen is open; after the third the samples wait
+//      and the screen asks for the passkey again (2026-11-26); cancelled, nothing reaches the model; given, the model is
+//      rebuilt
 //   4. the grant runs out before the samples are finished: the trained screen says so
 //   5. the passkey prompt cancelled: nothing is asked of the server and the trained screen stays
+//   6. the samples all wait already when "Add samples" is pressed: the confirmation is next, no passage
+//   7. the samples waited too long and were removed before the confirmation: the trained screen says so
 //
 //   node extension/scripts/e2e_headless_sdk_topup_typing.mjs
 import { spawn } from "node:child_process"; import fs from "node:fs"; import os from "node:os"; import path from "node:path";
@@ -26,7 +29,7 @@ const ok = (n, c, d) => { console.log((c ? "  PASS  " : "  FAIL  ") + n + (d ? "
 
 // ---- what the "server" says
 let state;
-const fresh = () => ({ checks: 0, verifies: 0, topUps: [], grant: null, waiting: 0, enrolls: [], passkey: "ok" });
+const fresh = () => ({ checks: 0, verifies: 0, topUps: [], grant: null, waiting: 0, enrolls: [], confirms: [], committed: 0, passkey: "ok" });
 function api(p, method, body) {
   if (p === "/v1/sdk/onboarding") return { passkey: true, keystroke: true, mouse: true, keystrokeTraining: false };
   if (p === "/v1/sdk/lock/status") return { locked: false };
@@ -46,10 +49,17 @@ function api(p, method, body) {
   if (p === "/v1/sdk/keystroke/enroll") {
     state.enrolls.push({ topUpToken: body.topUpToken || null, keys: (body.keystrokeEvents || []).filter((e) => e.eventType === "keydown").length, chars: String(body.textContent || "").length });
     if (!state.grant || body.topUpToken !== state.grant) return { __status: 409, ok: false, error: "already_enrolled" };
+    if (state.waiting >= 3) return { __status: 409, ok: false, error: "topup_full", topUp: { added: 3, needed: 3 } };
     state.waiting++;
-    const done = state.waiting >= 3, r = { ok: true, trained: true, training: done, topUp: { added: state.waiting, needed: 3 } };
-    if (done) state.waiting = 0;
-    return r;
+    return { ok: true, trained: true, training: false, topUp: { added: state.waiting, needed: 3 } };   // they wait, the third too
+  }
+  // the end of a top-up: only with the step-up token of a passkey verified after the samples
+  if (p === "/v1/sdk/keystroke/topup/confirm") {
+    state.confirms.push(body.stepUpToken || null);
+    if (body.stepUpToken !== "step-" + state.verifies) return { __status: 403, error: "passkey_required" };
+    if (state.waiting < 3) return { __status: 409, ok: false, error: "topup_incomplete", topUp: { added: state.waiting, needed: 3 } };
+    state.committed += state.waiting; state.waiting = 0;
+    return { ok: true, trained: true, training: true };
   }
   return {};
 }
@@ -70,10 +80,10 @@ const WIZ = `(() => { const ov = ${OPEN}; const t = ov && ov.querySelector('.car
   const e = ov.querySelector('.card .e'), c = ov.querySelector('.samplecount'), ta = ov.querySelector('#cta');
   return { title: t.textContent, count: c ? c.textContent : '', note: e && getComputedStyle(e).display !== 'none' ? e.textContent : '', add: !!ov.querySelector('#cadd'),
     reset: !!ov.querySelector('#creset') && getComputedStyle(ov.querySelector('#creset').parentElement).display !== 'none', passage: !!ta, topUp: !!ta && ta.getAttribute('data-topup') === 'keystroke',
-    canSave: !!ov.querySelector('#cs') && !ov.querySelector('#cs').disabled }; })()`;
+    canSave: !!ov.querySelector('#cs') && !ov.querySelector('#cs').disabled, confirm: !!ov.querySelector('#cconf') }; })()`;
 const wiz = (s) => ev(s, WIZ);
 const clickIn = (s, sel) => ev(s, `(() => { const b = (${SH}).querySelector(${JSON.stringify(sel)}); if (b) b.click(); return !!b; })()`);
-const TRAINED = "Your typing rhythm is trained", PASSAGES = "Strengthen your typing rhythm", REBUILT = "Your typing model is being rebuilt";
+const TRAINED = "Your typing rhythm is trained", PASSAGES = "Strengthen your typing rhythm", REBUILT = "Your typing model is being rebuilt", READY = "Your samples are ready";
 const titled = (s, title, ms = 8000) => waitFor(s, `(${WIZ}) && (${WIZ}).title === ${JSON.stringify(title)}`, ms);
 
 const token = "x." + Buffer.from(JSON.stringify({ sub: "topup-typing-user" })).toString("base64url") + ".y";
@@ -159,12 +169,26 @@ try {
   saved.push(await sample(s));
   const after2 = await wiz(s);
   saved.push(await sample(s));
-  const done3 = await titled(s, REBUILT);
+  const ready3 = await titled(s, READY);
+  const w3 = await wiz(s);
   ok("3. three samples go with the grant, one at a time", saved.every(Boolean) && state.enrolls.length === 3 && state.enrolls.every((e) => e.topUpToken === "grant-1" && e.keys >= 100 && e.chars >= 120)
     && after1.count === "Extra sample 2 of 3" && after2.count === "Extra sample 3 of 3",
     `${state.enrolls.length} samples, grants ${[...new Set(state.enrolls.map((e) => e.topUpToken))].join(",")}, counter ${after1.count} / ${after2.count}`);
   ok("…typing is judged on the page before, and not while the top-up's screen is open", judged > 0 && state.checks === checks3, `${judged} checks before, ${state.checks - checks3} during`);
-  ok("…after the third the screen says the model is being rebuilt", done3, JSON.stringify(await wiz(s)));
+  ok("…after the third the samples wait: the screen asks for the passkey again, and the model is as it was", ready3 && w3.confirm && !w3.passage && state.verifies === 1
+    && state.confirms.length === 0 && state.committed === 0, `${JSON.stringify(w3)}; ${state.verifies} passkey so far, ${state.committed} samples in the model`);
+  // someone else finished the samples: no passkey, so nothing of them reaches the model
+  await ev(s, "window.__passkey = 'cancel'; true");
+  await clickIn(s, "#cconf");
+  await sleep(1200);
+  const w3b = await wiz(s);
+  ok("…the passkey not given at the end: the server is not asked, nothing reaches the model, and the reason shows", w3b.title === READY && !!w3b.note && state.confirms.length === 0
+    && state.committed === 0 && state.waiting === 3, `asked ${state.confirms.length} times, ${state.committed} in the model, note: ${w3b.note}`);
+  await ev(s, "window.__passkey = 'ok'; true");
+  await clickIn(s, "#cconf");
+  const done3 = await titled(s, REBUILT);
+  ok("…the passkey given: its own step-up token goes with the confirmation, the samples reach the model and it is rebuilt", done3 && state.verifies === 2
+    && state.confirms.length === 1 && state.confirms[0] === "step-2" && state.committed === 3, `confirmed with ${JSON.stringify(state.confirms)}, ${state.committed} in the model`);
   await clickIn(s, "#cdone");
   await onPage(s);
   const checks3c = state.checks;
@@ -194,6 +218,34 @@ try {
   const w5 = await wiz(s);
   ok("5. the passkey prompt cancelled: the server is asked for no grant and the trained screen stays, with the reason", w5.title === TRAINED && !w5.passage && state.topUps.length === 0 && state.enrolls.length === 0 && !!w5.note,
     `${state.topUps.length} grants asked; note: ${w5.note}`);
+
+  // ---- 6. all the samples wait already (the window was closed before the confirmation)
+  await load();
+  state.waiting = 3;
+  await clickIn(s, ADD);
+  await titled(s, TRAINED);
+  await clickIn(s, "#cadd");
+  const ready6 = await titled(s, READY);
+  const w6 = await wiz(s);
+  await clickIn(s, "#cconf");
+  const done6 = await titled(s, REBUILT);
+  ok("6. the samples all wait already: the confirmation is next, with a passkey of its own, and no passage is asked for", ready6 && !w6.passage && done6 && state.enrolls.length === 0
+    && state.verifies === 2 && state.confirms[0] === "step-2" && state.committed === 3, `${state.verifies} passkeys, ${state.enrolls.length} samples sent, ${state.committed} in the model`);
+
+  // ---- 7. the samples waited too long and were removed before the confirmation
+  await load();
+  await clickIn(s, ADD);
+  await titled(s, TRAINED);
+  await clickIn(s, "#cadd");
+  await titled(s, PASSAGES);
+  for (let i = 0; i < 3; i++) await sample(s);
+  await titled(s, READY);
+  state.waiting = 0;   // on the server the sitting is over
+  await clickIn(s, "#cconf");
+  const back7 = await titled(s, TRAINED);
+  const w7 = await wiz(s);
+  ok("7. the samples were removed before the confirmation: the trained screen says so, and the model is as it was", back7 && /waited too long/.test(w7.note) && w7.add && state.committed === 0,
+    `note: ${w7.note}; ${state.committed} in the model`);
   ok("no script error on the page in the whole run", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
   ok("run completed", false, e.message);

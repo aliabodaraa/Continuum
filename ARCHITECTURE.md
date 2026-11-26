@@ -357,12 +357,15 @@ inference on that process — the fix is gunicorn with separate inference and tr
   gateway (`/v1/sdk/<channel>/topup`, `/v1/server/<channel>/topup`): one channel, 15 minutes, at most 8 samples. An
   enrolment sample that carries the grant reaches ca-service with `topUp` set, and nothing else sets it (the caller's
   own body never does). The samples of a top-up wait outside the profile (the mouse: table `mouse_topup_samples`;
-  typing: purpose `top-up-pending`, not training samples) until the last one arrives: four for the mouse, after
-  which the model is rebuilt from the newest eight samples, half new and half earlier; three for typing, which then
-  become training samples and the model is rebuilt (with the hold-out test of every retrain). A sample that has
-  waited longer than 16 minutes is deleted, so an unfinished top-up never reaches a model. While a channel's top-up
-  screen is open the SDK does not judge that channel. What is left open: someone who takes the seat within the
-  quarter of an hour of the passkey can finish the top-up.
+  typing: purpose `top-up-pending`, not training samples): four for the mouse, three for typing, and a top-up that
+  has its samples takes no more. They reach the profile only at the end, with a second step-up token
+  (`/v1/sdk/<channel>/topup/confirm`, `/v1/server/<channel>/topup/confirm`, since 2026-11-26): a passkey verified
+  after the samples were made. Then the mouse model is rebuilt from the newest eight samples, half new and half
+  earlier, and the typing samples become training samples and that model is rebuilt (with the hold-out test of
+  every retrain). A sample that has waited longer than 16 minutes is deleted, so an unfinished or unconfirmed top-up
+  never reaches a model. While a channel's pad or passage screen of a top-up is open the SDK does not judge that
+  channel. For one day the last sample ended the top-up by itself, and whoever took the seat within the quarter of
+  an hour of the passkey could finish it.
 - Public API: `getRiskToken`, `riskHeader`, `isLocked`, `identify`, `onReady`,
   `requireStepUp(modality, onSuccess)`.
 

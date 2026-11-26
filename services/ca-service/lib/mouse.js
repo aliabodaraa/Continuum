@@ -159,16 +159,38 @@ function repeatedSamples(samples) {
 // of 0.79 and turned his ordinary movement down minutes later, while the mix of four of those samples with four from
 // earlier days asked for no passkey in his next 166 checks. So the user may add samples later, after proving the
 // passkey. A top-up is half a profile, made in one sitting: its samples wait in mouse_topup_samples, outside the
-// profile's samples, and when the last of TOPUP_SAMPLES arrives they join them and the model is rebuilt from the
-// newest SAMPLES_REQUIRED (retrainMouse), half new and half earlier. Samples that have waited longer than the sitting
-// are deleted: the passkey that opened the top-up has long run out, so whoever finishes it need not be its user, and
-// an unfinished top-up must never reach a model.
+// profile's samples. With TOPUP_SAMPLES of them waiting, confirmTopUp moves them in and the model is rebuilt from the
+// newest SAMPLES_REQUIRED (retrainMouse), half new and half earlier. The caller reaches confirmTopUp only with a
+// passkey verified after the samples were made (2026-11-26). For one day the last sample moved them in by itself: the
+// passkey that opened the top-up was then the only one, and whoever sat down within its quarter of an hour could
+// finish the samples and the profile learned them. Samples that have waited longer than the sitting are deleted: an
+// unfinished or unconfirmed top-up never reaches a model.
 const TOPUP_SAMPLES = Math.floor(SAMPLES_REQUIRED / 2);
 const TOPUP_SITTING_MS = 16 * 60000;   // a little over the life of the gateway's grant (15 minutes)
 const timeText = (ms) => new Date(ms).toISOString().slice(0, 19).replace("T", " ");   // as the database writes created_at
 async function topUpWaiting(userId) {
   await db.run("DELETE FROM mouse_topup_samples WHERE user_id = ? AND created_at < ?", userId, timeText(Date.now() - TOPUP_SITTING_MS));
   return db.all("SELECT id, windows, window_count FROM mouse_topup_samples WHERE user_id = ? ORDER BY id", userId);
+}
+// The end of a top-up: its samples join the profile's samples, in the order they were made, and the model is rebuilt
+// once. This service trusts its caller to have checked the passkey, as for a reset: the gateway comes here only with a
+// step-up token, a passkey verified in the last two minutes, so after the samples were made.
+async function confirmTopUp(userId) {
+  if (!(await mouseEnrolled(userId))) return { status: 409, body: { ok: false, error: "not_enrolled" } };
+  const waiting = await topUpWaiting(userId);
+  if (waiting.length < TOPUP_SAMPLES) {
+    return { status: 409, body: { ok: false, error: "topup_incomplete", topUp: { added: waiting.length, needed: TOPUP_SAMPLES },
+      note: `A top-up is ${TOPUP_SAMPLES} samples made in one sitting, and ${waiting.length} are waiting. A sample that waited longer than a quarter of an hour was removed.` } };
+  }
+  await db.tx(async () => {
+    for (const w of waiting.slice(0, TOPUP_SAMPLES)) {
+      await db.run("INSERT INTO mouse_samples (user_id, windows, window_count) VALUES (?, ?, ?)", userId, w.windows, w.window_count);
+    }
+    await db.run("DELETE FROM mouse_topup_samples WHERE user_id = ?", userId);
+  });
+  const rebuild = await trainingQueue.enqueue(userId, "mouse", "top-up");
+  return { status: 202, body: { ok: true, trained: true, training: true, jobId: rebuild.id, samples: TOPUP_SAMPLES,
+    message: "Your mouse model is being rebuilt from your newest samples: usually under a minute." } };
 }
 
 async function enrollMouse(userId, windows, opts = {}) {
@@ -181,6 +203,11 @@ async function enrollMouse(userId, windows, opts = {}) {
   if (enrolled && !opts.topUp) {
     return { status: 409, body: { ok: false, error: "already_enrolled",
       note: "The mouse profile is trained. It takes more samples only after the user's passkey (a top-up); a reset (passkey) starts again." } };
+  }
+  // A top-up that has its samples takes no more: they wait for the passkey (confirmTopUp).
+  if (enrolled && (await topUpWaiting(userId)).length >= TOPUP_SAMPLES) {
+    return { status: 409, body: { ok: false, error: "topup_full", topUp: { added: TOPUP_SAMPLES, needed: TOPUP_SAMPLES },
+      note: "This top-up has its samples. They are added to the mouse model once the passkey confirms them." } };
   }
   if (staleClientWindows(windows)) {
     return { status: 400, body: { ok: false, error: "This client sends the retired 7-feature mouse windows. Reload the page or update the extension." } };
@@ -225,24 +252,13 @@ async function enrollMouse(userId, windows, opts = {}) {
   }
 
   if (enrolled) {
-    // A top-up sample waits; the last one of the top-up moves them all to the profile's samples, in the order they were
-    // made, and the model is rebuilt once.
+    // A top-up sample waits, the last one too: they reach the profile's samples only through confirmTopUp.
     await db.run("INSERT INTO mouse_topup_samples (user_id, windows, window_count) VALUES (?, ?, ?)", userId, JSON.stringify(windows), windows.length);
     const waiting = await topUpWaiting(userId);
-    const body = { ok: true, trained: true, topUp: { added: Math.min(waiting.length, TOPUP_SAMPLES), needed: TOPUP_SAMPLES },
-      samplesOnFile: SAMPLES_REQUIRED, samplesRequired: SAMPLES_REQUIRED, sampleWindows: SAMPLE_WINDOWS, sessionWindows: windows.length };
-    if (waiting.length < TOPUP_SAMPLES) {
-      return { status: 202, body: { ...body, message: `Saved extra sample ${waiting.length} of ${TOPUP_SAMPLES}. Your mouse model is rebuilt after the last one.` } };
-    }
-    await db.tx(async () => {
-      for (const w of waiting) {
-        await db.run("INSERT INTO mouse_samples (user_id, windows, window_count) VALUES (?, ?, ?)", userId, w.windows, w.window_count);
-        await db.run("DELETE FROM mouse_topup_samples WHERE id = ?", w.id);
-      }
-    });
-    const rebuild = await trainingQueue.enqueue(userId, "mouse", "top-up");
-    return { status: 202, body: { ...body, training: true, jobId: rebuild.id,
-      message: "Saved. Your mouse model is being rebuilt from your newest samples: usually under a minute." } };
+    return { status: 202, body: { ok: true, trained: true, topUp: { added: Math.min(waiting.length, TOPUP_SAMPLES), needed: TOPUP_SAMPLES },
+      samplesOnFile: SAMPLES_REQUIRED, samplesRequired: SAMPLES_REQUIRED, sampleWindows: SAMPLE_WINDOWS, sessionWindows: windows.length,
+      message: waiting.length < TOPUP_SAMPLES ? `Saved extra sample ${waiting.length} of ${TOPUP_SAMPLES}.`
+        : `Saved extra sample ${TOPUP_SAMPLES} of ${TOPUP_SAMPLES}. They are added to your mouse model once your passkey confirms them.` } };
   }
 
   await db.run(
@@ -577,6 +593,7 @@ async function resetMouseProfile(userId) {
 
 module.exports = {
   enrollMouse,
+  confirmTopUp,
   retrainMouse,
   checkMouse,
   mouseStatus,

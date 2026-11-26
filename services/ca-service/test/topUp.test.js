@@ -3,11 +3,15 @@
 // The first enrolment stays in one session, and a profile from one sitting holds one pace; the user may add samples
 // later, after the passkey. The gateway checks the passkey and passes `topUp`; this service only takes its word.
 //   - without that word a trained profile takes no sample (as since 5 and 24 Oct)
-//   - the mouse: four samples wait outside the profile, the fourth moves them in and rebuilds the model from the newest
-//     eight, half new and half earlier
-//   - typing: three samples wait as pending ones, the third makes them training samples and queues the rebuild
+//   - the mouse: four samples wait outside the profile, the fourth too; the confirm route (the gateway calls it after a
+//     second passkey, 2026-11-26) moves them in and rebuilds the model from the newest eight, half new and half earlier
+//   - typing: three samples wait as pending ones; the confirm route makes them training samples and queues the rebuild
+//   - nothing is confirmed before the top-up has its samples, for a locked account, or for a user with no profile; a
+//     top-up that has its samples takes no more
 //   - a top-up is one sitting: a sample that has waited longer than it is dropped and never reaches a model
 //   - a top-up sample passes the same checks as an enrolment sample
+// The same tests run on PostgreSQL, the backend of the live system, when TEST_DATABASE_URL names a throwaway server
+// (scripts/ci-local.sh starts one), and on a SQLite file otherwise.
 // node --test
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -23,7 +27,10 @@ const ROOT = path.join(__dirname, "..");
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ca-top-up-"));
 const DB_PATH = path.join(DIR, "server.db");
 process.env.DB_PATH = DB_PATH;
-process.env.STORAGE = "sqlite";
+const PG = require("./pg");
+const ON_PG = !!PG.BASE;
+process.env.STORAGE = ON_PG ? "postgres" : "sqlite";
+let PG_URL = "";
 const db = require("../db");
 const mouse = require("../lib/mouse");
 const Database = require("better-sqlite3");
@@ -103,6 +110,7 @@ const ago = (min) => new Date(Date.now() - min * 60000).toISOString().slice(0, 1
 test.before(async () => {
   await new Promise((r) => stub.listen(0, "127.0.0.1", r));
   const stubUrl = `http://127.0.0.1:${stub.address().port}`;
+  if (ON_PG) { PG_URL = await PG.freshDatabase("ca_topup"); process.env.DATABASE_URL = PG_URL; }
   await db.open();
   // typing models trained an hour ago
   for (const id of [TYPIST, SLOW_TYPIST]) {
@@ -114,7 +122,7 @@ test.before(async () => {
   base = `http://127.0.0.1:${port}`;
   server = spawn(process.execPath, ["server.js"], {
     cwd: ROOT, stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PORT: String(port), STORAGE: "sqlite", DB_PATH, NODE_ENV: "test", LOG_FORMAT: "", TRAINING_POLL_MS: "200",
+    env: { ...process.env, PORT: String(port), STORAGE: process.env.STORAGE, DB_PATH, NODE_ENV: "test", LOG_FORMAT: "", TRAINING_POLL_MS: "200",
       GATEWAY_JWKS_URI: `${stubUrl}/jwks.json`, MODEL_INFER_URL: stubUrl, MODEL_API_URL: stubUrl },
   });
   server.stdout.on("data", (d) => { log += d; });
@@ -137,15 +145,22 @@ const call = async (method, p, sub, body) => {
     body: body ? JSON.stringify(body) : undefined });
   return { status: r.status, d: await r.json() };
 };
-function rows(sql, ...args) {
-  const ro = new Database(DB_PATH, { readonly: true });
-  try { return ro.prepare(sql).all(...args); } finally { ro.close(); }
+// Straight from the database, beside the service: a handle on its SQLite file, or a client of the PostgreSQL database
+// (bigint as a number, as the service's own data layer reads it).
+async function query(sql, args, writing) {
+  if (ON_PG) {
+    const pg = require("pg");
+    const types = { getTypeParser: (oid, format) => (oid === 20 ? Number : pg.types.getTypeParser(oid, format)) };
+    const c = new pg.Client({ connectionString: PG_URL, types });
+    await c.connect();
+    try { return (await c.query(db.toPg(sql), args)).rows; } finally { await c.end(); }
+  }
+  const h = new Database(DB_PATH, writing ? {} : { readonly: true });
+  try { return writing ? h.prepare(sql).run(...args) : h.prepare(sql).all(...args); } finally { h.close(); }
 }
-function write(sql, ...args) {
-  const w = new Database(DB_PATH);
-  try { return w.prepare(sql).run(...args); } finally { w.close(); }
-}
-const count = (table, sub) => rows(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id = ?`, sub)[0].n;
+const rows = (sql, ...args) => query(sql, args, false);
+const write = (sql, ...args) => query(sql, args, true);
+const count = async (table, sub) => (await rows(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id = ?`, sub))[0].n;
 const mouseStatus = async (sub) => (await call("GET", `/v1/mouse/status/${sub}`, sub)).d;
 async function enrolled(sub) {
   for (let i = 0; i < 8; i++) assert.equal((await call("POST", "/v1/mouse/enroll", sub, { windows: sample(`${sub} enrol ${i}`) })).status, 202);
@@ -156,8 +171,9 @@ async function enrolled(sub) {
 }
 const trainingsOf = (sub) => trained.filter((x) => String(x.userId) === String(sub));
 const topUp = (sub, seed) => call("POST", "/v1/mouse/enroll", sub, { windows: sample(seed), topUp: true });
+const confirm = (sub) => call("POST", "/v1/mouse/topup/confirm", sub, {});
 
-test("the mouse: four samples with the caller's word wait, and the fourth rebuilds the model from the newest eight", async () => {
+test("the mouse: four samples with the caller's word wait, and the confirmation rebuilds the model from the newest eight", async () => {
   const sub = 4001;
   const st = await enrolled(sub);
   assert.equal(st.topUpSamples, mouse.TOPUP_SAMPLES);
@@ -180,13 +196,26 @@ test("the mouse: four samples with the caller's word wait, and the fourth rebuil
   await sleep(600);
   assert.equal(trainingsOf(sub).length, 1, "three samples changed nothing yet");
   assert.equal((await mouseStatus(sub)).topUpAdded, 3);
-  assert.equal(count("mouse_samples", sub), 8, "they wait outside the profile's samples");
-  assert.equal(count("mouse_topup_samples", sub), 3);
+  assert.equal(await count("mouse_samples", sub), 8, "they wait outside the profile's samples");
+  assert.equal(await count("mouse_topup_samples", sub), 3);
 
   const last = await topUp(sub, `${sub} top 3`);
   assert.equal(last.status, 202, JSON.stringify(last.d));
   assert.deepEqual(last.d.topUp, { added: 4, needed: 4 });
-  assert.equal(last.d.training, true);
+  assert.ok(!last.d.training, "the last sample waits too");
+  await sleep(600);
+  assert.equal(trainingsOf(sub).length, 1, "four samples and no passkey after them: the model is as it was");
+  assert.equal(await count("mouse_samples", sub), 8);
+  assert.equal(await count("mouse_topup_samples", sub), 4);
+  assert.equal((await mouseStatus(sub)).topUpAdded, 4);
+  const fifth = await topUp(sub, `${sub} top 4`);
+  assert.equal(fifth.status, 409, JSON.stringify(fifth.d));
+  assert.equal(fifth.d.error, "topup_full");
+  assert.equal(await count("mouse_topup_samples", sub), 4, "a top-up that has its samples takes no more");
+
+  const done = await confirm(sub);
+  assert.equal(done.status, 202, JSON.stringify(done.d));
+  assert.equal(done.d.training, true);
   for (let i = 0; i < 100 && trainingsOf(sub).length < 2; i++) await sleep(100);
   assert.equal(trainingsOf(sub).length, 2, `the model was not rebuilt:\n${log.slice(-2000)}`);
   // the newest eight samples in time order: the last four of the enrolment, then the four of the top-up
@@ -198,9 +227,43 @@ test("the mouse: four samples with the caller's word wait, and the fourth rebuil
   for (let i = 0; i < 50 && !(after.enrolled && !after.training); i++) { await sleep(100); after = await mouseStatus(sub); }
   assert.equal(after.enrolled, true);
   assert.equal(after.topUpAdded, 0);
-  assert.equal(count("mouse_samples", sub), 12, "the four joined the eight, nothing was deleted");
-  assert.equal(count("mouse_topup_samples", sub), 0);
-  assert.equal(rows("SELECT reason FROM training_jobs WHERE user_id = ? AND modality = 'mouse' ORDER BY id DESC LIMIT 1", sub)[0].reason, "top-up");
+  assert.equal(await count("mouse_samples", sub), 12, "the four joined the eight, nothing was deleted");
+  assert.equal(await count("mouse_topup_samples", sub), 0);
+  assert.equal((await rows("SELECT reason FROM training_jobs WHERE user_id = ? AND modality = 'mouse' ORDER BY id DESC LIMIT 1", sub))[0].reason, "top-up");
+  const twice = await confirm(sub);
+  assert.equal(twice.status, 409, "confirmed once");
+  assert.equal(twice.d.error, "topup_incomplete");
+});
+
+test("the mouse: nothing is confirmed before the top-up has its samples, for a locked account, or with no profile", async () => {
+  const sub = 4005;
+  await enrolled(sub);
+  for (let i = 0; i < 2; i++) assert.equal((await topUp(sub, `${sub} top ${i}`)).status, 202);
+  const early = await confirm(sub);
+  assert.equal(early.status, 409, JSON.stringify(early.d));
+  assert.equal(early.d.error, "topup_incomplete");
+  assert.deepEqual(early.d.topUp, { added: 2, needed: 4 });
+  for (let i = 2; i < 4; i++) assert.equal((await topUp(sub, `${sub} top ${i}`)).status, 202);
+
+  assert.equal((await call("POST", "/v1/lock/set", sub, {})).status, 200);
+  const locked = await confirm(sub);
+  assert.equal(locked.status, 423, JSON.stringify(locked.d));
+  assert.equal(locked.d.locked, true);
+  assert.equal((await call("POST", "/v1/lock/clear", sub, {})).status, 200);
+
+  // the four waited longer than the sitting: they are gone, and a passkey now confirms nothing
+  await write("UPDATE mouse_topup_samples SET created_at = ? WHERE user_id = ?", ago(20), sub);
+  const late = await confirm(sub);
+  assert.equal(late.status, 409, JSON.stringify(late.d));
+  assert.deepEqual(late.d.topUp, { added: 0, needed: 4 });
+  assert.equal(await count("mouse_samples", sub), 8, "the profile's samples are as they were");
+  assert.equal(await count("mouse_topup_samples", sub), 0);
+  await sleep(400);
+  assert.equal(trainingsOf(sub).length, 1, "and the model was not rebuilt");
+
+  const nobody = await confirm(4006);
+  assert.equal(nobody.status, 409, JSON.stringify(nobody.d));
+  assert.equal(nobody.d.error, "not_enrolled");
 });
 
 test("the mouse: a top-up sample passes the checks of an enrolment sample", async () => {
@@ -221,7 +284,7 @@ test("the mouse: a top-up is one sitting, a sample that waited longer is dropped
   const sub = 4004;
   await enrolled(sub);
   assert.equal((await topUp(sub, `${sub} top 0`)).d.topUp.added, 1);
-  write("UPDATE mouse_topup_samples SET created_at = ? WHERE user_id = ?", ago(20), sub);
+  await write("UPDATE mouse_topup_samples SET created_at = ? WHERE user_id = ?", ago(20), sub);
   assert.equal((await mouseStatus(sub)).topUpAdded, 0, "the unfinished top-up of 20 minutes ago is gone");
   for (let i = 1; i <= 3; i++) {
     const r = await topUp(sub, `${sub} top ${i}`);
@@ -229,9 +292,9 @@ test("the mouse: a top-up is one sitting, a sample that waited longer is dropped
     assert.ok(!r.d.training);
   }
   assert.equal(trainingsOf(sub).length, 1, "the model was not rebuilt from three samples and a dropped one");
-  assert.equal(count("mouse_samples", sub), 8);
+  assert.equal(await count("mouse_samples", sub), 8);
   assert.equal((await call("POST", "/v1/mouse/reset", sub, {})).status, 200);
-  assert.equal(count("mouse_topup_samples", sub), 0, "a reset drops the top-up in progress");
+  assert.equal(await count("mouse_topup_samples", sub), 0, "a reset drops the top-up in progress");
 });
 
 test("the mouse: before the first model the word changes nothing, enrolment goes as ever", async () => {
@@ -240,12 +303,14 @@ test("the mouse: before the first model the word changes nothing, enrolment goes
   assert.equal(r.status, 202, JSON.stringify(r.d));
   assert.equal(r.d.samplesOnFile, 1);
   assert.equal(r.d.topUp, undefined);
-  assert.equal(count("mouse_topup_samples", sub), 0);
+  assert.equal(await count("mouse_topup_samples", sub), 0);
 });
 
 const typingRows = (sub) => rows("SELECT sample_purpose, is_training FROM keystroke_texts WHERE user_id = ? ORDER BY id", sub);
 
-test("typing: without the word a trained model takes no sample; with it three wait and the third queues the rebuild", async () => {
+const confirmTyping = (sub) => call("POST", "/v1/keystroke/topup/confirm", sub, {});
+
+test("typing: without the word a trained model takes no sample; with it three wait and the confirmation queues the rebuild", async () => {
   const plain = await call("POST", "/v1/keystroke/enroll", TYPIST, typed(200, 11));
   assert.equal(plain.status, 409, JSON.stringify(plain.d));
   assert.equal(plain.d.error, "already_enrolled");
@@ -258,12 +323,29 @@ test("typing: without the word a trained model takes no sample; with it three wa
     const r = await call("POST", "/v1/keystroke/enroll", TYPIST, { ...typed(200, 21 + i), topUp: true });
     assert.equal(r.status, 200, JSON.stringify(r.d));
     assert.deepEqual(r.d.topUp, { added: i + 1, needed: 3 });
-    assert.equal(r.d.training, i === 2, "the rebuild is queued by the third sample only");
-    if (i < 2) assert.deepEqual(typingRows(TYPIST), Array(i + 1).fill({ sample_purpose: "top-up-pending", is_training: 0 }), "until then they wait and train nothing");
+    assert.equal(r.d.training, false, "no sample queues the rebuild, the third neither");
+    assert.deepEqual(await typingRows(TYPIST), Array(i + 1).fill({ sample_purpose: "top-up-pending", is_training: 0 }), "they wait and train nothing");
   }
-  assert.deepEqual(typingRows(TYPIST), Array(3).fill({ sample_purpose: "top-up", is_training: 1 }), "the third made all three training samples");
-  const jobs = rows("SELECT reason FROM training_jobs WHERE user_id = ? AND modality = 'keystroke' ORDER BY id", TYPIST);
-  assert.deepEqual(jobs.map((j) => j.reason), ["top-up"]);
+  const jobsOf = async () => (await rows("SELECT reason FROM training_jobs WHERE user_id = ? AND modality = 'keystroke' ORDER BY id", TYPIST)).map((j) => j.reason);
+  assert.deepEqual(await jobsOf(), [], "three samples and no passkey after them: nothing is owed");
+  const fourth = await call("POST", "/v1/keystroke/enroll", TYPIST, { ...typed(200, 29), topUp: true });
+  assert.equal(fourth.status, 409, JSON.stringify(fourth.d));
+  assert.equal(fourth.d.error, "topup_full");
+  assert.equal((await typingRows(TYPIST)).length, 3, "a top-up that has its samples takes no more");
+
+  assert.equal((await call("POST", "/v1/lock/set", TYPIST, {})).status, 200);
+  assert.equal((await confirmTyping(TYPIST)).status, 423, "a locked account confirms nothing");
+  assert.equal((await call("POST", "/v1/lock/clear", TYPIST, {})).status, 200);
+  assert.deepEqual(await jobsOf(), []);
+
+  const done = await confirmTyping(TYPIST);
+  assert.equal(done.status, 200, JSON.stringify(done.d));
+  assert.equal(done.d.training, true);
+  assert.deepEqual(await typingRows(TYPIST), Array(3).fill({ sample_purpose: "top-up", is_training: 1 }), "the confirmation made all three training samples");
+  assert.deepEqual(await jobsOf(), ["top-up"]);
+  const twice = await confirmTyping(TYPIST);
+  assert.equal(twice.status, 409, "confirmed once");
+  assert.equal(twice.d.error, "topup_incomplete");
 });
 
 test("typing: a top-up sample passes the checks of an enrolment sample", async () => {
@@ -277,16 +359,19 @@ test("typing: a top-up sample passes the checks of an enrolment sample", async (
 test("typing: a top-up is one sitting, a sample that waited longer is dropped with its key events", async () => {
   const first = await call("POST", "/v1/keystroke/enroll", SLOW_TYPIST, { ...typed(200, 41), topUp: true });
   assert.deepEqual(first.d.topUp, { added: 1, needed: 3 }, JSON.stringify(first.d));
-  write("UPDATE keystroke_texts SET submitted_at = ? WHERE user_id = ?", ago(20), SLOW_TYPIST);
+  await write("UPDATE keystroke_texts SET submitted_at = ? WHERE user_id = ?", ago(20), SLOW_TYPIST);
   assert.equal((await call("GET", `/v1/keystroke/status/${SLOW_TYPIST}`, SLOW_TYPIST)).d.topUpAdded, 0, "the unfinished top-up of 20 minutes ago is gone");
-  assert.equal(count("keystroke_texts", SLOW_TYPIST), 0);
-  assert.equal(rows("SELECT COUNT(*) AS n FROM keystroke_events").length && rows("SELECT COUNT(*) AS n FROM keystroke_events e WHERE NOT EXISTS (SELECT 1 FROM keystroke_texts t WHERE t.id = e.keystroke_text_id)")[0].n, 0, "no key event is left without its sample");
+  assert.equal(await count("keystroke_texts", SLOW_TYPIST), 0);
+  assert.equal((await rows("SELECT COUNT(*) AS n FROM keystroke_events e WHERE NOT EXISTS (SELECT 1 FROM keystroke_texts t WHERE t.id = e.keystroke_text_id)"))[0].n, 0, "no key event is left without its sample");
   for (let i = 0; i < 2; i++) {
     const r = await call("POST", "/v1/keystroke/enroll", SLOW_TYPIST, { ...typed(200, 51 + i), topUp: true });
     assert.deepEqual(r.d.topUp, { added: i + 1, needed: 3 }, "the count starts again");
     assert.equal(r.d.training, false);
   }
-  assert.equal(count("training_jobs", SLOW_TYPIST), 0, "no rebuild from two samples and a dropped one");
+  const early = await confirmTyping(SLOW_TYPIST);
+  assert.equal(early.status, 409, JSON.stringify(early.d));
+  assert.deepEqual(early.d.topUp, { added: 2, needed: 3 });
+  assert.equal(await count("training_jobs", SLOW_TYPIST), 0, "no rebuild from two samples and a dropped one, with or without a passkey");
   assert.equal((await call("POST", "/v1/keystroke/reset", SLOW_TYPIST, {})).status, 200);
-  assert.equal(count("keystroke_texts", SLOW_TYPIST), 0, "a reset drops the top-up in progress");
+  assert.equal(await count("keystroke_texts", SLOW_TYPIST), 0, "a reset drops the top-up in progress");
 });
