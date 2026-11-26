@@ -54,6 +54,11 @@ function poll() {
     $("lockNote").textContent = s.locked ? ERRORS.locked : "";
     // The sign-in itself expired: signing in again keeps the account, and its lock if there is one (2026-11-25).
     $("reSignInBtn").classList.toggle("hidden", !s.signInExpired);
+    // Locked for the account signed in above: the study's settings would change who the user is and lift that lock, so
+    // the worker refuses them until the passkey (2026-11-26). A participant's lock is the experimenter's to lift, as ever.
+    var accountLock = !!s.locked && !s.study;
+    $("studySave").disabled = accountLock;
+    $("studyLockNote").textContent = accountLock ? ERRORS.locked : "";
   });
 }
 poll();
@@ -153,7 +158,12 @@ $("studySave").addEventListener("click", function () {
   var v = { on: sOn.checked, gateway: sGw.value.trim().replace(/\/+$/, ""), siteKey: sKey.value.trim(), participant: p,
             condition: sCond.value === "impostor" ? "impostor:" + imp : "genuine", client: sClient.value === "lab" ? "lab" : "extension-study",
             showVerdict: sShow.checked };
-  api.storage.local.set({ cg_study: v }, function () { msg("studyMsg", v.on ? "Saved. Study mode is ON for " + p + " (" + v.condition + ")." : "Saved. Study mode is off.", true); });
+  // Through the worker, which refuses them while the signed-in account is locked (background.js "cg:save-study").
+  api.runtime.sendMessage({ type: "cg:save-study", study: v }, function (r) {
+    if (api.runtime.lastError || !r) return msg("studyMsg", "The extension did not answer. Reload it and try again.");
+    if (!r.ok) return msg("studyMsg", ERRORS[r.error] || r.error);
+    msg("studyMsg", v.on ? "Saved. Study mode is ON for " + p + " (" + v.condition + ")." : "Saved. Study mode is off.", true);
+  });
 });
 $("studyEnrol").addEventListener("click", function () {
   // The participant saved here (2026-11-25): with study mode off, or another pseudonym typed but not saved, this opened the

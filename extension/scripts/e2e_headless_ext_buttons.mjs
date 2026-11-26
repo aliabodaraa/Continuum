@@ -5,7 +5,8 @@
 //   1. the organisation turned the mouse off and the mouse is not enrolled: no "Finish enrolment" (the enrolment page skips
 //      a channel that is off, so the button stayed for good); switched back on, the button is there
 //   2. locked: no "Finish enrolment" (the page asked for the passkey, then the lock again), and "Sign out" is off with the
-//      reason (signing out is refused while locked); unlocked, both are back
+//      reason (signing out is refused while locked); unlocked, both are back. The study's "Save study settings" is off
+//      too (2026-11-26): saved, they changed who the user is and the lock went with it, whatever was typed in the fields
 //   3. the server cannot be reached: no "Finish enrolment" (the page cannot load)
 //   4. "Exclude this site" only on a page that is recorded: not on the extension's own pages nor on the gateway's
 //   5. study mode on: the display switch "Show the live verdict" is off with a note (the study's own switch decides)
@@ -130,9 +131,23 @@ try {
   ok("2. locked: no \"Finish enrolment\" in the popup nor in the settings", (await ev(pop, shown("enrolBtn"))) === false && (await ev(opt, shown("enrolBtn"))) === false);
   const out = await ev(opt, "({ disabled: document.getElementById('signOutBtn').disabled, note: document.getElementById('lockNote').textContent })");
   ok("…\"Sign out\" is off and says why", out && out.disabled === true && /locked/.test(out.note), JSON.stringify(out));
+  // the study's settings: any text in the fields, saved, made the "user" someone else and the lock went with the account
+  await ev(opt, `document.getElementById('studyBox').open = true; document.getElementById('studyOn').checked = true; document.getElementById('studyGateway').value = "${GW}";
+    document.getElementById('studyKey').value = "anything"; document.getElementById('studyParticipant').value = "P09"; true`);
+  const st2 = await ev(opt, "({ disabled: document.getElementById('studySave').disabled, note: (document.getElementById('studyLockNote') || {}).textContent || '' })");
+  await ev(opt, "document.getElementById('studySave').click(), true");
+  await sleep(1200);
+  const sent2 = await ev(opt, `new Promise((r) => { setTimeout(() => r(null), 3000); chrome.runtime.sendMessage({ type: "cg:save-study", study: { on: true, gateway: "${GW}", siteKey: "anything", participant: "P09" } }, (x) => { void chrome.runtime.lastError; r(x || null); }); })`);
+  await sleep(800);
+  const saved2 = await ev(opt, "new Promise((r) => chrome.storage.local.get('cg_study', (d) => r((d && d.cg_study) || null)))");
+  const still2 = { locked: await W("state.locked"), overlay: await ev(site, "!!document.getElementById('__cgVerifyBtn')") };
+  ok("…the study's \"Save\" is off and says why; pressed or sent anyway, nothing is saved and the lock stays", st2 && st2.disabled === true && /locked/.test(st2.note)
+    && !!sent2 && sent2.ok === false && sent2.error === "locked" && saved2 === null && still2.locked === true && still2.overlay === true,
+    JSON.stringify({ button: st2, answer: sent2, saved: saved2, still: still2 }));
   await W("releaseLock(); true");
   await sleep(2500);
   ok("…unlocked: both back", (await ev(pop, shown("enrolBtn"))) && (await ev(opt, "!document.getElementById('signOutBtn').disabled && !document.getElementById('lockNote').textContent")));
+  ok("…and the study's \"Save\" is on again", await ev(opt, "!document.getElementById('studySave').disabled && !document.getElementById('studyLockNote').textContent"));
 
   // ---- 3. the server cannot be reached
   state.down = true;
@@ -154,14 +169,22 @@ try {
   ok("4. \"Exclude this site\" on a website, not on the extension's own page nor on the gateway's", own === false && onSite === true && onGateway === false,
     `own page ${own}, website ${onSite}, gateway ${onGateway}`);
 
-  // ---- 5. study mode on: the display switch
-  await ev(opt, `new Promise((r) => chrome.storage.local.set({ cg_study: { on: true, gateway: "${GW}", siteKey: "SK_STUDY", participant: "P01", condition: "genuine", client: "extension-study", showVerdict: false } }, () => r(true)))`);
+  // ---- 5. study mode on: the display switch. Saved with the page's own button, which goes through the worker.
+  const saveStudy = async (on) => {
+    await ev(opt, `document.getElementById('studyOn').checked = ${on}; document.getElementById('studyGateway').value = "${GW}"; document.getElementById('studyKey').value = "SK_STUDY";
+      document.getElementById('studyParticipant').value = "P01"; document.getElementById('studySave').click(); true`);
+    return waitFor(opt, `document.getElementById('studyMsg').textContent.startsWith("Saved. Study mode is ${on ? "ON" : "off"}")`, 6000);
+  };
+  const on5 = await saveStudy(true);
   await sleep(800);
   const s5 = await ev(opt, "({ disabled: document.getElementById('showVerdict').disabled, note: !document.getElementById('verdictNote').classList.contains('hidden') })");
-  await ev(opt, `new Promise((r) => chrome.storage.local.set({ cg_study: { on: false, gateway: "${GW}", siteKey: "SK_STUDY", participant: "P01", condition: "genuine", client: "extension-study", showVerdict: false } }, () => r(true)))`);
+  const user5 = await W("connKey()");
+  const off5 = await saveStudy(false);
   await sleep(800);
   const s5off = await ev(opt, "({ disabled: document.getElementById('showVerdict').disabled, note: !document.getElementById('verdictNote').classList.contains('hidden') })");
-  ok("5. study mode on: \"Show the live verdict\" is off with a note; study mode off: back", s5 && s5.disabled && s5.note && s5off && !s5off.disabled && !s5off.note,
+  ok("5. not locked, the study's \"Save\" works: the participant becomes the user, and back", on5 && off5 && /^study\|/.test(user5 || "") && /^personal\|/.test((await W("connKey()")) || ""),
+    `on ${on5}, user ${user5}; off ${off5}, user ${await W("connKey()")}`);
+  ok("…study mode on: \"Show the live verdict\" is off with a note; study mode off: back", s5 && s5.disabled && s5.note && s5off && !s5off.disabled && !s5off.note,
     `${JSON.stringify(s5)} / ${JSON.stringify(s5off)}`);
 
   // ---- 6. the study's enrolment page with study mode off

@@ -64,7 +64,9 @@ never lifted automatically; tell participants to resume after typing something p
 
 1. Install the extension in the participant's Chrome (the study origin must match the tenant).
 2. Settings page, "Research study (experimenter only)": study mode on, gateway URL, the study site key, the participant's
-   pseudonym, condition "The participant (genuine)". Save.
+   pseudonym, condition "The participant (genuine)". Save. If an account is signed in on this browser and it is locked,
+   "Save" is off until its owner verifies with the passkey (since 2026-11-26: the study's settings change who the user
+   is, and saving them lifted that account's lock). A participant's own lock does not stop the next "Save".
 3. "Open enrolment page": the participant creates the passkey, types the five texts and does the eight mouse
    samples. Training runs on the server (a few minutes).
 

@@ -407,6 +407,12 @@ function fromGatewayPage(sender, page) {
   if (page === "/connect.html" && pendingGateway) g = pendingGateway;
   return !!g && !!sender && !!sender.url && sender.url.indexOf(g + page) === 0;
 }
+// One of this extension's own pages (the settings, the popup), not a content script in a website.
+function fromOwnPage(sender) {
+  var own = "";
+  try { own = api.runtime.getURL(""); } catch (e) {}
+  return !!own && !!sender && typeof sender.url === "string" && sender.url.indexOf(own) === 0;
+}
 function closeSenderTab(sender) {
   if (sender && sender.tab && sender.tab.id != null) { try { api.tabs.remove(sender.tab.id, function () { void api.runtime.lastError; }); } catch (e) {} }
 }
@@ -940,6 +946,16 @@ function onMessage(msg, sender, reply) {
       if (state.locked) { reply({ ok: false, error: "locked" }); return true; }
       if (account) revoke(account);
       api.storage.local.remove("cg_account", function () { reply({ ok: true }); });
+      return true;
+    case "cg:save-study":
+      // The study's settings, from the options page. Switching the study on, or changing its participant, changes who
+      // the user is, and a change of user lifts the lock (storage.onChanged above): that is how the lab goes from one
+      // participant to the next. A lock held for a signed-in account is not the study's to lift (2026-11-26): until the
+      // passkey these settings are refused, as signing out and signing in as someone else are. The page wrote them to
+      // storage itself before, so any text in its fields lifted an account's lock.
+      if (!fromOwnPage(sender)) return;
+      if (state.locked && !studyOn()) { reply({ ok: false, error: "locked" }); return true; }
+      api.storage.local.set({ cg_study: msg.study || {} }, function () { reply({ ok: true }); });
       return true;
     case "cg:open-enrol":
       // Never while locked (2026-11-25): the enrolment page asked for the passkey too, and the lock then asked again.

@@ -11,6 +11,8 @@
 //   7. a channel the organisation turned off stays off across a restart of the worker, and is noticed when it is back on
 //   8. the tabs already open when the extension is installed get the Arabic phrases before content.js
 //   9. another account signing in in place of a signed-in one (not locked): the pages start again from empty buffers
+//  10. the study's settings (2026-11-26): refused while the signed-in account is locked (they changed the user and the
+//      lock went with it, with any text in the fields); kept between a study's participants; never from a website's page
 //
 //   node extension/scripts/unit_worker_buttons.mjs
 import fs from "node:fs"; import path from "node:path"; import vm from "node:vm";
@@ -43,10 +45,18 @@ async function start(store, route = {}, opts = {}) {
   const on = (name) => ({ addListener: (fn) => { (listeners[name] = listeners[name] || []).push(fn); } });
   const newWindow = (url) => { const w = nextId++, t = nextId++; tabs.set(t, { id: t, url, windowId: w }); opened.push(url); return { id: w, tabs: [{ id: t, windowId: w, url }] }; };
   const chrome = {
-    runtime: { id: "ext", onMessage: on("message"), onInstalled: on("installed"), onStartup: on("startup"), openOptionsPage() {} },
+    runtime: { id: "ext", getURL: (p) => "chrome-extension://ext/" + (p || ""), onMessage: on("message"), onInstalled: on("installed"), onStartup: on("startup"), openOptionsPage() {} },
     storage: {
       local: { get(keys, cb) { const snap = pick(store, keys); reads.push(() => cb(snap)); },
-        set(o, cb) { Object.assign(store, copy(o)); if (cb) cb(); }, remove(k, cb) { for (const x of [].concat(k)) delete store[x]; if (cb) cb(); } },
+        // opts.changes: a write is followed by the change event, as in Chrome (the worker follows its own writes that way)
+        set(o, cb) {
+          const changes = {};
+          for (const k of Object.keys(o)) if (JSON.stringify(store[k]) !== JSON.stringify(o[k])) changes[k] = { oldValue: copy(store[k]), newValue: copy(o[k]) };
+          Object.assign(store, copy(o));
+          if (opts.changes && Object.keys(changes).length) (listeners.changed || []).forEach((fn) => fn(changes, "local"));
+          if (cb) cb();
+        },
+        remove(k, cb) { for (const x of [].concat(k)) delete store[x]; if (cb) cb(); } },
       session: { get(k, cb) { const out = pick(session, k); if (cb) cb(out); return Promise.resolve(out); },
         set(o) { Object.assign(session, copy(o)); return Promise.resolve(); }, remove(k) { for (const x of [].concat(k)) delete session[x]; return Promise.resolve(); } },
       onChanged: on("changed"),
@@ -223,6 +233,43 @@ const linkTab = (w) => w.session.cg_link_pending && w.session.cg_link_pending.ta
   const reset = w.sent.find((m) => m.type === "cg:reset");
   ok("9. another account replacing a signed-in one (not locked): a new buffer epoch, the pages told to start again",
     w.store.cg_account.userId === 99 && w.W("bufferEpoch") !== epoch && !!reset && reset.bufferEpoch === w.W("bufferEpoch"), `account ${w.store.cg_account.userId}`);
+}
+// ---- 10. the study's settings
+{
+  const STUDY = (participant) => ({ on: true, gateway: GW, siteKey: "SK_STUDY", participant, condition: "genuine", client: "extension-study", showVerdict: false });
+  const OPTIONS = { url: "chrome-extension://ext/src/options.html" };
+  const w = await start(locked(), { "/v1/sdk/session": SESSION_OK }, { changes: true });
+  w.sent.length = 0;
+  const r = await w.message({ type: "cg:save-study", study: STUDY("P01") }, OPTIONS);
+  ok("10. the study's settings while the signed-in account is locked: refused, nothing saved", r.got && r.got.ok === false && r.got.error === "locked" && w.store.cg_study === undefined,
+    `${JSON.stringify(r.got)}, saved ${JSON.stringify(w.store.cg_study)}`);
+  ok("…the account and its lock stay, and no page is told to unlock", w.W("state.locked") === true && w.W("connKey()") === USER && !types(w).includes("cg:unlock")
+    && w.store.cg_progress.locked === true && w.store.cg_progress.user === USER, `locked ${w.W("state.locked")}, user ${w.W("connKey()")}, sent ${types(w).join(", ")}`);
+  const w2 = await start(w.store, { "/v1/sdk/session": SESSION_OK });
+  ok("…a restarted worker is still locked for the account", w2.W("state.locked") === true && w2.W("connKey()") === USER);
+
+  // not locked: the experimenter switches the study on, and off again
+  const store = locked(); store.cg_progress.locked = false;
+  const u = await start(store, { "/v1/sdk/session": SESSION_OK }, { changes: true });
+  const on = await u.message({ type: "cg:save-study", study: STUDY("P01") }, OPTIONS);
+  ok("…not locked: saved, and the study's participant is the user", on.got && on.got.ok === true && u.store.cg_study.participant === "P01" && u.W("connKey()") === ["study", GW, "SK_STUDY", "P01"].join("|"),
+    `${JSON.stringify(on.got)}, user ${u.W("connKey()")}`);
+
+  // the lab: a participant's lock goes when the experimenter sets the next participant, as before
+  const P1 = ["study", GW, "SK_STUDY", "P01"].join("|");
+  const lab = await start({ cg_study: STUDY("P01"), cg_buffer_epoch: "bSAVED",
+    cg_progress: { user: P1, locked: true, lockReason: "mouse", lockPasted: false, probation: false, verdict: null, mouseVerdict: null, at: Date.now() } }, {}, { changes: true });
+  const was = lab.W("state.locked");
+  lab.sent.length = 0;
+  const next = await lab.message({ type: "cg:save-study", study: STUDY("P02") }, OPTIONS);
+  ok("…a study participant's lock: the next participant is saved and the lock goes, as the lab's sessions need", was === true && next.got && next.got.ok === true
+    && lab.store.cg_study.participant === "P02" && lab.W("state.locked") === false && types(lab).includes("cg:unlock"), `locked before ${was}, after ${lab.W("state.locked")}; sent ${types(lab).join(", ")}`);
+
+  // only the extension's own pages: a content script in a website gets no answer and changes nothing
+  const plain = locked(); plain.cg_progress.locked = false;
+  const x = await start(plain, { "/v1/sdk/session": SESSION_OK }, { changes: true });
+  const site = await x.message({ type: "cg:save-study", study: STUDY("P09") });
+  ok("…from a website's page: not taken", site.got === undefined && x.store.cg_study === undefined, `${JSON.stringify(site.got)}, saved ${JSON.stringify(x.store.cg_study)}`);
 }
 console.log(bad ? `\n${bad} check(s) FAILED` : "\nall checks passed");
 process.exit(bad ? 1 : 0);
