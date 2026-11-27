@@ -1,0 +1,17 @@
+Question 3, code c741ca51ae21, valid True (thresholds = first run, max diff 0.0e+00); 47.8 s
+Balabit users (windows, median step px): user12 1200/17.0, user15 1200/18.0, user16 1200/16.6, user20 1200/5.0, user21 1200/13.0, user23 1200/15.8, user29 1200/15.5, user35 1200/15.3, user7 1200/3.6, user9 1200/2.2; his A median step 10.2
+  A              threshold 0.2621  capture raw 41.0% scaled 10.5%  AUC his use vs Balabit raw 0.693 scaled 0.531  per user raw [5.0, 5.0, 20.0, 100.0, 0.0, 10.0, 65.0, 5.0, 100.0, 100.0]
+  M              threshold 0.2556  capture raw 63.5% scaled 26.0%  AUC his use vs Balabit raw 0.745 scaled 0.594  per user raw [45.0, 60.0, 60.0, 100.0, 15.0, 55.0, 80.0, 20.0, 100.0, 100.0]
+  N              threshold 0.7902  capture raw 100.0% scaled 100.0%  AUC his use vs Balabit raw 0.819 scaled 0.755  per user raw [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+  T              threshold 0.7935  capture raw 100.0% scaled 100.0%  AUC his use vs Balabit raw 0.756 scaled 0.690  per user raw [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+  U_2026-11-23   threshold 0.4756  capture raw 96.0% scaled 100.0%  AUC his use vs Balabit raw 0.964 scaled 0.984  per user raw [100.0, 100.0, 100.0, 85.0, 100.0, 100.0, 100.0, 100.0, 100.0, 75.0]
+  PU_2026-11-23  threshold 0.3393  capture raw 97.0% scaled 94.5%  AUC his use vs Balabit raw 0.938 scaled 0.914  per user raw [100.0, 100.0, 100.0, 95.0, 80.0, 100.0, 100.0, 100.0, 95.0, 100.0]
+  U_2026-11-24   threshold 0.4210  capture raw 98.0% scaled 99.0%  AUC his use vs Balabit raw 0.951 scaled 0.956  per user raw [100.0, 100.0, 100.0, 90.0, 100.0, 100.0, 100.0, 100.0, 100.0, 90.0]
+  PU_2026-11-24  threshold 0.3601  capture raw 97.0% scaled 96.0%  AUC his use vs Balabit raw 0.921 scaled 0.897  per user raw [100.0, 100.0, 100.0, 95.0, 80.0, 100.0, 100.0, 100.0, 95.0, 100.0]
+Q3 N: raw 100.0% (+36.5 vs M, 95% [+18.5, +55.0]), scaled 100.0% (+74.0, 95% [+61.0, +85.5]); 200 decisions; passes True
+Q3 T: raw 100.0% (+36.5 vs M, 95% [+18.5, +55.0]), scaled 100.0% (+74.0, 95% [+61.0, +85.5]); 200 decisions; passes True
+Q3 U_2026-11-23: raw 96.0% (+32.5 vs M, 95% [+11.0, +54.0]), scaled 100.0% (+74.0, 95% [+61.0, +85.5]); 200 decisions; passes True
+Q3 PU_2026-11-23: raw 97.0% (+33.5 vs M, 95% [+16.5, +51.0]), scaled 94.5% (+68.5, 95% [+57.0, +78.5]); 200 decisions; passes True
+Q3 U_2026-11-24: raw 98.0% (+34.5 vs M, 95% [+15.0, +54.5]), scaled 99.0% (+73.0, 95% [+60.5, +84.0]); 200 decisions; passes True
+Q3 PU_2026-11-24: raw 97.0% (+33.5 vs M, 95% [+16.5, +51.0]), scaled 96.0% (+70.0, 95% [+58.0, +80.5]); 200 decisions; passes True
+verdict: {"U_pass": true, "PU_pass": true}
