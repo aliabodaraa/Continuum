@@ -1,0 +1,12 @@
+Dots or days, code 562ba482f15a, valid True; 36.4 s; his 558 checks = 14.9 min of movement
+  A   8 samples on 5 day(s), median step 10.2 px, threshold 0.2621:  16 requests (1.08/min), mean low 17.4 of 60, real-use median score 0.391 | SapiMouse 77.1/57.0% | Balabit 41.0/10.5% (AUC his use vs Balabit 0.693/0.531)
+  M   8 samples on 4 day(s), median step 6.0 px, threshold 0.2556:   8 requests (0.54/min), mean low 16.2 of 60, real-use median score 0.389 | SapiMouse 79.9/76.5% | Balabit 63.5/26.0% (AUC his use vs Balabit 0.745/0.594)
+  T   8 samples on 1 day(s), median step 4.0 px, threshold 0.7935:  63 requests (4.23/min), mean low 59.8 of 60, real-use median score 0.042 | SapiMouse 100.0/100.0% | Balabit 100.0/100.0% (AUC his use vs Balabit 0.756/0.690)
+  D1  6 samples on 1 day(s), median step 5.4 px, threshold 0.5509:  63 requests (4.23/min), mean low 56.2 of 60, real-use median score 0.105 | SapiMouse 100.0/99.0% | Balabit 100.0/99.0% (AUC his use vs Balabit 0.845/0.729)
+  A6  6 samples on 4 day(s), median step 11.7 px, threshold 0.2408:   3 requests (0.20/min), mean low 11.5 of 60, real-use median score 0.437 | SapiMouse 76.1/59.0% | Balabit 35.5/9.0% (AUC his use vs Balabit 0.753/0.617)
+  T6  6 samples on 1 day(s), median step 4.0 px, threshold 0.7825:  63 requests (4.23/min), mean low 59.8 of 60, real-use median score 0.078 | SapiMouse 100.0/100.0% | Balabit 100.0/100.0% (AUC his use vs Balabit 0.818/0.779)
+sapimouse D1_vs_A6: raw +23.9 [+3.3, +45.2], scaled +39.9 [+20.0, +58.2]
+sapimouse T6_vs_A6: raw +23.9 [+3.3, +45.2], scaled +41.0 [+20.1, +60.4]
+balabit D1_vs_A6: raw +64.5 [+36.5, +89.5], scaled +90.0 [+80.0, +97.0]
+balabit T6_vs_A6: raw +64.5 [+36.5, +89.5], scaled +91.0 [+81.0, +98.0]
+verdict: {"oneSittingOfDotsAcceptsHim": false, "andItKnowsHim": false}
